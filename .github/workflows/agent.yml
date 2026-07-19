@@ -1,0 +1,44 @@
+# Agente Rust: compila e testa em Windows, Linux e macOS a cada push.
+# É assim que o macOS é coberto sem possuir um Mac.
+name: Agent (Rust)
+
+on:
+  push:
+    branches: [main]
+    paths: ["agent/**", ".github/workflows/agent.yml"]
+  pull_request:
+    paths: ["agent/**", ".github/workflows/agent.yml"]
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+
+      - name: Formatação
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Testes
+        run: cargo test
+
+      - name: Build release
+        run: cargo build --release

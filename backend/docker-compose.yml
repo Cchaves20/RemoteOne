@@ -1,0 +1,32 @@
+# Stack de desenvolvimento local: API + PostgreSQL + Redis.
+# Uso: docker compose up --build  (a API fica em http://localhost:8000)
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      REMOTEONE_DATABASE_URL: postgresql://remoteone:remoteone@db:5432/remoteone
+      REMOTEONE_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: remoteone
+      POSTGRES_PASSWORD: remoteone
+      POSTGRES_DB: remoteone
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:

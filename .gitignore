@@ -1,0 +1,24 @@
+# Rust
+agent/target/
+agent/Cargo.lock
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Flutter / Dart
+client/.dart_tool/
+client/build/
+client/.flutter-plugins*
+client/pubspec.lock
+
+# IDEs e SO
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+[package]
+name = "remoteone-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Agente desktop do RemoteOne: recebe comandos remotos e executa ações no sistema operacional"
+license = "MIT"
+
+[dependencies]
+rand = "0.8"
