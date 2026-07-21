@@ -47,7 +47,9 @@ Agente                          Backend
 | `stop_stream` | — | Encerra a transmissão da tela |
 
 O agente responde ao `start_stream` enviando frames JPEG como mensagens
-**binárias** (agente → backend). A tela remota está em [`tela-remota.md`](tela-remota.md).
+**binárias** (agente → backend). O backend os repassa em tempo real aos apps
+conectados em `/ws/viewer/{device_id}` (que autenticam com
+`{"token": ...}`). A tela remota está em [`tela-remota.md`](tela-remota.md).
 
 O pareamento está documentado em [`pareamento.md`](pareamento.md) e o controle
 remoto em [`controle-remoto.md`](controle-remoto.md).

@@ -2,13 +2,14 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
+import jwt
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from app import pairing
 from app.agents import AgentRegistry
 from app.auth import router as auth_router
 from app.config import settings
-from app.connections import manager
+from app.connections import manager, viewers
 from app.db import SessionLocal, init_db
 from app.devices import router as devices_router
 from app.protocol import (
@@ -21,6 +22,7 @@ from app.protocol import (
     parse_client_message,
 )
 from app.screen import frame_store
+from app.security import decode_token
 
 logger = logging.getLogger("remoteone")
 
@@ -122,9 +124,11 @@ async def agent_ws(websocket: WebSocket) -> None:
             if packet["type"] == "websocket.disconnect":
                 break
 
-            # Frame de tela (binário): guarda o mais recente do dispositivo.
+            # Frame de tela (binário): guarda o mais recente e empurra aos
+            # apps que estão assistindo (tempo real).
             if packet.get("bytes") is not None:
                 frame_store.put(device_id, packet["bytes"])
+                await viewers.broadcast(device_id, packet["bytes"])
                 continue
 
             text = packet.get("text")
@@ -161,3 +165,60 @@ async def agent_ws(websocket: WebSocket) -> None:
             manager.unregister(device_id, websocket)
             frame_store.clear(device_id)
             logger.info("agente desconectado: %s", device_id)
+
+
+def _authenticate_viewer(token: str, device_id: str) -> bool:
+    """Valida o token e a posse do dispositivo para assistir à tela."""
+    try:
+        payload = decode_token(token)
+    except jwt.PyJWTError:
+        return False
+    if payload.get("type") != "access":
+        return False
+    with SessionLocal() as db:
+        device = pairing.get_device(db, device_id)
+        return device is not None and str(device.user_id) == str(payload.get("sub"))
+
+
+@app.websocket("/ws/viewer/{device_id}")
+async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
+    """Canal do app para assistir à tela em tempo real.
+
+    O app envia `{"token": "..."}` como primeira mensagem; autenticado e sendo
+    dono do dispositivo, passa a receber os frames JPEG (binários) empurrados
+    pelo backend. Ao conectar o primeiro viewer, o backend pede a transmissão
+    ao agente; ao sair o último, pede para parar.
+    """
+    await websocket.accept()
+    registered = False
+    try:
+        auth = await websocket.receive_json()
+        if not _authenticate_viewer(auth.get("token", ""), device_id):
+            await websocket.close(code=4401)  # não autorizado
+            return
+
+        count = viewers.add(device_id, websocket)
+        registered = True
+        # Primeiro viewer: pede a transmissão ao agente.
+        if count == 1:
+            await manager.send_to_agent(
+                device_id, {"type": "start_stream", "max_fps": settings.stream_fps}
+            )
+        # Manda o último frame guardado, se houver (exibe algo na hora).
+        cached = frame_store.get(device_id)
+        if cached is not None:
+            await websocket.send_bytes(cached)
+
+        # Mantém a conexão viva; os frames são empurrados pelo handler do agente.
+        while True:
+            packet = await websocket.receive()
+            if packet["type"] == "websocket.disconnect":
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if registered:
+            remaining = viewers.remove(device_id, websocket)
+            if remaining == 0:
+                await manager.send_to_agent(device_id, {"type": "stop_stream"})
+                frame_store.clear(device_id)

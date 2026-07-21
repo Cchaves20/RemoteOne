@@ -16,24 +16,33 @@ Como a injeção de entrada, a **captura de tela é específica do SO**:
 `xcap` é declarado só para Windows em `agent/Cargo.toml`; a codificação JPEG
 (crate `image`) é compartilhada e roda em qualquer plataforma.
 
-## Fluxo
+## Fluxo (tempo real por WebSocket)
 
 ```
-App                         Backend                      Agente
- │ POST /screen/start ──────►  manda start_stream ──────► começa a capturar
- │                                              ◄── frames JPEG (binário, WS)
- │                            guarda o último frame
- │ GET /screen ────────────►  devolve o último JPEG
- │   (repete ~3x/s)
- │ POST /screen/stop ───────►  manda stop_stream ───────► para de capturar
+App                          Backend                      Agente
+ │ WS /ws/viewer/{id} ───────►  1º viewer? manda start_stream ─► captura
+ │ {"token": ...}               (autentica + checa posse)
+ │ ◄──────────── frames JPEG ── empurra cada frame ◄── frames (binário, WS)
+ │ (em tempo real, ~10 fps)
+ │ (fecha o WS) ─────────────►  último viewer saiu? manda stop_stream ─► para
 ```
 
-O agente envia frames pelo seu WebSocket como mensagens **binárias**; o
-backend mantém apenas o **último frame por dispositivo** (em memória) e o
-entrega no `GET`. O app faz *polling* desse GET para montar o "vídeo".
+O app abre um WebSocket em `/ws/viewer/{device_id}` e envia
+`{"token": "<access_token>"}` como primeira mensagem. Autenticado e sendo
+dono do dispositivo, passa a **receber cada frame assim que chega** — sem
+polling. O backend guarda também o último frame (para exibir algo na hora em
+que um novo viewer entra).
 
-- Parâmetros do agente (`agent/src/client.rs`): ~3 fps, largura máx. 1280 px,
-  qualidade JPEG 60. Fáceis de ajustar conforme rede/CPU.
+- Parâmetros do agente (`agent/src/client.rs`): ~10 fps, largura máx. 1280 px,
+  qualidade JPEG 55. A captura roda em `spawn_blocking` para não travar o
+  tratamento de comandos. Fáceis de ajustar conforme rede/CPU.
+
+### Alternativa por HTTP (para testar no navegador/`/docs`)
+
+Os endpoints `POST /screen/start`, `GET /screen` e `POST /screen/stop`
+continuam existindo: o `GET` devolve o último frame como `image/jpeg`. Útil
+para validar a captura sem um cliente WebSocket, mas é polling (mais lento
+que o WS).
 
 ## Endpoints (autenticados, exigem posse do dispositivo)
 

@@ -15,9 +15,9 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::protocol::{ClientMessage, ServerMessage};
 
 /// Parâmetros da transmissão de tela.
-const FRAME_INTERVAL_MS: u64 = 300; // ~3 fps
+const FRAME_INTERVAL_MS: u64 = 100; // ~10 fps
 const STREAM_MAX_WIDTH: u32 = 1280;
-const STREAM_QUALITY: u8 = 60;
+const STREAM_QUALITY: u8 = 55;
 
 /// Dados de identificação do agente, resolvidos uma vez na inicialização.
 #[derive(Debug, Clone)]
@@ -73,9 +73,16 @@ pub async fn run(
                 ws.send(Message::Text(hb)).await?;
             }
             _ = frame_ticker.tick(), if streaming => {
-                match crate::capture::capture_frame(STREAM_MAX_WIDTH, STREAM_QUALITY) {
-                    Ok(jpeg) => ws.send(Message::Binary(jpeg)).await?,
-                    Err(e) => eprintln!("Falha ao capturar a tela: {e}"),
+                // Captura fora do event loop (spawn_blocking) para não travar
+                // o tratamento de comandos durante a codificação do frame.
+                let captured = tokio::task::spawn_blocking(|| {
+                    crate::capture::capture_frame(STREAM_MAX_WIDTH, STREAM_QUALITY)
+                })
+                .await;
+                match captured {
+                    Ok(Ok(jpeg)) => ws.send(Message::Binary(jpeg)).await?,
+                    Ok(Err(e)) => eprintln!("Falha ao capturar a tela: {e}"),
+                    Err(e) => eprintln!("Falha na tarefa de captura: {e}"),
                 }
             }
             incoming = ws.next() => {

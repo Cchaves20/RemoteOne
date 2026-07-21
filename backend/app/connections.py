@@ -33,5 +33,42 @@ class ConnectionManager:
         return True
 
 
-# Instância única compartilhada pelo endpoint do agente e pelo relay de input.
+class ViewerRegistry:
+    """Conexões WebSocket dos apps que assistem à tela de cada dispositivo."""
+
+    def __init__(self) -> None:
+        self._viewers: dict[str, set[WebSocket]] = {}
+
+    def add(self, device_id: str, websocket: WebSocket) -> int:
+        """Registra um viewer. Retorna quantos viewers o dispositivo tem agora."""
+        viewers = self._viewers.setdefault(device_id, set())
+        viewers.add(websocket)
+        return len(viewers)
+
+    def remove(self, device_id: str, websocket: WebSocket) -> int:
+        """Remove um viewer. Retorna quantos viewers restam."""
+        viewers = self._viewers.get(device_id)
+        if viewers is None:
+            return 0
+        viewers.discard(websocket)
+        remaining = len(viewers)
+        if remaining == 0:
+            self._viewers.pop(device_id, None)
+        return remaining
+
+    def count(self, device_id: str) -> int:
+        return len(self._viewers.get(device_id, ()))
+
+    async def broadcast(self, device_id: str, frame: bytes) -> None:
+        """Envia um frame a todos os viewers; descarta os que falharem."""
+        viewers = list(self._viewers.get(device_id, ()))
+        for websocket in viewers:
+            try:
+                await websocket.send_bytes(frame)
+            except Exception:  # noqa: BLE001 — viewer caiu; remove e segue
+                self.remove(device_id, websocket)
+
+
+# Instâncias únicas compartilhadas entre os endpoints.
 manager = ConnectionManager()
+viewers = ViewerRegistry()

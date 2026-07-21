@@ -21,5 +21,8 @@ class Settings(BaseSettings):
     # Validade do código de pareamento exibido pelo agente.
     pairing_ttl_seconds: int = 600
 
+    # fps alvo pedido ao agente ao transmitir a tela.
+    stream_fps: int = 10
+
 
 settings = Settings()
