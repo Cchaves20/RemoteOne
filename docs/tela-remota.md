@@ -33,9 +33,22 @@ dono do dispositivo, passa a **receber cada frame assim que chega** — sem
 polling. O backend guarda também o último frame (para exibir algo na hora em
 que um novo viewer entra).
 
-- Parâmetros do agente (`agent/src/client.rs`): ~10 fps, largura máx. 1280 px,
-  qualidade JPEG 55. A captura roda em `spawn_blocking` para não travar o
-  tratamento de comandos. Fáceis de ajustar conforme rede/CPU.
+- Parâmetros do agente ajustáveis por variável de ambiente (sem recompilar),
+  com padrão 30 fps / largura 1280 px / qualidade 50:
+  - `REMOTEONE_STREAM_FPS` (1–60)
+  - `REMOTEONE_STREAM_MAX_WIDTH`
+  - `REMOTEONE_STREAM_QUALITY` (1–100)
+
+  A captura roda em `spawn_blocking` para não travar o tratamento de comandos.
+  O fps real depende do quanto a máquina consegue capturar + comprimir por
+  segundo: se não alcançar o alvo, degrada suavemente (entrega menos frames).
+  Para ganhar fluidez com pouca banda/CPU, reduza a largura e/ou a qualidade.
+
+> **Rode o agente em release para alta taxa de frames:** `cargo run --release`.
+> A compressão JPEG é bem mais rápida otimizada — em teste, o debug entregou
+> ~11 fps e o release ~31 fps com os mesmos parâmetros. Para 30 fps de verdade
+> na resolução cheia, use release; se ainda não sustentar, baixe
+> `REMOTEONE_STREAM_MAX_WIDTH`/`REMOTEONE_STREAM_QUALITY`.
 
 ### Alternativa por HTTP (para testar no navegador/`/docs`)
 

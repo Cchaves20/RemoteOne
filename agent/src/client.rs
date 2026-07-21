@@ -14,10 +14,31 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::protocol::{ClientMessage, ServerMessage};
 
-/// Parâmetros da transmissão de tela.
-const FRAME_INTERVAL_MS: u64 = 100; // ~10 fps
-const STREAM_MAX_WIDTH: u32 = 1280;
-const STREAM_QUALITY: u8 = 55;
+/// Parâmetros da transmissão de tela (ajustáveis por variável de ambiente).
+#[derive(Debug, Clone, Copy)]
+pub struct StreamConfig {
+    pub fps: u32,
+    pub max_width: u32,
+    pub quality: u8,
+}
+
+impl Default for StreamConfig {
+    fn default() -> Self {
+        Self {
+            fps: 30,
+            max_width: 1280,
+            quality: 50,
+        }
+    }
+}
+
+impl StreamConfig {
+    /// Intervalo entre frames, com um teto de segurança de ~60 fps.
+    fn frame_interval(&self) -> Duration {
+        let fps = self.fps.clamp(1, 60);
+        Duration::from_millis(1000 / fps as u64)
+    }
+}
 
 /// Dados de identificação do agente, resolvidos uma vez na inicialização.
 #[derive(Debug, Clone)]
@@ -47,6 +68,7 @@ pub async fn run(
     url: &str,
     identity: &AgentIdentity,
     heartbeat: Duration,
+    stream: StreamConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (mut ws, _response) = connect_async(url).await?;
     println!("Conectado ao backend em {url}");
@@ -63,7 +85,7 @@ pub async fn run(
 
     // Transmissão de tela: enquanto ativa, captura e envia frames JPEG.
     let mut streaming = false;
-    let mut frame_ticker = interval(Duration::from_millis(FRAME_INTERVAL_MS));
+    let mut frame_ticker = interval(stream.frame_interval());
     frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
     loop {
@@ -75,8 +97,9 @@ pub async fn run(
             _ = frame_ticker.tick(), if streaming => {
                 // Captura fora do event loop (spawn_blocking) para não travar
                 // o tratamento de comandos durante a codificação do frame.
-                let captured = tokio::task::spawn_blocking(|| {
-                    crate::capture::capture_frame(STREAM_MAX_WIDTH, STREAM_QUALITY)
+                let (max_width, quality) = (stream.max_width, stream.quality);
+                let captured = tokio::task::spawn_blocking(move || {
+                    crate::capture::capture_frame(max_width, quality)
                 })
                 .await;
                 match captured {

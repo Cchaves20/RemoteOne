@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use remoteone_agent::client::{self, AgentIdentity};
+use remoteone_agent::client::{self, AgentIdentity, StreamConfig};
 use remoteone_agent::identity::load_or_create_device_id;
 use remoteone_agent::platform::{self, Platform};
 
@@ -9,6 +9,14 @@ const AGENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_BACKEND_URL: &str = "ws://127.0.0.1:8000/ws/agent";
 const HEARTBEAT_SECS: u64 = 10;
 const RECONNECT_SECS: u64 = 5;
+
+/// Lê uma variável de ambiente como u32, com fallback ao valor padrão.
+fn env_u32(name: &str, default: u32) -> u32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
 
 fn device_id_path() -> PathBuf {
     // Guarda o id no diretório de configuração do usuário quando disponível,
@@ -49,16 +57,30 @@ async fn main() {
         agent_version: AGENT_VERSION.to_string(),
     };
 
+    // Parâmetros de transmissão (ajustáveis sem recompilar).
+    let default = StreamConfig::default();
+    let stream = StreamConfig {
+        fps: env_u32("REMOTEONE_STREAM_FPS", default.fps),
+        max_width: env_u32("REMOTEONE_STREAM_MAX_WIDTH", default.max_width),
+        quality: env_u32("REMOTEONE_STREAM_QUALITY", default.quality as u32) as u8,
+    };
+
     println!(
         "RemoteOne Agent {AGENT_VERSION} — sistema: {}",
         plat.os_name()
     );
     println!("device_id: {device_id}");
+    println!(
+        "Tela: {} fps, largura máx. {}px, qualidade {}",
+        stream.fps, stream.max_width, stream.quality
+    );
     println!("Conectando a {url} ...");
 
     // Laço de reconexão: se a conexão cair, espera e tenta de novo.
     loop {
-        if let Err(e) = client::run(&url, &identity, Duration::from_secs(HEARTBEAT_SECS)).await {
+        if let Err(e) =
+            client::run(&url, &identity, Duration::from_secs(HEARTBEAT_SECS), stream).await
+        {
             eprintln!("Conexão perdida: {e}");
         }
         println!("Reconectando em {RECONNECT_SECS}s ...");
