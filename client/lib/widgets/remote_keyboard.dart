@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
-/// Teclado customizado para controle remoto: além de digitar texto, oferece
-/// teclas que o teclado do celular não tem (Ctrl, Alt, Tab, Esc, setas...).
-///
-/// Os modificadores (Ctrl/Alt/Shift) são "grudentos": toque em Ctrl e depois
-/// em C para enviar Ctrl+C; toque em Ctrl e depois numa tecla especial para o
-/// atalho correspondente.
+/// Teclado em layout de computador (QWERTY), com modificadores e teclas
+/// especiais que o celular não tem. Cada tecla de caractere digita direto;
+/// com Ctrl/Alt/Meta ativos, vira atalho (ex.: Ctrl+C). Shift aplica
+/// maiúscula na próxima letra (ou entra no atalho).
 class RemoteKeyboard extends StatefulWidget {
   const RemoteKeyboard({
     super.key,
@@ -14,13 +12,8 @@ class RemoteKeyboard extends StatefulWidget {
     required this.onCombo,
   });
 
-  /// Texto digitado (uma ou mais letras).
   final void Function(String text) onText;
-
-  /// Tecla especial (nomes do backend: enter, tab, escape, up, down...).
   final void Function(String specialKey) onKey;
-
-  /// Atalho: modificadores + tecla (um caractere ou nome de tecla especial).
   final void Function(List<String> modifiers, String key) onCombo;
 
   @override
@@ -28,32 +21,32 @@ class RemoteKeyboard extends StatefulWidget {
 }
 
 class _RemoteKeyboardState extends State<RemoteKeyboard> {
-  final _controller = TextEditingController();
   final Set<String> _mods = {};
-  String _prev = '';
 
-  static const _specials = <(String, String)>[
-    ('Esc', 'escape'),
-    ('Tab', 'tab'),
-    ('←', 'left'),
-    ('↑', 'up'),
-    ('↓', 'down'),
-    ('→', 'right'),
-    ('Enter', 'enter'),
-    ('⌫', 'backspace'),
-    ('Del', 'delete'),
-  ];
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  static const _row1 = '1234567890';
+  static const _row2 = 'qwertyuiop';
+  static const _row3 = 'asdfghjkl';
+  static const _row4 = 'zxcvbnm';
 
   void _toggleMod(String modifier) {
     setState(() {
       if (!_mods.remove(modifier)) _mods.add(modifier);
     });
+  }
+
+  bool get _hasComboMod =>
+      _mods.contains('ctrl') || _mods.contains('alt') || _mods.contains('meta');
+
+  void _typeChar(String c) {
+    if (_hasComboMod) {
+      widget.onCombo(_mods.toList(), c);
+      setState(_mods.clear);
+    } else if (_mods.contains('shift')) {
+      widget.onText(c.toUpperCase());
+      setState(() => _mods.remove('shift'));
+    } else {
+      widget.onText(c);
+    }
   }
 
   void _special(String name) {
@@ -65,84 +58,101 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
     }
   }
 
-  void _onChanged(String value) {
-    if (value.length > _prev.length && value.startsWith(_prev)) {
-      final added = value.substring(_prev.length);
-      if (_mods.isNotEmpty && added.length == 1) {
-        widget.onCombo(_mods.toList(), added);
-        setState(_mods.clear);
-      } else {
-        widget.onText(added);
-      }
-    } else if (value.length < _prev.length) {
-      // Apagou no campo → envia Backspace ao computador.
-      for (var i = 0; i < _prev.length - value.length; i++) {
-        widget.onKey('backspace');
-      }
-    }
-    _prev = value;
+  Widget _key(Widget child, VoidCallback onTap, {int flex = 2, bool active = false}) {
+    return Expanded(
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: SizedBox(
+          height: 44,
+          child: active
+              ? FilledButton(
+                  onPressed: onTap,
+                  style: _style,
+                  child: FittedBox(child: child),
+                )
+              : OutlinedButton(
+                  onPressed: onTap,
+                  style: _style,
+                  child: FittedBox(child: child),
+                ),
+        ),
+      ),
+    );
   }
+
+  static const _style = ButtonStyle(
+    padding: WidgetStatePropertyAll(EdgeInsets.zero),
+  );
+
+  Widget _charKey(String c) {
+    final label = _mods.contains('shift') ? c.toUpperCase() : c;
+    return _key(Text(label), () => _typeChar(c));
+  }
+
+  Row _charRow(String chars) => Row(
+        children: [for (final c in chars.split('')) _charKey(c)],
+      );
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final m in const [
-                  ('Ctrl', 'ctrl'),
-                  ('Alt', 'alt'),
-                  ('Shift', 'shift'),
-                ])
-                  _ModKey(
-                    label: m.$1,
-                    active: _mods.contains(m.$2),
-                    onTap: () => _toggleMod(m.$2),
-                  ),
-                for (final s in _specials)
-                  OutlinedButton(
-                    onPressed: () => _special(s.$2),
-                    child: Text(s.$1),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _controller,
-              onChanged: _onChanged,
-              autocorrect: false,
-              enableSuggestions: false,
-              decoration: const InputDecoration(
-                isDense: true,
-                border: OutlineInputBorder(),
-                hintText: 'Digitar (com Ctrl/Alt ativo, vira atalho)',
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Especiais: Esc, Tab, setas, Del.
+              Row(
+                children: [
+                  _key(const Text('Esc'), () => _special('escape')),
+                  _key(const Text('Tab'), () => _special('tab')),
+                  _key(const Icon(Icons.arrow_upward, size: 18),
+                      () => _special('up')),
+                  _key(const Icon(Icons.arrow_downward, size: 18),
+                      () => _special('down')),
+                  _key(const Icon(Icons.arrow_back, size: 18),
+                      () => _special('left')),
+                  _key(const Icon(Icons.arrow_forward, size: 18),
+                      () => _special('right')),
+                  _key(const Text('Del'), () => _special('delete')),
+                ],
               ),
-            ),
-          ],
+              _charRow(_row1),
+              _charRow(_row2),
+              _charRow(_row3),
+              // Shift + zxcvbnm + Backspace.
+              Row(
+                children: [
+                  _key(const Icon(Icons.keyboard_capslock, size: 18),
+                      () => _toggleMod('shift'),
+                      flex: 3, active: _mods.contains('shift')),
+                  for (final c in _row4.split('')) _charKey(c),
+                  _key(const Icon(Icons.backspace_outlined, size: 18),
+                      () => _special('backspace'),
+                      flex: 3),
+                ],
+              ),
+              // Modificadores + espaço + Enter.
+              Row(
+                children: [
+                  _key(const Text('Ctrl'), () => _toggleMod('ctrl'),
+                      flex: 3, active: _mods.contains('ctrl')),
+                  _key(const Text('Alt'), () => _toggleMod('alt'),
+                      flex: 3, active: _mods.contains('alt')),
+                  _key(const Text('espaço'), () => _typeChar(' '), flex: 8),
+                  _key(const Icon(Icons.keyboard_return, size: 18),
+                      () => _special('enter'),
+                      flex: 4),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
-  }
-}
-
-class _ModKey extends StatelessWidget {
-  const _ModKey({required this.label, required this.active, required this.onTap});
-
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return active
-        ? FilledButton(onPressed: onTap, child: Text(label))
-        : OutlinedButton(onPressed: onTap, child: Text(label));
   }
 }
