@@ -15,6 +15,14 @@ class MouseMove(BaseModel):
     dy: int
 
 
+class MouseMoveTo(BaseModel):
+    """Posição absoluta em fração da tela (0.0–1.0) — modo toque direto."""
+
+    kind: Literal["mouse_move_to"] = "mouse_move_to"
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+
+
 class MouseClick(BaseModel):
     kind: Literal["mouse_click"] = "mouse_click"
     button: Literal["left", "right", "middle"] = "left"
@@ -51,6 +59,6 @@ class KeyCombo(BaseModel):
 
 
 InputAction = Annotated[
-    MouseMove | MouseClick | MouseScroll | KeyText | KeyPress | KeyCombo,
+    MouseMove | MouseMoveTo | MouseClick | MouseScroll | KeyText | KeyPress | KeyCombo,
     Field(discriminator="kind"),
 ]

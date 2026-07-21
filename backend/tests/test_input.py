@@ -96,6 +96,28 @@ def test_input_relayed_to_connected_agent():
         manager.unregister("dev-in", fake)
 
 
+def test_move_to_relayed_and_validated():
+    headers, user_id = _register()
+    _pair_device(user_id)
+    fake = FakeWS()
+    manager.register("dev-in", fake)
+    try:
+        # Ação válida (0–1) é retransmitida.
+        action = {"kind": "mouse_move_to", "x": 0.5, "y": 0.25}
+        assert client.post(
+            "/api/v1/devices/dev-in/input", json=action, headers=headers
+        ).status_code == 204
+        assert fake.sent[-1] == {"type": "input", "action": action}
+        # Fora do intervalo [0,1] → 422.
+        assert client.post(
+            "/api/v1/devices/dev-in/input",
+            json={"kind": "mouse_move_to", "x": 1.5, "y": 0.2},
+            headers=headers,
+        ).status_code == 422
+    finally:
+        manager.unregister("dev-in", fake)
+
+
 def test_keyboard_actions_relayed():
     headers, user_id = _register()
     _pair_device(user_id)

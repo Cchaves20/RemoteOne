@@ -60,6 +60,9 @@ pub enum Modifier {
 pub enum InputAction {
     /// Movimento relativo do cursor (touchpad).
     MouseMove { dx: i32, dy: i32 },
+    /// Move o cursor para uma posição absoluta, em fração da tela (0.0–1.0).
+    /// Usado no modo "toque direto" (tocar leva o cursor até o ponto).
+    MouseMoveTo { x: f64, y: f64 },
     /// Clique de um botão do mouse.
     MouseClick { button: MouseButton },
     /// Rolagem vertical (positivo = para cima).
@@ -105,6 +108,13 @@ mod tests {
         let action: InputAction =
             serde_json::from_str(r#"{"kind":"mouse_scroll","dy":3}"#).unwrap();
         assert_eq!(action, InputAction::MouseScroll { dy: 3 });
+    }
+
+    #[test]
+    fn deserializes_move_to() {
+        let action: InputAction =
+            serde_json::from_str(r#"{"kind":"mouse_move_to","x":0.5,"y":0.25}"#).unwrap();
+        assert_eq!(action, InputAction::MouseMoveTo { x: 0.5, y: 0.25 });
     }
 
     #[test]

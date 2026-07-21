@@ -117,6 +117,15 @@ mod imp {
                     .enigo
                     .move_mouse(*dx, *dy, Coordinate::Rel)
                     .map_err(|e| e.to_string()),
+                InputAction::MouseMoveTo { x, y } => {
+                    // Fração da tela (0–1) → pixel absoluto na tela principal.
+                    let (w, h) = self.enigo.main_display().map_err(|e| e.to_string())?;
+                    let px = (x.clamp(0.0, 1.0) * w as f64).round() as i32;
+                    let py = (y.clamp(0.0, 1.0) * h as f64).round() as i32;
+                    self.enigo
+                        .move_mouse(px, py, Coordinate::Abs)
+                        .map_err(|e| e.to_string())
+                }
                 InputAction::MouseClick { button } => {
                     let b = match button {
                         MouseButton::Left => Button::Left,
