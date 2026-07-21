@@ -1,8 +1,8 @@
-# Controle remoto — mouse (Etapa 6)
+# Controle remoto — mouse e teclado (Etapa 6)
 
-Primeiro comando remoto: o app envia ações de mouse que o agente injeta no
-computador pareado. É a primeira feature que toca a **camada de plataforma**
-do agente (injeção de entrada no SO).
+O app envia ações de mouse e teclado que o agente injeta no computador
+pareado. É a primeira feature que toca a **camada de plataforma** do agente
+(injeção de entrada no SO).
 
 ## Onde funciona de verdade
 
@@ -42,6 +42,15 @@ adicionado junto com o cliente Flutter.
 | `mouse_move` | `dx`, `dy` (relativos) | Move o cursor |
 | `mouse_click` | `button` (`left`/`right`/`middle`) | Clica |
 | `mouse_scroll` | `dy` (+ = para cima) | Rola verticalmente |
+| `key_text` | `text` | Digita o texto |
+| `key_press` | `key` (tecla especial) | Pressiona Enter, setas, F1–F12, etc. |
+| `key_combo` | `modifiers` (`ctrl`/`alt`/`shift`/`meta`), `key` | Atalho (ex.: Ctrl+C, Alt+F4) |
+
+Teclas especiais aceitas em `key_press`: `enter`, `backspace`, `tab`,
+`escape`, `space`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`,
+`page_up`, `page_down`, `f1`–`f12`. Em `key_combo`, `key` é um caractere
+(ex.: `"c"`) ou um nome de tecla (`enter`, `tab`, `escape`, `delete`,
+`space`, `f1`–`f4`).
 
 Respostas: `204` enviado; `404` dispositivo não é da conta; `503` agente
 offline; `422` ação inválida.
@@ -59,4 +68,12 @@ curl -X POST http://localhost:8000/api/v1/devices/<device_id>/input \
 ```
 
 No Windows o cursor se move; no Linux/macOS o agente imprime
-`[mouse-stub] MouseMove { dx: 50, dy: 0 }`.
+`[input-stub] MouseMove { dx: 50, dy: 0 }`.
+
+Para teclado, abra um editor de texto no computador e envie:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/devices/<device_id>/input \
+  -H "Authorization: Bearer <access_token>" -H "Content-Type: application/json" \
+  -d '{"kind":"key_text","text":"Olá do meu celular!"}'
+```

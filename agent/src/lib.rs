@@ -6,8 +6,8 @@
 
 pub mod client;
 pub mod identity;
+pub mod injector;
 pub mod input;
-pub mod mouse;
 pub mod pairing;
 pub mod platform;
 pub mod protocol;

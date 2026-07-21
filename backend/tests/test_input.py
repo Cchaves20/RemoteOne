@@ -74,17 +74,17 @@ def test_input_invalid_action_is_422():
     assert resp.status_code == 422
 
 
+class FakeWS:
+    def __init__(self):
+        self.sent = []
+
+    async def send_json(self, message):
+        self.sent.append(message)
+
+
 def test_input_relayed_to_connected_agent():
     headers, user_id = _register()
     _pair_device(user_id)
-
-    # Simula o agente conectado registrando um socket falso no manager.
-    class FakeWS:
-        def __init__(self):
-            self.sent = []
-
-        async def send_json(self, message):
-            self.sent.append(message)
 
     fake = FakeWS()
     manager.register("dev-in", fake)
@@ -92,5 +92,54 @@ def test_input_relayed_to_connected_agent():
         resp = client.post("/api/v1/devices/dev-in/input", json=MOVE, headers=headers)
         assert resp.status_code == 204
         assert fake.sent == [{"type": "input", "action": MOVE}]
+    finally:
+        manager.unregister("dev-in", fake)
+
+
+def test_keyboard_actions_relayed():
+    headers, user_id = _register()
+    _pair_device(user_id)
+    fake = FakeWS()
+    manager.register("dev-in", fake)
+    actions = [
+        {"kind": "key_text", "text": "Olá mundo"},
+        {"kind": "key_press", "key": "enter"},
+        {"kind": "key_combo", "modifiers": ["ctrl"], "key": "c"},
+    ]
+    try:
+        for action in actions:
+            resp = client.post(
+                "/api/v1/devices/dev-in/input", json=action, headers=headers
+            )
+            assert resp.status_code == 204
+        assert fake.sent == [{"type": "input", "action": a} for a in actions]
+    finally:
+        manager.unregister("dev-in", fake)
+
+
+def test_invalid_keyboard_actions_are_422():
+    headers, user_id = _register()
+    _pair_device(user_id)
+    fake = FakeWS()
+    manager.register("dev-in", fake)
+    try:
+        # Tecla especial desconhecida.
+        assert client.post(
+            "/api/v1/devices/dev-in/input",
+            json={"kind": "key_press", "key": "tecla_inexistente"},
+            headers=headers,
+        ).status_code == 422
+        # Combo sem modificadores.
+        assert client.post(
+            "/api/v1/devices/dev-in/input",
+            json={"kind": "key_combo", "modifiers": [], "key": "c"},
+            headers=headers,
+        ).status_code == 422
+        # Texto vazio.
+        assert client.post(
+            "/api/v1/devices/dev-in/input",
+            json={"kind": "key_text", "text": ""},
+            headers=headers,
+        ).status_code == 422
     finally:
         manager.unregister("dev-in", fake)

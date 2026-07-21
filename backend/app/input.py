@@ -25,6 +25,32 @@ class MouseScroll(BaseModel):
     dy: int
 
 
+# Teclas especiais e modificadores aceitos (espelham agent/src/input.rs).
+SpecialKey = Literal[
+    "enter", "backspace", "tab", "escape", "space", "delete",
+    "up", "down", "left", "right", "home", "end", "page_up", "page_down",
+    "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+]
+Modifier = Literal["ctrl", "alt", "shift", "meta"]
+
+
+class KeyText(BaseModel):
+    kind: Literal["key_text"] = "key_text"
+    text: str = Field(min_length=1, max_length=4096)
+
+
+class KeyPress(BaseModel):
+    kind: Literal["key_press"] = "key_press"
+    key: SpecialKey
+
+
+class KeyCombo(BaseModel):
+    kind: Literal["key_combo"] = "key_combo"
+    modifiers: list[Modifier] = Field(min_length=1)
+    key: str = Field(min_length=1, max_length=16)
+
+
 InputAction = Annotated[
-    MouseMove | MouseClick | MouseScroll, Field(discriminator="kind")
+    MouseMove | MouseClick | MouseScroll | KeyText | KeyPress | KeyCombo,
+    Field(discriminator="kind"),
 ]

@@ -1,0 +1,165 @@
+//! Injeção de entrada (mouse e teclado) no sistema operacional.
+//!
+//! A implementação real usa o `enigo` e existe apenas no Windows — a única
+//! plataforma disponível para teste real neste projeto. Linux e macOS têm um
+//! stub que apenas registra a ação (permite desenvolver e testar todo o
+//! caminho — backend → agente — sem uma sessão gráfica).
+
+use crate::input::InputAction;
+
+/// Aplica ações de entrada (mouse/teclado) no computador.
+pub trait InputInjector {
+    fn apply(&mut self, action: &InputAction) -> Result<(), String>;
+}
+
+#[cfg(windows)]
+mod imp {
+    use super::InputInjector;
+    use crate::input::{InputAction, Modifier, MouseButton, SpecialKey};
+    use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+
+    pub struct EnigoInjector {
+        enigo: Enigo,
+    }
+
+    pub fn controller() -> Box<dyn InputInjector> {
+        let enigo = Enigo::new(&Settings::default())
+            .expect("não foi possível inicializar a injeção de entrada");
+        Box::new(EnigoInjector { enigo })
+    }
+
+    fn special_key(key: &SpecialKey) -> Key {
+        match key {
+            SpecialKey::Enter => Key::Return,
+            SpecialKey::Backspace => Key::Backspace,
+            SpecialKey::Tab => Key::Tab,
+            SpecialKey::Escape => Key::Escape,
+            SpecialKey::Space => Key::Space,
+            SpecialKey::Delete => Key::Delete,
+            SpecialKey::Up => Key::UpArrow,
+            SpecialKey::Down => Key::DownArrow,
+            SpecialKey::Left => Key::LeftArrow,
+            SpecialKey::Right => Key::RightArrow,
+            SpecialKey::Home => Key::Home,
+            SpecialKey::End => Key::End,
+            SpecialKey::PageUp => Key::PageUp,
+            SpecialKey::PageDown => Key::PageDown,
+            SpecialKey::F1 => Key::F1,
+            SpecialKey::F2 => Key::F2,
+            SpecialKey::F3 => Key::F3,
+            SpecialKey::F4 => Key::F4,
+            SpecialKey::F5 => Key::F5,
+            SpecialKey::F6 => Key::F6,
+            SpecialKey::F7 => Key::F7,
+            SpecialKey::F8 => Key::F8,
+            SpecialKey::F9 => Key::F9,
+            SpecialKey::F10 => Key::F10,
+            SpecialKey::F11 => Key::F11,
+            SpecialKey::F12 => Key::F12,
+        }
+    }
+
+    fn modifier_key(modifier: &Modifier) -> Key {
+        match modifier {
+            Modifier::Ctrl => Key::Control,
+            Modifier::Alt => Key::Alt,
+            Modifier::Shift => Key::Shift,
+            Modifier::Meta => Key::Meta,
+        }
+    }
+
+    /// Resolve a tecla de um atalho: um único caractere vira Unicode; caso
+    /// contrário tenta interpretar como nome de tecla especial.
+    fn combo_key(key: &str) -> Result<Key, String> {
+        let mut chars = key.chars();
+        let first = chars.next();
+        if let (Some(c), None) = (first, chars.next()) {
+            return Ok(Key::Unicode(c));
+        }
+        match key.to_ascii_lowercase().as_str() {
+            "enter" => Ok(Key::Return),
+            "tab" => Ok(Key::Tab),
+            "escape" | "esc" => Ok(Key::Escape),
+            "delete" | "del" => Ok(Key::Delete),
+            "space" => Ok(Key::Space),
+            "f1" => Ok(Key::F1),
+            "f2" => Ok(Key::F2),
+            "f3" => Ok(Key::F3),
+            "f4" => Ok(Key::F4),
+            other => Err(format!("tecla de atalho desconhecida: {other}")),
+        }
+    }
+
+    impl EnigoInjector {
+        fn key_combo(&mut self, modifiers: &[Modifier], key: &str) -> Result<(), String> {
+            let resolved = combo_key(key)?;
+            for m in modifiers {
+                self.enigo
+                    .key(modifier_key(m), Direction::Press)
+                    .map_err(|e| e.to_string())?;
+            }
+            let result = self
+                .enigo
+                .key(resolved, Direction::Click)
+                .map_err(|e| e.to_string());
+            // Solta os modificadores mesmo se o clique falhar.
+            for m in modifiers.iter().rev() {
+                let _ = self.enigo.key(modifier_key(m), Direction::Release);
+            }
+            result
+        }
+    }
+
+    impl InputInjector for EnigoInjector {
+        fn apply(&mut self, action: &InputAction) -> Result<(), String> {
+            match action {
+                InputAction::MouseMove { dx, dy } => self
+                    .enigo
+                    .move_mouse(*dx, *dy, Coordinate::Rel)
+                    .map_err(|e| e.to_string()),
+                InputAction::MouseClick { button } => {
+                    let b = match button {
+                        MouseButton::Left => Button::Left,
+                        MouseButton::Right => Button::Right,
+                        MouseButton::Middle => Button::Middle,
+                    };
+                    self.enigo
+                        .button(b, Direction::Click)
+                        .map_err(|e| e.to_string())
+                }
+                InputAction::MouseScroll { dy } => self
+                    .enigo
+                    .scroll(-*dy, Axis::Vertical)
+                    .map_err(|e| e.to_string()),
+                InputAction::KeyText { text } => self.enigo.text(text).map_err(|e| e.to_string()),
+                InputAction::KeyPress { key } => self
+                    .enigo
+                    .key(special_key(key), Direction::Click)
+                    .map_err(|e| e.to_string()),
+                InputAction::KeyCombo { modifiers, key } => self.key_combo(modifiers, key),
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod imp {
+    use super::InputInjector;
+    use crate::input::InputAction;
+
+    /// Stub: registra a ação em vez de injetá-la (sem sessão gráfica).
+    pub struct StubInjector;
+
+    pub fn controller() -> Box<dyn InputInjector> {
+        Box::new(StubInjector)
+    }
+
+    impl InputInjector for StubInjector {
+        fn apply(&mut self, action: &InputAction) -> Result<(), String> {
+            println!("[input-stub] {action:?}");
+            Ok(())
+        }
+    }
+}
+
+pub use imp::controller;

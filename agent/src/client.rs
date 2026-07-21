@@ -53,8 +53,8 @@ pub async fn run(
     let mut ticker = interval(heartbeat);
     ticker.tick().await; // consome o primeiro tick imediato
 
-    // Controlador de mouse da plataforma (real no Windows, stub no restante).
-    let mut mouse = crate::mouse::controller();
+    // Injetor de entrada da plataforma (real no Windows, stub no restante).
+    let mut injector = crate::injector::controller();
 
     loop {
         tokio::select! {
@@ -64,7 +64,7 @@ pub async fn run(
             }
             incoming = ws.next() => {
                 match incoming {
-                    Some(Ok(Message::Text(text))) => handle_server_text(&text, mouse.as_mut()),
+                    Some(Ok(Message::Text(text))) => handle_server_text(&text, injector.as_mut()),
                     Some(Ok(Message::Close(_))) | None => {
                         println!("Conexão encerrada pelo servidor");
                         return Ok(());
@@ -77,7 +77,7 @@ pub async fn run(
     }
 }
 
-fn handle_server_text(text: &str, mouse: &mut dyn crate::mouse::MouseController) {
+fn handle_server_text(text: &str, injector: &mut dyn crate::injector::InputInjector) {
     match serde_json::from_str::<ServerMessage>(text) {
         Ok(ServerMessage::Welcome { server_version }) => {
             println!("Registrado no backend (servidor v{server_version})");
@@ -101,7 +101,7 @@ fn handle_server_text(text: &str, mouse: &mut dyn crate::mouse::MouseController)
             println!("✓ Dispositivo pareado com a conta {user_email}");
         }
         Ok(ServerMessage::Input { action }) => {
-            if let Err(e) = mouse.apply(&action) {
+            if let Err(e) = injector.apply(&action) {
                 eprintln!("Falha ao aplicar entrada: {e}");
             }
         }
