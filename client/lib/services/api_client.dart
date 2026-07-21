@@ -1,0 +1,124 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import '../models/device.dart';
+
+/// Erro de API com o código HTTP e uma mensagem amigável.
+class ApiException implements Exception {
+  ApiException(this.statusCode, this.message);
+  final int statusCode;
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Cliente REST do backend do RemoteOne.
+///
+/// Mantém os tokens em memória (nesta sessão). A persistência entre execuções
+/// entra depois, via armazenamento seguro.
+class ApiClient {
+  ApiClient({required this.baseUrl, http.Client? httpClient})
+      : _http = httpClient ?? http.Client();
+
+  /// URL base do backend (ex.: http://192.168.0.10:8000). Editável para
+  /// apontar o celular ao computador na mesma rede.
+  String baseUrl;
+  final http.Client _http;
+
+  String? _accessToken;
+  String? _refreshToken;
+
+  bool get isAuthenticated => _accessToken != null;
+
+  Map<String, String> get _jsonHeaders => {'Content-Type': 'application/json'};
+
+  Map<String, String> get _authHeaders => {
+        ..._jsonHeaders,
+        if (_accessToken != null) 'Authorization': 'Bearer $_accessToken',
+      };
+
+  Uri _uri(String path) => Uri.parse('$baseUrl$path');
+
+  Future<void> register(String email, String password) async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/register'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'email': email, 'password': password}),
+    );
+    _storeTokens(_decode(res, expected: 201));
+  }
+
+  Future<void> login(String email, String password) async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/login'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'email': email, 'password': password}),
+    );
+    _storeTokens(_decode(res));
+  }
+
+  void logout() {
+    _accessToken = null;
+    _refreshToken = null;
+  }
+
+  Future<List<Device>> listDevices() async {
+    final res = await _http.get(_uri('/api/v1/devices'), headers: _authHeaders);
+    final data = _decode(res) as List<dynamic>;
+    return data
+        .map((e) => Device.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Device> claim(String code) async {
+    final res = await _http.post(
+      _uri('/api/v1/pairing/claim'),
+      headers: _authHeaders,
+      body: jsonEncode({'code': code}),
+    );
+    return Device.fromJson(_decode(res, expected: 201) as Map<String, dynamic>);
+  }
+
+  /// Envia uma ação de entrada (mouse/teclado) ao computador pareado.
+  Future<void> sendInput(String deviceId, Map<String, dynamic> action) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/input'),
+      headers: _authHeaders,
+      body: jsonEncode(action),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  // --- helpers ---------------------------------------------------------------
+
+  void _storeTokens(dynamic body) {
+    final map = body as Map<String, dynamic>;
+    _accessToken = map['access_token'] as String?;
+    _refreshToken = map['refresh_token'] as String? ?? _refreshToken;
+  }
+
+  dynamic _decode(http.Response res, {int expected = 200}) {
+    if (res.statusCode != expected) {
+      throw _error(res);
+    }
+    if (res.body.isEmpty) return null;
+    return jsonDecode(res.body);
+  }
+
+  ApiException _error(http.Response res) {
+    String message;
+    try {
+      final decoded = jsonDecode(res.body);
+      message = (decoded is Map && decoded['detail'] != null)
+          ? decoded['detail'].toString()
+          : 'Erro ${res.statusCode}';
+    } catch (_) {
+      message = 'Erro ${res.statusCode}';
+    }
+    return ApiException(res.statusCode, message);
+  }
+}

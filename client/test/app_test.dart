@@ -1,12 +1,65 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:remoteone_client/main.dart';
+import 'package:remoteone_client/services/api_client.dart';
+import 'package:remoteone_client/services/app_state.dart';
+
+/// Constrói um AppState com um http.Client falso, roteado por [handler].
+AppState _stateWith(Future<http.Response> Function(http.Request) handler) {
+  final mock = MockClient((req) => handler(req));
+  return AppState(ApiClient(baseUrl: 'http://test', httpClient: mock));
+}
 
 void main() {
-  testWidgets('tela inicial mostra estado sem pareamento', (tester) async {
-    await tester.pumpWidget(const RemoteOneApp());
+  testWidgets('mostra a tela de login quando não autenticado', (tester) async {
+    final state = _stateWith((_) async => http.Response('{}', 200));
+    await tester.pumpWidget(RemoteOneApp(state: state));
 
     expect(find.text('RemoteOne'), findsOneWidget);
-    expect(find.text('Nenhum computador pareado'), findsOneWidget);
-    expect(find.text('Parear computador'), findsOneWidget);
+    expect(find.text('Entrar'), findsWidgets);
+    expect(find.text('Criar uma conta'), findsOneWidget);
+  });
+
+  testWidgets('login bem-sucedido leva à lista de dispositivos', (tester) async {
+    final state = _stateWith((req) async {
+      if (req.url.path == '/api/v1/auth/login') {
+        return http.Response(
+          jsonEncode({'access_token': 'a', 'refresh_token': 'r'}),
+          200,
+        );
+      }
+      if (req.url.path == '/api/v1/devices') {
+        return http.Response(jsonEncode([]), 200);
+      }
+      return http.Response('{}', 404);
+    });
+
+    await tester.pumpWidget(RemoteOneApp(state: state));
+    await tester.enterText(find.byType(TextField).at(0), 'caio@example.com');
+    await tester.enterText(find.byType(TextField).at(1), 'senhaSegura123');
+    await tester.tap(find.widgetWithText(FilledButton, 'Entrar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Meus computadores'), findsOneWidget);
+    expect(find.textContaining('Nenhum computador pareado'), findsOneWidget);
+  });
+
+  testWidgets('erro de login exibe mensagem', (tester) async {
+    final state = _stateWith((req) async {
+      return http.Response(jsonEncode({'detail': 'e-mail ou senha inválidos'}), 401);
+    });
+
+    await tester.pumpWidget(RemoteOneApp(state: state));
+    await tester.enterText(find.byType(TextField).at(0), 'x@y.com');
+    await tester.enterText(find.byType(TextField).at(1), 'senhaSegura123');
+    await tester.tap(find.widgetWithText(FilledButton, 'Entrar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('e-mail ou senha inválidos'), findsOneWidget);
+    expect(find.text('Meus computadores'), findsNothing);
   });
 }
