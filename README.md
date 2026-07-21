@@ -32,9 +32,13 @@ pytest                         # testes
 
 ```bash
 cd agent
-cargo run     # inicia e exibe o código de pareamento
+cargo run     # conecta ao backend por WebSocket e envia heartbeats
 cargo test    # testes (rodam em Windows, Linux e macOS)
 ```
+
+Com o backend rodando, o agente aparece online em
+<http://localhost:8000/api/v1/agents>. O backend é configurável por variável
+de ambiente: `REMOTEONE_BACKEND_URL` (padrão `ws://127.0.0.1:8000/ws/agent`).
 
 ### Cliente
 

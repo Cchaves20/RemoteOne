@@ -1,6 +1,6 @@
 # Rust
 agent/target/
-agent/Cargo.lock
+# Cargo.lock é versionado (o agente é uma aplicação — builds reproduzíveis)
 
 # Python
 __pycache__/
