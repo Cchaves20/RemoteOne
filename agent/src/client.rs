@@ -53,6 +53,9 @@ pub async fn run(
     let mut ticker = interval(heartbeat);
     ticker.tick().await; // consome o primeiro tick imediato
 
+    // Controlador de mouse da plataforma (real no Windows, stub no restante).
+    let mut mouse = crate::mouse::controller();
+
     loop {
         tokio::select! {
             _ = ticker.tick() => {
@@ -61,7 +64,7 @@ pub async fn run(
             }
             incoming = ws.next() => {
                 match incoming {
-                    Some(Ok(Message::Text(text))) => handle_server_text(&text),
+                    Some(Ok(Message::Text(text))) => handle_server_text(&text, mouse.as_mut()),
                     Some(Ok(Message::Close(_))) | None => {
                         println!("Conexão encerrada pelo servidor");
                         return Ok(());
@@ -74,7 +77,7 @@ pub async fn run(
     }
 }
 
-fn handle_server_text(text: &str) {
+fn handle_server_text(text: &str, mouse: &mut dyn crate::mouse::MouseController) {
     match serde_json::from_str::<ServerMessage>(text) {
         Ok(ServerMessage::Welcome { server_version }) => {
             println!("Registrado no backend (servidor v{server_version})");
@@ -96,6 +99,11 @@ fn handle_server_text(text: &str) {
         }
         Ok(ServerMessage::Paired { user_email }) => {
             println!("✓ Dispositivo pareado com a conta {user_email}");
+        }
+        Ok(ServerMessage::Input { action }) => {
+            if let Err(e) = mouse.apply(&action) {
+                eprintln!("Falha ao aplicar entrada: {e}");
+            }
         }
         Err(e) => eprintln!("Mensagem desconhecida do servidor: {text} ({e})"),
     }

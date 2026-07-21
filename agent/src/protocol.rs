@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::input::InputAction;
+
 /// Mensagens que o agente envia ao backend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -37,6 +39,10 @@ pub enum ServerMessage {
     /// O dispositivo foi vinculado a uma conta.
     Paired {
         user_email: String,
+    },
+    /// Comando de entrada a ser injetado no computador (Etapa 6).
+    Input {
+        action: InputAction,
     },
 }
 

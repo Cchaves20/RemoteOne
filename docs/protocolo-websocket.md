@@ -42,8 +42,10 @@ Agente                          Backend
 | `error` | `message` | Mensagem inválida ou fora de ordem |
 | `pair_code` | `code`, `expires_in_seconds` | Após o `welcome`, se o dispositivo não está pareado |
 | `paired` | `user_email` | Quando o dispositivo é vinculado a uma conta |
+| `input` | `action` (mouse) | Comando de entrada a injetar no computador (Etapa 6) |
 
-O pareamento em si está documentado em [`pareamento.md`](pareamento.md).
+O pareamento está documentado em [`pareamento.md`](pareamento.md) e o controle
+remoto em [`controle-remoto.md`](controle-remoto.md).
 
 ## Estado e identidade
 

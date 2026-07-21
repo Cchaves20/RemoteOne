@@ -7,6 +7,7 @@ from app import pairing
 from app.agents import AgentRegistry
 from app.auth import router as auth_router
 from app.config import settings
+from app.connections import manager
 from app.db import SessionLocal, init_db
 from app.devices import router as devices_router
 from app.protocol import (
@@ -106,6 +107,7 @@ async def agent_ws(websocket: WebSocket) -> None:
 
         device_id = message.device_id
         registry.register(message)
+        manager.register(device_id, websocket)
         logger.info("agente conectado: %s (%s)", device_id, message.hostname)
         await websocket.send_json(Welcome(server_version=settings.version).model_dump())
 
@@ -125,6 +127,7 @@ async def agent_ws(websocket: WebSocket) -> None:
                 # Re-identificação (ex.: após reconexão na mesma sessão).
                 device_id = message.device_id
                 registry.register(message)
+                manager.register(device_id, websocket)
                 await websocket.send_json(
                     Welcome(server_version=settings.version).model_dump()
                 )
@@ -142,4 +145,5 @@ async def agent_ws(websocket: WebSocket) -> None:
     finally:
         if device_id is not None:
             registry.unregister(device_id)
+            manager.unregister(device_id, websocket)
             logger.info("agente desconectado: %s", device_id)

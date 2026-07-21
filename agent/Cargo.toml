@@ -14,3 +14,8 @@ tokio-tungstenite = "0.24"
 futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
 gethostname = "0.5"
+
+# Injeção de mouse/teclado: só no Windows (única plataforma testável aqui).
+# Linux/macOS usam o stub em src/mouse.rs, sem esta dependência.
+[target.'cfg(windows)'.dependencies]
+enigo = "0.2"

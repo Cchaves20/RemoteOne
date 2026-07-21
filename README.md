@@ -21,6 +21,7 @@ Documentação por etapa:
 - [`docs/protocolo-websocket.md`](docs/protocolo-websocket.md) — canal agente ↔ backend (Etapa 4)
 - [`docs/autenticacao.md`](docs/autenticacao.md) — usuários, login e JWT (Etapa 2)
 - [`docs/pareamento.md`](docs/pareamento.md) — vincular computador à conta (Etapa 5)
+- [`docs/controle-remoto.md`](docs/controle-remoto.md) — mouse remoto (Etapa 6)
 
 ## Como rodar
 
