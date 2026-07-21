@@ -62,9 +62,9 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
     return Expanded(
       flex: flex,
       child: Padding(
-        padding: const EdgeInsets.all(2),
+        padding: const EdgeInsets.all(1.5),
         child: SizedBox(
-          height: 44,
+          height: 34,
           child: active
               ? FilledButton(
                   onPressed: onTap,

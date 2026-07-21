@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
@@ -45,6 +46,11 @@ class _RemoteScreenState extends State<RemoteScreen> {
   @override
   void initState() {
     super.initState();
+    // Controle remoto em paisagem: a tela do PC (16:9) preenche o celular.
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     _connect();
     _flushTimer =
         Timer.periodic(const Duration(milliseconds: 60), (_) => _flushScroll());
@@ -86,6 +92,8 @@ class _RemoteScreenState extends State<RemoteScreen> {
     _flushTimer?.cancel();
     _sub?.cancel();
     _channel?.sink.close();
+    // Volta a permitir todas as orientações ao sair.
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
@@ -174,42 +182,47 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Column: a tela ocupa o espaço restante e o teclado, quando aberto,
+    // empurra a imagem para cima em vez de cobri-la.
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
+      body: Column(
         children: [
-          Positioned.fill(child: _liveView()),
-          // Barra superior translúcida com voltar e alternar teclado.
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _RoundButton(
-                    icon: Icons.arrow_back,
-                    onTap: () => Navigator.of(context).pop(),
+          Expanded(
+            child: Stack(
+              children: [
+                Positioned.fill(child: _liveView()),
+                // Barra superior translúcida: voltar e alternar teclado.
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _RoundButton(
+                          icon: Icons.arrow_back,
+                          onTap: () => Navigator.of(context).pop(),
+                        ),
+                        _RoundButton(
+                          icon: _keyboardVisible
+                              ? Icons.keyboard_hide
+                              : Icons.keyboard,
+                          onTap: () => setState(
+                              () => _keyboardVisible = !_keyboardVisible),
+                        ),
+                      ],
+                    ),
                   ),
-                  _RoundButton(
-                    icon: _keyboardVisible ? Icons.keyboard_hide : Icons.keyboard,
-                    onTap: () =>
-                        setState(() => _keyboardVisible = !_keyboardVisible),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           if (_keyboardVisible)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: SafeArea(
-                child: RemoteKeyboard(
-                  onText: (text) => _send({'kind': 'key_text', 'text': text}),
-                  onKey: (key) => _send({'kind': 'key_press', 'key': key}),
-                  onCombo: (mods, key) =>
-                      _send({'kind': 'key_combo', 'modifiers': mods, 'key': key}),
-                ),
-              ),
+            RemoteKeyboard(
+              onText: (text) => _send({'kind': 'key_text', 'text': text}),
+              onKey: (key) => _send({'kind': 'key_press', 'key': key}),
+              onCombo: (mods, key) =>
+                  _send({'kind': 'key_combo', 'modifiers': mods, 'key': key}),
             ),
         ],
       ),
