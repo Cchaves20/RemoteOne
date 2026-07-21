@@ -40,8 +40,13 @@ workflows:
           cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
           cd build/ipa
           zip -r RemoteOne-unsigned.ipa Payload
+          ls -la "$CM_BUILD_DIR/client/build/ipa"
+    # Caminhos cobrindo as duas interpretações (relativo à working_directory e
+    # à raiz do clone) + um glob que acha o .ipa em qualquer lugar.
     artifacts:
-      - client/build/ipa/RemoteOne-unsigned.ipa
+      - build/ipa/*.ipa
+      - client/build/ipa/*.ipa
+      - "**/*.ipa"
 
   # ios-testflight:
   #   name: iOS (TestFlight — exige Apple Developer)
