@@ -6,8 +6,9 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 
 - **Login/cadastro** (e-mail + senha) com token guardado na sessão.
 - **Lista de computadores** pareados e **pareamento** pelo código.
-- **Controle remoto**: touchpad (deslizar = mover, tocar = clicar), botões de
-  clique/rolagem e campo de texto para digitar no computador.
+- **Controle remoto**: touchpad com gestos de trackpad — 1 dedo desliza para
+  mover, toque = clique esquerdo, segurar = clique direito, 2 dedos = rolar.
+  Há também botões de clique/rolagem (reserva) e campo de texto para digitar.
 
 Estrutura:
 

@@ -1,19 +1,41 @@
 import 'package:flutter/material.dart';
 
-/// Área sensível ao toque: deslizar reporta deltas de movimento; tocar reporta
-/// um clique. O consumidor decide como agrupar/enviar os movimentos.
+/// Área sensível ao toque com gestos de trackpad:
+/// - 1 dedo deslizando → mover o cursor
+/// - toque → clique esquerdo
+/// - segurar → clique direito
+/// - 2 dedos deslizando → rolar
+///
+/// Usa `onScaleUpdate` (que informa `pointerCount`) para distinguir um de dois
+/// dedos. O consumidor decide como agrupar/enviar os movimentos e a rolagem.
 class Touchpad extends StatelessWidget {
-  const Touchpad({super.key, required this.onMove, required this.onTap});
+  const Touchpad({
+    super.key,
+    required this.onMove,
+    required this.onScroll,
+    required this.onLeftClick,
+    required this.onRightClick,
+  });
 
   final void Function(double dx, double dy) onMove;
-  final VoidCallback onTap;
+  final void Function(double dy) onScroll;
+  final VoidCallback onLeftClick;
+  final VoidCallback onRightClick;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
-      onTap: onTap,
-      onPanUpdate: (details) => onMove(details.delta.dx, details.delta.dy),
+      onTap: onLeftClick,
+      onLongPress: onRightClick,
+      onScaleUpdate: (details) {
+        final delta = details.focalPointDelta;
+        if (details.pointerCount >= 2) {
+          onScroll(delta.dy);
+        } else {
+          onMove(delta.dx, delta.dy);
+        }
+      },
       child: Container(
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest,
@@ -27,7 +49,9 @@ class Touchpad extends StatelessWidget {
               Icon(Icons.touch_app, size: 40, color: scheme.outline),
               const SizedBox(height: 8),
               Text(
-                'Deslize para mover · toque para clicar',
+                'Deslize para mover · toque para clicar\n'
+                'segure para o botão direito · 2 dedos para rolar',
+                textAlign: TextAlign.center,
                 style: TextStyle(color: scheme.outline),
               ),
             ],

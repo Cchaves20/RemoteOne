@@ -19,20 +19,23 @@ class ControlScreen extends StatefulWidget {
 
 class _ControlScreenState extends State<ControlScreen> {
   static const _sensitivity = 1.6;
+  // Pixels de arraste com 2 dedos por "passo" de rolagem.
+  static const _scrollDivisor = 24.0;
 
   final _text = TextEditingController();
 
-  // Acumula o movimento e envia em lote, para não gerar uma requisição por
-  // evento de arraste.
+  // Acumula movimento e rolagem e envia em lote, para não gerar uma
+  // requisição por evento de arraste.
   double _pendingDx = 0;
   double _pendingDy = 0;
+  double _pendingScroll = 0;
   Timer? _flushTimer;
 
   @override
   void initState() {
     super.initState();
     _flushTimer =
-        Timer.periodic(const Duration(milliseconds: 60), (_) => _flushMove());
+        Timer.periodic(const Duration(milliseconds: 60), (_) => _flush());
   }
 
   @override
@@ -47,13 +50,25 @@ class _ControlScreenState extends State<ControlScreen> {
     _pendingDy += dy * _sensitivity;
   }
 
-  void _flushMove() {
+  void _accumulateScroll(double dy) {
+    _pendingScroll += dy;
+  }
+
+  void _flush() {
     final dx = _pendingDx.truncate();
     final dy = _pendingDy.truncate();
-    if (dx == 0 && dy == 0) return;
-    _pendingDx -= dx;
-    _pendingDy -= dy;
-    _send({'kind': 'mouse_move', 'dx': dx, 'dy': dy}, silent: true);
+    if (dx != 0 || dy != 0) {
+      _pendingDx -= dx;
+      _pendingDy -= dy;
+      _send({'kind': 'mouse_move', 'dx': dx, 'dy': dy}, silent: true);
+    }
+
+    final steps = (_pendingScroll / _scrollDivisor).truncate();
+    if (steps != 0) {
+      _pendingScroll -= steps * _scrollDivisor;
+      // 2 dedos para cima (dy negativo) → rolar para cima (dy positivo).
+      _send({'kind': 'mouse_scroll', 'dy': -steps}, silent: true);
+    }
   }
 
   Future<void> _send(Map<String, dynamic> action, {bool silent = false}) async {
@@ -86,7 +101,11 @@ class _ControlScreenState extends State<ControlScreen> {
             Expanded(
               child: Touchpad(
                 onMove: _accumulateMove,
-                onTap: () => _send({'kind': 'mouse_click', 'button': 'left'}),
+                onScroll: _accumulateScroll,
+                onLeftClick: () =>
+                    _send({'kind': 'mouse_click', 'button': 'left'}),
+                onRightClick: () =>
+                    _send({'kind': 'mouse_click', 'button': 'right'}),
               ),
             ),
             const SizedBox(height: 12),
