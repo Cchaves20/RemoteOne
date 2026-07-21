@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -91,6 +92,41 @@ class ApiClient {
     if (res.statusCode != 204) {
       throw _error(res);
     }
+  }
+
+  /// Pede ao computador para começar a transmitir a tela.
+  Future<void> startScreen(String deviceId) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/screen/start'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Pede para parar a transmissão da tela (best-effort).
+  Future<void> stopScreen(String deviceId) async {
+    await _http.post(
+      _uri('/api/v1/devices/$deviceId/screen/stop'),
+      headers: _authHeaders,
+    );
+  }
+
+  /// Busca o último frame da tela. Retorna null enquanto ainda não há frame
+  /// (HTTP 503), o que é normal logo após iniciar a transmissão.
+  Future<Uint8List?> fetchFrame(String deviceId) async {
+    final res = await _http.get(
+      _uri('/api/v1/devices/$deviceId/screen'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode == 200) {
+      return res.bodyBytes;
+    }
+    if (res.statusCode == 503) {
+      return null;
+    }
+    throw _error(res);
   }
 
   // --- helpers ---------------------------------------------------------------

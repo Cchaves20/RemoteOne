@@ -9,6 +9,8 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Controle remoto**: touchpad com gestos de trackpad — 1 dedo desliza para
   mover, toque = clique esquerdo, segurar = clique direito, 2 dedos = rolar.
   Há também botões de clique/rolagem (reserva) e campo de texto para digitar.
+- **Tela remota**: botão de monitor na tela de controle abre a visualização da
+  tela do computador (frames JPEG por polling; pinça para dar zoom).
 
 Estrutura:
 

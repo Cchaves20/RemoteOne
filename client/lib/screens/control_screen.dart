@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/device.dart';
 import '../services/app_state.dart';
 import '../widgets/touchpad.dart';
+import 'screen_view_screen.dart';
 
 /// Tela de controle remoto: touchpad (mouse), botões e entrada de texto.
 class ControlScreen extends StatefulWidget {
@@ -93,7 +94,23 @@ class _ControlScreenState extends State<ControlScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.device.name)),
+      appBar: AppBar(
+        title: Text(widget.device.name),
+        actions: [
+          IconButton(
+            tooltip: 'Ver a tela',
+            icon: const Icon(Icons.desktop_windows),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ScreenViewScreen(
+                  state: widget.state,
+                  device: widget.device,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

@@ -46,6 +46,37 @@ void main() {
     expect(seenUrl?.path, '/api/v1/devices/dev-9/input');
   });
 
+  test('fetchFrame devolve os bytes em 200 e null em 503', () async {
+    var call = 0;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      httpClient: MockClient((req) async {
+        call++;
+        if (call == 1) {
+          return http.Response.bytes([0xFF, 0xD8, 0xFF, 0x01], 200);
+        }
+        return http.Response('', 503);
+      }),
+    );
+    final frame = await client.fetchFrame('dev-1');
+    expect(frame, isNotNull);
+    expect(frame!.first, 0xFF);
+    expect(await client.fetchFrame('dev-1'), isNull);
+  });
+
+  test('startScreen aceita 204', () async {
+    Uri? seen;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      httpClient: MockClient((req) async {
+        seen = req.url;
+        return http.Response('', 204);
+      }),
+    );
+    await client.startScreen('dev-7');
+    expect(seen?.path, '/api/v1/devices/dev-7/screen/start');
+  });
+
   test('erro HTTP vira ApiException com a mensagem detail', () async {
     final client = ApiClient(
       baseUrl: 'http://test',
