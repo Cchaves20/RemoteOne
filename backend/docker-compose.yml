@@ -8,6 +8,8 @@ services:
     environment:
       REMOTEONE_DATABASE_URL: postgresql://remoteone:remoteone@db:5432/remoteone
       REMOTEONE_REDIS_URL: redis://redis:6379/0
+      # Segredo de desenvolvimento. Em produção, defina um valor forte e único.
+      REMOTEONE_JWT_SECRET: dev-only-change-me
     depends_on:
       - db
       - redis

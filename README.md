@@ -16,6 +16,11 @@ O escopo completo de features e etapas está no documento do projeto; a
 estratégia para testar todas as plataformas sem possuir todos os aparelhos
 está em [`docs/estrategia-de-testes.md`](docs/estrategia-de-testes.md).
 
+Documentação por etapa:
+
+- [`docs/protocolo-websocket.md`](docs/protocolo-websocket.md) — canal agente ↔ backend (Etapa 4)
+- [`docs/autenticacao.md`](docs/autenticacao.md) — usuários, login e JWT (Etapa 2)
+
 ## Como rodar
 
 ### Backend

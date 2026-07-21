@@ -1,14 +1,26 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from app.agents import AgentRegistry
+from app.auth import router as auth_router
 from app.config import settings
+from app.db import init_db
 from app.protocol import Ack, Error, Hello, Welcome, parse_client_message
 
 logger = logging.getLogger("remoteone")
 
-app = FastAPI(title=settings.app_name, version=settings.version)
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Cria as tabelas ausentes na subida (MVP; futuramente via Alembic).
+    init_db()
+    yield
+
+
+app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)
+app.include_router(auth_router)
 
 # Registro de agentes conectados (em memória; ver app/agents.py).
 registry = AgentRegistry()

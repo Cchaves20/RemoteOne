@@ -7,6 +7,11 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pydantic-settings>=2.4",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
+    "pyjwt>=2.9",
+    "bcrypt>=4.1",
+    "email-validator>=2.1",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +27,8 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+# B008: `Depends()`/`HTTPBearer()` em defaults é o padrão idiomático do FastAPI.
+ignore = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

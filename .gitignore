@@ -10,6 +10,9 @@ __pycache__/
 .ruff_cache/
 .venv/
 
+# Bancos SQLite locais (dev/testes)
+*.db
+
 # Flutter / Dart
 client/.dart_tool/
 client/build/
