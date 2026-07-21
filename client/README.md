@@ -6,11 +6,13 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 
 - **Login/cadastro** (e-mail + senha) com token guardado na sessão.
 - **Lista de computadores** pareados e **pareamento** pelo código.
-- **Controle remoto**: touchpad com gestos de trackpad — 1 dedo desliza para
-  mover, toque = clique esquerdo, segurar = clique direito, 2 dedos = rolar.
-  Há também botões de clique/rolagem (reserva) e campo de texto para digitar.
-- **Tela remota**: botão de monitor na tela de controle abre a visualização da
-  tela do computador (frames JPEG por polling; pinça para dar zoom).
+- **Controle por toque direto** (`remote_screen.dart`): a tela do computador
+  ocupa a tela inteira e o toque age como num touchscreen — tocar leva o
+  cursor ao ponto e clica; arrastar faz o cursor seguir o dedo; segurar =
+  clique direito; 2 dedos = rolar (usa posição absoluta, `mouse_move_to`).
+- **Teclado customizado** (`remote_keyboard.dart`): campo de texto + teclas
+  que o celular não tem (Ctrl, Alt, Shift, Tab, Esc, setas, Enter, Del). Os
+  modificadores são grudentos: Ctrl e depois C envia Ctrl+C.
 
 Estrutura:
 

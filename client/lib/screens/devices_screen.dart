@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/device.dart';
 import '../services/app_state.dart';
-import 'control_screen.dart';
+import 'remote_screen.dart';
 
 /// Lista os computadores pareados e permite parear um novo pelo código.
 class DevicesScreen extends StatefulWidget {
@@ -70,7 +70,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
     widget.state.selectDevice(device);
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ControlScreen(state: widget.state, device: device),
+        builder: (_) => RemoteScreen(state: widget.state, device: device),
       ),
     );
   }
