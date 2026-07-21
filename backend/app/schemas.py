@@ -33,3 +33,17 @@ class UserOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ClaimRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=16)
+
+
+class DeviceOut(BaseModel):
+    device_id: str
+    name: str
+    os: str
+    hostname: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

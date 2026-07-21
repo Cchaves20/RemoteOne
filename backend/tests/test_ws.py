@@ -22,6 +22,10 @@ def test_agent_handshake_and_online_presence():
         assert welcome["type"] == "welcome"
         assert welcome["server_version"]
 
+        # Dispositivo novo (não pareado): recebe um código de pareamento.
+        intro = ws.receive_json()
+        assert intro["type"] == "pair_code"
+
         # Enquanto conectado, o agente aparece na listagem HTTP.
         listed = client.get("/api/v1/agents").json()["agents"]
         assert any(a["device_id"] == "dev-ws" for a in listed)

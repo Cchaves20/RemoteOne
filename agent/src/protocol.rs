@@ -22,9 +22,22 @@ pub enum ClientMessage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
-    Welcome { server_version: String },
+    Welcome {
+        server_version: String,
+    },
     Ack,
-    Error { message: String },
+    Error {
+        message: String,
+    },
+    /// Código de pareamento a ser exibido ao usuário (dispositivo não pareado).
+    PairCode {
+        code: String,
+        expires_in_seconds: u64,
+    },
+    /// O dispositivo foi vinculado a uma conta.
+    Paired {
+        user_email: String,
+    },
 }
 
 #[cfg(test)]
@@ -74,6 +87,30 @@ mod tests {
             err,
             ServerMessage::Error {
                 message: "xis".into()
+            }
+        );
+    }
+
+    #[test]
+    fn deserializes_pair_code_and_paired() {
+        let pc: ServerMessage = serde_json::from_str(
+            r#"{"type":"pair_code","code":"ABC23XYZK","expires_in_seconds":600}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            pc,
+            ServerMessage::PairCode {
+                code: "ABC23XYZK".into(),
+                expires_in_seconds: 600
+            }
+        );
+
+        let paired: ServerMessage =
+            serde_json::from_str(r#"{"type":"paired","user_email":"caio@example.com"}"#).unwrap();
+        assert_eq!(
+            paired,
+            ServerMessage::Paired {
+                user_email: "caio@example.com".into()
             }
         );
     }

@@ -83,6 +83,20 @@ fn handle_server_text(text: &str) {
         Ok(ServerMessage::Error { message }) => {
             eprintln!("Erro do backend: {message}");
         }
+        Ok(ServerMessage::PairCode {
+            code,
+            expires_in_seconds,
+        }) => {
+            let minutes = expires_in_seconds / 60;
+            println!();
+            println!("┌───────────────────────────────────────────┐");
+            println!("│  Código de pareamento: {code:<19}│");
+            println!("└───────────────────────────────────────────┘");
+            println!("Informe esse código no aplicativo (expira em {minutes} min).");
+        }
+        Ok(ServerMessage::Paired { user_email }) => {
+            println!("✓ Dispositivo pareado com a conta {user_email}");
+        }
         Err(e) => eprintln!("Mensagem desconhecida do servidor: {text} ({e})"),
     }
 }

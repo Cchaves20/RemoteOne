@@ -40,6 +40,10 @@ Agente                          Backend
 | `welcome` | `server_version` | Resposta ao `hello` |
 | `ack` | — | Resposta ao `heartbeat` |
 | `error` | `message` | Mensagem inválida ou fora de ordem |
+| `pair_code` | `code`, `expires_in_seconds` | Após o `welcome`, se o dispositivo não está pareado |
+| `paired` | `user_email` | Quando o dispositivo é vinculado a uma conta |
+
+O pareamento em si está documentado em [`pareamento.md`](pareamento.md).
 
 ## Estado e identidade
 

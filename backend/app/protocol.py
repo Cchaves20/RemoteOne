@@ -55,6 +55,21 @@ class Error(BaseModel):
     message: str
 
 
+class PairCode(BaseModel):
+    """Código de pareamento a ser exibido pelo agente (dispositivo não pareado)."""
+
+    type: Literal["pair_code"] = "pair_code"
+    code: str
+    expires_in_seconds: int
+
+
+class Paired(BaseModel):
+    """Notifica o agente de que foi vinculado a uma conta."""
+
+    type: Literal["paired"] = "paired"
+    user_email: str
+
+
 def parse_client_message(raw: dict) -> ClientMessage:
     """Interpreta um dict cru como mensagem do agente.
 

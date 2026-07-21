@@ -18,5 +18,8 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
 
+    # Validade do código de pareamento exibido pelo agente.
+    pairing_ttl_seconds: int = 600
+
 
 settings = Settings()
