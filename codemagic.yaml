@@ -1,29 +1,20 @@
 # Build de iOS/iPadOS em Macs na nuvem (Codemagic) — dispensa possuir um Mac.
 #
-# Passos para ativar:
-#   1. Crie uma conta em https://codemagic.io e conecte este repositório.
-#   2. O workflow abaixo já compila sem assinatura (valida o código iOS).
-#   3. Para instalar no seu iPhone/iPad via TestFlight:
-#      a. Assine o Apple Developer Program (US$ 99/ano).
-#      b. No Codemagic, crie o grupo de variáveis "app_store" com a chave da
-#         App Store Connect API (o painel guia o processo).
-#      c. Descomente as seções marcadas com "TestFlight" abaixo.
+# Dois caminhos:
+#  - ios-sideload: gera um .ipa NÃO ASSINADO para instalar via Sideloadly com
+#    Apple ID grátis (ver docs/instalar-no-iphone.md). Não exige conta paga.
+#  - ios-testflight: build assinado para o TestFlight (exige Apple Developer
+#    Program, US$ 99/ano). Deixado comentado para o futuro.
 
 workflows:
-  ios-build:
-    name: iOS (sem Mac local)
+  ios-sideload:
+    name: iOS (.ipa não assinado para sideload)
     instance_type: mac_mini_m2
     max_build_duration: 45
     working_directory: client
     environment:
       flutter: stable
       xcode: latest
-      # TestFlight: descomente após configurar as credenciais no painel.
-      # groups:
-      #   - app_store
-      # ios_signing:
-      #   distribution_type: app_store
-      #   bundle_identifier: com.remoteone.remoteoneClient
     triggering:
       events:
         - push
@@ -42,15 +33,34 @@ workflows:
         script: |
           flutter analyze
           flutter test
-      - name: Build iOS sem assinatura
-        script: flutter build ios --no-codesign
-      # TestFlight: substitua o passo acima por build assinado.
-      # - name: Build IPA assinado
-      #   script: flutter build ipa --export-options-plist=/Users/builder/export_options.plist
-    # TestFlight: descomente para publicar automaticamente.
-    # artifacts:
-    #   - client/build/ios/ipa/*.ipa
-    # publishing:
-    #   app_store_connect:
-    #     auth: integration
-    #     submit_to_testflight: true
+      - name: Build iOS sem assinatura e empacotar .ipa
+        script: |
+          flutter build ios --release --no-codesign
+          mkdir -p build/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
+          cd build/ipa
+          zip -r RemoteOne-unsigned.ipa Payload
+    artifacts:
+      - client/build/ipa/RemoteOne-unsigned.ipa
+
+  # ios-testflight:
+  #   name: iOS (TestFlight — exige Apple Developer)
+  #   instance_type: mac_mini_m2
+  #   working_directory: client
+  #   environment:
+  #     flutter: stable
+  #     xcode: latest
+  #     groups:
+  #       - app_store            # chave da App Store Connect API (painel do Codemagic)
+  #     ios_signing:
+  #       distribution_type: app_store
+  #       bundle_identifier: com.remoteone.remoteoneClient
+  #   scripts:
+  #     - flutter pub get
+  #     - flutter build ipa --export-options-plist=/Users/builder/export_options.plist
+  #   artifacts:
+  #     - client/build/ios/ipa/*.ipa
+  #   publishing:
+  #     app_store_connect:
+  #       auth: integration
+  #       submit_to_testflight: true
