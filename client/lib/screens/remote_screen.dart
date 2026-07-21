@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
 import '../services/app_state.dart';
@@ -33,50 +34,41 @@ class _RemoteScreenState extends State<RemoteScreen> {
   double _aspectRatio = 16 / 9;
   bool _aspectResolved = false;
   String? _error;
-  bool _fetching = false;
   bool _keyboardVisible = false;
 
   double _pendingScroll = 0;
   DateTime _lastMove = DateTime.fromMillisecondsSinceEpoch(0);
-  Timer? _pollTimer;
+  WebSocketChannel? _channel;
+  StreamSubscription<dynamic>? _sub;
   Timer? _flushTimer;
 
   @override
   void initState() {
     super.initState();
-    _start();
+    _connect();
     _flushTimer =
         Timer.periodic(const Duration(milliseconds: 60), (_) => _flushScroll());
   }
 
-  Future<void> _start() async {
-    try {
-      await widget.state.api.startScreen(widget.device.deviceId);
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-      return;
-    }
-    _pollTimer =
-        Timer.periodic(const Duration(milliseconds: 300), (_) => _poll());
-  }
-
-  Future<void> _poll() async {
-    if (_fetching) return;
-    _fetching = true;
-    try {
-      final frame = await widget.state.api.fetchFrame(widget.device.deviceId);
-      if (frame != null && mounted) {
+  void _connect() {
+    final channel = widget.state.api.connectScreen(widget.device.deviceId);
+    _channel = channel;
+    _sub = channel.stream.listen(
+      (event) {
+        if (event is! List<int>) return; // ignora mensagens de texto
+        final frame =
+            event is Uint8List ? event : Uint8List.fromList(event);
+        if (!mounted) return;
         setState(() {
           _frame = frame;
           _error = null;
         });
         _resolveAspect(frame);
-      }
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    } finally {
-      _fetching = false;
-    }
+      },
+      onError: (Object e) {
+        if (mounted) setState(() => _error = 'Conexão de tela perdida');
+      },
+    );
   }
 
   void _resolveAspect(Uint8List bytes) {
@@ -91,9 +83,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
     _flushTimer?.cancel();
-    widget.state.api.stopScreen(widget.device.deviceId).catchError((_) {});
+    _sub?.cancel();
+    _channel?.sink.close();
     super.dispose();
   }
 

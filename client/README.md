@@ -13,6 +13,8 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Teclado customizado** (`remote_keyboard.dart`): campo de texto + teclas
   que o celular não tem (Ctrl, Alt, Shift, Tab, Esc, setas, Enter, Del). Os
   modificadores são grudentos: Ctrl e depois C envia Ctrl+C.
+- **Tela em tempo real**: os frames chegam por WebSocket (`/ws/viewer/{id}`),
+  empurrados pelo backend (~10 fps), no lugar de polling.
 
 Estrutura:
 

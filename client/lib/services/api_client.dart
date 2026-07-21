@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
 
@@ -127,6 +128,18 @@ class ApiClient {
       return null;
     }
     throw _error(res);
+  }
+
+  /// Abre o canal de tela em tempo real. O backend passa a empurrar os frames
+  /// JPEG (binários) assim que o autenticamos com o token. O chamador escuta
+  /// `channel.stream` (eventos `List<int>`) e fecha `channel.sink` ao sair.
+  WebSocketChannel connectScreen(String deviceId) {
+    final wsBase = baseUrl.replaceFirst(RegExp(r'^http'), 'ws');
+    final channel = WebSocketChannel.connect(
+      Uri.parse('$wsBase/ws/viewer/$deviceId'),
+    );
+    channel.sink.add(jsonEncode({'token': _accessToken}));
+    return channel;
   }
 
   // --- helpers ---------------------------------------------------------------
