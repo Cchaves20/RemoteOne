@@ -14,8 +14,11 @@ tokio-tungstenite = "0.24"
 futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
 gethostname = "0.5"
+# Codificação JPEG dos frames (multiplataforma; usada também pelo stub).
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
-# Injeção de mouse/teclado: só no Windows (única plataforma testável aqui).
-# Linux/macOS usam o stub em src/injector.rs, sem esta dependência.
+# Só no Windows (única plataforma testável aqui). Linux/macOS usam os stubs
+# em src/injector.rs e src/capture.rs, sem estas dependências.
 [target.'cfg(windows)'.dependencies]
 enigo = "0.2"
+xcap = "0.0.14"

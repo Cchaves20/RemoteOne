@@ -42,7 +42,12 @@ Agente                          Backend
 | `error` | `message` | Mensagem inválida ou fora de ordem |
 | `pair_code` | `code`, `expires_in_seconds` | Após o `welcome`, se o dispositivo não está pareado |
 | `paired` | `user_email` | Quando o dispositivo é vinculado a uma conta |
-| `input` | `action` (mouse) | Comando de entrada a injetar no computador (Etapa 6) |
+| `input` | `action` (mouse/teclado) | Comando de entrada a injetar no computador (Etapa 6) |
+| `start_stream` | `max_fps` | Inicia a transmissão da tela (Etapa 7) |
+| `stop_stream` | — | Encerra a transmissão da tela |
+
+O agente responde ao `start_stream` enviando frames JPEG como mensagens
+**binárias** (agente → backend). A tela remota está em [`tela-remota.md`](tela-remota.md).
 
 O pareamento está documentado em [`pareamento.md`](pareamento.md) e o controle
 remoto em [`controle-remoto.md`](controle-remoto.md).

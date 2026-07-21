@@ -8,11 +8,16 @@
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
-use tokio::time::interval;
+use tokio::time::{interval, MissedTickBehavior};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::protocol::{ClientMessage, ServerMessage};
+
+/// Parâmetros da transmissão de tela.
+const FRAME_INTERVAL_MS: u64 = 300; // ~3 fps
+const STREAM_MAX_WIDTH: u32 = 1280;
+const STREAM_QUALITY: u8 = 60;
 
 /// Dados de identificação do agente, resolvidos uma vez na inicialização.
 #[derive(Debug, Clone)]
@@ -56,15 +61,28 @@ pub async fn run(
     // Injetor de entrada da plataforma (real no Windows, stub no restante).
     let mut injector = crate::injector::controller();
 
+    // Transmissão de tela: enquanto ativa, captura e envia frames JPEG.
+    let mut streaming = false;
+    let mut frame_ticker = interval(Duration::from_millis(FRAME_INTERVAL_MS));
+    frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
     loop {
         tokio::select! {
             _ = ticker.tick() => {
                 let hb = serde_json::to_string(&ClientMessage::Heartbeat)?;
                 ws.send(Message::Text(hb)).await?;
             }
+            _ = frame_ticker.tick(), if streaming => {
+                match crate::capture::capture_frame(STREAM_MAX_WIDTH, STREAM_QUALITY) {
+                    Ok(jpeg) => ws.send(Message::Binary(jpeg)).await?,
+                    Err(e) => eprintln!("Falha ao capturar a tela: {e}"),
+                }
+            }
             incoming = ws.next() => {
                 match incoming {
-                    Some(Ok(Message::Text(text))) => handle_server_text(&text, injector.as_mut()),
+                    Some(Ok(Message::Text(text))) => {
+                        handle_server_text(&text, injector.as_mut(), &mut streaming);
+                    }
                     Some(Ok(Message::Close(_))) | None => {
                         println!("Conexão encerrada pelo servidor");
                         return Ok(());
@@ -77,7 +95,11 @@ pub async fn run(
     }
 }
 
-fn handle_server_text(text: &str, injector: &mut dyn crate::injector::InputInjector) {
+fn handle_server_text(
+    text: &str,
+    injector: &mut dyn crate::injector::InputInjector,
+    streaming: &mut bool,
+) {
     match serde_json::from_str::<ServerMessage>(text) {
         Ok(ServerMessage::Welcome { server_version }) => {
             println!("Registrado no backend (servidor v{server_version})");
@@ -104,6 +126,14 @@ fn handle_server_text(text: &str, injector: &mut dyn crate::injector::InputInjec
             if let Err(e) = injector.apply(&action) {
                 eprintln!("Falha ao aplicar entrada: {e}");
             }
+        }
+        Ok(ServerMessage::StartStream { max_fps }) => {
+            *streaming = true;
+            println!("Transmissão de tela iniciada (~{max_fps} fps)");
+        }
+        Ok(ServerMessage::StopStream) => {
+            *streaming = false;
+            println!("Transmissão de tela encerrada");
         }
         Err(e) => eprintln!("Mensagem desconhecida do servidor: {text} ({e})"),
     }

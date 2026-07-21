@@ -44,6 +44,12 @@ pub enum ServerMessage {
     Input {
         action: InputAction,
     },
+    /// Inicia a transmissão da tela (Etapa 7).
+    StartStream {
+        max_fps: u32,
+    },
+    /// Encerra a transmissão da tela.
+    StopStream,
 }
 
 #[cfg(test)]

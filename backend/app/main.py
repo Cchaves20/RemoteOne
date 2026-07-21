@@ -1,3 +1,4 @@
+import json
 import logging
 from contextlib import asynccontextmanager
 
@@ -19,6 +20,7 @@ from app.protocol import (
     Welcome,
     parse_client_message,
 )
+from app.screen import frame_store
 
 logger = logging.getLogger("remoteone")
 
@@ -116,10 +118,21 @@ async def agent_ws(websocket: WebSocket) -> None:
         await websocket.send_json(intro)
 
         while True:
-            raw = await websocket.receive_json()
+            packet = await websocket.receive()
+            if packet["type"] == "websocket.disconnect":
+                break
+
+            # Frame de tela (binário): guarda o mais recente do dispositivo.
+            if packet.get("bytes") is not None:
+                frame_store.put(device_id, packet["bytes"])
+                continue
+
+            text = packet.get("text")
+            if text is None:
+                continue
             try:
-                message = parse_client_message(raw)
-            except ValueError:
+                message = parse_client_message(json.loads(text))
+            except (ValueError, json.JSONDecodeError):
                 await websocket.send_json(Error(message="mensagem inválida").model_dump())
                 continue
 
@@ -146,4 +159,5 @@ async def agent_ws(websocket: WebSocket) -> None:
         if device_id is not None:
             registry.unregister(device_id)
             manager.unregister(device_id, websocket)
+            frame_store.clear(device_id)
             logger.info("agente desconectado: %s", device_id)
