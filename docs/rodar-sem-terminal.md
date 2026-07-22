@@ -98,3 +98,5 @@ fechar todas as janelas.
 - Para **acordar** o PC com Wake-on-LAN, o computador precisa estar apenas
   desligado/suspenso (não sem energia) e com o recurso ativado na BIOS e na
   placa de rede. O passo a passo de WoL entra num próximo lote (recurso 9).
+- Para o ciclo completo **sem tocar no PC** (IP fixo + backend no boot + login
+  automático do Windows), veja [`pc-sempre-pronto.md`](pc-sempre-pronto.md).

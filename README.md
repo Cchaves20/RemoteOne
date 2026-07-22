@@ -25,6 +25,7 @@ Documentação por etapa:
 - [`docs/tela-remota.md`](docs/tela-remota.md) — ver a tela do PC no app (Etapa 7)
 - [`docs/instalar-no-iphone.md`](docs/instalar-no-iphone.md) — instalar o app no iPhone sem Mac (sideload)
 - [`docs/rodar-sem-terminal.md`](docs/rodar-sem-terminal.md) — agente e backend em segundo plano (sem terminal; base para desligar/Wake-on-LAN)
+- [`docs/pc-sempre-pronto.md`](docs/pc-sempre-pronto.md) — IP fixo + backend no boot + login automático (controlar sem tocar no PC)
 
 ## Como rodar
 
