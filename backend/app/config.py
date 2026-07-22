@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # fps alvo informado ao agente ao transmitir a tela (o agente também aceita
     # REMOTEONE_STREAM_FPS/QUALITY/MAX_WIDTH para ajuste fino).
-    stream_fps: int = 30
+    stream_fps: int = 60
 
 
 settings = Settings()

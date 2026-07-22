@@ -25,7 +25,7 @@ pub struct StreamConfig {
 impl Default for StreamConfig {
     fn default() -> Self {
         Self {
-            fps: 30,
+            fps: 60,
             max_width: 1280,
             quality: 50,
         }

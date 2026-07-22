@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-/// Teclado em layout de computador (QWERTY), com modificadores e teclas
-/// especiais que o celular não tem. Cada tecla de caractere digita direto;
-/// com Ctrl/Alt/Meta ativos, vira atalho (ex.: Ctrl+C). Shift aplica
-/// maiúscula na próxima letra (ou entra no atalho).
+enum _Layer { letters, symbols, accents }
+
+/// Teclado em layout de computador com camadas: letras (QWERTY), símbolos/
+/// pontuação e acentos (PT-BR). Modificadores Ctrl/Alt/Shift são grudentos;
+/// letra sozinha digita, com Ctrl/Alt vira atalho, Shift aplica maiúscula.
 class RemoteKeyboard extends StatefulWidget {
   const RemoteKeyboard({
     super.key,
@@ -22,11 +23,44 @@ class RemoteKeyboard extends StatefulWidget {
 
 class _RemoteKeyboardState extends State<RemoteKeyboard> {
   final Set<String> _mods = {};
+  _Layer _layer = _Layer.letters;
 
-  static const _row1 = '1234567890';
-  static const _row2 = 'qwertyuiop';
-  static const _row3 = 'asdfghjkl';
-  static const _row4 = 'zxcvbnm';
+  List<List<String>> _rowsFor(_Layer layer) {
+    switch (layer) {
+      case _Layer.letters:
+        return ['qwertyuiop', 'asdfghjkl', 'zxcvbnm']
+            .map((s) => s.split(''))
+            .toList();
+      case _Layer.symbols:
+        return [
+          '1234567890'.split(''),
+          ['@', '#', r'$', '%', '&', '*', '-', '_', '/', '+'],
+          ['.', ',', '?', '!', "'", '"', ':', ';', '='],
+        ];
+      case _Layer.accents:
+        return [
+          ['á', 'à', 'â', 'ã', 'é', 'ê'],
+          ['í', 'ó', 'ô', 'õ', 'ú'],
+          ['ç', 'ü', 'ª', 'º', '°'],
+        ];
+    }
+  }
+
+  String get _layerLabel => switch (_layer) {
+        _Layer.letters => '?#',
+        _Layer.symbols => 'áé',
+        _Layer.accents => 'abc',
+      };
+
+  void _cycleLayer() {
+    setState(() {
+      _layer = switch (_layer) {
+        _Layer.letters => _Layer.symbols,
+        _Layer.symbols => _Layer.accents,
+        _Layer.accents => _Layer.letters,
+      };
+    });
+  }
 
   void _toggleMod(String modifier) {
     setState(() {
@@ -58,6 +92,10 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
     }
   }
 
+  static const _style = ButtonStyle(
+    padding: WidgetStatePropertyAll(EdgeInsets.zero),
+  );
+
   Widget _key(Widget child, VoidCallback onTap, {int flex = 2, bool active = false}) {
     return Expanded(
       flex: flex,
@@ -66,85 +104,69 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
         child: SizedBox(
           height: 34,
           child: active
-              ? FilledButton(
-                  onPressed: onTap,
-                  style: _style,
-                  child: FittedBox(child: child),
-                )
-              : OutlinedButton(
-                  onPressed: onTap,
-                  style: _style,
-                  child: FittedBox(child: child),
-                ),
+              ? FilledButton(onPressed: onTap, style: _style, child: FittedBox(child: child))
+              : OutlinedButton(onPressed: onTap, style: _style, child: FittedBox(child: child)),
         ),
       ),
     );
   }
-
-  static const _style = ButtonStyle(
-    padding: WidgetStatePropertyAll(EdgeInsets.zero),
-  );
 
   Widget _charKey(String c) {
     final label = _mods.contains('shift') ? c.toUpperCase() : c;
     return _key(Text(label), () => _typeChar(c));
   }
 
-  Row _charRow(String chars) => Row(
-        children: [for (final c in chars.split('')) _charKey(c)],
-      );
+  Row _charRow(List<String> chars) => Row(children: [for (final c in chars) _charKey(c)]);
 
   @override
   Widget build(BuildContext context) {
+    final rows = _rowsFor(_layer);
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Especiais: Esc, Tab, setas, Del.
+              // Especiais (sempre visíveis).
               Row(
                 children: [
                   _key(const Text('Esc'), () => _special('escape')),
                   _key(const Text('Tab'), () => _special('tab')),
-                  _key(const Icon(Icons.arrow_upward, size: 18),
-                      () => _special('up')),
-                  _key(const Icon(Icons.arrow_downward, size: 18),
-                      () => _special('down')),
-                  _key(const Icon(Icons.arrow_back, size: 18),
-                      () => _special('left')),
-                  _key(const Icon(Icons.arrow_forward, size: 18),
-                      () => _special('right')),
+                  _key(const Icon(Icons.arrow_upward, size: 16), () => _special('up')),
+                  _key(const Icon(Icons.arrow_downward, size: 16), () => _special('down')),
+                  _key(const Icon(Icons.arrow_back, size: 16), () => _special('left')),
+                  _key(const Icon(Icons.arrow_forward, size: 16), () => _special('right')),
                   _key(const Text('Del'), () => _special('delete')),
                 ],
               ),
-              _charRow(_row1),
-              _charRow(_row2),
-              _charRow(_row3),
-              // Shift + zxcvbnm + Backspace.
+              _charRow(rows[0]),
+              _charRow(rows[1]),
+              // Shift + terceira linha + Backspace.
               Row(
                 children: [
-                  _key(const Icon(Icons.keyboard_capslock, size: 18),
+                  _key(const Icon(Icons.keyboard_capslock, size: 16),
                       () => _toggleMod('shift'),
                       flex: 3, active: _mods.contains('shift')),
-                  for (final c in _row4.split('')) _charKey(c),
-                  _key(const Icon(Icons.backspace_outlined, size: 18),
+                  for (final c in rows[2]) _charKey(c),
+                  _key(const Icon(Icons.backspace_outlined, size: 16),
                       () => _special('backspace'),
                       flex: 3),
                 ],
               ),
-              // Modificadores + espaço + Enter.
+              // Camada + modificadores + espaço + ponto + Enter.
               Row(
                 children: [
+                  _key(Text(_layerLabel), _cycleLayer, flex: 3),
                   _key(const Text('Ctrl'), () => _toggleMod('ctrl'),
                       flex: 3, active: _mods.contains('ctrl')),
                   _key(const Text('Alt'), () => _toggleMod('alt'),
                       flex: 3, active: _mods.contains('alt')),
                   _key(const Text('espaço'), () => _typeChar(' '), flex: 8),
-                  _key(const Icon(Icons.keyboard_return, size: 18),
+                  _key(const Text('.'), () => _typeChar('.')),
+                  _key(const Icon(Icons.keyboard_return, size: 16),
                       () => _special('enter'),
                       flex: 4),
                 ],
