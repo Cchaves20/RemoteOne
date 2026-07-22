@@ -24,9 +24,11 @@ Na pasta do projeto, abra o **PowerShell** e rode:
 powershell -ExecutionPolicy Bypass -File agent\scripts\install-agent-windows.ps1
 ```
 
-O script compila o agente em modo release, cria uma **Tarefa Agendada**
-(`RemoteOneAgent`) que o inicia **oculto a cada login** e o inicia na hora. A
-tarefa reinicia o agente automaticamente se ele cair.
+O script compila o agente em modo release e coloca um launcher oculto na
+**pasta Inicializar** do seu usuário, então ele passa a iniciar **oculto a cada
+login** (e já inicia na hora, sem esperar o próximo login). **Não exige
+administrador.** O agente tem reconexão automática interna; se o Windows
+reiniciar, ele sobe de novo no login.
 
 Se o backend **não** estiver no mesmo PC do agente, informe a URL:
 
