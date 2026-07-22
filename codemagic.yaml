@@ -29,6 +29,12 @@ workflows:
           fi
       - name: Dependências
         script: flutter pub get
+      - name: Permissão de Face ID no Info.plist
+        script: |
+          PLIST=ios/Runner/Info.plist
+          REASON="Desbloquear o RemoteOne"
+          /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string $REASON" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Set :NSFaceIDUsageDescription $REASON" "$PLIST"
       - name: Análise e testes
         script: |
           flutter analyze

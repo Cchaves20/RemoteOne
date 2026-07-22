@@ -13,10 +13,11 @@ class AppState extends ChangeNotifier {
   List<Device> devices = [];
   Device? selected;
   ThemeMode themeMode = ThemeMode.system;
+  bool appLockEnabled = false;
 
   bool get isAuthenticated => api.isAuthenticated;
 
-  /// Carrega as preferências salvas (tema) na inicialização.
+  /// Carrega as preferências salvas (tema, bloqueio) na inicialização.
   Future<void> loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     themeMode = switch (prefs.getString('themeMode')) {
@@ -24,7 +25,15 @@ class AppState extends ChangeNotifier {
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
+    appLockEnabled = prefs.getBool('appLock') ?? false;
     notifyListeners();
+  }
+
+  Future<void> setAppLockEnabled(bool enabled) async {
+    appLockEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('appLock', enabled);
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {

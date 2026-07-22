@@ -16,8 +16,13 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Tela em tempo real**: os frames chegam por WebSocket (`/ws/viewer/{id}`),
   empurrados pelo backend, com borda visível, indicador de fps e vibração ao
   clicar.
-- **Configurações** (`settings_screen.dart`): tema (automático/claro/escuro,
-  salvo com shared_preferences), sair e "Sobre".
+- **Login persistente**: os tokens ficam no armazenamento seguro
+  (`token_store.dart`), então o app lembra o login entre aberturas.
+- **Reconexão automática** da tela e **tela do celular sempre acesa** durante
+  a sessão de controle.
+- **Bloqueio por Face ID/biometria** opcional (`lock_gate.dart`, fail-open).
+- **Configurações** (`settings_screen.dart`): tema (automático/claro/escuro),
+  bloqueio biométrico, sair e "Sobre".
 
 Estrutura:
 

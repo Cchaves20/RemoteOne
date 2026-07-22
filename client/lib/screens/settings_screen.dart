@@ -25,6 +25,15 @@ class SettingsScreen extends StatelessWidget {
               _themeTile('Claro', ThemeMode.light),
               _themeTile('Escuro', ThemeMode.dark),
               const Divider(),
+              const _SectionHeader('Segurança'),
+              SwitchListTile(
+                secondary: const Icon(Icons.lock_outline),
+                title: const Text('Bloquear com Face ID / biometria'),
+                subtitle: const Text('Pede biometria ao abrir o app'),
+                value: state.appLockEnabled,
+                onChanged: state.setAppLockEnabled,
+              ),
+              const Divider(),
               const _SectionHeader('Conta'),
               ListTile(
                 leading: const Icon(Icons.logout),

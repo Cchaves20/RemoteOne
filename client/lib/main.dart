@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'screens/devices_screen.dart';
+import 'screens/lock_gate.dart';
 import 'screens/login_screen.dart';
 import 'services/api_client.dart';
 import 'services/app_state.dart';
@@ -44,9 +45,12 @@ class RemoteOneApp extends StatelessWidget {
           theme: _theme(Brightness.light),
           darkTheme: _theme(Brightness.dark),
           themeMode: state.themeMode,
-          home: state.isAuthenticated
-              ? DevicesScreen(state: state)
-              : LoginScreen(state: state),
+          home: LockGate(
+            state: state,
+            child: state.isAuthenticated
+                ? DevicesScreen(state: state)
+                : LoginScreen(state: state),
+          ),
         );
       },
     );
