@@ -106,6 +106,21 @@ def list_devices(db: Session, user: User) -> list[Device]:
     )
 
 
+def rename_device(db: Session, device_id: str, user: User, name: str) -> Device | None:
+    """Renomeia (apelido) um dispositivo da conta. None se não existir."""
+    device = db.scalar(
+        select(Device).where(
+            Device.device_id == device_id, Device.user_id == user.id
+        )
+    )
+    if device is None:
+        return None
+    device.name = name
+    db.commit()
+    db.refresh(device)
+    return device
+
+
 def remove_device(db: Session, device_id: str, user: User) -> bool:
     device = db.scalar(
         select(Device).where(

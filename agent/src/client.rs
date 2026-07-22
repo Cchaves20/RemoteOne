@@ -83,9 +83,11 @@ pub async fn run(
     // Injetor de entrada da plataforma (real no Windows, stub no restante).
     let mut injector = crate::injector::controller();
 
-    // Transmissão de tela: enquanto ativa, captura e envia frames JPEG.
+    // Transmissão de tela: enquanto ativa, captura e envia frames JPEG. A
+    // config é mutável porque o app pode ajustar fps/qualidade por sessão.
     let mut streaming = false;
-    let mut frame_ticker = interval(stream.frame_interval());
+    let mut active = stream;
+    let mut frame_ticker = interval(active.frame_interval());
     frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
     loop {
@@ -97,7 +99,7 @@ pub async fn run(
             _ = frame_ticker.tick(), if streaming => {
                 // Captura fora do event loop (spawn_blocking) para não travar
                 // o tratamento de comandos durante a codificação do frame.
-                let (max_width, quality) = (stream.max_width, stream.quality);
+                let (max_width, quality) = (active.max_width, active.quality);
                 let captured = tokio::task::spawn_blocking(move || {
                     crate::capture::capture_frame(max_width, quality)
                 })
@@ -111,7 +113,11 @@ pub async fn run(
             incoming = ws.next() => {
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
-                        handle_server_text(&text, injector.as_mut(), &mut streaming);
+                        // Se a config de fps mudou, recria o ticker no ritmo novo.
+                        if handle_server_text(&text, injector.as_mut(), &mut streaming, &mut active) {
+                            frame_ticker = interval(active.frame_interval());
+                            frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                        }
                     }
                     Some(Ok(Message::Close(_))) | None => {
                         println!("Conexão encerrada pelo servidor");
@@ -125,11 +131,14 @@ pub async fn run(
     }
 }
 
+/// Trata uma mensagem de texto do servidor. Retorna `true` se o intervalo de
+/// frames mudou (o chamador deve recriar o `frame_ticker`).
 fn handle_server_text(
     text: &str,
     injector: &mut dyn crate::injector::InputInjector,
     streaming: &mut bool,
-) {
+    active: &mut StreamConfig,
+) -> bool {
     match serde_json::from_str::<ServerMessage>(text) {
         Ok(ServerMessage::Welcome { server_version }) => {
             println!("Registrado no backend (servidor v{server_version})");
@@ -157,16 +166,39 @@ fn handle_server_text(
                 eprintln!("Falha ao aplicar entrada: {e}");
             }
         }
-        Ok(ServerMessage::StartStream { max_fps }) => {
+        Ok(ServerMessage::StartStream {
+            max_fps,
+            quality,
+            max_width,
+        }) => {
             *streaming = true;
-            println!("Transmissão de tela iniciada (~{max_fps} fps)");
+            let old_fps = active.fps;
+            active.fps = max_fps;
+            if let Some(q) = quality {
+                active.quality = q;
+            }
+            if let Some(w) = max_width {
+                active.max_width = w;
+            }
+            println!(
+                "Transmissão de tela iniciada (~{} fps, largura máx. {}px, qualidade {})",
+                active.fps, active.max_width, active.quality
+            );
+            return active.fps != old_fps;
         }
         Ok(ServerMessage::StopStream) => {
             *streaming = false;
             println!("Transmissão de tela encerrada");
         }
+        Ok(ServerMessage::Power { action }) => {
+            println!("Comando de energia recebido: {action:?}");
+            if let Err(e) = crate::power::apply(action) {
+                eprintln!("Falha ao executar comando de energia: {e}");
+            }
+        }
         Err(e) => eprintln!("Mensagem desconhecida do servidor: {text} ({e})"),
     }
+    false
 }
 
 #[cfg(test)]

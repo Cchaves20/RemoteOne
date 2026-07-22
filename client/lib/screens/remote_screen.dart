@@ -69,7 +69,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   void _connect() {
     _sub?.cancel();
-    final channel = widget.state.api.connectScreen(widget.device.deviceId);
+    final q = widget.state.streamQuality;
+    final channel = widget.state.api.connectScreen(
+      widget.device.deviceId,
+      fps: q.fps,
+      quality: q.quality,
+      maxWidth: q.maxWidth,
+    );
     _channel = channel;
     _sub = channel.stream.listen(
       (event) {

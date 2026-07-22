@@ -188,6 +188,31 @@ def _authenticate_viewer(token: str, device_id: str) -> bool:
 _pending_stops: dict[str, asyncio.Task] = {}
 _STREAM_GRACE_SECONDS = 8
 
+# Faixas aceitas para o ajuste de qualidade/desempenho vindo do app.
+_FPS_RANGE = (1, 30)
+_QUALITY_RANGE = (20, 90)
+_WIDTH_RANGE = (640, 1920)
+
+
+def _clamp(value: int, bounds: tuple[int, int]) -> int:
+    low, high = bounds
+    return max(low, min(high, value))
+
+
+def _start_stream_message(auth: dict) -> dict:
+    """Monta o start_stream com a qualidade pedida pelo app (ou o padrão)."""
+    message: dict = {"type": "start_stream", "max_fps": settings.stream_fps}
+    fps = auth.get("fps")
+    if isinstance(fps, int):
+        message["max_fps"] = _clamp(fps, _FPS_RANGE)
+    quality = auth.get("quality")
+    if isinstance(quality, int):
+        message["quality"] = _clamp(quality, _QUALITY_RANGE)
+    max_width = auth.get("max_width")
+    if isinstance(max_width, int):
+        message["max_width"] = _clamp(max_width, _WIDTH_RANGE)
+    return message
+
 
 async def _delayed_stop(device_id: str) -> None:
     try:
@@ -225,13 +250,14 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
 
         # Se havia uma parada agendada, o agente ainda está transmitindo
         # (aquecido): cancela a parada e a entrada é instantânea. Senão, e
-        # sendo o primeiro viewer, liga a transmissão (cold start).
+        # sendo o primeiro viewer, liga a transmissão (cold start) com a
+        # qualidade que o app pediu no handshake.
         pending = _pending_stops.pop(device_id, None)
         if pending is not None:
             pending.cancel()
         elif count == 1:
             await manager.send_to_agent(
-                device_id, {"type": "start_stream", "max_fps": settings.stream_fps}
+                device_id, _start_stream_message(auth)
             )
 
         # Oferece o último frame guardado, se houver (exibe algo na hora).

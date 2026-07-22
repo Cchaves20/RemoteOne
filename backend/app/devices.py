@@ -9,13 +9,29 @@ from app.connections import manager
 from app.db import get_db
 from app.input import InputAction
 from app.models import Device, User
-from app.schemas import ClaimRequest, DeviceOut
+from app.schemas import ClaimRequest, DeviceOut, PowerRequest, RenameDeviceRequest
 from app.screen import frame_store
 
 router = APIRouter(prefix="/api/v1", tags=["devices"])
 
-# Alvo de fps que o backend pede ao agente ao iniciar a transmissão.
+# Alvo de fps padrão que o backend pede ao agente ao iniciar a transmissão.
 _STREAM_FPS = 3
+# Faixas aceitas para ajuste de qualidade/desempenho pelo app.
+_FPS_RANGE = (1, 30)
+_QUALITY_RANGE = (20, 90)
+_WIDTH_RANGE = (640, 1920)
+
+
+def _device_out(device: Device) -> DeviceOut:
+    """Serializa incluindo o estado de conexão (online) do momento."""
+    out = DeviceOut.model_validate(device)
+    out.online = manager.is_online(device.device_id)
+    return out
+
+
+def _clamp(value: int, bounds: tuple[int, int]) -> int:
+    low, high = bounds
+    return max(low, min(high, value))
 
 
 def _owned_device_or_404(db: Session, device_id: str, user: User) -> Device:
@@ -38,7 +54,7 @@ def claim_device(
         device = pairing.claim(db, body.code.strip().upper(), current_user)
     except pairing.PairingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    return DeviceOut.model_validate(device)
+    return _device_out(device)
 
 
 @router.get("/devices", response_model=list[DeviceOut])
@@ -46,8 +62,24 @@ def list_devices(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[DeviceOut]:
-    """Lista os computadores pareados na conta."""
-    return [DeviceOut.model_validate(d) for d in pairing.list_devices(db, current_user)]
+    """Lista os computadores pareados na conta, com o estado online de cada um."""
+    return [_device_out(d) for d in pairing.list_devices(db, current_user)]
+
+
+@router.patch("/devices/{device_id}", response_model=DeviceOut)
+def rename_device(
+    device_id: str,
+    body: RenameDeviceRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DeviceOut:
+    """Renomeia (apelido) um computador da conta."""
+    device = pairing.rename_device(db, device_id, current_user, body.name.strip())
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="dispositivo não encontrado"
+        )
+    return _device_out(device)
 
 
 @router.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -86,15 +118,42 @@ async def send_input(
         )
 
 
-@router.post("/devices/{device_id}/screen/start", status_code=status.HTTP_204_NO_CONTENT)
-async def start_screen(
+@router.post("/devices/{device_id}/power", status_code=status.HTTP_204_NO_CONTENT)
+async def power_device(
     device_id: str,
+    body: PowerRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    """Pede ao agente que comece a transmitir a tela (Etapa 7)."""
+    """Desliga, reinicia ou suspende o computador pareado."""
     _owned_device_or_404(db, device_id, current_user)
-    message = {"type": "start_stream", "max_fps": _STREAM_FPS}
+    message = {"type": "power", "action": body.action}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post("/devices/{device_id}/screen/start", status_code=status.HTTP_204_NO_CONTENT)
+async def start_screen(
+    device_id: str,
+    fps: int = Body(_STREAM_FPS, embed=True),
+    quality: int | None = Body(None, embed=True),
+    max_width: int | None = Body(None, embed=True),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Pede ao agente que comece a transmitir a tela (Etapa 7).
+
+    O app pode ajustar desempenho enviando `fps`, `quality` (JPEG) e
+    `max_width`; valores fora da faixa são limitados aos extremos aceitos.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    message: dict = {"type": "start_stream", "max_fps": _clamp(fps, _FPS_RANGE)}
+    if quality is not None:
+        message["quality"] = _clamp(quality, _QUALITY_RANGE)
+    if max_width is not None:
+        message["max_width"] = _clamp(max_width, _WIDTH_RANGE)
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"

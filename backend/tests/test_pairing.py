@@ -169,6 +169,94 @@ def test_remove_device():
     assert client.delete("/api/v1/devices/dev-abc", headers=headers).status_code == 404
 
 
+def _pair(headers) -> None:
+    """Pareia o dispositivo padrão (dev-abc) à conta dada."""
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json(HELLO)
+        ws.receive_json()
+        code = ws.receive_json()["code"]
+    client.post("/api/v1/pairing/claim", json={"code": code}, headers=headers)
+
+
+def test_rename_device():
+    headers = _auth_headers()
+    _pair(headers)
+    resp = client.patch(
+        "/api/v1/devices/dev-abc", json={"name": "PC do escritório"}, headers=headers
+    )
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "PC do escritório"
+    # A lista reflete o novo nome.
+    devices = client.get("/api/v1/devices", headers=headers).json()
+    assert devices[0]["name"] == "PC do escritório"
+
+
+def test_rename_unknown_device_404():
+    headers = _auth_headers()
+    resp = client.patch(
+        "/api/v1/devices/nao-existe", json={"name": "x"}, headers=headers
+    )
+    assert resp.status_code == 404
+
+
+def test_device_online_status():
+    headers = _auth_headers()
+    # Enquanto o agente está conectado, o dispositivo aparece online.
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json(HELLO)
+        ws.receive_json()
+        code = ws.receive_json()["code"]
+        client.post("/api/v1/pairing/claim", json={"code": code}, headers=headers)
+        online = client.get("/api/v1/devices", headers=headers).json()
+        assert online[0]["online"] is True
+    # Fora do bloco, o WebSocket fechou: o dispositivo fica offline.
+    offline = client.get("/api/v1/devices", headers=headers).json()
+    assert offline[0]["online"] is False
+
+
+def test_power_offline_agent_returns_503():
+    headers = _auth_headers()
+    _pair(headers)  # pareado, mas sem agente conectado agora
+    resp = client.post(
+        "/api/v1/devices/dev-abc/power", json={"action": "shutdown"}, headers=headers
+    )
+    assert resp.status_code == 503
+
+
+def test_power_rejects_invalid_action():
+    headers = _auth_headers()
+    _pair(headers)
+    resp = client.post(
+        "/api/v1/devices/dev-abc/power", json={"action": "explodir"}, headers=headers
+    )
+    assert resp.status_code == 422
+
+
+def test_power_relays_to_connected_agent():
+    headers = _auth_headers()
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json(HELLO)
+        ws.receive_json()  # welcome
+        code = ws.receive_json()["code"]
+        client.post("/api/v1/pairing/claim", json={"code": code}, headers=headers)
+        # Consome o `paired` que chega após o próximo heartbeat/claim.
+        resp = client.post(
+            "/api/v1/devices/dev-abc/power",
+            json={"action": "restart"},
+            headers=headers,
+        )
+        assert resp.status_code == 204
+        # O agente recebe o comando de energia (pode vir após o `paired`).
+        seen_power = False
+        for _ in range(3):
+            msg = ws.receive_json()
+            if msg.get("type") == "power":
+                assert msg["action"] == "restart"
+                seen_power = True
+                break
+        assert seen_power
+
+
 def test_pairing_request_is_replaced_on_reconnect():
     # Duas conexões seguidas devem deixar apenas um pedido pendente por device.
     for _ in range(2):

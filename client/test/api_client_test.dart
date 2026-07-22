@@ -82,6 +82,68 @@ void main() {
     expect(seen?.path, '/api/v1/devices/dev-7/screen/start');
   });
 
+  test('renameDevice envia PATCH e devolve o Device atualizado', () async {
+    Uri? seenUrl;
+    String? seenMethod;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        seenUrl = req.url;
+        seenMethod = req.method;
+        return http.Response(
+          jsonEncode({
+            'device_id': 'dev-1',
+            'name': 'Novo nome',
+            'os': 'windows',
+            'hostname': 'pc',
+            'online': true,
+          }),
+          200,
+        );
+      }),
+    );
+    final device = await client.renameDevice('dev-1', 'Novo nome');
+    expect(seenMethod, 'PATCH');
+    expect(seenUrl?.path, '/api/v1/devices/dev-1');
+    expect(device.name, 'Novo nome');
+    expect(device.online, isTrue);
+  });
+
+  test('powerDevice envia a ação e aceita 204', () async {
+    Map<String, dynamic>? body;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        body = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response('', 204);
+      }),
+    );
+    await client.powerDevice('dev-1', 'restart');
+    expect(body?['action'], 'restart');
+  });
+
+  test('deleteAccount envia a senha e limpa a sessão', () async {
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        if (req.url.path == '/api/v1/auth/login') {
+          return http.Response(
+            jsonEncode({'access_token': 'tok', 'refresh_token': 'r'}),
+            200,
+          );
+        }
+        return http.Response('', 204);
+      }),
+    );
+    await client.login('a@b.com', 'senhaSegura123');
+    expect(client.isAuthenticated, isTrue);
+    await client.deleteAccount('senhaSegura123');
+    expect(client.isAuthenticated, isFalse);
+  });
+
   test('erro HTTP vira ApiException com a mensagem detail', () async {
     final client = ApiClient(
       baseUrl: 'http://test',

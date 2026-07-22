@@ -76,9 +76,18 @@ class ApiClient {
     try {
       await refreshAccess();
       return true;
+    } on ApiException catch (e) {
+      // Só desloga se o servidor rejeitou o refresh (token inválido/expirado).
+      // Erros de rede não devem forçar novo login: mantém a sessão e o app
+      // revalida quando o servidor voltar a responder.
+      if (e.statusCode == 401) {
+        await logout();
+        return false;
+      }
+      return true;
     } catch (_) {
-      await logout();
-      return false;
+      // Falha de rede (servidor fora do ar, Wi-Fi caiu): segue autenticado.
+      return true;
     }
   }
 
@@ -100,6 +109,50 @@ class ApiClient {
     await _store.clear();
   }
 
+  // --- conta -----------------------------------------------------------------
+
+  /// Troca o e-mail da conta (exige a senha atual).
+  Future<void> updateEmail(String currentPassword, String newEmail) async {
+    final res = await _http.patch(
+      _uri('/api/v1/auth/me/email'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        'current_password': currentPassword,
+        'new_email': newEmail,
+      }),
+    );
+    _decode(res); // 200 ou lança
+  }
+
+  /// Troca a senha da conta (exige a senha atual).
+  Future<void> updatePassword(
+      String currentPassword, String newPassword) async {
+    final res = await _http.patch(
+      _uri('/api/v1/auth/me/password'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        'current_password': currentPassword,
+        'new_password': newPassword,
+      }),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Exclui a conta (exige a senha). Ao concluir, limpa a sessão local.
+  Future<void> deleteAccount(String password) async {
+    final res = await _http.delete(
+      _uri('/api/v1/auth/me'),
+      headers: _authHeaders,
+      body: jsonEncode({'password': password}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+    await logout();
+  }
+
   Future<void> _persist() => _store.save(_accessToken, _refreshToken);
 
   Future<List<Device>> listDevices() async {
@@ -119,6 +172,39 @@ class ApiClient {
     return Device.fromJson(_decode(res, expected: 201) as Map<String, dynamic>);
   }
 
+  /// Renomeia (apelido) um computador da conta.
+  Future<Device> renameDevice(String deviceId, String name) async {
+    final res = await _http.patch(
+      _uri('/api/v1/devices/$deviceId'),
+      headers: _authHeaders,
+      body: jsonEncode({'name': name}),
+    );
+    return Device.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Desvincula um computador da conta.
+  Future<void> removeDevice(String deviceId) async {
+    final res = await _http.delete(
+      _uri('/api/v1/devices/$deviceId'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Envia um comando de energia (shutdown/restart/suspend) ao computador.
+  Future<void> powerDevice(String deviceId, String action) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/power'),
+      headers: _authHeaders,
+      body: jsonEncode({'action': action}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
   /// Envia uma ação de entrada (mouse/teclado) ao computador pareado.
   Future<void> sendInput(String deviceId, Map<String, dynamic> action) async {
     final res = await _http.post(
@@ -131,11 +217,22 @@ class ApiClient {
     }
   }
 
-  /// Pede ao computador para começar a transmitir a tela.
-  Future<void> startScreen(String deviceId) async {
+  /// Pede ao computador para começar a transmitir a tela. `fps`, `quality` e
+  /// `maxWidth` ajustam desempenho/qualidade (o backend limita à faixa aceita).
+  Future<void> startScreen(
+    String deviceId, {
+    int? fps,
+    int? quality,
+    int? maxWidth,
+  }) async {
+    final body = <String, dynamic>{};
+    if (fps != null) body['fps'] = fps;
+    if (quality != null) body['quality'] = quality;
+    if (maxWidth != null) body['max_width'] = maxWidth;
     final res = await _http.post(
       _uri('/api/v1/devices/$deviceId/screen/start'),
       headers: _authHeaders,
+      body: jsonEncode(body),
     );
     if (res.statusCode != 204) {
       throw _error(res);
@@ -169,12 +266,23 @@ class ApiClient {
   /// Abre o canal de tela em tempo real. O backend passa a empurrar os frames
   /// JPEG (binários) assim que o autenticamos com o token. O chamador escuta
   /// `channel.stream` (eventos `List<int>`) e fecha `channel.sink` ao sair.
-  WebSocketChannel connectScreen(String deviceId) {
+  WebSocketChannel connectScreen(
+    String deviceId, {
+    int? fps,
+    int? quality,
+    int? maxWidth,
+  }) {
     final wsBase = baseUrl.replaceFirst(RegExp(r'^http'), 'ws');
     final channel = WebSocketChannel.connect(
       Uri.parse('$wsBase/ws/viewer/$deviceId'),
     );
-    channel.sink.add(jsonEncode({'token': _accessToken}));
+    // A qualidade escolhida vale no cold start (quando este é o 1º viewer).
+    channel.sink.add(jsonEncode({
+      'token': _accessToken,
+      if (fps != null) 'fps': fps,
+      if (quality != null) 'quality': quality,
+      if (maxWidth != null) 'max_width': maxWidth,
+    }));
     return channel;
   }
 

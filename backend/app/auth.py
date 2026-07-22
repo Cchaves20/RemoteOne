@@ -17,8 +17,11 @@ from app.models import User
 from app.schemas import (
     AccessToken,
     Credentials,
+    DeleteAccountRequest,
     RefreshRequest,
     TokenPair,
+    UpdateEmailRequest,
+    UpdatePasswordRequest,
     UserOut,
 )
 from app.security import (
@@ -111,3 +114,56 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> AccessToken:
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
+
+
+@router.patch("/me/email", response_model=UserOut)
+def update_email(
+    body: UpdateEmailRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Troca o e-mail da conta (exige a senha atual)."""
+    if not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="senha atual incorreta"
+        )
+    if body.new_email != current_user.email:
+        taken = db.scalar(select(User).where(User.email == body.new_email))
+        if taken is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="e-mail já cadastrado"
+            )
+        current_user.email = body.new_email
+        db.commit()
+        db.refresh(current_user)
+    return current_user
+
+
+@router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def update_password(
+    body: UpdatePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Troca a senha da conta (exige a senha atual)."""
+    if not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="senha atual incorreta"
+        )
+    current_user.hashed_password = hash_password(body.new_password)
+    db.commit()
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(
+    body: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Exclui a conta e todos os dispositivos vinculados (exige a senha)."""
+    if not verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="senha incorreta"
+        )
+    db.delete(current_user)
+    db.commit()

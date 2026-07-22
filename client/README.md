@@ -21,8 +21,14 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Reconexão automática** da tela e **tela do celular sempre acesa** durante
   a sessão de controle.
 - **Bloqueio por Face ID/biometria** opcional (`lock_gate.dart`, fail-open).
+- **Status online/offline** de cada computador na lista (ponto verde/cinza).
+- **Ações do computador** (menu na lista): controlar, **renomear**, **desligar/
+  reiniciar/suspender** (energia) e **remover** da conta.
+- **Qualidade da tela ajustável** (Econômico/Equilibrado/Nítido): define fps,
+  qualidade do JPEG e largura, enviados ao agente ao abrir a tela.
 - **Configurações** (`settings_screen.dart`): tema (automático/claro/escuro),
-  bloqueio biométrico, sair e "Sobre".
+  qualidade da tela, bloqueio biométrico, **alterar e-mail**, **alterar senha**,
+  sair, **excluir conta** e "Sobre".
 
 Estrutura:
 

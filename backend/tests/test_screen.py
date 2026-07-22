@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 from app.connections import manager
 from app.db import SessionLocal
-from app.main import app
+from app.main import _start_stream_message, app
 from app.models import Device, User
 from app.screen import FrameStore, frame_store
 
@@ -43,6 +43,29 @@ class FakeWS:
 
 
 # --- FrameStore --------------------------------------------------------------
+
+
+def test_start_stream_message_default_and_tuned():
+    # Sem parâmetros: só o max_fps padrão.
+    base = _start_stream_message({"token": "x"})
+    assert base["type"] == "start_stream"
+    assert "quality" not in base and "max_width" not in base
+
+    # Com qualidade e largura, dentro da faixa.
+    tuned = _start_stream_message({"fps": 15, "quality": 75, "max_width": 1600})
+    assert tuned == {
+        "type": "start_stream",
+        "max_fps": 15,
+        "quality": 75,
+        "max_width": 1600,
+    }
+
+
+def test_start_stream_message_clamps_out_of_range():
+    msg = _start_stream_message({"fps": 999, "quality": 5, "max_width": 99999})
+    assert msg["max_fps"] == 30  # teto de fps
+    assert msg["quality"] == 20  # piso de qualidade
+    assert msg["max_width"] == 1920  # teto de largura
 
 
 def test_frame_store_put_get_clear():

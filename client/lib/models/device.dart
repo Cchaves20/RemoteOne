@@ -5,6 +5,7 @@ class Device {
     required this.name,
     required this.os,
     required this.hostname,
+    this.online = false,
   });
 
   final String deviceId;
@@ -12,12 +13,16 @@ class Device {
   final String os;
   final String hostname;
 
+  /// Se o agente está conectado ao backend agora (presença ao vivo).
+  final bool online;
+
   factory Device.fromJson(Map<String, dynamic> json) {
     return Device(
       deviceId: json['device_id'] as String,
       name: json['name'] as String,
       os: json['os'] as String,
       hostname: json['hostname'] as String,
+      online: json['online'] as bool? ?? false,
     );
   }
 }

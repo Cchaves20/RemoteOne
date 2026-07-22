@@ -102,3 +102,100 @@ def test_refresh_token_cannot_access_protected_route():
     tokens = _register()
     headers = {"Authorization": f"Bearer {tokens['refresh_token']}"}
     assert client.get("/api/v1/auth/me", headers=headers).status_code == 401
+
+
+# --- gerenciamento de conta (Lote 3) ----------------------------------------
+
+
+def _register_headers(creds=CREDS) -> dict:
+    tokens = _register(creds)
+    return {"Authorization": f"Bearer {tokens['access_token']}"}
+
+
+def test_update_email_changes_login():
+    headers = _register_headers()
+    resp = client.patch(
+        "/api/v1/auth/me/email",
+        json={"current_password": CREDS["password"], "new_email": "novo@example.com"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "novo@example.com"
+    # Login com o e-mail novo funciona; com o antigo, não.
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"email": "novo@example.com", "password": CREDS["password"]},
+    ).status_code == 200
+    assert client.post("/api/v1/auth/login", json=CREDS).status_code == 401
+
+
+def test_update_email_wrong_password():
+    headers = _register_headers()
+    resp = client.patch(
+        "/api/v1/auth/me/email",
+        json={"current_password": "errada12345", "new_email": "novo@example.com"},
+        headers=headers,
+    )
+    assert resp.status_code == 401
+
+
+def test_update_email_conflict():
+    _register({"email": "ocupado@example.com", "password": "senhaSegura123"})
+    headers = _register_headers()
+    resp = client.patch(
+        "/api/v1/auth/me/email",
+        json={"current_password": CREDS["password"], "new_email": "ocupado@example.com"},
+        headers=headers,
+    )
+    assert resp.status_code == 409
+
+
+def test_update_password_changes_login():
+    headers = _register_headers()
+    resp = client.patch(
+        "/api/v1/auth/me/password",
+        json={"current_password": CREDS["password"], "new_password": "novaSenha456"},
+        headers=headers,
+    )
+    assert resp.status_code == 204
+    assert client.post("/api/v1/auth/login", json=CREDS).status_code == 401
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"email": CREDS["email"], "password": "novaSenha456"},
+    ).status_code == 200
+
+
+def test_update_password_wrong_current():
+    headers = _register_headers()
+    resp = client.patch(
+        "/api/v1/auth/me/password",
+        json={"current_password": "errada12345", "new_password": "novaSenha456"},
+        headers=headers,
+    )
+    assert resp.status_code == 401
+
+
+def test_delete_account_removes_login():
+    headers = _register_headers()
+    resp = client.request(
+        "DELETE",
+        "/api/v1/auth/me",
+        json={"password": CREDS["password"]},
+        headers=headers,
+    )
+    assert resp.status_code == 204
+    # A conta deixou de existir: login falha.
+    assert client.post("/api/v1/auth/login", json=CREDS).status_code == 401
+
+
+def test_delete_account_wrong_password():
+    headers = _register_headers()
+    resp = client.request(
+        "DELETE",
+        "/api/v1/auth/me",
+        json={"password": "errada12345"},
+        headers=headers,
+    )
+    assert resp.status_code == 401
+    # A conta continua utilizável.
+    assert client.post("/api/v1/auth/login", json=CREDS).status_code == 200

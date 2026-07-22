@@ -76,6 +76,177 @@ class _DevicesScreenState extends State<DevicesScreen> {
     );
   }
 
+  Future<void> _runDeviceAction(
+      Future<void> Function() action, String success) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await action();
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(success)));
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  Future<void> _showRenameDialog(Device device) async {
+    final controller = TextEditingController(text: device.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Renomear computador'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Nome'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    await _runDeviceAction(
+      () => widget.state.renameDevice(device, name),
+      'Nome atualizado.',
+    );
+  }
+
+  Future<void> _confirmRemove(Device device) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remover computador'),
+        content: Text('Desvincular "${device.name}" da sua conta?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remover'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _runDeviceAction(
+      () => widget.state.removeDevice(device),
+      'Computador removido.',
+    );
+  }
+
+  Future<void> _confirmPower(Device device, String action) async {
+    const labels = {
+      'shutdown': 'Desligar',
+      'restart': 'Reiniciar',
+      'suspend': 'Suspender',
+    };
+    final label = labels[action]!;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('$label computador'),
+        content: Text('$label "${device.name}" agora?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(label),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _runDeviceAction(
+      () => widget.state.powerDevice(device, action),
+      '$label enviado.',
+    );
+  }
+
+  /// Menu de ações do computador: abrir, renomear, energia e remover.
+  Widget _deviceMenu(Device d) {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert),
+      onSelected: (value) {
+        switch (value) {
+          case 'open':
+            _openControl(d);
+          case 'rename':
+            _showRenameDialog(d);
+          case 'shutdown':
+          case 'restart':
+          case 'suspend':
+            _confirmPower(d, value);
+          case 'remove':
+            _confirmRemove(d);
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'open',
+          child: ListTile(
+            leading: Icon(Icons.play_arrow),
+            title: Text('Controlar'),
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'rename',
+          child: ListTile(
+            leading: Icon(Icons.edit),
+            title: Text('Renomear'),
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'shutdown',
+          enabled: d.online,
+          child: const ListTile(
+            leading: Icon(Icons.power_settings_new),
+            title: Text('Desligar'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'restart',
+          enabled: d.online,
+          child: const ListTile(
+            leading: Icon(Icons.restart_alt),
+            title: Text('Reiniciar'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'suspend',
+          enabled: d.online,
+          child: const ListTile(
+            leading: Icon(Icons.bedtime),
+            title: Text('Suspender'),
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'remove',
+          child: ListTile(
+            leading: Icon(Icons.link_off),
+            title: Text('Remover'),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -116,10 +287,12 @@ class _DevicesScreenState extends State<DevicesScreen> {
               itemBuilder: (context, i) {
                 final d = devices[i];
                 return ListTile(
-                  leading: const Icon(Icons.computer),
+                  leading: _StatusIcon(online: d.online),
                   title: Text(d.name),
-                  subtitle: Text('${d.os} · ${d.hostname}'),
-                  trailing: const Icon(Icons.chevron_right),
+                  subtitle: Text(
+                    '${d.online ? 'Online' : 'Offline'} · ${d.os} · ${d.hostname}',
+                  ),
+                  trailing: _deviceMenu(d),
                   onTap: () => _openControl(d),
                 );
               },
@@ -132,6 +305,36 @@ class _DevicesScreenState extends State<DevicesScreen> {
         icon: const Icon(Icons.add_link),
         label: const Text('Parear'),
       ),
+    );
+  }
+}
+
+/// Ícone de computador com um ponto de status (verde = online, cinza = offline).
+class _StatusIcon extends StatelessWidget {
+  const _StatusIcon({required this.online});
+
+  final bool online;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = online ? Colors.green : Theme.of(context).disabledColor;
+    return Stack(
+      alignment: Alignment.bottomRight,
+      children: [
+        const Icon(Icons.computer),
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              width: 1.5,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

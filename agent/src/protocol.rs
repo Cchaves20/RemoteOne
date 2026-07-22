@@ -44,12 +44,30 @@ pub enum ServerMessage {
     Input {
         action: InputAction,
     },
-    /// Inicia a transmissão da tela (Etapa 7).
+    /// Inicia a transmissão da tela (Etapa 7). `quality` e `max_width` são
+    /// opcionais: quando presentes, o app está ajustando qualidade/desempenho.
     StartStream {
         max_fps: u32,
+        #[serde(default)]
+        quality: Option<u8>,
+        #[serde(default)]
+        max_width: Option<u32>,
     },
     /// Encerra a transmissão da tela.
     StopStream,
+    /// Comando de energia: desligar, reiniciar ou suspender o computador.
+    Power {
+        action: PowerAction,
+    },
+}
+
+/// Ações de energia suportadas pelo agente.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PowerAction {
+    Shutdown,
+    Restart,
+    Suspend,
 }
 
 #[cfg(test)]
@@ -125,5 +143,46 @@ mod tests {
                 user_email: "caio@example.com".into()
             }
         );
+    }
+
+    #[test]
+    fn deserializes_start_stream_with_and_without_quality() {
+        // Formato antigo (só fps): quality/max_width ausentes viram None.
+        let basic: ServerMessage =
+            serde_json::from_str(r#"{"type":"start_stream","max_fps":3}"#).unwrap();
+        assert_eq!(
+            basic,
+            ServerMessage::StartStream {
+                max_fps: 3,
+                quality: None,
+                max_width: None,
+            }
+        );
+
+        // Formato novo: app ajustando qualidade/desempenho.
+        let tuned: ServerMessage = serde_json::from_str(
+            r#"{"type":"start_stream","max_fps":10,"quality":70,"max_width":1600}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            tuned,
+            ServerMessage::StartStream {
+                max_fps: 10,
+                quality: Some(70),
+                max_width: Some(1600),
+            }
+        );
+    }
+
+    #[test]
+    fn deserializes_power_actions() {
+        for (json, expected) in [
+            (r#"{"type":"power","action":"shutdown"}"#, PowerAction::Shutdown),
+            (r#"{"type":"power","action":"restart"}"#, PowerAction::Restart),
+            (r#"{"type":"power","action":"suspend"}"#, PowerAction::Suspend),
+        ] {
+            let msg: ServerMessage = serde_json::from_str(json).unwrap();
+            assert_eq!(msg, ServerMessage::Power { action: expected });
+        }
     }
 }
