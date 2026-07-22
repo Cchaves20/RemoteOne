@@ -13,8 +13,10 @@ const _defaultBackend = String.fromEnvironment(
   defaultValue: 'http://localhost:8000',
 );
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   final state = AppState(ApiClient(baseUrl: _defaultBackend));
+  await state.loadPreferences();
   runApp(RemoteOneApp(state: state));
 }
 
@@ -23,22 +25,29 @@ class RemoteOneApp extends StatelessWidget {
 
   final AppState state;
 
+  ThemeData _theme(Brightness brightness) => ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.indigo,
+          brightness: brightness,
+        ),
+        useMaterial3: true,
+      );
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'RemoteOne',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
-      home: ListenableBuilder(
-        listenable: state,
-        builder: (context, _) {
-          return state.isAuthenticated
+    return ListenableBuilder(
+      listenable: state,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'RemoteOne',
+          theme: _theme(Brightness.light),
+          darkTheme: _theme(Brightness.dark),
+          themeMode: state.themeMode,
+          home: state.isAuthenticated
               ? DevicesScreen(state: state)
-              : LoginScreen(state: state);
-        },
-      ),
+              : LoginScreen(state: state),
+        );
+      },
     );
   }
 }

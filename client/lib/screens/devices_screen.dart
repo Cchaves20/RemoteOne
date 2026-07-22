@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/device.dart';
 import '../services/app_state.dart';
 import 'remote_screen.dart';
+import 'settings_screen.dart';
 
 /// Lista os computadores pareados e permite parear um novo pelo código.
 class DevicesScreen extends StatefulWidget {
@@ -82,9 +83,13 @@ class _DevicesScreenState extends State<DevicesScreen> {
         title: const Text('Meus computadores'),
         actions: [
           IconButton(
-            tooltip: 'Sair',
-            icon: const Icon(Icons.logout),
-            onPressed: widget.state.logout,
+            tooltip: 'Configurações',
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SettingsScreen(state: widget.state),
+              ),
+            ),
           ),
         ],
       ),

@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
@@ -42,12 +42,24 @@ class _RemoteScreenState extends State<RemoteScreen> {
   StreamSubscription<dynamic>? _sub;
   Timer? _flushTimer;
 
+  int _frameCount = 0;
+  int _fps = 0;
+  Timer? _fpsTimer;
+
   @override
   void initState() {
     super.initState();
     _connect();
     _flushTimer =
         Timer.periodic(const Duration(milliseconds: 60), (_) => _flushScroll());
+    _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {
+          _fps = _frameCount;
+          _frameCount = 0;
+        });
+      }
+    });
   }
 
   void _connect() {
@@ -59,6 +71,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
         final frame =
             event is Uint8List ? event : Uint8List.fromList(event);
         if (!mounted) return;
+        _frameCount++;
         setState(() {
           _frame = frame;
           _error = null;
@@ -84,6 +97,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   @override
   void dispose() {
     _flushTimer?.cancel();
+    _fpsTimer?.cancel();
     _sub?.cancel();
     _channel?.sink.close();
     super.dispose();
@@ -105,12 +119,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
       );
 
   void _tapAt(Offset local, Size box) {
+    HapticFeedback.selectionClick();
     final p = _norm(local, box);
     _send({'kind': 'mouse_move_to', 'x': p.x, 'y': p.y});
     _send({'kind': 'mouse_click', 'button': 'left'});
   }
 
   void _rightClickAt(Offset local, Size box) {
+    HapticFeedback.mediumImpact();
     final p = _norm(local, box);
     _send({'kind': 'mouse_move_to', 'x': p.x, 'y': p.y});
     _send({'kind': 'mouse_click', 'button': 'right'});
@@ -151,22 +167,32 @@ class _RemoteScreenState extends State<RemoteScreen> {
     return Center(
       child: AspectRatio(
         aspectRatio: _aspectRatio,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final box = Size(constraints.maxWidth, constraints.maxHeight);
-            return GestureDetector(
-              onTapUp: (d) => _tapAt(d.localPosition, box),
-              onLongPressStart: (d) => _rightClickAt(d.localPosition, box),
-              onScaleUpdate: (d) {
-                if (d.pointerCount >= 2) {
-                  _pendingScroll += d.focalPointDelta.dy;
-                } else {
-                  _moveTo(d.localFocalPoint, box);
-                }
-              },
-              child: Image.memory(_frame!, gaplessPlayback: true, fit: BoxFit.fill),
-            );
-          },
+        child: Container(
+          // Borda visível delimitando a tela do computador (A1).
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary,
+              width: 2,
+            ),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final box = Size(constraints.maxWidth, constraints.maxHeight);
+              return GestureDetector(
+                onTapUp: (d) => _tapAt(d.localPosition, box),
+                onLongPressStart: (d) => _rightClickAt(d.localPosition, box),
+                onScaleUpdate: (d) {
+                  if (d.pointerCount >= 2) {
+                    _pendingScroll += d.focalPointDelta.dy;
+                  } else {
+                    _moveTo(d.localFocalPoint, box);
+                  }
+                },
+                child:
+                    Image.memory(_frame!, gaplessPlayback: true, fit: BoxFit.fill),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -215,6 +241,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
               widget.device.name,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Colors.white70),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              '$_fps fps',
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
             ),
           ),
           if (showToggle)

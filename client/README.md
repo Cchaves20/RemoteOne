@@ -14,7 +14,10 @@ Aplicativo usado no celular/tablet para controlar os computadores.
   que o celular não tem (Ctrl, Alt, Shift, Tab, Esc, setas, Enter, Del). Os
   modificadores são grudentos: Ctrl e depois C envia Ctrl+C.
 - **Tela em tempo real**: os frames chegam por WebSocket (`/ws/viewer/{id}`),
-  empurrados pelo backend (~10 fps), no lugar de polling.
+  empurrados pelo backend, com borda visível, indicador de fps e vibração ao
+  clicar.
+- **Configurações** (`settings_screen.dart`): tema (automático/claro/escuro,
+  salvo com shared_preferences), sair e "Sobre".
 
 Estrutura:
 
