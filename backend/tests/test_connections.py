@@ -1,6 +1,6 @@
 import asyncio
 
-from app.connections import ConnectionManager, ViewerRegistry
+from app.connections import ConnectionManager, Viewer, ViewerRegistry
 
 
 class FakeWebSocket:
@@ -42,10 +42,10 @@ def test_unregister_only_removes_matching_socket():
 
 class FakeViewer:
     def __init__(self):
-        self.frames = []
+        self.offered = []
 
-    async def send_bytes(self, data):
-        self.frames.append(data)
+    def offer(self, frame):
+        self.offered.append(frame)
 
 
 def test_viewer_registry_count_and_broadcast():
@@ -56,27 +56,36 @@ def test_viewer_registry_count_and_broadcast():
     assert reg.add("dev", b) == 2
     assert reg.count("dev") == 2
 
-    asyncio.run(reg.broadcast("dev", b"frame"))
-    assert a.frames == [b"frame"]
-    assert b.frames == [b"frame"]
+    reg.broadcast("dev", b"frame")
+    assert a.offered == [b"frame"]
+    assert b.offered == [b"frame"]
 
     assert reg.remove("dev", a) == 1
     assert reg.remove("dev", b) == 0
     assert reg.count("dev") == 0
 
 
-def test_viewer_broadcast_drops_failed_viewer():
-    reg = ViewerRegistry()
+def test_viewer_drops_stale_frames():
+    """O sender envia só o frame mais recente; os intermediários são descartados."""
 
-    class Broken:
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
         async def send_bytes(self, data):
-            raise RuntimeError("caiu")
+            self.sent.append(data)
+            await asyncio.sleep(0)
 
-    broken = Broken()
-    ok = FakeViewer()
-    reg.add("dev", broken)
-    reg.add("dev", ok)
-    asyncio.run(reg.broadcast("dev", b"x"))
-    # O que falhou foi removido; o bom recebeu.
-    assert ok.frames == [b"x"]
-    assert reg.count("dev") == 1
+    async def scenario():
+        ws = FakeWS()
+        viewer = Viewer(ws)
+        viewer.offer(b"a")
+        viewer.offer(b"b")
+        viewer.offer(b"c")  # só o 'c' fica pendente
+        task = asyncio.create_task(viewer.run_sender())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        return ws.sent
+
+    sent = asyncio.run(scenario())
+    assert sent == [b"c"]

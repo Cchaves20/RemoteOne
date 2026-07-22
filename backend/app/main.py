@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -9,7 +10,7 @@ from app import pairing
 from app.agents import AgentRegistry
 from app.auth import router as auth_router
 from app.config import settings
-from app.connections import manager, viewers
+from app.connections import Viewer, manager, viewers
 from app.db import SessionLocal, init_db
 from app.devices import router as devices_router
 from app.protocol import (
@@ -124,11 +125,12 @@ async def agent_ws(websocket: WebSocket) -> None:
             if packet["type"] == "websocket.disconnect":
                 break
 
-            # Frame de tela (binário): guarda o mais recente e empurra aos
-            # apps que estão assistindo (tempo real).
+            # Frame de tela (binário): guarda o mais recente e o oferece aos
+            # apps que estão assistindo (não bloqueia; cada um envia no seu
+            # ritmo, descartando frames velhos).
             if packet.get("bytes") is not None:
                 frame_store.put(device_id, packet["bytes"])
-                await viewers.broadcast(device_id, packet["bytes"])
+                viewers.broadcast(device_id, packet["bytes"])
                 continue
 
             text = packet.get("text")
@@ -190,26 +192,29 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
     ao agente; ao sair o último, pede para parar.
     """
     await websocket.accept()
+    viewer = Viewer(websocket)
     registered = False
+    sender_task: asyncio.Task | None = None
     try:
         auth = await websocket.receive_json()
         if not _authenticate_viewer(auth.get("token", ""), device_id):
             await websocket.close(code=4401)  # não autorizado
             return
 
-        count = viewers.add(device_id, websocket)
+        count = viewers.add(device_id, viewer)
         registered = True
+        sender_task = asyncio.create_task(viewer.run_sender())
         # Primeiro viewer: pede a transmissão ao agente.
         if count == 1:
             await manager.send_to_agent(
                 device_id, {"type": "start_stream", "max_fps": settings.stream_fps}
             )
-        # Manda o último frame guardado, se houver (exibe algo na hora).
+        # Oferece o último frame guardado, se houver (exibe algo na hora).
         cached = frame_store.get(device_id)
         if cached is not None:
-            await websocket.send_bytes(cached)
+            viewer.offer(cached)
 
-        # Mantém a conexão viva; os frames são empurrados pelo handler do agente.
+        # Mantém a conexão viva; os frames são empurrados pelo sender.
         while True:
             packet = await websocket.receive()
             if packet["type"] == "websocket.disconnect":
@@ -217,8 +222,10 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        if sender_task is not None:
+            sender_task.cancel()
         if registered:
-            remaining = viewers.remove(device_id, websocket)
+            remaining = viewers.remove(device_id, viewer)
             if remaining == 0:
                 await manager.send_to_agent(device_id, {"type": "stop_stream"})
                 frame_store.clear(device_id)

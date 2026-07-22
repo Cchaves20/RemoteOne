@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
@@ -45,11 +45,6 @@ class _RemoteScreenState extends State<RemoteScreen> {
   @override
   void initState() {
     super.initState();
-    // Controle remoto em paisagem: a tela do PC (16:9) preenche o celular.
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
     _connect();
     _flushTimer =
         Timer.periodic(const Duration(milliseconds: 60), (_) => _flushScroll());
@@ -91,8 +86,6 @@ class _RemoteScreenState extends State<RemoteScreen> {
     _flushTimer?.cancel();
     _sub?.cancel();
     _channel?.sink.close();
-    // Volta a permitir todas as orientações ao sair.
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
@@ -181,68 +174,59 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Column: a tela ocupa o espaço restante e o teclado, quando aberto,
-    // empurra a imagem para cima em vez de cobri-la.
+    final isPortrait =
+        MediaQuery.orientationOf(context) == Orientation.portrait;
+    // Na vertical, o teclado aparece automaticamente (modo digitação); na
+    // horizontal, é opcional (mais tela). Layout em Column: a barra de
+    // controles e o teclado ficam FORA da imagem, sem cobri-la.
+    final showKeyboard = isPortrait || _keyboardVisible;
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Column(
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                Positioned.fill(child: _liveView()),
-                // Barra superior translúcida: voltar e alternar teclado.
-                SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _RoundButton(
-                          icon: Icons.arrow_back,
-                          onTap: () => Navigator.of(context).pop(),
-                        ),
-                        _RoundButton(
-                          icon: _keyboardVisible
-                              ? Icons.keyboard_hide
-                              : Icons.keyboard,
-                          onTap: () => setState(
-                              () => _keyboardVisible = !_keyboardVisible),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (_keyboardVisible)
-            RemoteKeyboard(
-              onText: (text) => _send({'kind': 'key_text', 'text': text}),
-              onKey: (key) => _send({'kind': 'key_press', 'key': key}),
-              onCombo: (mods, key) =>
-                  _send({'kind': 'key_combo', 'modifiers': mods, 'key': key}),
-            ),
-        ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            _topBar(showToggle: !isPortrait),
+            Expanded(child: _liveView()),
+            if (showKeyboard)
+              RemoteKeyboard(
+                onText: (text) => _send({'kind': 'key_text', 'text': text}),
+                onKey: (key) => _send({'kind': 'key_press', 'key': key}),
+                onCombo: (mods, key) =>
+                    _send({'kind': 'key_combo', 'modifiers': mods, 'key': key}),
+              ),
+          ],
+        ),
       ),
     );
   }
-}
 
-class _RoundButton extends StatelessWidget {
-  const _RoundButton({required this.icon, required this.onTap});
-
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black54,
-      shape: const CircleBorder(),
-      child: IconButton(
-        icon: Icon(icon, color: Colors.white),
-        onPressed: onTap,
+  Widget _topBar({required bool showToggle}) {
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          Expanded(
+            child: Text(
+              widget.device.name,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ),
+          if (showToggle)
+            IconButton(
+              icon: Icon(
+                _keyboardVisible ? Icons.keyboard_hide : Icons.keyboard,
+                color: Colors.white,
+              ),
+              onPressed: () =>
+                  setState(() => _keyboardVisible = !_keyboardVisible),
+            ),
+        ],
       ),
     );
   }

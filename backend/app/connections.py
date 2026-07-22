@@ -6,6 +6,8 @@ relay de input do app). Vive num único processo/worker; ao escalar, o relay
 passa a usar um canal Redis (pub/sub) entre instâncias.
 """
 
+import asyncio
+
 from fastapi import WebSocket
 
 
@@ -33,24 +35,53 @@ class ConnectionManager:
         return True
 
 
+class Viewer:
+    """Um app assistindo à tela.
+
+    Mantém apenas o frame **mais recente** (descarta os anteriores ainda não
+    enviados). Assim, se a rede é mais lenta que a captura, o app não acumula
+    atraso — ele sempre pula para o frame atual em vez de exibir uma fila de
+    frames velhos.
+    """
+
+    def __init__(self, websocket: WebSocket) -> None:
+        self.websocket = websocket
+        self._latest: bytes | None = None
+        self._event = asyncio.Event()
+
+    def offer(self, frame: bytes) -> None:
+        """Oferece um frame; substitui qualquer pendente (drop do antigo)."""
+        self._latest = frame
+        self._event.set()
+
+    async def run_sender(self) -> None:
+        """Envia sempre o frame mais recente disponível, no ritmo da rede."""
+        while True:
+            await self._event.wait()
+            self._event.clear()
+            frame, self._latest = self._latest, None
+            if frame is not None:
+                await self.websocket.send_bytes(frame)
+
+
 class ViewerRegistry:
-    """Conexões WebSocket dos apps que assistem à tela de cada dispositivo."""
+    """Apps que assistem à tela de cada dispositivo."""
 
     def __init__(self) -> None:
-        self._viewers: dict[str, set[WebSocket]] = {}
+        self._viewers: dict[str, set[Viewer]] = {}
 
-    def add(self, device_id: str, websocket: WebSocket) -> int:
+    def add(self, device_id: str, viewer: Viewer) -> int:
         """Registra um viewer. Retorna quantos viewers o dispositivo tem agora."""
         viewers = self._viewers.setdefault(device_id, set())
-        viewers.add(websocket)
+        viewers.add(viewer)
         return len(viewers)
 
-    def remove(self, device_id: str, websocket: WebSocket) -> int:
+    def remove(self, device_id: str, viewer: Viewer) -> int:
         """Remove um viewer. Retorna quantos viewers restam."""
         viewers = self._viewers.get(device_id)
         if viewers is None:
             return 0
-        viewers.discard(websocket)
+        viewers.discard(viewer)
         remaining = len(viewers)
         if remaining == 0:
             self._viewers.pop(device_id, None)
@@ -59,14 +90,11 @@ class ViewerRegistry:
     def count(self, device_id: str) -> int:
         return len(self._viewers.get(device_id, ()))
 
-    async def broadcast(self, device_id: str, frame: bytes) -> None:
-        """Envia um frame a todos os viewers; descarta os que falharem."""
-        viewers = list(self._viewers.get(device_id, ()))
-        for websocket in viewers:
-            try:
-                await websocket.send_bytes(frame)
-            except Exception:  # noqa: BLE001 — viewer caiu; remove e segue
-                self.remove(device_id, websocket)
+    def broadcast(self, device_id: str, frame: bytes) -> None:
+        """Oferece o frame a todos os viewers (não bloqueia; cada um envia no
+        seu ritmo, descartando frames velhos)."""
+        for viewer in self._viewers.get(device_id, ()):
+            viewer.offer(frame)
 
 
 # Instâncias únicas compartilhadas entre os endpoints.

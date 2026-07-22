@@ -33,6 +33,12 @@ dono do dispositivo, passa a **receber cada frame assim que chega** — sem
 polling. O backend guarda também o último frame (para exibir algo na hora em
 que um novo viewer entra).
 
+**Baixa latência (descarte de frames):** cada viewer mantém apenas o frame
+**mais recente** para enviar; se a rede do app é mais lenta que a captura, os
+frames intermediários são **descartados** em vez de enfileirados. Assim o app
+sempre mostra o estado atual da tela, sem acumular atraso (ver a classe
+`Viewer` em `backend/app/connections.py`).
+
 - Parâmetros do agente ajustáveis por variável de ambiente (sem recompilar),
   com padrão 30 fps / largura 1280 px / qualidade 50:
   - `REMOTEONE_STREAM_FPS` (1–60)
