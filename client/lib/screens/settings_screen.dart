@@ -21,24 +21,9 @@ class SettingsScreen extends StatelessWidget {
           return ListView(
             children: [
               const _SectionHeader('Aparência'),
-              RadioListTile<ThemeMode>(
-                title: const Text('Automático (sistema)'),
-                value: ThemeMode.system,
-                groupValue: state.themeMode,
-                onChanged: _setTheme,
-              ),
-              RadioListTile<ThemeMode>(
-                title: const Text('Claro'),
-                value: ThemeMode.light,
-                groupValue: state.themeMode,
-                onChanged: _setTheme,
-              ),
-              RadioListTile<ThemeMode>(
-                title: const Text('Escuro'),
-                value: ThemeMode.dark,
-                groupValue: state.themeMode,
-                onChanged: _setTheme,
-              ),
+              _themeTile('Automático (sistema)', ThemeMode.system),
+              _themeTile('Claro', ThemeMode.light),
+              _themeTile('Escuro', ThemeMode.dark),
               const Divider(),
               const _SectionHeader('Conta'),
               ListTile(
@@ -63,8 +48,15 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  void _setTheme(ThemeMode? mode) {
-    if (mode != null) state.setThemeMode(mode);
+  Widget _themeTile(String label, ThemeMode mode) {
+    final selected = state.themeMode == mode;
+    return ListTile(
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+      ),
+      title: Text(label),
+      onTap: () => state.setThemeMode(mode),
+    );
   }
 }
 
