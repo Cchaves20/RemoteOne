@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
+import 'token_store.dart';
 
 /// Erro de API com o código HTTP e uma mensagem amigável.
 class ApiException implements Exception {
@@ -18,16 +19,18 @@ class ApiException implements Exception {
 
 /// Cliente REST do backend do RemoteOne.
 ///
-/// Mantém os tokens em memória (nesta sessão). A persistência entre execuções
-/// entra depois, via armazenamento seguro.
+/// Os tokens são guardados em disco (armazenamento seguro) para manter o login
+/// entre aberturas do app; nos testes, um `TokenStore` em memória é injetado.
 class ApiClient {
-  ApiClient({required this.baseUrl, http.Client? httpClient})
-      : _http = httpClient ?? http.Client();
+  ApiClient({required this.baseUrl, http.Client? httpClient, TokenStore? tokenStore})
+      : _http = httpClient ?? http.Client(),
+        _store = tokenStore ?? SecureTokenStore();
 
   /// URL base do backend (ex.: http://192.168.0.10:8000). Editável para
   /// apontar o celular ao computador na mesma rede.
   String baseUrl;
   final http.Client _http;
+  final TokenStore _store;
 
   String? _accessToken;
   String? _refreshToken;
@@ -50,6 +53,7 @@ class ApiClient {
       body: jsonEncode({'email': email, 'password': password}),
     );
     _storeTokens(_decode(res, expected: 201));
+    await _persist();
   }
 
   Future<void> login(String email, String password) async {
@@ -59,12 +63,44 @@ class ApiClient {
       body: jsonEncode({'email': email, 'password': password}),
     );
     _storeTokens(_decode(res));
+    await _persist();
   }
 
-  void logout() {
+  /// Restaura a sessão a partir dos tokens salvos. Renova o access token com o
+  /// refresh; retorna false (e limpa) se não houver sessão válida.
+  Future<bool> restore() async {
+    final (access, refresh) = await _store.load();
+    if (refresh == null) return false;
+    _accessToken = access;
+    _refreshToken = refresh;
+    try {
+      await refreshAccess();
+      return true;
+    } catch (_) {
+      await logout();
+      return false;
+    }
+  }
+
+  /// Troca o refresh token por um novo access token.
+  Future<void> refreshAccess() async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/refresh'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'refresh_token': _refreshToken}),
+    );
+    final body = _decode(res) as Map<String, dynamic>;
+    _accessToken = body['access_token'] as String?;
+    await _persist();
+  }
+
+  Future<void> logout() async {
     _accessToken = null;
     _refreshToken = null;
+    await _store.clear();
   }
+
+  Future<void> _persist() => _store.save(_accessToken, _refreshToken);
 
   Future<List<Device>> listDevices() async {
     final res = await _http.get(_uri('/api/v1/devices'), headers: _authHeaders);

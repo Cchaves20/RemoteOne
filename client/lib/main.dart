@@ -17,6 +17,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final state = AppState(ApiClient(baseUrl: _defaultBackend));
   await state.loadPreferences();
+  await state.restoreSession();
   runApp(RemoteOneApp(state: state));
 }
 

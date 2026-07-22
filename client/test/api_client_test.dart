@@ -4,12 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:remoteone_client/services/api_client.dart';
+import 'package:remoteone_client/services/token_store.dart';
 
 void main() {
   test('login guarda o token e envia Bearer nas chamadas seguintes', () async {
     String? seenAuth;
     final client = ApiClient(
       baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
       httpClient: MockClient((req) async {
         if (req.url.path == '/api/v1/auth/login') {
           return http.Response(
@@ -37,6 +39,7 @@ void main() {
     Uri? seenUrl;
     final client = ApiClient(
       baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
       httpClient: MockClient((req) async {
         seenUrl = req.url;
         return http.Response('', 204);
@@ -50,6 +53,7 @@ void main() {
     var call = 0;
     final client = ApiClient(
       baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
       httpClient: MockClient((req) async {
         call++;
         if (call == 1) {
@@ -68,6 +72,7 @@ void main() {
     Uri? seen;
     final client = ApiClient(
       baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
       httpClient: MockClient((req) async {
         seen = req.url;
         return http.Response('', 204);
@@ -80,6 +85,7 @@ void main() {
   test('erro HTTP vira ApiException com a mensagem detail', () async {
     final client = ApiClient(
       baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
       httpClient: MockClient((req) async {
         return http.Response(jsonEncode({'detail': 'agente offline'}), 503);
       }),

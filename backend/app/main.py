@@ -182,14 +182,32 @@ def _authenticate_viewer(token: str, device_id: str) -> bool:
         return device is not None and str(device.user_id) == str(payload.get("sub"))
 
 
+# Paradas de transmissão agendadas por dispositivo. Ao sair o último viewer,
+# o stream é mantido "aquecido" por alguns segundos antes de parar de fato —
+# assim, voltar à tela logo em seguida é instantâneo (Etapa de refino #16).
+_pending_stops: dict[str, asyncio.Task] = {}
+_STREAM_GRACE_SECONDS = 8
+
+
+async def _delayed_stop(device_id: str) -> None:
+    try:
+        await asyncio.sleep(_STREAM_GRACE_SECONDS)
+    except asyncio.CancelledError:
+        return
+    _pending_stops.pop(device_id, None)
+    if viewers.count(device_id) == 0:
+        await manager.send_to_agent(device_id, {"type": "stop_stream"})
+        frame_store.clear(device_id)
+
+
 @app.websocket("/ws/viewer/{device_id}")
 async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
     """Canal do app para assistir à tela em tempo real.
 
     O app envia `{"token": "..."}` como primeira mensagem; autenticado e sendo
     dono do dispositivo, passa a receber os frames JPEG (binários) empurrados
-    pelo backend. Ao conectar o primeiro viewer, o backend pede a transmissão
-    ao agente; ao sair o último, pede para parar.
+    pelo backend. A transmissão do agente é ligada ao conectar o primeiro
+    viewer e desligada alguns segundos após o último sair (stream aquecido).
     """
     await websocket.accept()
     viewer = Viewer(websocket)
@@ -204,11 +222,18 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
         count = viewers.add(device_id, viewer)
         registered = True
         sender_task = asyncio.create_task(viewer.run_sender())
-        # Primeiro viewer: pede a transmissão ao agente.
-        if count == 1:
+
+        # Se havia uma parada agendada, o agente ainda está transmitindo
+        # (aquecido): cancela a parada e a entrada é instantânea. Senão, e
+        # sendo o primeiro viewer, liga a transmissão (cold start).
+        pending = _pending_stops.pop(device_id, None)
+        if pending is not None:
+            pending.cancel()
+        elif count == 1:
             await manager.send_to_agent(
                 device_id, {"type": "start_stream", "max_fps": settings.stream_fps}
             )
+
         # Oferece o último frame guardado, se houver (exibe algo na hora).
         cached = frame_store.get(device_id)
         if cached is not None:
@@ -226,6 +251,8 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
             sender_task.cancel()
         if registered:
             remaining = viewers.remove(device_id, viewer)
-            if remaining == 0:
-                await manager.send_to_agent(device_id, {"type": "stop_stream"})
-                frame_store.clear(device_id)
+            if remaining == 0 and device_id not in _pending_stops:
+                # Agenda a parada com carência (mantém o stream aquecido).
+                _pending_stops[device_id] = asyncio.create_task(
+                    _delayed_stop(device_id)
+                )

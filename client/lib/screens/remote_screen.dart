@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
@@ -45,10 +46,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
   int _frameCount = 0;
   int _fps = 0;
   Timer? _fpsTimer;
+  Timer? _reconnectTimer;
+  bool _disposed = false;
 
   @override
   void initState() {
     super.initState();
+    // Mantém a tela do celular acesa durante a sessão de controle (#13).
+    WakelockPlus.enable();
     _connect();
     _flushTimer =
         Timer.periodic(const Duration(milliseconds: 60), (_) => _flushScroll());
@@ -63,6 +68,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   }
 
   void _connect() {
+    _sub?.cancel();
     final channel = widget.state.api.connectScreen(widget.device.deviceId);
     _channel = channel;
     _sub = channel.stream.listen(
@@ -78,10 +84,20 @@ class _RemoteScreenState extends State<RemoteScreen> {
         });
         _resolveAspect(frame);
       },
-      onError: (Object e) {
-        if (mounted) setState(() => _error = 'Conexão de tela perdida');
-      },
+      onError: (Object _) => _scheduleReconnect(),
+      onDone: _scheduleReconnect,
+      cancelOnError: true,
     );
+  }
+
+  /// Reconecta automaticamente se a conexão de tela cair (#12).
+  void _scheduleReconnect() {
+    if (_disposed) return;
+    if (mounted) setState(() => _error = 'Reconectando…');
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 2), () {
+      if (!_disposed) _connect();
+    });
   }
 
   void _resolveAspect(Uint8List bytes) {
@@ -96,10 +112,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   @override
   void dispose() {
+    _disposed = true;
     _flushTimer?.cancel();
     _fpsTimer?.cancel();
+    _reconnectTimer?.cancel();
     _sub?.cancel();
     _channel?.sink.close();
+    WakelockPlus.disable();
     super.dispose();
   }
 

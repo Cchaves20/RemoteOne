@@ -34,6 +34,24 @@ class AppState extends ChangeNotifier {
     await prefs.setString('themeMode', mode.name);
   }
 
+  /// Tenta retomar a sessão salva (login persistente). Ignora falhas de rede.
+  Future<void> restoreSession() async {
+    bool restored;
+    try {
+      restored = await api.restore();
+    } catch (_) {
+      restored = false;
+    }
+    if (restored) {
+      try {
+        await refreshDevices();
+      } catch (_) {
+        // Sem rede agora: segue autenticado; a lista atualiza depois.
+      }
+    }
+    notifyListeners();
+  }
+
   String get serverUrl => api.baseUrl;
   set serverUrl(String value) {
     api.baseUrl = value;
@@ -69,7 +87,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    api.logout();
+    await api.logout();
     devices = [];
     selected = null;
     notifyListeners();

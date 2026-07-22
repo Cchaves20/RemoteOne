@@ -7,11 +7,16 @@ import 'package:http/testing.dart';
 import 'package:remoteone_client/main.dart';
 import 'package:remoteone_client/services/api_client.dart';
 import 'package:remoteone_client/services/app_state.dart';
+import 'package:remoteone_client/services/token_store.dart';
 
 /// Constrói um AppState com um http.Client falso, roteado por [handler].
 AppState _stateWith(Future<http.Response> Function(http.Request) handler) {
   final mock = MockClient((req) => handler(req));
-  return AppState(ApiClient(baseUrl: 'http://test', httpClient: mock));
+  return AppState(ApiClient(
+    baseUrl: 'http://test',
+    httpClient: mock,
+    tokenStore: InMemoryTokenStore(),
+  ));
 }
 
 void main() {
