@@ -257,6 +257,32 @@ def test_power_relays_to_connected_agent():
         assert seen_power
 
 
+def test_agent_gets_new_code_after_device_removed():
+    # Pareia com o agente conectado; ao remover o dispositivo no app, o agente
+    # deve receber um novo pair_code no próximo heartbeat (sem reconectar).
+    headers = _auth_headers()
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json(HELLO)
+        ws.receive_json()  # welcome
+        code = ws.receive_json()["code"]
+        client.post("/api/v1/pairing/claim", json={"code": code}, headers=headers)
+
+        # Consome o `paired` (chega após o próximo heartbeat).
+        ws.send_json({"type": "heartbeat"})
+        assert ws.receive_json()["type"] == "ack"
+        assert ws.receive_json()["type"] == "paired"
+
+        # Usuário remove o dispositivo no app.
+        assert client.delete("/api/v1/devices/dev-abc", headers=headers).status_code == 204
+
+        # No próximo heartbeat, o agente recebe um novo código.
+        ws.send_json({"type": "heartbeat"})
+        assert ws.receive_json()["type"] == "ack"
+        reissued = ws.receive_json()
+        assert reissued["type"] == "pair_code"
+        assert len(reissued["code"]) == _CODE_LEN
+
+
 def test_pairing_request_is_replaced_on_reconnect():
     # Duas conexões seguidas devem deixar apenas um pedido pendente por device.
     for _ in range(2):

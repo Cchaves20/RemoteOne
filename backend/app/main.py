@@ -111,6 +111,8 @@ async def agent_ws(websocket: WebSocket) -> None:
             return
 
         device_id = message.device_id
+        hostname = message.hostname
+        os_name = message.os
         registry.register(message)
         manager.register(device_id, websocket)
         logger.info("agente conectado: %s (%s)", device_id, message.hostname)
@@ -145,6 +147,8 @@ async def agent_ws(websocket: WebSocket) -> None:
             if isinstance(message, Hello):
                 # Re-identificação (ex.: após reconexão na mesma sessão).
                 device_id = message.device_id
+                hostname = message.hostname
+                os_name = message.os
                 registry.register(message)
                 manager.register(device_id, websocket)
                 await websocket.send_json(
@@ -153,12 +157,26 @@ async def agent_ws(websocket: WebSocket) -> None:
             else:  # Heartbeat
                 registry.heartbeat(device_id)
                 await websocket.send_json(Ack().model_dump())
-                # Detecta o pareamento concluído entre heartbeats e avisa o agente.
-                if not paired_notified:
+                # Detecta mudanças de pareamento entre heartbeats:
+                #  - vinculado agora → avisa o agente (`paired`);
+                #  - desvinculado no app → gera e reexibe um novo código, para o
+                #    usuário poder reparear sem reiniciar o agente.
+                now_paired = _paired_email(device_id) is not None
+                if now_paired and not paired_notified:
                     email = _paired_email(device_id)
-                    if email is not None:
-                        await websocket.send_json(Paired(user_email=email).model_dump())
-                        paired_notified = True
+                    await websocket.send_json(Paired(user_email=email).model_dump())
+                    paired_notified = True
+                elif not now_paired and paired_notified:
+                    paired_notified = False
+                    with SessionLocal() as db:
+                        code = pairing.create_pairing_request(
+                            db, device_id, hostname, os_name, settings.pairing_ttl_seconds
+                        )
+                    await websocket.send_json(
+                        PairCode(
+                            code=code, expires_in_seconds=settings.pairing_ttl_seconds
+                        ).model_dump()
+                    )
     except WebSocketDisconnect:
         pass
     finally:

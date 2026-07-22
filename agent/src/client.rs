@@ -159,7 +159,11 @@ fn handle_server_text(
             println!("Informe esse código no aplicativo (expira em {minutes} min).");
         }
         Ok(ServerMessage::Paired { user_email }) => {
-            println!("✓ Dispositivo pareado com a conta {user_email}");
+            println!("✓ Dispositivo já pareado com a conta {user_email}");
+            println!(
+                "  (para gerar um novo código, remova este computador no app — \
+                 o código aparece aqui automaticamente)"
+            );
         }
         Ok(ServerMessage::Input { action }) => {
             if let Err(e) = injector.apply(&action) {
