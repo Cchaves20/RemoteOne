@@ -1,0 +1,10 @@
+# Caddy: proxy reverso com HTTPS automático (Let's Encrypt) para o RemoteOne.
+#
+# $DOMAIN vem do docker-compose (arquivo .env). O Caddy obtém e renova o
+# certificado sozinho, desde que o domínio aponte para o IP do VPS e as portas
+# 80/443 estejam abertas. O reverse_proxy repassa também as conexões WebSocket
+# (/ws/agent e /ws/viewer) automaticamente.
+
+{$DOMAIN} {
+	reverse_proxy api:8000
+}

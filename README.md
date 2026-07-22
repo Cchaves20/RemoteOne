@@ -26,6 +26,7 @@ Documentação por etapa:
 - [`docs/instalar-no-iphone.md`](docs/instalar-no-iphone.md) — instalar o app no iPhone sem Mac (sideload)
 - [`docs/rodar-sem-terminal.md`](docs/rodar-sem-terminal.md) — agente e backend em segundo plano (sem terminal; base para desligar/Wake-on-LAN)
 - [`docs/pc-sempre-pronto.md`](docs/pc-sempre-pronto.md) — IP fixo + backend no boot + login automático (controlar sem tocar no PC)
+- [`docs/deploy-vps-oracle.md`](docs/deploy-vps-oracle.md) — backend na nuvem (Oracle Free + DuckDNS + HTTPS), controlar de qualquer lugar
 
 ## Como rodar
 

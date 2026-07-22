@@ -17,6 +17,10 @@ __pycache__/
 # Bancos SQLite locais (dev/testes)
 *.db
 
+# Segredos de deploy (nunca versionar). O .env.example é versionado.
+.env
+deploy/.env
+
 # Flutter / Dart
 client/.dart_tool/
 client/build/
