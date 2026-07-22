@@ -43,7 +43,32 @@ conflitos.)
 
 ---
 
-## 2. Backend sobe sozinho no boot (Docker)
+## 2. Backend sobe sozinho no boot
+
+Há dois caminhos. **O recomendado é o serviço**, porque sobe **antes do login**
+(um servidor de rede não precisa de desktop) — assim o backend nunca mais
+depende de alguém logar.
+
+### Opção A (recomendada): backend como serviço do Windows (sem login, sem Docker)
+
+Abra o **PowerShell como Administrador** e rode:
+
+```powershell
+cd C:\Users\SEU_USUARIO\RemoteOne\backend
+powershell -ExecutionPolicy Bypass -File scripts\install-backend-service-windows.ps1
+```
+
+Isso cria um ambiente Python, roda o backend com **SQLite** (dispensa
+Postgres/Redis/Docker), libera a porta 8000 no Firewall e registra um serviço
+(conta SYSTEM) que **inicia no boot, antes do login**. Teste em
+`http://localhost:8000/health`.
+
+> Atenção: o serviço usa um **banco SQLite novo** (não o do Docker). Cadastre a
+> conta uma vez no app e refaça o pareamento — é só uma vez.
+
+Para remover: `scripts\uninstall-backend-service-windows.ps1` (como admin).
+
+### Opção B: Docker destacado (precisa de login)
 
 1. Suba a stack **destacada** uma vez (o `-d` libera o terminal):
    ```powershell
@@ -61,10 +86,16 @@ responder `{"status":"ok"}`.
 
 ---
 
-## 3. Login automático do Windows
+## 3. Login automático do Windows (para o agente)
 
-Backend (Docker) e agente (pasta Inicializar) só sobem **depois** que você
-loga. Com o autologon, o PC liga → loga sozinho → tudo sobe.
+Com o backend como **serviço** (Opção A), ele já sobe sem login. Mas o
+**agente** ainda precisa da sessão logada — ele tem que **ver a tela** e
+**mexer no mouse/teclado**, e isso só existe depois do login (regra do Windows:
+serviços rodam na Sessão 0, sem desktop). Por isso o auto-login continua sendo o
+jeito mais simples de deixar o agente pronto sozinho.
+
+Com o autologon, o PC liga → loga sozinho → o agente sobe (e, se você usar a
+Opção B do backend, o Docker também).
 
 1. Tecla **Windows + R**, digite `netplwiz` e Enter.
 2. Selecione sua conta e **desmarque** *“Os usuários devem digitar um nome de
@@ -74,6 +105,11 @@ loga. Com o autologon, o PC liga → loga sozinho → tudo sobe.
 > Se a opção (o checkbox) não aparecer: vá em **Configurações → Contas → Opções
 > de entrada** e desative *“Exigir entrada do Windows Hello para contas da
 > Microsoft”*; depois volte ao `netplwiz`.
+
+4. Ainda em **Opções de entrada**, ajuste *“Se você esteve ausente, quando o
+   Windows deve exigir uma nova entrada?”* para **Nunca** — senão, ao acordar da
+   suspensão (ex.: por Wake-on-LAN) o PC para na tela de bloqueio e o agente não
+   consegue ver a tela nem controlar.
 
 Cuidado: com autologon, qualquer pessoa que ligar o PC entra direto na sua
 conta. Use só se o computador fica em local de confiança.
@@ -94,14 +130,16 @@ conta. Use só se o computador fica em local de confiança.
 
 ## Recuperar o acesso agora (sem esperar os ajustes)
 
-Se você acabou de religar o PC e o app dá timeout, é só subir o backend uma vez:
+Se você acabou de religar o PC e o app dá timeout, é só subir o backend uma vez.
+Com o **serviço** (Opção A) instalado, ele já sobe sozinho no boot — não precisa
+fazer nada. Se ainda estiver no Docker (Opção B):
 
 ```powershell
 cd C:\Users\SEU_USUARIO\RemoteOne\backend
 docker compose up -d
 ```
 
-Depois disso o app entra normalmente. Os passos 1–3 acima fazem isso acontecer
+Depois disso o app entra normalmente. Os passos acima fazem isso acontecer
 sozinho nas próximas vezes.
 
 > Observação sobre Wake‑on‑LAN: ele acorda o PC que está **suspenso/desligado
