@@ -109,6 +109,8 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _showChangeEmail(BuildContext context) async {
     final email = TextEditingController();
     final password = TextEditingController();
+    // Captura antes do await para não usar o context após o gap assíncrono.
+    final messenger = ScaffoldMessenger.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -143,7 +145,7 @@ class SettingsScreen extends StatelessWidget {
     );
     if (ok != true) return;
     await _run(
-      context,
+      messenger,
       () => state.updateEmail(password.text, email.text.trim()),
       'E-mail atualizado.',
     );
@@ -152,6 +154,7 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _showChangePassword(BuildContext context) async {
     final current = TextEditingController();
     final next = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -188,7 +191,7 @@ class SettingsScreen extends StatelessWidget {
     );
     if (ok != true) return;
     await _run(
-      context,
+      messenger,
       () => state.updatePassword(current.text, next.text),
       'Senha atualizada.',
     );
@@ -196,6 +199,8 @@ class SettingsScreen extends StatelessWidget {
 
   Future<void> _showDeleteAccount(BuildContext context) async {
     final password = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -232,8 +237,6 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
     if (ok != true) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
     try {
       await state.deleteAccount(password.text);
       // Conta excluída: volta à raiz (LoginScreen assume via isAuthenticated).
@@ -243,13 +246,13 @@ class SettingsScreen extends StatelessWidget {
     }
   }
 
-  /// Executa uma ação assíncrona mostrando erro/sucesso via SnackBar.
+  /// Executa uma ação assíncrona mostrando erro/sucesso via SnackBar. Recebe o
+  /// messenger já resolvido (capturado antes de qualquer await no chamador).
   Future<void> _run(
-    BuildContext context,
+    ScaffoldMessengerState messenger,
     Future<void> Function() action,
     String successMessage,
   ) async {
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await action();
       messenger.showSnackBar(SnackBar(content: Text(successMessage)));
