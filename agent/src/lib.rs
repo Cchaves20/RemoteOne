@@ -9,6 +9,7 @@ pub mod client;
 pub mod identity;
 pub mod injector;
 pub mod input;
+pub mod notify;
 pub mod pairing;
 pub mod platform;
 pub mod power;

@@ -157,6 +157,9 @@ fn handle_server_text(
             println!("│  Código de pareamento: {code:<19}│");
             println!("└───────────────────────────────────────────┘");
             println!("Informe esse código no aplicativo (expira em {minutes} min).");
+            // Também mostra o código sem depender do terminal (arquivo + janela),
+            // para quando o agente roda em segundo plano.
+            crate::notify::announce_pairing_code(&code, expires_in_seconds);
         }
         Ok(ServerMessage::Paired { user_email }) => {
             println!("✓ Dispositivo já pareado com a conta {user_email}");
@@ -164,6 +167,8 @@ fn handle_server_text(
                 "  (para gerar um novo código, remova este computador no app — \
                  o código aparece aqui automaticamente)"
             );
+            // Já pareado: remove o arquivo de código antigo, se houver.
+            crate::notify::clear_pairing_code();
         }
         Ok(ServerMessage::Input { action }) => {
             if let Err(e) = injector.apply(&action) {

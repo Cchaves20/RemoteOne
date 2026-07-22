@@ -1,5 +1,10 @@
 # Stack de desenvolvimento local: API + PostgreSQL + Redis.
 # Uso: docker compose up --build  (a API fica em http://localhost:8000)
+#
+# Para rodar sem terminal ativo: `docker compose up -d --build` (destacado) e,
+# no Docker Desktop, ative "Start Docker Desktop when you sign in". Com o
+# `restart: unless-stopped` abaixo, a stack volta sozinha ao ligar o PC.
+# Ver docs/rodar-sem-terminal.md.
 services:
   api:
     build: .
@@ -13,6 +18,7 @@ services:
     depends_on:
       - db
       - redis
+    restart: unless-stopped
 
   db:
     image: postgres:16-alpine
@@ -24,11 +30,13 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    restart: unless-stopped
 
 volumes:
   pgdata:

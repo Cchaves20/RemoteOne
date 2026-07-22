@@ -1,6 +1,10 @@
 # Rust
 agent/target/
 # Cargo.lock é versionado (o agente é uma aplicação — builds reproduzíveis)
+# Launcher oculto gerado pelo instalador do Windows.
+agent/start-agent-hidden.vbs
+# Diretório de config local usado em testes manuais do agente.
+agent/config/
 
 # Python
 __pycache__/
