@@ -40,3 +40,24 @@ def init_db() -> None:
     from app import models  # noqa: F401  (registra as tabelas no metadata)
 
     Base.metadata.create_all(bind=engine)
+    _migrate()
+
+
+def _migrate() -> None:
+    """Migração leve: adiciona colunas novas em bancos já existentes.
+
+    Como ainda não usamos Alembic, garantimos aqui as colunas que `create_all`
+    não adiciona a tabelas pré-existentes (funciona em SQLite e Postgres).
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    existing = {col["name"] for col in inspector.get_columns("devices")}
+    novas = {
+        "mac_address": "VARCHAR(32)",
+        "last_public_ip": "VARCHAR(64)",
+    }
+    with engine.begin() as conn:
+        for coluna, tipo in novas.items():
+            if coluna not in existing:
+                conn.execute(text(f"ALTER TABLE devices ADD COLUMN {coluna} {tipo}"))

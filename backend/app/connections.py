@@ -14,17 +14,29 @@ from fastapi import WebSocket
 class ConnectionManager:
     def __init__(self) -> None:
         self._agents: dict[str, WebSocket] = {}
+        # IP público de cada agente online (mesmo IP público = mesma LAN),
+        # usado para escolher um "peer" ligado no Wake-on-LAN.
+        self._public_ip: dict[str, str] = {}
 
-    def register(self, device_id: str, websocket: WebSocket) -> None:
+    def register(
+        self, device_id: str, websocket: WebSocket, public_ip: str | None = None
+    ) -> None:
         self._agents[device_id] = websocket
+        if public_ip is not None:
+            self._public_ip[device_id] = public_ip
 
     def unregister(self, device_id: str, websocket: WebSocket | None = None) -> None:
         # Só remove se for a mesma conexão (evita derrubar uma reconexão nova).
         if websocket is None or self._agents.get(device_id) is websocket:
             self._agents.pop(device_id, None)
+            self._public_ip.pop(device_id, None)
 
     def is_online(self, device_id: str) -> bool:
         return device_id in self._agents
+
+    def public_ip(self, device_id: str) -> str | None:
+        """IP público atual do agente online (None se offline/desconhecido)."""
+        return self._public_ip.get(device_id)
 
     async def send_to_agent(self, device_id: str, message: dict) -> bool:
         """Envia uma mensagem ao agente. Retorna False se ele não está conectado."""

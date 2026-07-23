@@ -17,6 +17,8 @@ tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
 gethostname = "0.5"
+# MAC da placa de rede local, para Wake-on-LAN (multiplataforma).
+mac_address = "1"
 # Codificação JPEG dos frames (multiplataforma; usada também pelo stub).
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 

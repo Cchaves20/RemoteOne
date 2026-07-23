@@ -47,6 +47,7 @@ pub struct AgentIdentity {
     pub hostname: String,
     pub os: String,
     pub agent_version: String,
+    pub mac: Option<String>,
 }
 
 impl AgentIdentity {
@@ -57,6 +58,7 @@ impl AgentIdentity {
             hostname: self.hostname.clone(),
             os: self.os.clone(),
             agent_version: self.agent_version.clone(),
+            mac: self.mac.clone(),
         }
     }
 }
@@ -205,6 +207,12 @@ fn handle_server_text(
                 eprintln!("Falha ao executar comando de energia: {e}");
             }
         }
+        Ok(ServerMessage::Wake { mac }) => {
+            println!("Acordando vizinho na LAN (Wake-on-LAN) → {mac}");
+            if let Err(e) = crate::wol::send_magic_packet(&mac) {
+                eprintln!("Falha ao enviar pacote mágico: {e}");
+            }
+        }
         Err(e) => eprintln!("Mensagem desconhecida do servidor: {text} ({e})"),
     }
     false
@@ -221,6 +229,7 @@ mod tests {
             hostname: "dell-g5".into(),
             os: "linux".into(),
             agent_version: "0.1.0".into(),
+            mac: Some("01:23:45:AB:CD:EF".into()),
         };
         assert_eq!(
             identity.hello(),
@@ -229,6 +238,7 @@ mod tests {
                 hostname: "dell-g5".into(),
                 os: "linux".into(),
                 agent_version: "0.1.0".into(),
+                mac: Some("01:23:45:AB:CD:EF".into()),
             }
         );
     }

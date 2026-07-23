@@ -146,6 +146,22 @@ class _DevicesScreenState extends State<DevicesScreen> {
     );
   }
 
+  Future<void> _wake(Device device) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await widget.state.wakeDevice(device);
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Sinal enviado. O computador deve ligar em instantes.'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
   Future<void> _confirmPower(Device device, String action) async {
     const labels = {
       'shutdown': 'Desligar',
@@ -183,6 +199,8 @@ class _DevicesScreenState extends State<DevicesScreen> {
       icon: const Icon(Icons.more_vert),
       onSelected: (value) {
         switch (value) {
+          case 'wake':
+            _wake(d);
           case 'open':
             _openControl(d);
           case 'rename':
@@ -196,6 +214,14 @@ class _DevicesScreenState extends State<DevicesScreen> {
         }
       },
       itemBuilder: (context) => [
+        if (!d.online)
+          const PopupMenuItem(
+            value: 'wake',
+            child: ListTile(
+              leading: Icon(Icons.power),
+              title: Text('Ligar (Wake-on-LAN)'),
+            ),
+          ),
         const PopupMenuItem(
           value: 'open',
           child: ListTile(

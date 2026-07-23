@@ -20,6 +20,9 @@ class Hello(BaseModel):
     hostname: str
     os: str
     agent_version: str
+    # MAC da placa de rede local (para Wake-on-LAN). Opcional: agentes antigos
+    # ou máquinas sem MAC resolvido não enviam.
+    mac: str | None = None
 
 
 class Heartbeat(BaseModel):

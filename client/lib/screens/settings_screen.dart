@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/stream_quality.dart';
 import '../services/app_state.dart';
+import 'wake_on_lan_screen.dart';
 
 /// Configurações do app e da conta: tema, qualidade da tela, segurança,
 /// gerenciamento de conta (e-mail, senha, excluir) e "Sobre".
@@ -64,6 +65,16 @@ class SettingsScreen extends StatelessWidget {
                     style:
                         TextStyle(color: Theme.of(context).colorScheme.error)),
                 onTap: () => _showDeleteAccount(context),
+              ),
+              const Divider(),
+              const _SectionHeader('Ajuda'),
+              ListTile(
+                leading: const Icon(Icons.power),
+                title: const Text('Ligar o PC (Wake-on-LAN)'),
+                subtitle: const Text('Como acordar um computador desligado'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const WakeOnLanScreen()),
+                ),
               ),
               const Divider(),
               const _SectionHeader('Sobre'),

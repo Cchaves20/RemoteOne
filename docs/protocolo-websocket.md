@@ -30,7 +30,7 @@ Agente                          Backend
 
 | type | Campos | Quando |
 |---|---|---|
-| `hello` | `device_id`, `hostname`, `os`, `agent_version` | Primeira mensagem ao conectar |
+| `hello` | `device_id`, `hostname`, `os`, `agent_version`, `mac?` | Primeira mensagem ao conectar (`mac` opcional, para Wake-on-LAN) |
 | `heartbeat` | — | Periódico, mantém a sessão viva |
 
 ## Mensagens do backend → agente
@@ -46,6 +46,7 @@ Agente                          Backend
 | `start_stream` | `max_fps`, `quality?`, `max_width?` | Inicia a transmissão da tela; `quality`/`max_width` (opcionais) vêm do ajuste de qualidade do app (Etapa 7) |
 | `stop_stream` | — | Encerra a transmissão da tela |
 | `power` | `action` (`shutdown`/`restart`/`suspend`) | Desliga, reinicia ou suspende o computador |
+| `wake` | `mac` | Pede a este agente que acorde (Wake-on-LAN) um vizinho da LAN pelo MAC |
 
 O agente responde ao `start_stream` enviando frames JPEG como mensagens
 **binárias** (agente → backend). O backend os repassa em tempo real aos apps

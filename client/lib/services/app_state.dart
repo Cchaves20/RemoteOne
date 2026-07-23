@@ -141,6 +141,10 @@ class AppState extends ChangeNotifier {
     await api.powerDevice(device.deviceId, action);
   }
 
+  Future<void> wakeDevice(Device device) async {
+    await api.wakeDevice(device.deviceId);
+  }
+
   // --- conta -----------------------------------------------------------------
 
   Future<void> updateEmail(String currentPassword, String newEmail) =>

@@ -16,6 +16,10 @@ pub enum ClientMessage {
         hostname: String,
         os: String,
         agent_version: String,
+        /// MAC da placa de rede local, para Wake-on-LAN. Opcional (nem toda
+        /// máquina resolve; o backend guarda quando presente).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mac: Option<String>,
     },
     Heartbeat,
 }
@@ -59,6 +63,11 @@ pub enum ServerMessage {
     Power {
         action: PowerAction,
     },
+    /// Pede a este agente que acorde (Wake-on-LAN) uma máquina vizinha da LAN
+    /// enviando o pacote mágico para o MAC informado.
+    Wake {
+        mac: String,
+    },
 }
 
 /// Ações de energia suportadas pelo agente.
@@ -81,11 +90,13 @@ mod tests {
             hostname: "dell-g5".into(),
             os: "windows".into(),
             agent_version: "0.1.0".into(),
+            mac: Some("01:23:45:AB:CD:EF".into()),
         };
         let value: serde_json::Value = serde_json::to_value(&hello).unwrap();
         assert_eq!(value["type"], "hello");
         assert_eq!(value["device_id"], "dev-1");
         assert_eq!(value["os"], "windows");
+        assert_eq!(value["mac"], "01:23:45:AB:CD:EF");
     }
 
     #[test]
@@ -170,6 +181,18 @@ mod tests {
                 max_fps: 10,
                 quality: Some(70),
                 max_width: Some(1600),
+            }
+        );
+    }
+
+    #[test]
+    fn deserializes_wake() {
+        let msg: ServerMessage =
+            serde_json::from_str(r#"{"type":"wake","mac":"01:23:45:AB:CD:EF"}"#).unwrap();
+        assert_eq!(
+            msg,
+            ServerMessage::Wake {
+                mac: "01:23:45:AB:CD:EF".into()
             }
         );
     }

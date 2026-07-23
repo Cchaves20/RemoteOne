@@ -80,6 +80,31 @@ def _pairing_intro(hello: Hello) -> dict:
     return PairCode(code=code, expires_in_seconds=settings.pairing_ttl_seconds).model_dump()
 
 
+def _client_public_ip(websocket: WebSocket) -> str | None:
+    """IP público do agente. Atrás do Caddy, vem no cabeçalho X-Forwarded-For."""
+    forwarded = websocket.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return websocket.client.host if websocket.client else None
+
+
+def _update_device_presence(device_id: str, mac: str | None, public_ip: str | None) -> None:
+    """Guarda o MAC e o último IP público do dispositivo pareado (Wake-on-LAN)."""
+    with SessionLocal() as db:
+        device = pairing.get_device(db, device_id)
+        if device is None:
+            return
+        changed = False
+        if mac and device.mac_address != mac:
+            device.mac_address = mac
+            changed = True
+        if public_ip and device.last_public_ip != public_ip:
+            device.last_public_ip = public_ip
+            changed = True
+        if changed:
+            db.commit()
+
+
 @app.websocket("/ws/agent")
 async def agent_ws(websocket: WebSocket) -> None:
     """Canal do agente desktop.
@@ -113,8 +138,11 @@ async def agent_ws(websocket: WebSocket) -> None:
         device_id = message.device_id
         hostname = message.hostname
         os_name = message.os
+        mac_addr = message.mac
+        public_ip = _client_public_ip(websocket)
         registry.register(message)
-        manager.register(device_id, websocket)
+        manager.register(device_id, websocket, public_ip)
+        _update_device_presence(device_id, mac_addr, public_ip)
         logger.info("agente conectado: %s (%s)", device_id, message.hostname)
         await websocket.send_json(Welcome(server_version=settings.version).model_dump())
 
@@ -149,8 +177,11 @@ async def agent_ws(websocket: WebSocket) -> None:
                 device_id = message.device_id
                 hostname = message.hostname
                 os_name = message.os
+                mac_addr = message.mac
+                public_ip = _client_public_ip(websocket)
                 registry.register(message)
-                manager.register(device_id, websocket)
+                manager.register(device_id, websocket, public_ip)
+                _update_device_presence(device_id, mac_addr, public_ip)
                 await websocket.send_json(
                     Welcome(server_version=settings.version).model_dump()
                 )
@@ -166,6 +197,8 @@ async def agent_ws(websocket: WebSocket) -> None:
                     email = _paired_email(device_id)
                     await websocket.send_json(Paired(user_email=email).model_dump())
                     paired_notified = True
+                    # Acabou de parear: guarda MAC/IP para o Wake-on-LAN.
+                    _update_device_presence(device_id, mac_addr, public_ip)
                 elif not now_paired and paired_notified:
                     paired_notified = False
                     with SessionLocal() as db:

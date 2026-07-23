@@ -22,6 +22,10 @@ Aplicativo usado no celular/tablet para controlar os computadores.
   a sessão de controle.
 - **Bloqueio por Face ID/biometria** opcional (`lock_gate.dart`, fail-open).
 - **Status online/offline** de cada computador na lista (ponto verde/cinza).
+- **Ligar (Wake-on-LAN)**: computadores offline mostram "Ligar" no menu — o
+  backend usa outro PC seu ligado na mesma rede para enviar o pacote mágico
+  (peer-to-peer, sem configuração). Tela de ajuda em Configurações explica o
+  modo padrão e o modo avançado (roteador) com aviso de segurança.
 - **Ações do computador** (menu na lista): controlar, **renomear**, **desligar/
   reiniciar/suspender** (energia) e **remover** da conta.
 - **Qualidade da tela ajustável** (Econômico/Equilibrado/Nítido): define fps,

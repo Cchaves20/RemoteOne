@@ -50,11 +50,19 @@ async fn main() {
         .expect("não foi possível ler/criar o device_id");
     let hostname = gethostname::gethostname().to_string_lossy().to_string();
 
+    // MAC da placa de rede local (para Wake-on-LAN). Best-effort: se não
+    // resolver, segue sem — só o WoL fica indisponível para esta máquina.
+    let mac = mac_address::get_mac_address()
+        .ok()
+        .flatten()
+        .map(|m| m.to_string());
+
     let identity = AgentIdentity {
         device_id: device_id.clone(),
         hostname,
         os: plat.os_name().to_string(),
         agent_version: AGENT_VERSION.to_string(),
+        mac,
     };
 
     // Parâmetros de transmissão (ajustáveis sem recompilar).

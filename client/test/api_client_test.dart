@@ -124,6 +124,34 @@ void main() {
     expect(body?['action'], 'restart');
   });
 
+  test('wakeDevice chama o endpoint /wake e aceita 204', () async {
+    Uri? seen;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        seen = req.url;
+        return http.Response('', 204);
+      }),
+    );
+    await client.wakeDevice('dev-9');
+    expect(seen?.path, '/api/v1/devices/dev-9/wake');
+  });
+
+  test('wakeDevice sem peer vira ApiException 409', () async {
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        return http.Response(jsonEncode({'detail': 'nenhum peer'}), 409);
+      }),
+    );
+    expect(
+      () => client.wakeDevice('d'),
+      throwsA(isA<ApiException>().having((e) => e.statusCode, 'code', 409)),
+    );
+  });
+
   test('deleteAccount envia a senha e limpa a sessão', () async {
     final client = ApiClient(
       baseUrl: 'http://test',
