@@ -31,6 +31,15 @@ para o IP do VPS. Depois, app e agentes apontam para esse domínio.
    privada** (guarde bem — é como você entra no servidor).
 4. **Create**. Anote o **Public IP address** que aparece.
 
+> **Deu "Out of capacity for shape VM.Standard.A1.Flex"?** É comum: a cota ARM
+> grátis vive esgotada. Opções:
+> - **Mais garantido:** troque o shape para **VM.Standard.E2.1.Micro** (AMD,
+>   também Always Free — quase sempre tem vaga). Ela tem **1 GB de RAM**, então
+>   no passo 9 use o compose **leve** (`docker-compose.lite.yml`, com SQLite e
+>   sem Postgres/Redis) em vez do de produção.
+> - **Insistir no ARM:** tente outro *Availability Domain* (AD-1/2/3) e/ou repita
+>   depois de um tempo — a capacidade libera. Fora de horário de pico ajuda.
+
 ## 3. IP público fixo (reservado)
 
 Para o IP não mudar em reinícios:
@@ -103,6 +112,15 @@ Salve (Ctrl+O, Enter, Ctrl+X).
 ```bash
 docker compose -f docker-compose.prod.yml up -d --build
 ```
+
+> **Na VM AMD Micro (1 GB de RAM)** use o compose **leve** (SQLite, sem
+> Postgres/Redis) — no `.env` basta `DOMAIN` e `REMOTEONE_JWT_SECRET`:
+> ```bash
+> docker compose -f docker-compose.lite.yml up -d --build
+> ```
+> (Nos comandos de manutenção mais abaixo, troque `docker-compose.prod.yml` por
+> `docker-compose.lite.yml`.)
+
 O Caddy pega o certificado HTTPS em alguns segundos. Teste **do seu celular/PC**:
 
 ```

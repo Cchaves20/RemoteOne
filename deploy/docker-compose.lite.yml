@@ -1,0 +1,41 @@
+# Deploy LEVE do backend (para VMs de 1 GB, ex.: Oracle AMD E2.1.Micro).
+#
+# Usa SQLite e dispensa Postgres/Redis, cabendo com folga em 1 GB de RAM.
+# Só Caddy (HTTPS) + API. Ideal quando a capacidade ARM (A1.Flex) está esgotada.
+#
+# Uso (na pasta deploy/, com .env preenchido — DOMAIN e REMOTEONE_JWT_SECRET):
+#   docker compose -f docker-compose.lite.yml up -d --build
+#
+# (POSTGRES_PASSWORD não é usado aqui.)
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  api:
+    build: ../backend
+    restart: unless-stopped
+    environment:
+      # SQLite num volume persistente (4 barras = caminho absoluto /data/...).
+      REMOTEONE_DATABASE_URL: sqlite:////data/remoteone.db
+      REMOTEONE_JWT_SECRET: ${REMOTEONE_JWT_SECRET}
+    volumes:
+      - apidata:/data
+    # Sem `ports:` — só o Caddy alcança a API (rede interna).
+
+volumes:
+  caddy_data:
+  caddy_config:
+  apidata:
