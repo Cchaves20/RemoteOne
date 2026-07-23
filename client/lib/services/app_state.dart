@@ -33,7 +33,7 @@ class AppState extends ChangeNotifier {
     // de restoreSession(), senão o refresh do token vai para localhost e falha.
     final savedUrl = prefs.getString('serverUrl');
     if (savedUrl != null && savedUrl.isNotEmpty) {
-      api.baseUrl = savedUrl;
+      api.baseUrl = _normalizeServerUrl(savedUrl);
     }
     notifyListeners();
   }
@@ -79,11 +79,23 @@ class AppState extends ChangeNotifier {
 
   String get serverUrl => api.baseUrl;
   set serverUrl(String value) {
-    api.baseUrl = value;
+    final normalized = _normalizeServerUrl(value);
+    api.baseUrl = normalized;
     notifyListeners();
     // Persiste para reabrir o app já apontando ao mesmo servidor.
     SharedPreferences.getInstance()
-        .then((prefs) => prefs.setString('serverUrl', value));
+        .then((prefs) => prefs.setString('serverUrl', normalized));
+  }
+
+  /// Normaliza a URL do servidor: remove espaços e barras finais e, se o
+  /// usuário esquecer o esquema, assume https (evita o redirecionamento 308
+  /// http→https que quebra o login).
+  static String _normalizeServerUrl(String value) {
+    var v = value.trim();
+    if (v.isNotEmpty && !v.startsWith('http://') && !v.startsWith('https://')) {
+      v = 'https://$v';
+    }
+    return v.replaceAll(RegExp(r'/+$'), '');
   }
 
   Future<void> login(String email, String password) async {
