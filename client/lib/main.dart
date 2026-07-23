@@ -17,9 +17,13 @@ const _defaultBackend = String.fromEnvironment(
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final state = AppState(ApiClient(baseUrl: _defaultBackend));
+  // Só o carregamento local (rápido) roda antes de desenhar a tela.
   await state.loadPreferences();
-  await state.restoreSession();
+  // Mostra a UI imediatamente; a restauração da sessão (rede) roda depois,
+  // sem travar a abertura. Assim, um servidor fora do ar nunca causa tela
+  // branca — a UI reage via ChangeNotifier quando a sessão resolve.
   runApp(RemoteOneApp(state: state));
+  state.restoreSession();
 }
 
 class RemoteOneApp extends StatelessWidget {

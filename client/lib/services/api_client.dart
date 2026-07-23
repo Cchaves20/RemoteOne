@@ -35,6 +35,10 @@ class ApiClient {
   String? _accessToken;
   String? _refreshToken;
 
+  /// Tempo máximo de espera por resposta do servidor (evita travas longas
+  /// quando o backend está inacessível).
+  static const _timeout = Duration(seconds: 15);
+
   bool get isAuthenticated => _accessToken != null;
 
   Map<String, String> get _jsonHeaders => {'Content-Type': 'application/json'};
@@ -47,21 +51,25 @@ class ApiClient {
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
 
   Future<void> register(String email, String password) async {
-    final res = await _http.post(
-      _uri('/api/v1/auth/register'),
-      headers: _jsonHeaders,
-      body: jsonEncode({'email': email, 'password': password}),
-    );
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/register'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'email': email, 'password': password}),
+        )
+        .timeout(_timeout);
     _storeTokens(_decode(res, expected: 201));
     await _persist();
   }
 
   Future<void> login(String email, String password) async {
-    final res = await _http.post(
-      _uri('/api/v1/auth/login'),
-      headers: _jsonHeaders,
-      body: jsonEncode({'email': email, 'password': password}),
-    );
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/login'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'email': email, 'password': password}),
+        )
+        .timeout(_timeout);
     _storeTokens(_decode(res));
     await _persist();
   }
@@ -93,11 +101,13 @@ class ApiClient {
 
   /// Troca o refresh token por um novo access token.
   Future<void> refreshAccess() async {
-    final res = await _http.post(
-      _uri('/api/v1/auth/refresh'),
-      headers: _jsonHeaders,
-      body: jsonEncode({'refresh_token': _refreshToken}),
-    );
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/refresh'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'refresh_token': _refreshToken}),
+        )
+        .timeout(_timeout);
     final body = _decode(res) as Map<String, dynamic>;
     _accessToken = body['access_token'] as String?;
     await _persist();
