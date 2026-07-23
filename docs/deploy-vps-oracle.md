@@ -37,6 +37,10 @@ para o IP do VPS. Depois, app e agentes apontam para esse domínio.
 >   também Always Free — quase sempre tem vaga). Ela tem **1 GB de RAM**, então
 >   no passo 9 use o compose **leve** (`docker-compose.lite.yml`, com SQLite e
 >   sem Postgres/Redis) em vez do de produção.
+>   > Ao trocar para a AMD, **reescolha a imagem** (Change image → Ubuntu 22.04):
+>   > a build precisa ser **x86_64/amd64**, não a ARM (aarch64). Se der
+>   > *"Shape ... is not valid for image ..."*, é a imagem ARM ainda
+>   > selecionada — arquitetura da imagem tem que casar com o shape.
 > - **Insistir no ARM:** tente outro *Availability Domain* (AD-1/2/3) e/ou repita
 >   depois de um tempo — a capacidade libera. Fora de horário de pico ajuda.
 
