@@ -165,12 +165,20 @@ class _RemoteScreenState extends State<RemoteScreen> {
     final ty = _transform.value[13];
     final focalX = _viewBox.width / 2;
     final focalY = _viewBox.height / 2;
-    // Mantém o ponto central fixo: t' = foco − f·(foco − t).
+    // Mantém o ponto central fixo: t' = foco − f·(foco − t)...
+    var ntx = focalX - f * (focalX - tx);
+    var nty = focalY - f * (focalY - ty);
+    // ...e reenquadra: no novo zoom a imagem tem que continuar cobrindo a tela
+    // (em 1× o deslocamento vira 0, então ela volta ao lugar).
+    final minTx = _viewBox.width * (1 - target);
+    final minTy = _viewBox.height * (1 - target);
+    ntx = ntx.clamp(minTx, 0.0);
+    nty = nty.clamp(minTy, 0.0);
     final m = Matrix4.identity();
     m[0] = target;
     m[5] = target;
-    m[12] = focalX - f * (focalX - tx);
-    m[13] = focalY - f * (focalY - ty);
+    m[12] = ntx;
+    m[13] = nty;
     _transform.value = m;
   }
 
