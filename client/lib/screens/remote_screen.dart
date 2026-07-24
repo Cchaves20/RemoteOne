@@ -50,6 +50,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
   Timer? _reconnectTimer;
   bool _disposed = false;
 
+  // Zoom (acessibilidade): em "modo lupa" os gestos ampliam/movem a tela; fora
+  // dele, os gestos controlam o mouse. Como o GestureDetector fica DENTRO do
+  // InteractiveViewer, o mapeamento do cursor continua correto mesmo ampliado.
+  bool _zoomMode = false;
+  final TransformationController _transform = TransformationController();
+  Size _viewBox = Size.zero;
+
   @override
   void initState() {
     super.initState();
@@ -135,8 +142,52 @@ class _RemoteScreenState extends State<RemoteScreen> {
     _reconnectTimer?.cancel();
     _sub?.cancel();
     _channel?.sink.close();
+    _transform.dispose();
     WakelockPlus.disable();
     super.dispose();
+  }
+
+  // --- zoom (lupa) ------------------------------------------------------------
+
+  // A transformação é uma escala uniforme + deslocamento. Lemos/escrevemos
+  // direto no armazenamento (coluna-major): [0]=escala, [12]/[13]=deslocamento.
+  double get _scale => _transform.value[0];
+
+  /// Amplia/reduz em torno do centro da tela, preservando o deslocamento atual.
+  void _zoomBy(double factor) {
+    if (_viewBox == Size.zero) return;
+    final current = _scale;
+    final target = (current * factor).clamp(1.0, 5.0);
+    final f = target / current;
+    if ((f - 1).abs() < 0.001) return;
+
+    final tx = _transform.value[12];
+    final ty = _transform.value[13];
+    final focalX = _viewBox.width / 2;
+    final focalY = _viewBox.height / 2;
+    // Mantém o ponto central fixo: t' = foco − f·(foco − t).
+    final m = Matrix4.identity();
+    m[0] = target;
+    m[5] = target;
+    m[12] = focalX - f * (focalX - tx);
+    m[13] = focalY - f * (focalY - ty);
+    _transform.value = m;
+  }
+
+  void _resetZoom() => _transform.value = Matrix4.identity();
+
+  void _toggleZoomMode() {
+    setState(() => _zoomMode = !_zoomMode);
+    if (_zoomMode) {
+      // Ao entrar no modo lupa, já amplia um pouco (ajuda quem não usa pinça).
+      if (_scale < 1.05) _zoomBy(2.0);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 3),
+          content: Text('Modo lupa: arraste para mover, use + e − para ampliar.'),
+        ),
+      );
+    }
   }
 
   // --- envio de comandos ------------------------------------------------------
@@ -214,18 +265,42 @@ class _RemoteScreenState extends State<RemoteScreen> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final box = Size(constraints.maxWidth, constraints.maxHeight);
-              return GestureDetector(
-                onTapUp: (d) => _tapAt(d.localPosition, box),
-                onLongPressStart: (d) => _rightClickAt(d.localPosition, box),
-                onScaleUpdate: (d) {
-                  if (d.pointerCount >= 2) {
-                    _pendingScroll += d.focalPointDelta.dy;
-                  } else {
-                    _moveTo(d.localFocalPoint, box);
-                  }
-                },
-                child:
-                    Image.memory(_frame!, gaplessPlayback: true, fit: BoxFit.fill),
+              _viewBox = box;
+              final image =
+                  Image.memory(_frame!, gaplessPlayback: true, fit: BoxFit.fill);
+
+              // Modo lupa: o InteractiveViewer cuida de ampliar/mover (pinça e
+              // botões +/−). Sem gestos de controle aqui.
+              if (_zoomMode) {
+                return InteractiveViewer(
+                  transformationController: _transform,
+                  minScale: 1.0,
+                  maxScale: 5.0,
+                  child: image,
+                );
+              }
+
+              // Modo controle: aplica a mesma transformação de forma estática
+              // (Transform) e deixa o GestureDetector receber os toques. Como o
+              // detector fica DENTRO do Transform, o toque chega em coordenadas
+              // da imagem — o zoom não distorce o mapeamento do cursor.
+              return ClipRect(
+                child: Transform(
+                  transform: _transform.value,
+                  transformHitTests: true,
+                  child: GestureDetector(
+                    onTapUp: (d) => _tapAt(d.localPosition, box),
+                    onLongPressStart: (d) => _rightClickAt(d.localPosition, box),
+                    onScaleUpdate: (d) {
+                      if (d.pointerCount >= 2) {
+                        _pendingScroll += d.focalPointDelta.dy;
+                      } else {
+                        _moveTo(d.localFocalPoint, box);
+                      }
+                    },
+                    child: image,
+                  ),
+                ),
               );
             },
           ),
@@ -279,22 +354,50 @@ class _RemoteScreenState extends State<RemoteScreen> {
               style: const TextStyle(color: Colors.white70),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              '$_fps fps',
-              style: const TextStyle(color: Colors.white38, fontSize: 12),
-            ),
-          ),
-          if (showToggle)
+          if (_zoomMode) ...[
             IconButton(
-              icon: Icon(
-                _keyboardVisible ? Icons.keyboard_hide : Icons.keyboard,
-                color: Colors.white,
-              ),
-              onPressed: () =>
-                  setState(() => _keyboardVisible = !_keyboardVisible),
+              tooltip: 'Reduzir',
+              icon: const Icon(Icons.remove_circle_outline, color: Colors.white),
+              onPressed: () => _zoomBy(1 / 1.4),
             ),
+            IconButton(
+              tooltip: 'Ampliar',
+              icon: const Icon(Icons.add_circle_outline, color: Colors.white),
+              onPressed: () => _zoomBy(1.4),
+            ),
+            IconButton(
+              tooltip: 'Tamanho normal',
+              icon: const Icon(Icons.fit_screen, color: Colors.white),
+              onPressed: _resetZoom,
+            ),
+            IconButton(
+              tooltip: 'Sair da lupa',
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: _toggleZoomMode,
+            ),
+          ] else ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                '$_fps fps',
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Ampliar (lupa)',
+              icon: const Icon(Icons.zoom_in, color: Colors.white),
+              onPressed: _toggleZoomMode,
+            ),
+            if (showToggle)
+              IconButton(
+                icon: Icon(
+                  _keyboardVisible ? Icons.keyboard_hide : Icons.keyboard,
+                  color: Colors.white,
+                ),
+                onPressed: () =>
+                    setState(() => _keyboardVisible = !_keyboardVisible),
+              ),
+          ],
         ],
       ),
     );

@@ -16,6 +16,9 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Tela em tempo real**: os frames chegam por WebSocket (`/ws/viewer/{id}`),
   empurrados pelo backend, com borda visível, indicador de fps e vibração ao
   clicar.
+- **Lupa (zoom)** para acessibilidade: botão que amplia a tela (pinça ou botões
+  + / −); como o toque é mapeado dentro do zoom, dá para controlar com precisão
+  a área ampliada.
 - **Login persistente**: os tokens ficam no armazenamento seguro
   (`token_store.dart`), então o app lembra o login entre aberturas.
 - **Reconexão automática** da tela e **tela do celular sempre acesa** durante
