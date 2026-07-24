@@ -124,6 +124,53 @@ void main() {
     expect(body?['action'], 'restart');
   });
 
+  test('login envia totp_code quando informado', () async {
+    Map<String, dynamic>? body;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        body = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response(
+          jsonEncode({'access_token': 'a', 'refresh_token': 'r'}),
+          200,
+        );
+      }),
+    );
+    await client.login('a@b.com', 'senhaSegura123', totpCode: '123456');
+    expect(body?['totp_code'], '123456');
+  });
+
+  test('setupTwoFactor retorna secret e uri', () async {
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        return http.Response(
+          jsonEncode({'secret': 'ABC123', 'otpauth_uri': 'otpauth://totp/x'}),
+          200,
+        );
+      }),
+    );
+    final data = await client.setupTwoFactor();
+    expect(data['secret'], 'ABC123');
+    expect(data['otpauth_uri'], 'otpauth://totp/x');
+  });
+
+  test('enableTwoFactor envia o código e aceita 204', () async {
+    Map<String, dynamic>? body;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        body = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response('', 204);
+      }),
+    );
+    await client.enableTwoFactor('654321');
+    expect(body?['code'], '654321');
+  });
+
   test('wakeDevice chama o endpoint /wake e aceita 204', () async {
     Uri? seen;
     final client = ApiClient(

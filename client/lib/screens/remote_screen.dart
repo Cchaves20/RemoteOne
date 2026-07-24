@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/device.dart';
 import '../services/app_state.dart';
 import '../widgets/remote_keyboard.dart';
+import 'gesture_tutorial_screen.dart';
 
 /// Controle remoto por toque direto: a tela do computador ocupa a tela inteira
 /// e o toque age como num touchscreen — tocar leva o cursor ao ponto e clica.
@@ -65,6 +66,16 @@ class _RemoteScreenState extends State<RemoteScreen> {
         });
       }
     });
+    // Na primeira vez que se controla um PC, mostra o tutorial de gestos (#20).
+    if (!widget.state.gestureTutorialSeen) {
+      widget.state.markGestureTutorialSeen();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const GestureTutorialScreen()),
+        );
+      });
+    }
   }
 
   void _connect() {

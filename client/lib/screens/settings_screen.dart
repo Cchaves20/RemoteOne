@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/stream_quality.dart';
 import '../services/app_state.dart';
+import 'gesture_tutorial_screen.dart';
+import 'two_factor_screen.dart';
 import 'wake_on_lan_screen.dart';
 
 /// Configurações do app e da conta: tema, qualidade da tela, segurança,
@@ -38,6 +40,15 @@ class SettingsScreen extends StatelessWidget {
                 value: state.appLockEnabled,
                 onChanged: state.setAppLockEnabled,
               ),
+              SwitchListTile(
+                secondary: const Icon(Icons.verified_user_outlined),
+                title: const Text('Verificação em duas etapas (2FA)'),
+                subtitle: const Text('Pede um código do autenticador ao entrar'),
+                value: state.twoFactorEnabled,
+                onChanged: (value) => value
+                    ? _startTwoFactor(context)
+                    : _disableTwoFactor(context),
+              ),
               const Divider(),
               const _SectionHeader('Conta'),
               ListTile(
@@ -68,6 +79,14 @@ class SettingsScreen extends StatelessWidget {
               ),
               const Divider(),
               const _SectionHeader('Ajuda'),
+              ListTile(
+                leading: const Icon(Icons.touch_app),
+                title: const Text('Como controlar (gestos)'),
+                subtitle: const Text('Toque, arrastar, segurar, rolar'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const GestureTutorialScreen()),
+                ),
+              ),
               ListTile(
                 leading: const Icon(Icons.power),
                 title: const Text('Ligar o PC (Wake-on-LAN)'),
@@ -113,6 +132,57 @@ class SettingsScreen extends StatelessWidget {
       ),
       onTap: () => state.setStreamQuality(quality),
     );
+  }
+
+  // --- verificação em duas etapas --------------------------------------------
+
+  Future<void> _startTwoFactor(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => TwoFactorScreen(state: state)),
+    );
+  }
+
+  Future<void> _disableTwoFactor(BuildContext context) async {
+    final password = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Desativar 2FA'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Confirme sua senha para desativar a verificação em duas etapas.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: password,
+              obscureText: true,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Senha'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Desativar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await state.disableTwoFactor(password.text);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Verificação em duas etapas desativada.')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   // --- diálogos de conta -----------------------------------------------------

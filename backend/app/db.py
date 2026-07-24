@@ -52,12 +52,19 @@ def _migrate() -> None:
     from sqlalchemy import inspect, text
 
     inspector = inspect(engine)
-    existing = {col["name"] for col in inspector.get_columns("devices")}
-    novas = {
-        "mac_address": "VARCHAR(32)",
-        "last_public_ip": "VARCHAR(64)",
+    por_tabela = {
+        "devices": {
+            "mac_address": "VARCHAR(32)",
+            "last_public_ip": "VARCHAR(64)",
+        },
+        "users": {
+            "totp_secret": "VARCHAR(64)",
+            "totp_enabled": "BOOLEAN DEFAULT 0 NOT NULL",
+        },
     }
     with engine.begin() as conn:
-        for coluna, tipo in novas.items():
-            if coluna not in existing:
-                conn.execute(text(f"ALTER TABLE devices ADD COLUMN {coluna} {tipo}"))
+        for tabela, colunas in por_tabela.items():
+            existing = {col["name"] for col in inspector.get_columns(tabela)}
+            for coluna, tipo in colunas.items():
+                if coluna not in existing:
+                    conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"))

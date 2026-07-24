@@ -20,6 +20,9 @@ from app.schemas import (
     DeleteAccountRequest,
     RefreshRequest,
     TokenPair,
+    TwoFactorDisableRequest,
+    TwoFactorEnableRequest,
+    TwoFactorSetupOut,
     UpdateEmailRequest,
     UpdatePasswordRequest,
     UserOut,
@@ -28,8 +31,11 @@ from app.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    generate_totp_secret,
     hash_password,
+    totp_uri,
     verify_password,
+    verify_totp,
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -90,6 +96,17 @@ def login(body: Credentials, db: Session = Depends(get_db)) -> TokenPair:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="e-mail ou senha inválidos",
         )
+    # 2FA: com a senha correta, ainda exige o código do autenticador. O app
+    # reconhece os detalhes "two_factor_required"/"two_factor_invalid".
+    if user.totp_enabled:
+        if not body.totp_code:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="two_factor_required"
+            )
+        if not verify_totp(user.totp_secret or "", body.totp_code):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="two_factor_invalid"
+            )
     return _tokens_for(user)
 
 
@@ -151,6 +168,62 @@ def update_password(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="senha atual incorreta"
         )
     current_user.hashed_password = hash_password(body.new_password)
+    db.commit()
+
+
+@router.post("/2fa/setup", response_model=TwoFactorSetupOut)
+def two_factor_setup(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TwoFactorSetupOut:
+    """Gera um segredo TOTP e o URI para o QR Code. Ainda não ativa o 2FA."""
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="2FA já está ativo"
+        )
+    secret = generate_totp_secret()
+    current_user.totp_secret = secret  # pendente até confirmar o código
+    db.commit()
+    return TwoFactorSetupOut(secret=secret, otpauth_uri=totp_uri(secret, current_user.email))
+
+
+@router.post("/2fa/enable", status_code=status.HTTP_204_NO_CONTENT)
+def two_factor_enable(
+    body: TwoFactorEnableRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Ativa o 2FA confirmando um código do autenticador."""
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="2FA já está ativo"
+        )
+    if not current_user.totp_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="inicie a configuração do 2FA antes",
+        )
+    if not verify_totp(current_user.totp_secret, body.code):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="código inválido"
+        )
+    current_user.totp_enabled = True
+    db.commit()
+
+
+@router.post("/2fa/disable", status_code=status.HTTP_204_NO_CONTENT)
+def two_factor_disable(
+    body: TwoFactorDisableRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Desativa o 2FA (exige a senha atual) e apaga o segredo."""
+    if not verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="senha incorreta"
+        )
+    current_user.totp_enabled = False
+    current_user.totp_secret = None
     db.commit()
 
 

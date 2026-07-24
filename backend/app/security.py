@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
+import pyotp
 
 from app.config import settings
 
@@ -51,3 +52,21 @@ def create_refresh_token(subject: str) -> str:
 def decode_token(token: str) -> dict:
     """Decodifica e valida a assinatura/expiração. Lança jwt.PyJWTError se inválido."""
     return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+
+
+# --- Verificação em duas etapas (TOTP) ---------------------------------------
+
+
+def generate_totp_secret() -> str:
+    """Gera um segredo base32 para o autenticador (TOTP)."""
+    return pyotp.random_base32()
+
+
+def totp_uri(secret: str, email: str) -> str:
+    """URI otpauth:// para o QR Code do app autenticador."""
+    return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name=settings.app_name)
+
+
+def verify_totp(secret: str, code: str) -> bool:
+    """Confere um código TOTP (aceita ±1 janela para tolerar relógio defasado)."""
+    return pyotp.TOTP(secret).verify(code.strip(), valid_window=1)

@@ -15,6 +15,8 @@ class AppState extends ChangeNotifier {
   Device? selected;
   ThemeMode themeMode = ThemeMode.system;
   bool appLockEnabled = false;
+  bool twoFactorEnabled = false;
+  bool gestureTutorialSeen = false;
   StreamQuality streamQuality = StreamQuality.equilibrado;
 
   bool get isAuthenticated => api.isAuthenticated;
@@ -28,6 +30,7 @@ class AppState extends ChangeNotifier {
       _ => ThemeMode.system,
     };
     appLockEnabled = prefs.getBool('appLock') ?? false;
+    gestureTutorialSeen = prefs.getBool('gestureTutorialSeen') ?? false;
     streamQuality = StreamQuality.fromName(prefs.getString('streamQuality'));
     // Reaponta ao mesmo servidor usado no login anterior. Precisa vir antes
     // de restoreSession(), senão o refresh do token vai para localhost e falha.
@@ -43,6 +46,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('streamQuality', quality.name);
+  }
+
+  Future<void> markGestureTutorialSeen() async {
+    gestureTutorialSeen = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('gestureTutorialSeen', true);
   }
 
   Future<void> setAppLockEnabled(bool enabled) async {
@@ -70,6 +79,7 @@ class AppState extends ChangeNotifier {
     if (restored) {
       try {
         await refreshDevices();
+        twoFactorEnabled = await api.fetchTwoFactorEnabled();
       } catch (_) {
         // Sem rede agora: segue autenticado; a lista atualiza depois.
       }
@@ -98,9 +108,30 @@ class AppState extends ChangeNotifier {
     return v.replaceAll(RegExp(r'/+$'), '');
   }
 
-  Future<void> login(String email, String password) async {
-    await api.login(email, password);
+  Future<void> login(String email, String password, {String? totpCode}) async {
+    await api.login(email, password, totpCode: totpCode);
     await refreshDevices();
+    try {
+      twoFactorEnabled = await api.fetchTwoFactorEnabled();
+    } catch (_) {
+      // Status do 2FA é secundário; não deve derrubar o login.
+    }
+    notifyListeners();
+  }
+
+  // --- verificação em duas etapas (2FA) --------------------------------------
+
+  Future<Map<String, String>> setupTwoFactor() => api.setupTwoFactor();
+
+  Future<void> enableTwoFactor(String code) async {
+    await api.enableTwoFactor(code);
+    twoFactorEnabled = true;
+    notifyListeners();
+  }
+
+  Future<void> disableTwoFactor(String password) async {
+    await api.disableTwoFactor(password);
+    twoFactorEnabled = false;
     notifyListeners();
   }
 

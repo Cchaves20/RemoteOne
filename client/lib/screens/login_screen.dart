@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/api_client.dart';
 import '../services/app_state.dart';
 
 /// Tela de login/cadastro. Também permite ajustar a URL do servidor, para
@@ -16,16 +17,20 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _code = TextEditingController();
   late final TextEditingController _server =
       TextEditingController(text: widget.state.serverUrl);
 
   bool _registering = false;
   bool _busy = false;
+  // Vira true quando a conta tem 2FA e o backend pede o código.
+  bool _needsCode = false;
 
   @override
   void dispose() {
     _email.dispose();
     _password.dispose();
+    _code.dispose();
     _server.dispose();
     super.dispose();
   }
@@ -37,7 +42,25 @@ class _LoginScreenState extends State<LoginScreen> {
       if (_registering) {
         await widget.state.register(_email.text.trim(), _password.text);
       } else {
-        await widget.state.login(_email.text.trim(), _password.text);
+        await widget.state.login(
+          _email.text.trim(),
+          _password.text,
+          totpCode: _needsCode ? _code.text.trim() : null,
+        );
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.message == 'two_factor_required') {
+        // Senha ok: agora pede o código do autenticador.
+        setState(() => _needsCode = true);
+      } else if (e.message == 'two_factor_invalid') {
+        setState(() => _needsCode = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Código inválido. Tente de novo.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
       }
     } catch (e) {
       if (mounted) {
@@ -78,6 +101,19 @@ class _LoginScreenState extends State<LoginScreen> {
                   obscureText: true,
                   decoration: const InputDecoration(labelText: 'Senha'),
                 ),
+                const SizedBox(height: 12),
+                if (_needsCode && !_registering) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _code,
+                    keyboardType: TextInputType.number,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Código de verificação (2FA)',
+                      helperText: 'Do seu app autenticador',
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextField(
                   controller: _server,

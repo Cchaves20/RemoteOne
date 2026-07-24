@@ -7,10 +7,34 @@ from pydantic import BaseModel, EmailStr, Field
 
 
 class Credentials(BaseModel):
-    """Dados de cadastro/login. A senha é limitada a 72 bytes (limite do bcrypt)."""
+    """Dados de cadastro/login. A senha é limitada a 72 bytes (limite do bcrypt).
+
+    `totp_code` só é usado no login quando a conta tem 2FA ativo; no cadastro é
+    ignorado.
+    """
 
     email: EmailStr
     password: str = Field(min_length=8, max_length=72)
+    totp_code: str | None = Field(default=None, max_length=10)
+
+
+class TwoFactorSetupOut(BaseModel):
+    """Segredo e URI (para QR Code) ao iniciar a configuração do 2FA."""
+
+    secret: str
+    otpauth_uri: str
+
+
+class TwoFactorEnableRequest(BaseModel):
+    """Confirma a ativação do 2FA com um código do autenticador."""
+
+    code: str = Field(min_length=6, max_length=10)
+
+
+class TwoFactorDisableRequest(BaseModel):
+    """Desativa o 2FA (exige a senha atual)."""
+
+    password: str = Field(min_length=1, max_length=72)
 
 
 class UpdateEmailRequest(BaseModel):
@@ -52,6 +76,7 @@ class UserOut(BaseModel):
     id: int
     email: EmailStr
     created_at: datetime
+    totp_enabled: bool = False
 
     model_config = {"from_attributes": True}
 

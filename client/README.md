@@ -21,6 +21,10 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Reconexão automática** da tela e **tela do celular sempre acesa** durante
   a sessão de controle.
 - **Bloqueio por Face ID/biometria** opcional (`lock_gate.dart`, fail-open).
+- **Verificação em duas etapas (2FA)** com app autenticador (TOTP): ativar por
+  QR Code nas configurações e informar o código de 6 dígitos no login.
+- **Tutorial de gestos** na primeira vez que se controla um PC (e revisável em
+  Configurações → Ajuda).
 - **Status online/offline** de cada computador na lista (ponto verde/cinza).
 - **Ligar (Wake-on-LAN)**: computadores offline mostram "Ligar" no menu — o
   backend usa outro PC seu ligado na mesma rede para enviar o pacote mágico

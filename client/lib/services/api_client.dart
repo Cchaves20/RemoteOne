@@ -62,16 +62,66 @@ class ApiClient {
     await _persist();
   }
 
-  Future<void> login(String email, String password) async {
+  Future<void> login(String email, String password, {String? totpCode}) async {
     final res = await _http
         .post(
           _uri('/api/v1/auth/login'),
           headers: _jsonHeaders,
-          body: jsonEncode({'email': email, 'password': password}),
+          body: jsonEncode({
+            'email': email,
+            'password': password,
+            if (totpCode != null && totpCode.isNotEmpty) 'totp_code': totpCode,
+          }),
         )
         .timeout(_timeout);
     _storeTokens(_decode(res));
     await _persist();
+  }
+
+  // --- verificação em duas etapas (2FA) --------------------------------------
+
+  /// Inicia a configuração do 2FA: retorna o segredo e o URI (para QR Code).
+  Future<Map<String, String>> setupTwoFactor() async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/2fa/setup'),
+      headers: _authHeaders,
+    );
+    final body = _decode(res) as Map<String, dynamic>;
+    return {
+      'secret': body['secret'] as String,
+      'otpauth_uri': body['otpauth_uri'] as String,
+    };
+  }
+
+  /// Confirma a ativação do 2FA com um código do autenticador.
+  Future<void> enableTwoFactor(String code) async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/2fa/enable'),
+      headers: _authHeaders,
+      body: jsonEncode({'code': code}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Desativa o 2FA (exige a senha atual).
+  Future<void> disableTwoFactor(String password) async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/2fa/disable'),
+      headers: _authHeaders,
+      body: jsonEncode({'password': password}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Consulta se a conta tem 2FA ativo (via /me).
+  Future<bool> fetchTwoFactorEnabled() async {
+    final res = await _http.get(_uri('/api/v1/auth/me'), headers: _authHeaders);
+    final body = _decode(res) as Map<String, dynamic>;
+    return body['totp_enabled'] as bool? ?? false;
   }
 
   /// Restaura a sessão a partir dos tokens salvos. Renova o access token com o
