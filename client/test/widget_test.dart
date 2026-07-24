@@ -4,19 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:remoteone_client/l10n/strings.dart';
 import 'package:remoteone_client/main.dart';
 import 'package:remoteone_client/services/api_client.dart';
 import 'package:remoteone_client/services/app_state.dart';
 import 'package:remoteone_client/services/token_store.dart';
 
-/// Constrói um AppState com um http.Client falso, roteado por [handler].
+/// Constrói um AppState com um http.Client falso, roteado por [handler]. Fixa o
+/// idioma em pt-BR para as asserções de texto serem determinísticas.
 AppState _stateWith(Future<http.Response> Function(http.Request) handler) {
   final mock = MockClient((req) => handler(req));
   return AppState(ApiClient(
     baseUrl: 'http://test',
     httpClient: mock,
     tokenStore: InMemoryTokenStore(),
-  ));
+  ))
+    ..language = AppLanguage.ptBr;
 }
 
 void main() {

@@ -1,0 +1,368 @@
+import '../models/stream_quality.dart';
+
+/// Idioma do app: segue o sistema, ou fixo num dos cinco suportados.
+enum AppLanguage { system, ptBr, en, zh, fr, es }
+
+/// Textos do app nos cinco idiomas. Uma única fonte, sem geração de código.
+/// Cada texto é `_t(pt, en, zh, fr, es)`. Acesse por `state.t` (reconstrói ao
+/// trocar o idioma). O idioma `system` é resolvido antes de chegar aqui.
+class Strings {
+  const Strings(this.lang);
+  final AppLanguage lang;
+
+  String _t(String pt, String en, String zh, String fr, String es) =>
+      switch (lang) {
+        AppLanguage.ptBr => pt,
+        AppLanguage.zh => zh,
+        AppLanguage.fr => fr,
+        AppLanguage.es => es,
+        _ => en,
+      };
+
+  // Comuns
+  String get cancel => _t('Cancelar', 'Cancel', '取消', 'Annuler', 'Cancelar');
+  String get save => _t('Salvar', 'Save', '保存', 'Enregistrer', 'Guardar');
+  String get remove => _t('Remover', 'Remove', '移除', 'Retirer', 'Quitar');
+  String get delete => _t('Excluir', 'Delete', '删除', 'Supprimer', 'Eliminar');
+  String get enable => _t('Ativar', 'Enable', '启用', 'Activer', 'Activar');
+  String get disable => _t('Desativar', 'Disable', '停用', 'Désactiver', 'Desactivar');
+
+  // Login
+  String get signInTitle => _t('Entrar', 'Sign in', '登录', 'Se connecter', 'Entrar');
+  String get createAccountTitle =>
+      _t('Criar conta', 'Create account', '创建账户', 'Créer un compte', 'Crear cuenta');
+  String get email => _t('E-mail', 'Email', '邮箱', 'E-mail', 'Correo');
+  String get password => _t('Senha', 'Password', '密码', 'Mot de passe', 'Contraseña');
+  String get twoFactorCode => _t('Código de verificação (2FA)', 'Verification code (2FA)',
+      '验证码 (2FA)', 'Code de vérification (2FA)', 'Código de verificación (2FA)');
+  String get twoFactorCodeHint => _t('Do seu app autenticador', 'From your authenticator app',
+      '来自身份验证器应用', "De votre application d'authentification", 'De tu app de autenticación');
+  String get server => _t('Servidor', 'Server', '服务器', 'Serveur', 'Servidor');
+  String get serverHint => 'Ex.: http://192.168.0.10:8000';
+  String get signInButton => _t('Entrar', 'Sign in', '登录', 'Se connecter', 'Entrar');
+  String get createAccountButton =>
+      _t('Cadastrar', 'Sign up', '注册', "S'inscrire", 'Registrarse');
+  String get haveAccount => _t('Já tenho conta', 'I already have an account', '我已有账户',
+      "J'ai déjà un compte", 'Ya tengo una cuenta');
+  String get createOne => _t('Criar uma conta', 'Create an account', '创建账户',
+      'Créer un compte', 'Crear una cuenta');
+  String get invalidCode => _t('Código inválido. Tente de novo.', 'Invalid code. Try again.',
+      '验证码无效，请重试。', 'Code invalide. Réessayez.', 'Código inválido. Inténtalo de nuevo.');
+
+  // Dispositivos
+  String get myComputers =>
+      _t('Meus computadores', 'My computers', '我的电脑', 'Mes ordinateurs', 'Mis equipos');
+  String get settings =>
+      _t('Configurações', 'Settings', '设置', 'Paramètres', 'Ajustes');
+  String get pairComputer => _t('Parear computador', 'Pair computer', '配对电脑',
+      "Associer l'ordinateur", 'Vincular equipo');
+  String get codeShownOnComputer => _t('Código exibido no computador',
+      'Code shown on the computer', '电脑上显示的代码', "Code affiché sur l'ordinateur",
+      'Código mostrado en el equipo');
+  String get pair => _t('Parear', 'Pair', '配对', 'Associer', 'Vincular');
+  String get computerPaired => _t('Computador pareado!', 'Computer paired!', '电脑已配对！',
+      'Ordinateur associé !', '¡Equipo vinculado!');
+  String get noComputers => _t(
+      'Nenhum computador pareado.\nToque em + e informe o código exibido pelo agente.',
+      'No computers paired.\nTap + and enter the code shown by the agent.',
+      '没有已配对的电脑。\n点击 + 并输入代理显示的代码。',
+      "Aucun ordinateur associé.\nAppuyez sur + et saisissez le code affiché par l'agent.",
+      'No hay equipos vinculados.\nToca + e introduce el código que muestra el agente.');
+  String get online => _t('Online', 'Online', '在线', 'En ligne', 'En línea');
+  String get offline => _t('Offline', 'Offline', '离线', 'Hors ligne', 'Desconectado');
+  String get wake => _t('Ligar (Wake-on-LAN)', 'Turn on (Wake-on-LAN)', '开机 (Wake-on-LAN)',
+      'Allumer (Wake-on-LAN)', 'Encender (Wake-on-LAN)');
+  String get control => _t('Controlar', 'Control', '控制', 'Contrôler', 'Controlar');
+  String get rename => _t('Renomear', 'Rename', '重命名', 'Renommer', 'Renombrar');
+  String get shutdown => _t('Desligar', 'Shut down', '关机', 'Éteindre', 'Apagar');
+  String get restart => _t('Reiniciar', 'Restart', '重启', 'Redémarrer', 'Reiniciar');
+  String get suspend => _t('Suspender', 'Sleep', '睡眠', 'Veille', 'Suspender');
+  String get renameComputer => _t('Renomear computador', 'Rename computer', '重命名电脑',
+      "Renommer l'ordinateur", 'Renombrar equipo');
+  String get name => _t('Nome', 'Name', '名称', 'Nom', 'Nombre');
+  String get nameUpdated =>
+      _t('Nome atualizado.', 'Name updated.', '名称已更新。', 'Nom mis à jour.', 'Nombre actualizado.');
+  String get removeComputer => _t('Remover computador', 'Remove computer', '移除电脑',
+      "Retirer l'ordinateur", 'Quitar equipo');
+  String unlinkConfirm(String device) => _t(
+      'Desvincular "$device" da sua conta?',
+      'Unlink "$device" from your account?',
+      '将"$device"从你的账户解绑？',
+      'Dissocier « $device » de votre compte ?',
+      '¿Desvincular «$device» de tu cuenta?');
+  String get computerRemoved => _t('Computador removido.', 'Computer removed.', '电脑已移除。',
+      'Ordinateur retiré.', 'Equipo eliminado.');
+  String powerLabel(String action) => switch (action) {
+        'shutdown' => shutdown,
+        'restart' => restart,
+        _ => suspend,
+      };
+  String powerConfirm(String action, String device) => _t(
+      '${powerLabel(action)} "$device" agora?',
+      '${powerLabel(action)} "$device" now?',
+      '现在${powerLabel(action)}"$device"？',
+      '${powerLabel(action)} « $device » maintenant ?',
+      '¿${powerLabel(action)} «$device» ahora?');
+  String powerSent(String action) => _t(
+      '${powerLabel(action)} enviado.',
+      '${powerLabel(action)} sent.',
+      '已发送：${powerLabel(action)}。',
+      '${powerLabel(action)} envoyé.',
+      '${powerLabel(action)} enviado.');
+  String get wakeSent => _t(
+      'Sinal enviado. O computador deve ligar em instantes.',
+      'Signal sent. The computer should turn on shortly.',
+      '信号已发送。电脑应该很快开机。',
+      "Signal envoyé. L'ordinateur devrait s'allumer sous peu.",
+      'Señal enviada. El equipo debería encenderse en breve.');
+
+  // Configurações
+  String get appearance => _t('Aparência', 'Appearance', '外观', 'Apparence', 'Apariencia');
+  String get screenQuality => _t('Qualidade da tela', 'Screen quality', '画面质量',
+      "Qualité de l'écran", 'Calidad de pantalla');
+  String get security => _t('Segurança', 'Security', '安全', 'Sécurité', 'Seguridad');
+  String get account => _t('Conta', 'Account', '账户', 'Compte', 'Cuenta');
+  String get help => _t('Ajuda', 'Help', '帮助', 'Aide', 'Ayuda');
+  String get about => _t('Sobre', 'About', '关于', 'À propos', 'Acerca de');
+  String get language => _t('Idioma', 'Language', '语言', 'Langue', 'Idioma');
+  String get languageSystem => _t('Automático (sistema)', 'Automatic (system)', '自动（系统）',
+      'Automatique (système)', 'Automático (sistema)');
+  String get themeAuto => _t('Automático (sistema)', 'Automatic (system)', '自动（系统）',
+      'Automatique (système)', 'Automático (sistema)');
+  String get themeLight => _t('Claro', 'Light', '浅色', 'Clair', 'Claro');
+  String get themeDark => _t('Escuro', 'Dark', '深色', 'Sombre', 'Oscuro');
+  String get faceIdLock => _t('Bloquear com Face ID / biometria',
+      'Lock with Face ID / biometrics', '使用 Face ID / 生物识别锁定',
+      'Verrouiller avec Face ID / biométrie', 'Bloquear con Face ID / biometría');
+  String get faceIdLockSub => _t('Pede biometria ao abrir o app',
+      'Asks for biometrics when opening the app', '打开应用时要求生物识别',
+      "Demande la biométrie à l'ouverture de l'app", 'Pide biometría al abrir la app');
+  String get twoFactor => _t('Verificação em duas etapas (2FA)', 'Two-step verification (2FA)',
+      '两步验证 (2FA)', 'Vérification en deux étapes (2FA)', 'Verificación en dos pasos (2FA)');
+  String get appLocked =>
+      _t('RemoteOne bloqueado', 'RemoteOne locked', 'RemoteOne 已锁定', 'RemoteOne verrouillé', 'RemoteOne bloqueado');
+  String get unlock => _t('Desbloquear', 'Unlock', '解锁', 'Déverrouiller', 'Desbloquear');
+  String get twoFactorSub => _t('Pede um código do autenticador ao entrar',
+      'Asks for an authenticator code at sign-in', '登录时要求身份验证器代码',
+      "Demande un code d'authentification à la connexion",
+      'Pide un código del autenticador al entrar');
+  String get changeEmail =>
+      _t('Alterar e-mail', 'Change email', '更改邮箱', "Changer l'e-mail", 'Cambiar correo');
+  String get changePassword => _t('Alterar senha', 'Change password', '更改密码',
+      'Changer le mot de passe', 'Cambiar contraseña');
+  String get signOut => _t('Sair', 'Sign out', '退出', 'Se déconnecter', 'Salir');
+  String get deleteAccount => _t('Excluir conta', 'Delete account', '删除账户',
+      'Supprimer le compte', 'Eliminar cuenta');
+  String get howToControl => _t('Como controlar (gestos)', 'How to control (gestures)',
+      '如何控制（手势）', 'Comment contrôler (gestes)', 'Cómo controlar (gestos)');
+  String get howToControlSub => _t('Toque, arrastar, segurar, rolar', 'Tap, drag, hold, scroll',
+      '点按、拖动、长按、滚动', 'Toucher, glisser, maintenir, défiler', 'Tocar, arrastrar, mantener, desplazar');
+  String get turnOnPc => _t('Ligar o PC (Wake-on-LAN)', 'Turn on the PC (Wake-on-LAN)',
+      '开机 (Wake-on-LAN)', 'Allumer le PC (Wake-on-LAN)', 'Encender el PC (Wake-on-LAN)');
+  String get turnOnPcSub => _t('Como acordar um computador desligado',
+      'How to wake a computer that is off', '如何唤醒已关机的电脑',
+      'Comment réveiller un ordinateur éteint', 'Cómo despertar un equipo apagado');
+  String version(String v) =>
+      _t('Versão $v', 'Version $v', '版本 $v', 'Version $v', 'Versión $v');
+
+  String qualityLabel(StreamQuality q) => switch (q) {
+        StreamQuality.economico => _t('Econômico', 'Economy', '省流', 'Économique', 'Económica'),
+        StreamQuality.equilibrado =>
+          _t('Equilibrado', 'Balanced', '均衡', 'Équilibré', 'Equilibrada'),
+        StreamQuality.nitido => _t('Nítido', 'Sharp', '清晰', 'Net', 'Nítida'),
+      };
+  String qualitySubtitle(StreamQuality q) => _t(
+      '${q.fps} fps · até ${q.maxWidth}px · qualidade ${q.quality}',
+      '${q.fps} fps · up to ${q.maxWidth}px · quality ${q.quality}',
+      '${q.fps} fps · 最大 ${q.maxWidth}px · 质量 ${q.quality}',
+      "${q.fps} fps · jusqu'à ${q.maxWidth}px · qualité ${q.quality}",
+      '${q.fps} fps · hasta ${q.maxWidth}px · calidad ${q.quality}');
+
+  // Diálogos de conta
+  String get newEmail => _t('Novo e-mail', 'New email', '新邮箱', 'Nouvel e-mail', 'Nuevo correo');
+  String get currentPassword => _t('Senha atual', 'Current password', '当前密码',
+      'Mot de passe actuel', 'Contraseña actual');
+  String get emailUpdated => _t('E-mail atualizado.', 'Email updated.', '邮箱已更新。',
+      'E-mail mis à jour.', 'Correo actualizado.');
+  String get newPasswordMin => _t('Nova senha (mín. 8 caracteres)',
+      'New password (min. 8 characters)', '新密码（至少 8 个字符）',
+      'Nouveau mot de passe (min. 8 caractères)', 'Nueva contraseña (mín. 8 caracteres)');
+  String get passwordUpdated => _t('Senha atualizada.', 'Password updated.', '密码已更新。',
+      'Mot de passe mis à jour.', 'Contraseña actualizada.');
+  String get deleteAccountBody => _t(
+      'Isso remove sua conta e todos os computadores pareados. A ação não pode ser desfeita.',
+      'This deletes your account and all paired computers. This cannot be undone.',
+      '这将删除你的账户和所有已配对的电脑。此操作无法撤销。',
+      'Ceci supprime votre compte et tous les ordinateurs associés. Action irréversible.',
+      'Esto elimina tu cuenta y todos los equipos vinculados. No se puede deshacer.');
+  String get confirmPassword => _t('Confirme a senha', 'Confirm your password', '确认密码',
+      'Confirmez le mot de passe', 'Confirma la contraseña');
+
+  // 2FA
+  String get twoFactorTitle => _t('Verificação em duas etapas', 'Two-step verification',
+      '两步验证', 'Vérification en deux étapes', 'Verificación en dos pasos');
+  String get twoFactorSteps => _t(
+      '1. Instale um app autenticador (Google Authenticator, Microsoft Authenticator, etc.).\n'
+          '2. Escaneie o QR Code abaixo — ou digite o código manual.\n'
+          '3. Digite o código de 6 dígitos que o app mostrar para confirmar.',
+      '1. Install an authenticator app (Google Authenticator, Microsoft Authenticator, etc.).\n'
+          '2. Scan the QR code below — or type the manual code.\n'
+          '3. Enter the 6-digit code the app shows to confirm.',
+      '1. 安装身份验证器应用（Google Authenticator、Microsoft Authenticator 等）。\n'
+          '2. 扫描下方二维码，或手动输入密钥。\n'
+          '3. 输入应用显示的 6 位验证码以确认。',
+      "1. Installez une app d'authentification (Google Authenticator, Microsoft Authenticator, etc.).\n"
+          '2. Scannez le QR code ci-dessous — ou saisissez le code manuel.\n'
+          "3. Saisissez le code à 6 chiffres affiché par l'app pour confirmer.",
+      '1. Instala una app de autenticación (Google Authenticator, Microsoft Authenticator, etc.).\n'
+          '2. Escanea el código QR de abajo — o escribe el código manual.\n'
+          '3. Introduce el código de 6 dígitos que muestra la app para confirmar.');
+  String manualCode(String secret) => _t('Código manual: $secret', 'Manual code: $secret',
+      '手动密钥：$secret', 'Code manuel : $secret', 'Código manual: $secret');
+  String get codeCopied =>
+      _t('Código copiado.', 'Code copied.', '密钥已复制。', 'Code copié.', 'Código copiado.');
+  String get sixDigitCode => _t('Código de 6 dígitos', '6-digit code', '6 位验证码',
+      'Code à 6 chiffres', 'Código de 6 dígitos');
+  String get twoFactorEnabled => _t('Verificação em duas etapas ativada.',
+      'Two-step verification enabled.', '两步验证已启用。',
+      'Vérification en deux étapes activée.', 'Verificación en dos pasos activada.');
+  String get disableTwoFactor =>
+      _t('Desativar 2FA', 'Disable 2FA', '停用 2FA', 'Désactiver la 2FA', 'Desactivar 2FA');
+  String get disableTwoFactorBody => _t(
+      'Confirme sua senha para desativar a verificação em duas etapas.',
+      'Confirm your password to disable two-step verification.',
+      '确认密码以停用两步验证。',
+      'Confirmez votre mot de passe pour désactiver la vérification en deux étapes.',
+      'Confirma tu contraseña para desactivar la verificación en dos pasos.');
+  String get twoFactorDisabled => _t('Verificação em duas etapas desativada.',
+      'Two-step verification disabled.', '两步验证已停用。',
+      'Vérification en deux étapes désactivée.', 'Verificación en dos pasos desactivada.');
+
+  // Tela de controle
+  String get waitingScreen => _t('Aguardando a tela do computador...',
+      'Waiting for the computer screen...', '正在等待电脑画面…',
+      "En attente de l'écran de l'ordinateur…", 'Esperando la pantalla del equipo…');
+  String get reconnecting =>
+      _t('Reconectando…', 'Reconnecting…', '重新连接中…', 'Reconnexion…', 'Reconectando…');
+  String get zoomHint => _t(
+      'Modo lupa: use as setas para mover e + / − para ampliar.',
+      'Magnifier: use the arrows to move and + / − to zoom.',
+      '放大模式：用箭头移动，用 + / − 缩放。',
+      'Loupe : utilisez les flèches pour déplacer et + / − pour zoomer.',
+      'Lupa: usa las flechas para mover y + / − para ampliar.');
+  String get zoomOut => _t('Reduzir', 'Zoom out', '缩小', 'Réduire', 'Reducir');
+  String get zoomIn => _t('Ampliar', 'Zoom in', '放大', 'Agrandir', 'Ampliar');
+  String get zoomFit =>
+      _t('Tamanho normal', 'Fit to screen', '适应屏幕', "Ajuster à l'écran", 'Ajustar a pantalla');
+  String get zoomExit => _t('Sair da lupa', 'Exit magnifier', '退出放大', 'Quitter la loupe', 'Salir de la lupa');
+  String get zoomEnter => _t('Ampliar (lupa)', 'Magnify', '放大（放大镜）', 'Agrandir (loupe)', 'Ampliar (lupa)');
+
+  // Tutorial de gestos
+  String get howToControlTitle =>
+      _t('Como controlar', 'How to control', '如何控制', 'Comment contrôler', 'Cómo controlar');
+  String get gestureIntro => _t(
+      'A tela do computador ocupa o celular inteiro e você controla como num touchscreen:',
+      'The computer screen fills your phone and you control it like a touchscreen:',
+      '电脑画面占满手机屏幕，你像操作触摸屏一样控制它：',
+      "L'écran de l'ordinateur occupe tout le téléphone et vous le contrôlez comme un écran tactile :",
+      'La pantalla del equipo ocupa todo el teléfono y la controlas como una pantalla táctil:');
+  String get gestureGotIt => _t('Entendi', 'Got it', '明白了', 'Compris', 'Entendido');
+  List<(String, String)> get gestures => [
+        (
+          _t('Tocar', 'Tap', '点按', 'Toucher', 'Tocar'),
+          _t('Leva o cursor ao ponto tocado e dá um clique (botão esquerdo).',
+              'Moves the cursor to the point and left-clicks.', '将光标移到触点并左键单击。',
+              'Déplace le curseur au point touché et fait un clic gauche.',
+              'Lleva el cursor al punto y hace clic izquierdo.'),
+        ),
+        (
+          _t('Arrastar', 'Drag', '拖动', 'Glisser', 'Arrastrar'),
+          _t('Move o cursor seguindo o seu dedo.', 'Moves the cursor following your finger.',
+              '光标跟随手指移动。', 'Déplace le curseur en suivant votre doigt.',
+              'Mueve el cursor siguiendo tu dedo.'),
+        ),
+        (
+          _t('Segurar', 'Hold', '长按', 'Maintenir', 'Mantener'),
+          _t('Clique com o botão direito (menu de contexto).', 'Right-click (context menu).',
+              '右键单击（上下文菜单）。', 'Clic droit (menu contextuel).',
+              'Clic derecho (menú contextual).'),
+        ),
+        (
+          _t('Dois dedos', 'Two fingers', '两指', 'Deux doigts', 'Dos dedos'),
+          _t('Rola a página para cima e para baixo.', 'Scrolls up and down.', '上下滚动页面。',
+              'Fait défiler vers le haut et le bas.', 'Desplaza hacia arriba y abajo.'),
+        ),
+        (
+          _t('Botão da lupa', 'Magnifier button', '放大镜按钮', 'Bouton loupe', 'Botón de lupa'),
+          _t(
+              'Amplia a tela para enxergar melhor. Use + e − para ajustar e as setas nas bordas para mover; toque no X para voltar a controlar.',
+              'Enlarges the screen. Use + and − to adjust and the edge arrows to move; tap X to go back to control.',
+              '放大屏幕以看得更清楚。用 + 和 − 调整，用边缘箭头移动；点击 X 返回控制。',
+              'Agrandit l\'écran. Utilisez + et − pour ajuster et les flèches des bords pour déplacer ; touchez X pour revenir au contrôle.',
+              'Amplía la pantalla. Usa + y − para ajustar y las flechas de los bordes para mover; toca X para volver a controlar.'),
+        ),
+        (
+          _t('Botão do teclado', 'Keyboard button', '键盘按钮', 'Bouton clavier', 'Botón de teclado'),
+          _t('Abre o teclado com as teclas especiais (Ctrl, Alt, setas...).',
+              'Opens the keyboard with special keys (Ctrl, Alt, arrows...).',
+              '打开带特殊键（Ctrl、Alt、方向键…）的键盘。',
+              'Ouvre le clavier avec les touches spéciales (Ctrl, Alt, flèches...).',
+              'Abre el teclado con teclas especiales (Ctrl, Alt, flechas...).'),
+        ),
+      ];
+
+  // Wake-on-LAN (ajuda)
+  String get wolTitle => _t('Ligar o PC à distância', 'Turn on the PC remotely', '远程开机',
+      'Allumer le PC à distance', 'Encender el PC a distancia');
+  String get wolHowTitle =>
+      _t('Como funciona', 'How it works', '工作原理', 'Comment ça marche', 'Cómo funciona');
+  String get wolHowBody => _t(
+      'Um computador desligado não consegue receber comandos sozinho. Mas, se você tem outro computador seu ligado na mesma casa (na mesma internet), o RemoteOne usa esse que está ligado para "acordar" o que está desligado.\n\nResumindo: se você tem dois ou mais computadores na mesma rede e pelo menos um está ligado, o botão "Ligar" acende os outros — sem você precisar configurar nada.',
+      'A computer that is off cannot receive commands on its own. But if you have another computer of yours turned on in the same house (same network), RemoteOne uses that one to "wake" the one that is off.\n\nIn short: if you have two or more computers on the same network and at least one is on, the "Turn on" button wakes the others — with no setup.',
+      '关机的电脑无法自行接收命令。但如果你在同一处（同一网络）还有另一台开着的电脑，RemoteOne 会用它来"唤醒"已关机的那台。\n\n简单说：只要同一网络里有两台以上电脑，且至少一台开着，"开机"按钮就能唤醒其他电脑——无需任何配置。',
+      "Un ordinateur éteint ne peut pas recevoir de commandes seul. Mais si vous avez un autre de vos ordinateurs allumé dans la même maison (même réseau), RemoteOne l'utilise pour « réveiller » celui qui est éteint.\n\nEn bref : si vous avez deux ordinateurs ou plus sur le même réseau et qu'au moins un est allumé, le bouton « Allumer » réveille les autres — sans aucune configuration.",
+      'Un equipo apagado no puede recibir comandos por sí solo. Pero si tienes otro equipo tuyo encendido en la misma casa (misma red), RemoteOne usa ese para "despertar" al que está apagado.\n\nEn resumen: si tienes dos o más equipos en la misma red y al menos uno encendido, el botón "Encender" despierta a los demás — sin configurar nada.');
+  String get wolNote => _t(
+      'Se todos os seus computadores dessa casa estiverem desligados ao mesmo tempo, não dá para ligar nenhum à distância. É preciso deixar pelo menos um ligado.',
+      'If all your computers on that network are off at the same time, none can be turned on remotely. Keep at least one on.',
+      '如果那处的所有电脑同时关机，就无法远程开机。请至少保持一台开着。',
+      "Si tous vos ordinateurs de cette maison sont éteints en même temps, aucun ne peut être allumé à distance. Gardez-en au moins un allumé.",
+      'Si todos tus equipos de esa casa están apagados a la vez, no se puede encender ninguno a distancia. Deja al menos uno encendido.');
+  String get wolPrepareTitle => _t('Preparar o computador', 'Prepare the computer', '准备电脑',
+      "Préparer l'ordinateur", 'Preparar el equipo');
+  String get wolPrepareBody => _t(
+      'Para um computador poder ser aceso à distância, esse recurso precisa estar ativado nele. Em geral:\n\n•  Ligue a opção "Wake on LAN" (ligar pela rede) nas configurações do computador. Ela costuma ficar numa tela de configurações que aparece logo quando o PC liga. Se não achar, pesquise na internet "ativar Wake on LAN" com o modelo do seu computador.\n\n•  Se puder, conecte o computador por cabo de rede — por Wi-Fi esse recurso costuma não funcionar.\n\n•  Desligue o computador normalmente, mas deixe-o na tomada.',
+      'For a computer to be turned on remotely, this feature must be enabled on it. Usually:\n\n•  Turn on the "Wake on LAN" option in the computer settings. It is often on a settings screen that appears right when the PC turns on. If you cannot find it, search online for "enable Wake on LAN" with your computer model.\n\n•  If possible, connect the computer with a network cable — over Wi-Fi this feature often does not work.\n\n•  Turn the computer off normally, but keep it plugged in.',
+      '要让电脑能被远程开机，需要先在它上面启用该功能。通常：\n\n•  在电脑设置中启用"Wake on LAN"（网络唤醒）。它通常在开机时出现的设置界面里。如果找不到，可在网上搜索"启用 Wake on LAN"加上你的电脑型号。\n\n•  如果可以，请用网线连接电脑——通过 Wi-Fi 该功能通常无效。\n\n•  正常关机，但保持通电。',
+      "Pour qu'un ordinateur puisse être allumé à distance, cette fonction doit y être activée. En général :\n\n•  Activez l'option « Wake on LAN » dans les paramètres de l'ordinateur. Elle se trouve souvent sur un écran de configuration qui apparaît au démarrage du PC. Si vous ne la trouvez pas, cherchez en ligne « activer Wake on LAN » avec le modèle de votre ordinateur.\n\n•  Si possible, connectez l'ordinateur par câble réseau — en Wi-Fi cette fonction ne marche souvent pas.\n\n•  Éteignez l'ordinateur normalement, mais laissez-le branché.",
+      'Para que un equipo pueda encenderse a distancia, esta función debe estar activada en él. En general:\n\n•  Activa la opción "Wake on LAN" (encender por red) en la configuración del equipo. Suele estar en una pantalla de configuración que aparece al encender el PC. Si no la encuentras, busca en internet "activar Wake on LAN" con el modelo de tu equipo.\n\n•  Si puedes, conecta el equipo por cable de red — por Wi-Fi esta función suele no funcionar.\n\n•  Apaga el equipo normalmente, pero déjalo enchufado.');
+  String get wolRouterTitle => _t('Ligar de fora de casa (avançado)',
+      'Turn on from outside home (advanced)', '在外网开机（高级）',
+      "Allumer hors du domicile (avancé)", 'Encender fuera de casa (avanzado)');
+  String get wolRouterWarning => _t(
+      'Atenção: este modo "abre uma porta" no seu roteador para a internet. Isso deixa a sua rede um pouco mais exposta a riscos de segurança. Use só se tiver experiência. O modo normal (acima) é seguro e não mexe em nada da sua rede.',
+      'Warning: this mode "opens a door" on your router to the internet. That makes your network a bit more exposed to security risks. Use only if you have experience. The normal mode (above) is safe and does not touch your network.',
+      '注意：此模式会在你的路由器上向互联网"开一个端口"，会让你的网络更容易受到安全风险。仅在你有经验时使用。上面的普通模式是安全的，不会改动你的网络。',
+      "Attention : ce mode « ouvre une porte » sur votre routeur vers Internet. Cela expose un peu plus votre réseau aux risques de sécurité. À utiliser seulement si vous avez de l'expérience. Le mode normal (ci-dessus) est sûr et ne touche à rien de votre réseau.",
+      'Atención: este modo "abre una puerta" en tu router hacia internet. Eso deja tu red un poco más expuesta a riesgos de seguridad. Úsalo solo si tienes experiencia. El modo normal (arriba) es seguro y no toca nada de tu red.');
+  String get wolRouterBody => _t(
+      'O modo normal só funciona quando você e o computador ligado estão na mesma rede. Este modo avançado permite acender o PC mesmo estando longe de casa — mas depende do seu roteador e da sua operadora (algumas não permitem conexões de fora).',
+      'The normal mode only works when you and the computer that is on are on the same network. This advanced mode lets you turn on the PC even when away from home — but it depends on your router and your internet provider (some do not allow connections from outside).',
+      '普通模式只在你和开着的电脑处于同一网络时有效。此高级模式让你即使不在家也能开机——但取决于你的路由器和运营商（有些不允许外部连接）。',
+      "Le mode normal ne fonctionne que lorsque vous et l'ordinateur allumé êtes sur le même réseau. Ce mode avancé permet d'allumer le PC même loin de chez vous — mais cela dépend de votre routeur et de votre opérateur (certains n'autorisent pas les connexions de l'extérieur).",
+      'El modo normal solo funciona cuando tú y el equipo encendido están en la misma red. Este modo avanzado permite encender el PC incluso lejos de casa — pero depende de tu router y de tu operador (algunos no permiten conexiones desde fuera).');
+  String get wolRouterIdeaTitle =>
+      _t('Ideia geral', 'General idea', '总体思路', 'Idée générale', 'Idea general');
+  String get wolRouterIdea => _t(
+      '•  Nas configurações do roteador, cria-se uma regra que deixa o "sinal para ligar" chegar da internet até o computador em casa.\n•  Alguns roteadores já têm um botão pronto chamado "Wake on LAN".\n•  Se você não tem familiaridade com configurações de roteador, o mais seguro é ficar no modo normal (deixar um computador ligado em casa).',
+      '•  In the router settings, you create a rule that lets the "turn-on signal" reach the computer at home from the internet.\n•  Some routers already have a ready button called "Wake on LAN".\n•  If you are not familiar with router settings, the safest is to stay on the normal mode (keep a computer on at home).',
+      '•  在路由器设置中创建一条规则，让"开机信号"能从互联网到达家里的电脑。\n•  有些路由器已内置"Wake on LAN"按钮。\n•  如果你不熟悉路由器设置，最安全的做法是使用普通模式（在家保持一台电脑开着）。',
+      "•  Dans les paramètres du routeur, on crée une règle qui laisse le « signal d'allumage » atteindre l'ordinateur à la maison depuis Internet.\n•  Certains routeurs ont déjà un bouton « Wake on LAN ».\n•  Si vous n'êtes pas à l'aise avec les paramètres du routeur, le plus sûr est de rester en mode normal (garder un ordinateur allumé à la maison).",
+      '•  En la configuración del router, se crea una regla que deja que la "señal de encendido" llegue desde internet al equipo de casa.\n•  Algunos routers ya tienen un botón llamado "Wake on LAN".\n•  Si no tienes familiaridad con la configuración del router, lo más seguro es quedarte en el modo normal (dejar un equipo encendido en casa).');
+  String get wolRouterFuture => _t(
+      'Este modo avançado ainda será integrado ao botão "Ligar" numa próxima atualização.',
+      'This advanced mode will be integrated into the "Turn on" button in a future update.',
+      '此高级模式将在未来更新中集成到"开机"按钮。',
+      "Ce mode avancé sera intégré au bouton « Allumer » dans une future mise à jour.",
+      'Este modo avanzado se integrará al botón "Encender" en una próxima actualización.');
+}

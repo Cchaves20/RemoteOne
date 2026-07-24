@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
 import '../models/stream_quality.dart';
 import '../services/app_state.dart';
 import 'gesture_tutorial_screen.dart';
@@ -18,52 +19,61 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Configurações')),
+      appBar: AppBar(title: Text(state.t.settings)),
       body: ListenableBuilder(
         listenable: state,
         builder: (context, _) {
+          final t = state.t;
           return ListView(
             children: [
-              const _SectionHeader('Aparência'),
-              _themeTile('Automático (sistema)', ThemeMode.system),
-              _themeTile('Claro', ThemeMode.light),
-              _themeTile('Escuro', ThemeMode.dark),
+              _SectionHeader(t.appearance),
+              _themeTile(t.themeAuto, ThemeMode.system),
+              _themeTile(t.themeLight, ThemeMode.light),
+              _themeTile(t.themeDark, ThemeMode.dark),
               const Divider(),
-              const _SectionHeader('Qualidade da tela'),
+              _SectionHeader(t.language),
+              _langTile(t.languageSystem, AppLanguage.system),
+              _langTile('Português', AppLanguage.ptBr),
+              _langTile('English', AppLanguage.en),
+              _langTile('中文', AppLanguage.zh),
+              _langTile('Français', AppLanguage.fr),
+              _langTile('Español', AppLanguage.es),
+              const Divider(),
+              _SectionHeader(t.screenQuality),
               for (final q in StreamQuality.values) _qualityTile(q),
               const Divider(),
-              const _SectionHeader('Segurança'),
+              _SectionHeader(t.security),
               SwitchListTile(
                 secondary: const Icon(Icons.lock_outline),
-                title: const Text('Bloquear com Face ID / biometria'),
-                subtitle: const Text('Pede biometria ao abrir o app'),
+                title: Text(t.faceIdLock),
+                subtitle: Text(t.faceIdLockSub),
                 value: state.appLockEnabled,
                 onChanged: state.setAppLockEnabled,
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.verified_user_outlined),
-                title: const Text('Verificação em duas etapas (2FA)'),
-                subtitle: const Text('Pede um código do autenticador ao entrar'),
+                title: Text(t.twoFactor),
+                subtitle: Text(t.twoFactorSub),
                 value: state.twoFactorEnabled,
                 onChanged: (value) => value
                     ? _startTwoFactor(context)
                     : _disableTwoFactor(context),
               ),
               const Divider(),
-              const _SectionHeader('Conta'),
+              _SectionHeader(t.account),
               ListTile(
                 leading: const Icon(Icons.alternate_email),
-                title: const Text('Alterar e-mail'),
+                title: Text(t.changeEmail),
                 onTap: () => _showChangeEmail(context),
               ),
               ListTile(
                 leading: const Icon(Icons.password),
-                title: const Text('Alterar senha'),
+                title: Text(t.changePassword),
                 onTap: () => _showChangePassword(context),
               ),
               ListTile(
                 leading: const Icon(Icons.logout),
-                title: const Text('Sair'),
+                title: Text(t.signOut),
                 onTap: () {
                   state.logout();
                   Navigator.of(context).pop();
@@ -72,40 +82,52 @@ class SettingsScreen extends StatelessWidget {
               ListTile(
                 leading: Icon(Icons.delete_forever,
                     color: Theme.of(context).colorScheme.error),
-                title: Text('Excluir conta',
+                title: Text(t.deleteAccount,
                     style:
                         TextStyle(color: Theme.of(context).colorScheme.error)),
                 onTap: () => _showDeleteAccount(context),
               ),
               const Divider(),
-              const _SectionHeader('Ajuda'),
+              _SectionHeader(t.help),
               ListTile(
                 leading: const Icon(Icons.touch_app),
-                title: const Text('Como controlar (gestos)'),
-                subtitle: const Text('Toque, arrastar, segurar, rolar'),
+                title: Text(t.howToControl),
+                subtitle: Text(t.howToControlSub),
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const GestureTutorialScreen()),
+                  MaterialPageRoute(
+                      builder: (_) => GestureTutorialScreen(state: state)),
                 ),
               ),
               ListTile(
                 leading: const Icon(Icons.power),
-                title: const Text('Ligar o PC (Wake-on-LAN)'),
-                subtitle: const Text('Como acordar um computador desligado'),
+                title: Text(t.turnOnPc),
+                subtitle: Text(t.turnOnPcSub),
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const WakeOnLanScreen()),
+                  MaterialPageRoute(builder: (_) => WakeOnLanScreen(state: state)),
                 ),
               ),
               const Divider(),
-              const _SectionHeader('Sobre'),
-              const ListTile(
-                leading: Icon(Icons.info_outline),
-                title: Text('RemoteOne'),
-                subtitle: Text('Versão $_appVersion'),
+              _SectionHeader(t.about),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('RemoteOne'),
+                subtitle: Text(t.version(_appVersion)),
               ),
             ],
           );
         },
       ),
+    );
+  }
+
+  Widget _langTile(String label, AppLanguage lang) {
+    final selected = state.language == lang;
+    return ListTile(
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+      ),
+      title: Text(label),
+      onTap: () => state.setLanguage(lang),
     );
   }
 
@@ -126,10 +148,8 @@ class SettingsScreen extends StatelessWidget {
       leading: Icon(
         selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
       ),
-      title: Text(quality.label),
-      subtitle: Text(
-        '${quality.fps} fps · até ${quality.maxWidth}px · qualidade ${quality.quality}',
-      ),
+      title: Text(state.t.qualityLabel(quality)),
+      subtitle: Text(state.t.qualitySubtitle(quality)),
       onTap: () => state.setStreamQuality(quality),
     );
   }
@@ -143,33 +163,34 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _disableTwoFactor(BuildContext context) async {
+    final t = state.t;
     final password = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Desativar 2FA'),
+        title: Text(t.disableTwoFactor),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Confirme sua senha para desativar a verificação em duas etapas.'),
+            Text(t.disableTwoFactorBody),
             const SizedBox(height: 12),
             TextField(
               controller: password,
               obscureText: true,
               autofocus: true,
-              decoration: const InputDecoration(labelText: 'Senha'),
+              decoration: InputDecoration(labelText: t.password),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+            child: Text(t.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Desativar'),
+            child: Text(t.disable),
           ),
         ],
       ),
@@ -178,7 +199,7 @@ class SettingsScreen extends StatelessWidget {
     try {
       await state.disableTwoFactor(password.text);
       messenger.showSnackBar(
-        const SnackBar(content: Text('Verificação em duas etapas desativada.')),
+        SnackBar(content: Text(t.twoFactorDisabled)),
       );
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
@@ -188,6 +209,7 @@ class SettingsScreen extends StatelessWidget {
   // --- diálogos de conta -----------------------------------------------------
 
   Future<void> _showChangeEmail(BuildContext context) async {
+    final t = state.t;
     final email = TextEditingController();
     final password = TextEditingController();
     // Captura antes do await para não usar o context após o gap assíncrono.
@@ -195,7 +217,7 @@ class SettingsScreen extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Alterar e-mail'),
+        title: Text(t.changeEmail),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -203,23 +225,23 @@ class SettingsScreen extends StatelessWidget {
               controller: email,
               autofocus: true,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Novo e-mail'),
+              decoration: InputDecoration(labelText: t.newEmail),
             ),
             TextField(
               controller: password,
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'Senha atual'),
+              decoration: InputDecoration(labelText: t.currentPassword),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+            child: Text(t.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Salvar'),
+            child: Text(t.save),
           ),
         ],
       ),
@@ -228,18 +250,19 @@ class SettingsScreen extends StatelessWidget {
     await _run(
       messenger,
       () => state.updateEmail(password.text, email.text.trim()),
-      'E-mail atualizado.',
+      t.emailUpdated,
     );
   }
 
   Future<void> _showChangePassword(BuildContext context) async {
+    final t = state.t;
     final current = TextEditingController();
     final next = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Alterar senha'),
+        title: Text(t.changePassword),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -247,25 +270,23 @@ class SettingsScreen extends StatelessWidget {
               controller: current,
               obscureText: true,
               autofocus: true,
-              decoration: const InputDecoration(labelText: 'Senha atual'),
+              decoration: InputDecoration(labelText: t.currentPassword),
             ),
             TextField(
               controller: next,
               obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Nova senha (mín. 8 caracteres)',
-              ),
+              decoration: InputDecoration(labelText: t.newPasswordMin),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+            child: Text(t.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Salvar'),
+            child: Text(t.save),
           ),
         ],
       ),
@@ -274,45 +295,43 @@ class SettingsScreen extends StatelessWidget {
     await _run(
       messenger,
       () => state.updatePassword(current.text, next.text),
-      'Senha atualizada.',
+      t.passwordUpdated,
     );
   }
 
   Future<void> _showDeleteAccount(BuildContext context) async {
+    final t = state.t;
     final password = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Excluir conta'),
+        title: Text(t.deleteAccount),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Isso remove sua conta e todos os computadores pareados. '
-              'A ação não pode ser desfeita.',
-            ),
+            Text(t.deleteAccountBody),
             const SizedBox(height: 12),
             TextField(
               controller: password,
               obscureText: true,
               autofocus: true,
-              decoration: const InputDecoration(labelText: 'Confirme a senha'),
+              decoration: InputDecoration(labelText: t.confirmPassword),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+            child: Text(t.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Excluir'),
+            child: Text(t.delete),
           ),
         ],
       ),

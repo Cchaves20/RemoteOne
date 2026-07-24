@@ -69,12 +69,12 @@ class _LockGateState extends State<LockGate> with WidgetsBindingObserver {
                   children: [
                     const Icon(Icons.lock_outline, size: 64),
                     const SizedBox(height: 16),
-                    const Text('RemoteOne bloqueado'),
+                    Text(widget.state.t.appLocked),
                     const SizedBox(height: 24),
                     FilledButton.icon(
                       onPressed: _tryUnlock,
                       icon: const Icon(Icons.fingerprint),
-                      label: const Text('Desbloquear'),
+                      label: Text(widget.state.t.unlock),
                     ),
                   ],
                 ),

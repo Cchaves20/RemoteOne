@@ -38,8 +38,11 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Qualidade da tela ajustável** (Econômico/Equilibrado/Nítido): define fps,
   qualidade do JPEG e largura, enviados ao agente ao abrir a tela.
 - **Configurações** (`settings_screen.dart`): tema (automático/claro/escuro),
-  qualidade da tela, bloqueio biométrico, **alterar e-mail**, **alterar senha**,
-  sair, **excluir conta** e "Sobre".
+  **idioma** (automático/PT-BR/Inglês/Chinês/Francês/Espanhol), qualidade da
+  tela, bloqueio biométrico, **alterar e-mail**, **alterar senha**, sair,
+  **excluir conta** e "Sobre".
+- **5 idiomas** (`l10n/strings.dart`): a interface segue o idioma do sistema ou
+  um escolhido manualmente — Português, English, 中文, Français, Español.
 
 Estrutura:
 

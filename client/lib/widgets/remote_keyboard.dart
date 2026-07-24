@@ -164,7 +164,7 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
                       flex: 3, active: _mods.contains('ctrl')),
                   _key(const Text('Alt'), () => _toggleMod('alt'),
                       flex: 3, active: _mods.contains('alt')),
-                  _key(const Text('espaço'), () => _typeChar(' '), flex: 8),
+                  _key(const Icon(Icons.space_bar, size: 16), () => _typeChar(' '), flex: 8),
                   _key(const Text('.'), () => _typeChar('.')),
                   _key(const Icon(Icons.keyboard_return, size: 16),
                       () => _special('enter'),

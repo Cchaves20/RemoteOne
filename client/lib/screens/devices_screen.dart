@@ -26,27 +26,26 @@ class _DevicesScreenState extends State<DevicesScreen> {
   }
 
   Future<void> _showPairDialog() async {
+    final t = widget.state.t;
     final controller = TextEditingController();
     final code = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Parear computador'),
+        title: Text(t.pairComputer),
         content: TextField(
           controller: controller,
           autofocus: true,
           textCapitalization: TextCapitalization.characters,
-          decoration: const InputDecoration(
-            labelText: 'Código exibido no computador',
-          ),
+          decoration: InputDecoration(labelText: t.codeShownOnComputer),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+            child: Text(t.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Parear'),
+            child: Text(t.pair),
           ),
         ],
       ),
@@ -56,7 +55,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
       await widget.state.pair(code);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Computador pareado!')),
+          SnackBar(content: Text(t.computerPaired)),
         );
       }
     } catch (e) {
@@ -92,24 +91,25 @@ class _DevicesScreenState extends State<DevicesScreen> {
   }
 
   Future<void> _showRenameDialog(Device device) async {
+    final t = widget.state.t;
     final controller = TextEditingController(text: device.name);
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Renomear computador'),
+        title: Text(t.renameComputer),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Nome'),
+          decoration: InputDecoration(labelText: t.name),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+            child: Text(t.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Salvar'),
+            child: Text(t.save),
           ),
         ],
       ),
@@ -117,24 +117,25 @@ class _DevicesScreenState extends State<DevicesScreen> {
     if (name == null || name.isEmpty) return;
     await _runDeviceAction(
       () => widget.state.renameDevice(device, name),
-      'Nome atualizado.',
+      t.nameUpdated,
     );
   }
 
   Future<void> _confirmRemove(Device device) async {
+    final t = widget.state.t;
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remover computador'),
-        content: Text('Desvincular "${device.name}" da sua conta?'),
+        title: Text(t.removeComputer),
+        content: Text(t.unlinkConfirm(device.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+            child: Text(t.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remover'),
+            child: Text(t.remove),
           ),
         ],
       ),
@@ -142,18 +143,17 @@ class _DevicesScreenState extends State<DevicesScreen> {
     if (ok != true) return;
     await _runDeviceAction(
       () => widget.state.removeDevice(device),
-      'Computador removido.',
+      t.computerRemoved,
     );
   }
 
   Future<void> _wake(Device device) async {
+    final t = widget.state.t;
     final messenger = ScaffoldMessenger.of(context);
     try {
       await widget.state.wakeDevice(device);
       if (mounted) {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Sinal enviado. O computador deve ligar em instantes.'),
-        ));
+        messenger.showSnackBar(SnackBar(content: Text(t.wakeSent)));
       }
     } catch (e) {
       if (mounted) {
@@ -163,25 +163,20 @@ class _DevicesScreenState extends State<DevicesScreen> {
   }
 
   Future<void> _confirmPower(Device device, String action) async {
-    const labels = {
-      'shutdown': 'Desligar',
-      'restart': 'Reiniciar',
-      'suspend': 'Suspender',
-    };
-    final label = labels[action]!;
+    final t = widget.state.t;
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('$label computador'),
-        content: Text('$label "${device.name}" agora?'),
+        title: Text(t.powerLabel(action)),
+        content: Text(t.powerConfirm(action, device.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+            child: Text(t.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(label),
+            child: Text(t.powerLabel(action)),
           ),
         ],
       ),
@@ -189,7 +184,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
     if (ok != true) return;
     await _runDeviceAction(
       () => widget.state.powerDevice(device, action),
-      '$label enviado.',
+      t.powerSent(action),
     );
   }
 
@@ -213,74 +208,78 @@ class _DevicesScreenState extends State<DevicesScreen> {
             _confirmRemove(d);
         }
       },
-      itemBuilder: (context) => [
-        if (!d.online)
-          const PopupMenuItem(
-            value: 'wake',
+      itemBuilder: (context) {
+        final t = widget.state.t;
+        return [
+          if (!d.online)
+            PopupMenuItem(
+              value: 'wake',
+              child: ListTile(
+                leading: const Icon(Icons.power),
+                title: Text(t.wake),
+              ),
+            ),
+          PopupMenuItem(
+            value: 'open',
             child: ListTile(
-              leading: Icon(Icons.power),
-              title: Text('Ligar (Wake-on-LAN)'),
+              leading: const Icon(Icons.play_arrow),
+              title: Text(t.control),
             ),
           ),
-        const PopupMenuItem(
-          value: 'open',
-          child: ListTile(
-            leading: Icon(Icons.play_arrow),
-            title: Text('Controlar'),
+          PopupMenuItem(
+            value: 'rename',
+            child: ListTile(
+              leading: const Icon(Icons.edit),
+              title: Text(t.rename),
+            ),
           ),
-        ),
-        const PopupMenuItem(
-          value: 'rename',
-          child: ListTile(
-            leading: Icon(Icons.edit),
-            title: Text('Renomear'),
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            value: 'shutdown',
+            enabled: d.online,
+            child: ListTile(
+              leading: const Icon(Icons.power_settings_new),
+              title: Text(t.shutdown),
+            ),
           ),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'shutdown',
-          enabled: d.online,
-          child: const ListTile(
-            leading: Icon(Icons.power_settings_new),
-            title: Text('Desligar'),
+          PopupMenuItem(
+            value: 'restart',
+            enabled: d.online,
+            child: ListTile(
+              leading: const Icon(Icons.restart_alt),
+              title: Text(t.restart),
+            ),
           ),
-        ),
-        PopupMenuItem(
-          value: 'restart',
-          enabled: d.online,
-          child: const ListTile(
-            leading: Icon(Icons.restart_alt),
-            title: Text('Reiniciar'),
+          PopupMenuItem(
+            value: 'suspend',
+            enabled: d.online,
+            child: ListTile(
+              leading: const Icon(Icons.bedtime),
+              title: Text(t.suspend),
+            ),
           ),
-        ),
-        PopupMenuItem(
-          value: 'suspend',
-          enabled: d.online,
-          child: const ListTile(
-            leading: Icon(Icons.bedtime),
-            title: Text('Suspender'),
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            value: 'remove',
+            child: ListTile(
+              leading: const Icon(Icons.link_off),
+              title: Text(t.remove),
+            ),
           ),
-        ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: 'remove',
-          child: ListTile(
-            leading: Icon(Icons.link_off),
-            title: Text('Remover'),
-          ),
-        ),
-      ],
+        ];
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final t = widget.state.t;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Meus computadores'),
+        title: Text(t.myComputers),
         actions: [
           IconButton(
-            tooltip: 'Configurações',
+            tooltip: t.settings,
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
@@ -295,14 +294,10 @@ class _DevicesScreenState extends State<DevicesScreen> {
         builder: (context, _) {
           final devices = widget.state.devices;
           if (devices.isEmpty) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Nenhum computador pareado.\n'
-                  'Toque em + e informe o código exibido pelo agente.',
-                  textAlign: TextAlign.center,
-                ),
+                padding: const EdgeInsets.all(24),
+                child: Text(t.noComputers, textAlign: TextAlign.center),
               ),
             );
           }
@@ -316,7 +311,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
                   leading: _StatusIcon(online: d.online),
                   title: Text(d.name),
                   subtitle: Text(
-                    '${d.online ? 'Online' : 'Offline'} · ${d.os} · ${d.hostname}',
+                    '${d.online ? t.online : t.offline} · ${d.os} · ${d.hostname}',
                   ),
                   trailing: _deviceMenu(d),
                   onTap: () => _openControl(d),
@@ -329,7 +324,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showPairDialog,
         icon: const Icon(Icons.add_link),
-        label: const Text('Parear'),
+        label: Text(t.pair),
       ),
     );
   }

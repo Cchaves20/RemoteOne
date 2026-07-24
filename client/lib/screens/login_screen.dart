@@ -56,7 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
       } else if (e.message == 'two_factor_invalid') {
         setState(() => _needsCode = true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Código inválido. Tente de novo.')),
+          SnackBar(content: Text(widget.state.t.invalidCode)),
         );
       } else {
         ScaffoldMessenger.of(context)
@@ -74,6 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = widget.state.t;
     return Scaffold(
       appBar: AppBar(title: const Text('RemoteOne')),
       body: Center(
@@ -85,7 +86,7 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _registering ? 'Criar conta' : 'Entrar',
+                  _registering ? t.createAccountTitle : t.signInTitle,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 24),
@@ -93,13 +94,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   controller: _email,
                   keyboardType: TextInputType.emailAddress,
                   autocorrect: false,
-                  decoration: const InputDecoration(labelText: 'E-mail'),
+                  decoration: InputDecoration(labelText: t.email),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _password,
                   obscureText: true,
-                  decoration: const InputDecoration(labelText: 'Senha'),
+                  decoration: InputDecoration(labelText: t.password),
                 ),
                 const SizedBox(height: 12),
                 if (_needsCode && !_registering) ...[
@@ -108,9 +109,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     controller: _code,
                     keyboardType: TextInputType.number,
                     autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Código de verificação (2FA)',
-                      helperText: 'Do seu app autenticador',
+                    decoration: InputDecoration(
+                      labelText: t.twoFactorCode,
+                      helperText: t.twoFactorCodeHint,
                     ),
                   ),
                 ],
@@ -119,9 +120,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   controller: _server,
                   keyboardType: TextInputType.url,
                   autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Servidor',
-                    helperText: 'Ex.: http://192.168.0.10:8000',
+                  decoration: InputDecoration(
+                    labelText: t.server,
+                    helperText: t.serverHint,
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -133,15 +134,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Text(_registering ? 'Cadastrar' : 'Entrar'),
+                      : Text(_registering ? t.createAccountButton : t.signInButton),
                 ),
                 TextButton(
                   onPressed: _busy
                       ? null
                       : () => setState(() => _registering = !_registering),
-                  child: Text(_registering
-                      ? 'Já tenho conta'
-                      : 'Criar uma conta'),
+                  child: Text(_registering ? t.haveAccount : t.createOne),
                 ),
               ],
             ),

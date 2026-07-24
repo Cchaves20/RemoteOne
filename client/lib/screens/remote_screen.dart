@@ -79,7 +79,8 @@ class _RemoteScreenState extends State<RemoteScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const GestureTutorialScreen()),
+          MaterialPageRoute(
+              builder: (_) => GestureTutorialScreen(state: widget.state)),
         );
       });
     }
@@ -117,7 +118,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   /// Reconecta automaticamente se a conexão de tela cair (#12).
   void _scheduleReconnect() {
     if (_disposed) return;
-    if (mounted) setState(() => _error = 'Reconectando…');
+    if (mounted) setState(() => _error = widget.state.t.reconnecting);
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 2), () {
       if (!_disposed) _connect();
@@ -208,9 +209,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
       // Ao entrar no modo lupa, já amplia um pouco (ajuda quem não usa pinça).
       if (_scale < 1.05) _zoomBy(2.0);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          duration: Duration(seconds: 3),
-          content: Text('Modo lupa: use as setas para mover e + / − para ampliar.'),
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text(widget.state.t.zoomHint),
         ),
       );
     }
@@ -304,7 +305,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
           const CircularProgressIndicator(),
           const SizedBox(height: 16),
           Text(
-            _error ?? 'Aguardando a tela do computador...',
+            _error ?? widget.state.t.waitingScreen,
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white70),
           ),
@@ -435,22 +436,22 @@ class _RemoteScreenState extends State<RemoteScreen> {
           ),
           if (_zoomMode) ...[
             IconButton(
-              tooltip: 'Reduzir',
+              tooltip: widget.state.t.zoomOut,
               icon: const Icon(Icons.remove_circle_outline, color: Colors.white),
               onPressed: () => _zoomBy(1 / 1.4),
             ),
             IconButton(
-              tooltip: 'Ampliar',
+              tooltip: widget.state.t.zoomIn,
               icon: const Icon(Icons.add_circle_outline, color: Colors.white),
               onPressed: () => _zoomBy(1.4),
             ),
             IconButton(
-              tooltip: 'Tamanho normal',
+              tooltip: widget.state.t.zoomFit,
               icon: const Icon(Icons.fit_screen, color: Colors.white),
               onPressed: _resetZoom,
             ),
             IconButton(
-              tooltip: 'Sair da lupa',
+              tooltip: widget.state.t.zoomExit,
               icon: const Icon(Icons.close, color: Colors.white),
               onPressed: _toggleZoomMode,
             ),
@@ -463,7 +464,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
               ),
             ),
             IconButton(
-              tooltip: 'Ampliar (lupa)',
+              tooltip: widget.state.t.zoomEnter,
               icon: const Icon(Icons.zoom_in, color: Colors.white),
               onPressed: _toggleZoomMode,
             ),

@@ -1,43 +1,46 @@
 import 'package:flutter/material.dart';
 
+import '../services/app_state.dart';
+
 /// Ensina os gestos de controle. Aparece na primeira vez que se abre um
 /// computador e pode ser revisto em Configurações → Ajuda.
 class GestureTutorialScreen extends StatelessWidget {
-  const GestureTutorialScreen({super.key});
+  const GestureTutorialScreen({super.key, required this.state});
 
-  static const _gestures = [
-    (Icons.touch_app, 'Tocar', 'Leva o cursor ao ponto tocado e dá um clique (botão esquerdo).'),
-    (Icons.swipe, 'Arrastar', 'Move o cursor seguindo o seu dedo.'),
-    (Icons.ads_click, 'Segurar', 'Clique com o botão direito (menu de contexto).'),
-    (Icons.pinch, 'Dois dedos', 'Rola a página para cima e para baixo.'),
-    (Icons.zoom_in, 'Botão da lupa', 'Amplia a tela para enxergar melhor. Use + e − para ajustar e as setas nas bordas para mover; toque no X para voltar a controlar.'),
-    (Icons.keyboard, 'Botão do teclado', 'Abre o teclado com as teclas especiais (Ctrl, Alt, setas...).'),
+  final AppState state;
+
+  static const _icons = [
+    Icons.touch_app,
+    Icons.swipe,
+    Icons.ads_click,
+    Icons.pinch,
+    Icons.zoom_in,
+    Icons.keyboard,
   ];
 
   @override
   Widget build(BuildContext context) {
+    final t = state.t;
+    final gestures = t.gestures;
     return Scaffold(
-      appBar: AppBar(title: const Text('Como controlar')),
+      appBar: AppBar(title: Text(t.howToControlTitle)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text(
-            'A tela do computador ocupa o celular inteiro e você controla como '
-            'num touchscreen:',
-          ),
+          Text(t.gestureIntro),
           const SizedBox(height: 12),
-          for (final (icon, title, desc) in _gestures)
+          for (var i = 0; i < gestures.length; i++)
             Card(
               child: ListTile(
-                leading: Icon(icon, size: 32),
-                title: Text(title),
-                subtitle: Text(desc),
+                leading: Icon(_icons[i], size: 32),
+                title: Text(gestures[i].$1),
+                subtitle: Text(gestures[i].$2),
               ),
             ),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: () => Navigator.of(context).maybePop(),
-            child: const Text('Entendi'),
+            child: Text(t.gestureGotIt),
           ),
         ],
       ),

@@ -57,7 +57,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
     try {
       await widget.state.enableTwoFactor(_code.text.trim());
       messenger.showSnackBar(
-        const SnackBar(content: Text('Verificação em duas etapas ativada.')),
+        SnackBar(content: Text(widget.state.t.twoFactorEnabled)),
       );
       navigator.pop();
     } catch (e) {
@@ -68,19 +68,15 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = widget.state.t;
     return Scaffold(
-      appBar: AppBar(title: const Text('Verificação em duas etapas')),
+      appBar: AppBar(title: Text(t.twoFactorTitle)),
       body: _error != null
           ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!)))
           : ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                const Text(
-                  '1. Instale um app autenticador (Google Authenticator, '
-                  'Microsoft Authenticator, etc.).\n'
-                  '2. Escaneie o QR Code abaixo — ou digite o código manual.\n'
-                  '3. Digite o código de 6 dígitos que o app mostrar para confirmar.',
-                ),
+                Text(t.twoFactorSteps),
                 const SizedBox(height: 20),
                 if (_uri != null)
                   Center(
@@ -95,11 +91,11 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
                   Center(
                     child: TextButton.icon(
                       icon: const Icon(Icons.copy),
-                      label: Text('Código manual: ${_secret!}'),
+                      label: Text(t.manualCode(_secret!)),
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: _secret!));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Código copiado.')),
+                          SnackBar(content: Text(t.codeCopied)),
                         );
                       },
                     ),
@@ -108,9 +104,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
                 TextField(
                   controller: _code,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Código de 6 dígitos',
-                  ),
+                  decoration: InputDecoration(labelText: t.sixDigitCode),
                 ),
                 const SizedBox(height: 20),
                 FilledButton(
@@ -121,7 +115,7 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
                           width: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Ativar'),
+                      : Text(t.enable),
                 ),
               ],
             ),

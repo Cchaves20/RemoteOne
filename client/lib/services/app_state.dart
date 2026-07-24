@@ -1,6 +1,9 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/strings.dart';
 import '../models/device.dart';
 import '../models/stream_quality.dart';
 import 'api_client.dart';
@@ -18,8 +21,30 @@ class AppState extends ChangeNotifier {
   bool twoFactorEnabled = false;
   bool gestureTutorialSeen = false;
   StreamQuality streamQuality = StreamQuality.equilibrado;
+  AppLanguage language = AppLanguage.system;
 
   bool get isAuthenticated => api.isAuthenticated;
+
+  /// Textos no idioma atual (resolve "sistema" para um dos cinco suportados).
+  Strings get t => Strings(_resolvedLanguage);
+
+  AppLanguage get _resolvedLanguage {
+    if (language != AppLanguage.system) return language;
+    return switch (ui.PlatformDispatcher.instance.locale.languageCode) {
+      'pt' => AppLanguage.ptBr,
+      'zh' => AppLanguage.zh,
+      'fr' => AppLanguage.fr,
+      'es' => AppLanguage.es,
+      _ => AppLanguage.en,
+    };
+  }
+
+  Future<void> setLanguage(AppLanguage lang) async {
+    language = lang;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('language', lang.name);
+  }
 
   /// Carrega as preferências salvas (tema, bloqueio) na inicialização.
   Future<void> loadPreferences() async {
@@ -32,6 +57,10 @@ class AppState extends ChangeNotifier {
     appLockEnabled = prefs.getBool('appLock') ?? false;
     gestureTutorialSeen = prefs.getBool('gestureTutorialSeen') ?? false;
     streamQuality = StreamQuality.fromName(prefs.getString('streamQuality'));
+    language = AppLanguage.values.firstWhere(
+      (l) => l.name == prefs.getString('language'),
+      orElse: () => AppLanguage.system,
+    );
     // Reaponta ao mesmo servidor usado no login anterior. Precisa vir antes
     // de restoreSession(), senão o refresh do token vai para localhost e falha.
     final savedUrl = prefs.getString('serverUrl');
