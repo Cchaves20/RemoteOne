@@ -10,7 +10,7 @@ class GestureTutorialScreen extends StatelessWidget {
     (Icons.swipe, 'Arrastar', 'Move o cursor seguindo o seu dedo.'),
     (Icons.ads_click, 'Segurar', 'Clique com o botão direito (menu de contexto).'),
     (Icons.pinch, 'Dois dedos', 'Rola a página para cima e para baixo.'),
-    (Icons.zoom_in, 'Botão da lupa', 'Amplia a tela para enxergar melhor. Use + e − para ajustar; toque no X para voltar a controlar.'),
+    (Icons.zoom_in, 'Botão da lupa', 'Amplia a tela para enxergar melhor. Use + e − para ajustar e as setas nas bordas para mover; toque no X para voltar a controlar.'),
     (Icons.keyboard, 'Botão do teclado', 'Abre o teclado com as teclas especiais (Ctrl, Alt, setas...).'),
   ];
 

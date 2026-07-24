@@ -176,6 +176,21 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   void _resetZoom() => _transform.value = Matrix4.identity();
 
+  /// Desloca a visão ampliada (setas), com limite para não passar das bordas.
+  /// Frações positivas revelam conteúdo à esquerda/acima.
+  void _pan(double dxFraction, double dyFraction) {
+    if (_viewBox == Size.zero) return;
+    final s = _scale;
+    if (s <= 1.0) return; // sem zoom, não há para onde mover
+    // Deslocamento válido: t ∈ [dim·(1−s), 0] mantém a imagem cobrindo a tela.
+    final minTx = _viewBox.width * (1 - s);
+    final minTy = _viewBox.height * (1 - s);
+    final m = _transform.value.clone();
+    m[12] = (m[12] + _viewBox.width * dxFraction).clamp(minTx, 0.0);
+    m[13] = (m[13] + _viewBox.height * dyFraction).clamp(minTy, 0.0);
+    _transform.value = m;
+  }
+
   void _toggleZoomMode() {
     setState(() => _zoomMode = !_zoomMode);
     if (_zoomMode) {
@@ -184,7 +199,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           duration: Duration(seconds: 3),
-          content: Text('Modo lupa: arraste para mover, use + e − para ampliar.'),
+          content: Text('Modo lupa: use as setas para mover e + / − para ampliar.'),
         ),
       );
     }
@@ -236,6 +251,25 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   // --- UI ---------------------------------------------------------------------
 
+  /// Seta de deslocamento posicionada numa borda (só no modo lupa).
+  Widget _panArrow(Alignment alignment, IconData icon, VoidCallback onTap) {
+    return Align(
+      alignment: alignment,
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Material(
+          color: Colors.black54,
+          shape: const CircleBorder(),
+          child: IconButton(
+            iconSize: 32,
+            icon: Icon(icon, color: Colors.white),
+            onPressed: onTap,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _liveView() {
     if (_frame == null) {
       return Column(
@@ -269,14 +303,28 @@ class _RemoteScreenState extends State<RemoteScreen> {
               final image =
                   Image.memory(_frame!, gaplessPlayback: true, fit: BoxFit.fill);
 
-              // Modo lupa: o InteractiveViewer cuida de ampliar/mover (pinça e
-              // botões +/−). Sem gestos de controle aqui.
+              // Modo lupa: o InteractiveViewer amplia/move (pinça e botões +/−),
+              // e as setas nas bordas deslocam a visão sem precisar arrastar.
               if (_zoomMode) {
-                return InteractiveViewer(
-                  transformationController: _transform,
-                  minScale: 1.0,
-                  maxScale: 5.0,
-                  child: image,
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: InteractiveViewer(
+                        transformationController: _transform,
+                        minScale: 1.0,
+                        maxScale: 5.0,
+                        child: image,
+                      ),
+                    ),
+                    _panArrow(Alignment.centerLeft, Icons.chevron_left,
+                        () => _pan(0.30, 0)),
+                    _panArrow(Alignment.centerRight, Icons.chevron_right,
+                        () => _pan(-0.30, 0)),
+                    _panArrow(Alignment.topCenter, Icons.expand_less,
+                        () => _pan(0, 0.30)),
+                    _panArrow(Alignment.bottomCenter, Icons.expand_more,
+                        () => _pan(0, -0.30)),
+                  ],
                 );
               }
 
