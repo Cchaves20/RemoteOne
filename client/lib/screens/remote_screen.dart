@@ -201,6 +201,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   void _toggleZoomMode() {
     setState(() => _zoomMode = !_zoomMode);
+    // Enquanto ampliado, pede um vídeo de maior qualidade (mais detalhe onde
+    // importa); ao sair, volta à qualidade escolhida (economiza banda).
+    _setStreamBoost(_zoomMode);
     if (_zoomMode) {
       // Ao entrar no modo lupa, já amplia um pouco (ajuda quem não usa pinça).
       if (_scale < 1.05) _zoomBy(2.0);
@@ -210,6 +213,21 @@ class _RemoteScreenState extends State<RemoteScreen> {
           content: Text('Modo lupa: use as setas para mover e + / − para ampliar.'),
         ),
       );
+    }
+  }
+
+  /// Aumenta a resolução/qualidade do vídeo no modo lupa e restaura ao sair.
+  Future<void> _setStreamBoost(bool boosted) async {
+    final q = widget.state.streamQuality;
+    try {
+      await widget.state.api.startScreen(
+        widget.device.deviceId,
+        fps: q.fps,
+        quality: boosted ? 85 : q.quality,
+        maxWidth: boosted ? 1920 : q.maxWidth,
+      );
+    } catch (_) {
+      // Sem rede/agente: mantém o que está; não é crítico.
     }
   }
 
@@ -308,8 +326,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
             builder: (context, constraints) {
               final box = Size(constraints.maxWidth, constraints.maxHeight);
               _viewBox = box;
-              final image =
-                  Image.memory(_frame!, gaplessPlayback: true, fit: BoxFit.fill);
+              final image = Image.memory(
+                _frame!,
+                gaplessPlayback: true,
+                fit: BoxFit.fill,
+                // Suaviza a imagem quando ampliada (menos "quadradinhos").
+                filterQuality: FilterQuality.medium,
+              );
 
               // Modo lupa: o InteractiveViewer amplia/move (pinça e botões +/−),
               // e as setas nas bordas deslocam a visão sem precisar arrastar.
