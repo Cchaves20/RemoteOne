@@ -126,6 +126,18 @@ class Strings {
   String get appsRunning => _t('Abertos', 'Running', '运行中', 'Ouvertes', 'Abiertas');
   String get appsSearch => _t('Buscar aplicativo', 'Search app', '搜索应用',
       'Rechercher une application', 'Buscar aplicación');
+  String get appsQuerying => _t(
+      'Consultando o computador…',
+      'Asking the computer…',
+      '正在查询电脑…',
+      "Interrogation de l'ordinateur…",
+      'Consultando el equipo…');
+  String get appsEmptyDesktop => _t(
+      'Nenhum atalho na área de trabalho do computador.',
+      'No shortcuts on the computer desktop.',
+      '电脑桌面上没有快捷方式。',
+      "Aucun raccourci sur le bureau de l'ordinateur.",
+      'No hay accesos directos en el escritorio del equipo.');
   String get appsEmptyInstalled => _t(
       'Nenhum aplicativo encontrado no computador.',
       'No apps found on the computer.',

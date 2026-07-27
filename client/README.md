@@ -29,8 +29,10 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Tutorial de gestos** na primeira vez que se controla um PC (e revisável em
   Configurações → Ajuda).
 - **Status online/offline** de cada computador na lista (ponto verde/cinza).
-- **Aplicativos do computador** (`apps_screen.dart`): abas "Instalados" e
+- **Aplicativos do computador** (`apps_screen.dart`): abas "Área de trabalho" e
   "Abertos", com busca — tocar abre um programa; nos abertos, o X encerra.
+  (O backend também sabe listar o menu Iniciar inteiro, via `kind=installed`,
+  mas o app não expõe: são centenas de entradas.)
 - **Dock de aplicativos** na tela de controle, no estilo do macOS: barra
   flutuante **sempre visível** sobre a tela, compacta (só ícones, nome no
   toque longo) e **móvel** — arraste pela alça para deslocá-la ao longo da

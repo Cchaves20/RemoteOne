@@ -5,8 +5,8 @@ import '../models/remote_app.dart';
 import '../services/app_state.dart';
 import '../widgets/pulse.dart';
 
-/// Aplicativos do computador (Etapa 8): abrir os instalados e encerrar os que
-/// estão abertos. A lista é consultada no computador na hora.
+/// Aplicativos do computador (Etapa 8): abrir os atalhos da área de trabalho e
+/// encerrar os programas abertos. A lista é consultada no computador na hora.
 class AppsScreen extends StatefulWidget {
   const AppsScreen({super.key, required this.state, required this.device});
 
@@ -19,14 +19,16 @@ class AppsScreen extends StatefulWidget {
 
 class _AppsScreenState extends State<AppsScreen>
     with SingleTickerProviderStateMixin {
-  /// Abas: 0 = área de trabalho, 1 = instalados (menu Iniciar), 2 = abertos.
-  static const _kinds = ['desktop', 'installed', 'running'];
+  /// Abas: 0 = atalhos da área de trabalho, 1 = programas abertos.
+  /// (O backend também sabe listar o menu Iniciar inteiro — `installed` —, mas
+  /// são centenas de entradas e isso não ajuda no uso pelo celular.)
+  static const _kinds = ['desktop', 'running'];
 
   late final TabController _tabs = TabController(length: _kinds.length, vsync: this)
     ..addListener(_onTabChanged);
   final _search = TextEditingController();
 
-  // Uma lista por aba: instalados (0) e abertos (1).
+  // Uma lista por aba: área de trabalho (0) e abertos (1).
   final Map<int, List<RemoteApp>> _apps = {};
   final Map<int, String?> _errors = {};
   final Set<int> _loading = {};
@@ -104,7 +106,7 @@ class _AppsScreenState extends State<AppsScreen>
     try {
       await widget.state.closeApp(widget.device, app.id);
       messenger.showSnackBar(SnackBar(content: Text(t.appClosed(app.name))));
-      _load(2); // a lista de abertos mudou
+      _load(1); // a lista de abertos mudou
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
     }
@@ -131,10 +133,8 @@ class _AppsScreenState extends State<AppsScreen>
         ],
         bottom: TabBar(
           controller: _tabs,
-          isScrollable: true,
           tabs: [
             Tab(text: t.appsDesktop),
-            Tab(text: t.appsInstalled),
             Tab(text: t.appsRunning),
           ],
         ),
@@ -155,7 +155,7 @@ class _AppsScreenState extends State<AppsScreen>
           Expanded(
             child: TabBarView(
               controller: _tabs,
-              children: [_tabBody(0), _tabBody(1), _tabBody(2)],
+              children: [_tabBody(0), _tabBody(1)],
             ),
           ),
         ],
@@ -165,7 +165,9 @@ class _AppsScreenState extends State<AppsScreen>
 
   Widget _tabBody(int tab) {
     final t = widget.state.t;
-    if (_loading.contains(tab)) return const _AppsSkeleton();
+    // A consulta vai até o computador e volta, então pode levar alguns
+    // segundos: o aviso deixa claro que não travou.
+    if (_loading.contains(tab)) return _AppsSkeleton(label: t.appsQuerying);
 
     final error = _errors[tab];
     if (error != null) {
@@ -183,12 +185,12 @@ class _AppsScreenState extends State<AppsScreen>
 
     // A última aba lista os programas ABERTOS (que se encerram); as outras
     // listam programas para ABRIR.
-    final isRunning = tab == 2;
+    final isRunning = tab == 1;
 
     final apps = _filtered(tab);
     if (apps.isEmpty) {
       return _centered(Text(
-        isRunning ? t.appsEmptyRunning : t.appsEmptyInstalled,
+        isRunning ? t.appsEmptyRunning : t.appsEmptyDesktop,
         textAlign: TextAlign.center,
       ));
     }
@@ -242,36 +244,64 @@ class _AppsScreenState extends State<AppsScreen>
       );
 }
 
-/// Placeholder animado enquanto o computador responde com a lista.
+/// Placeholder animado enquanto o computador responde com a lista, com um
+/// aviso do que está acontecendo (a consulta pode levar alguns segundos).
 class _AppsSkeleton extends StatelessWidget {
-  const _AppsSkeleton();
+  const _AppsSkeleton({required this.label});
+
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Pulse(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-        children: List.generate(
-          7,
-          (_) => Card(
-            elevation: 0,
-            color: scheme.surfaceContainerHighest,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            margin: const EdgeInsets.symmetric(vertical: 4),
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  SkeletonBox(width: 24, height: 24, radius: 6),
-                  SizedBox(width: 14),
-                  SkeletonBox(width: 160, height: 14),
-                ],
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Row(
+            children: [
+              const SizedBox(
+                height: 14,
+                width: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Pulse(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              children: List.generate(
+                7,
+                (_) => Card(
+                  elevation: 0,
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  shape:
+                      RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  child: const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        SkeletonBox(width: 24, height: 24, radius: 6),
+                        SizedBox(width: 14),
+                        SkeletonBox(width: 160, height: 14),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
