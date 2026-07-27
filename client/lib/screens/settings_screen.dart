@@ -8,6 +8,7 @@ import '../widgets/transitions.dart';
 import 'gesture_tutorial_screen.dart';
 import 'two_factor_screen.dart';
 import 'wake_on_lan_screen.dart';
+import 'webrtc_diagnostic_screen.dart';
 
 /// Configurações do app e da conta: tema, qualidade da tela, segurança,
 /// gerenciamento de conta (e-mail, senha, excluir) e "Sobre".
@@ -93,6 +94,19 @@ class SettingsScreen extends StatelessWidget {
                     () => Navigator.of(context)
                         .push(fadeThroughRoute(WakeOnLanScreen(state: state))),
                     subtitle: t.turnOnPcSub),
+              ])),
+              // Temporário: spike S1 do plano de WebRTC. Sai quando o spike
+              // estiver respondido (docs/webrtc-plano.md).
+              staggered(_card(context, 'Diagnóstico', Icons.science_outlined, [
+                _action(
+                  context,
+                  Icons.videocam_outlined,
+                  'Testar WebRTC',
+                  () => Navigator.of(context).push(
+                    fadeThroughRoute(const WebrtcDiagnosticScreen()),
+                  ),
+                  subtitle: 'Verificação temporária, antes de migrar o vídeo',
+                ),
               ])),
               staggered(_card(context, t.about, Icons.info_outline, [
                 Row(

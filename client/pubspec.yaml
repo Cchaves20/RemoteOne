@@ -16,6 +16,9 @@ dependencies:
   wakelock_plus: ^1.2.0
   local_auth: ^2.3.0
   qr_flutter: ^4.1.0
+  # Spike S1 do plano de WebRTC (docs/webrtc-plano.md). Traz o framework
+  # nativo do WebRTC, que é grande — se o spike reprovar, sai daqui.
+  flutter_webrtc: ^1.5.0
 
 dev_dependencies:
   flutter_test:

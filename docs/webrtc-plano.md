@@ -124,11 +124,41 @@ por vez, o caminho JPEG **tem que continuar funcionando no mesmo binário**. Um
 
 | # | Pergunta | Como responder | Estado |
 |---|---|---|---|
-| S1 | O `flutter_webrtc` sideloada? | App mínimo, build no Codemagic, instalar e abrir uma `RTCPeerConnection` | pendente |
+| S1 | O `flutter_webrtc` sideloada? | Diagnóstico embutido no app, build no Codemagic, sideload e rodar | **pronto para rodar** ↓ |
 | S2 | Quanto custa codificar H.264 no agente? | `openh264` sobre quadros capturados; medir ms/quadro e Mbps contra o JPEG de hoje | **feito** ↓ |
 | S3 | O P2P fecha na rede real? | iPhone no 4G ↔ PC em casa; medir quantas vezes conecta sem TURN | pendente |
 
 S1 é bloqueante. S3 pode correr em paralelo.
+
+#### Como rodar o S1
+
+O diagnóstico foi embutido no próprio RemoteOne, em **Configurações →
+Diagnóstico → Testar WebRTC**, e não num app separado: com Apple ID grátis só
+cabem 3 apps, e não vale gastar um slot com uma ferramenta temporária. Um
+sideload entrega o app normal e o spike.
+
+1. O Codemagic dispara sozinho ao receber um push nesta branch (o
+   `codemagic.yaml` agora aceita `claude/*`, além de `main`).
+2. Baixe o `.ipa` e instale pelo Sideloadly, como sempre.
+3. Abra **Configurações → Diagnóstico → Testar WebRTC** e toque em *Rodar os
+   testes*, com o celular na rede que você usa no dia a dia.
+
+São três testes, do mais básico ao mais revelador:
+
+| Teste | O que prova | Decide o spike? |
+| --- | --- | --- |
+| 1. O framework carrega | A biblioteca nativa subiu num app não assinado | **sim** |
+| 2. Duas conexões conversam | ICE, criptografia e canal de dados funcionam no aparelho, sem rede nem servidor | **sim** |
+| 3. O STUN enxerga seu IP | O IP externo é descobrível — pré-requisito do P2P | não (adianta parte do S3) |
+
+Se os testes 1 e 2 passarem, o plano segue como está. Se o 1 falhar, o
+`flutter_webrtc` não sobrevive ao sideload e o plano inteiro precisa ser
+repensado — provavelmente mantendo o caminho JPEG e otimizando por outro lado.
+
+**Riscos deste build**, que valem ser ditos antes: o framework nativo do WebRTC
+(`WebRTC-SDK`) é grande, então o `.ipa` cresce e o build demora bem mais que o
+de costume — daí o teto ter subido de 45 para 90 minutos. E se o build quebrar,
+o app instalado hoje continua funcionando: só não haverá `.ipa` novo.
 
 #### Resultado do S2
 

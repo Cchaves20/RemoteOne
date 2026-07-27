@@ -10,7 +10,8 @@ workflows:
   ios-sideload:
     name: iOS (.ipa não assinado para sideload)
     instance_type: mac_mini_m2
-    max_build_duration: 45
+    # 90 min: o framework nativo do WebRTC é grande e o pod install pesa.
+    max_build_duration: 90
     working_directory: client
     environment:
       flutter: stable
@@ -20,6 +21,10 @@ workflows:
         - push
       branch_patterns:
         - pattern: main
+          include: true
+        # Enquanto os spikes do WebRTC estão em andamento, a branch de
+        # desenvolvimento também gera .ipa — é assim que o S1 é respondido.
+        - pattern: 'claude/*'
           include: true
     scripts:
       - name: Gerar pasta ios/ se ainda não versionada
@@ -33,6 +38,29 @@ workflows:
         script: |
           dart run flutter_launcher_icons || echo "aviso: geração de ícone falhou"
           dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
+      - name: Requisitos do flutter_webrtc (iOS 13+ e chaves de permissão)
+        script: |
+          # O flutter_webrtc exige iOS 13 no mínimo. Como a pasta ios/ é
+          # gerada a cada build, o ajuste tem que ser por script — e antes do
+          # `flutter build`, que é quem roda o pod install.
+          if grep -q "^platform :ios" ios/Podfile; then
+            perl -pi -e "s/^platform :ios.*/platform :ios, '13.0'/" ios/Podfile
+          else
+            printf "platform :ios, '13.0'\n" | cat - ios/Podfile > ios/Podfile.novo
+            mv ios/Podfile.novo ios/Podfile
+          fi
+          perl -pi -e "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g" \
+            ios/Runner.xcodeproj/project.pbxproj
+          # O binário do WebRTC referencia câmera e microfone. O RemoteOne só
+          # recebe vídeo e não usa nenhum dos dois, mas sem estas chaves o iOS
+          # encerra o app caso alguma dessas APIs seja tocada.
+          PLIST=ios/Runner/Info.plist
+          MOTIVO="Nao utilizado: o RemoteOne apenas recebe a tela do computador."
+          for KEY in NSCameraUsageDescription NSMicrophoneUsageDescription; do
+            /usr/libexec/PlistBuddy -c "Add :$KEY string $MOTIVO" "$PLIST" \
+              || /usr/libexec/PlistBuddy -c "Set :$KEY $MOTIVO" "$PLIST"
+          done
+          echo "--- Podfile ---"; head -3 ios/Podfile
       - name: Permissão de Face ID no Info.plist
         script: |
           PLIST=ios/Runner/Info.plist
