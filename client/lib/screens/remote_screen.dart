@@ -61,17 +61,17 @@ class _RemoteScreenState extends State<RemoteScreen>
   final TransformationController _transform = TransformationController();
   Size _viewBox = Size.zero;
 
-  // Barra de aplicativos: à direita na horizontal, acima do teclado na
-  // vertical. Abre/fecha com animação (SizeTransition cuida do recorte).
+  // Dock de aplicativos, no estilo do macOS: uma barra flutuante sempre
+  // visível sobre a tela, compacta (só ícones) e que se arrasta pela alça —
+  // para cima/baixo quando está em pé, para os lados quando está deitada.
   late final AnimationController _dockAnim = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 280),
-    reverseDuration: const Duration(milliseconds: 220),
+    duration: const Duration(milliseconds: 420),
   );
-  bool _dockOpen = false;
   List<RemoteApp>? _dockApps;
   bool _dockLoading = false;
-  String? _dockError;
+  /// Posição ao longo da borda, de -1 (topo/esquerda) a 1 (base/direita).
+  double _dockPos = 0;
 
   @override
   void initState() {
@@ -89,6 +89,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         });
       }
     });
+    // A dock de aplicativos carrega em segundo plano, sem travar a tela.
+    _loadDockApps();
     // Na primeira vez que se controla um PC, mostra o tutorial de gestos (#20).
     if (!widget.state.gestureTutorialSeen) {
       widget.state.markGestureTutorialSeen();
@@ -164,28 +166,21 @@ class _RemoteScreenState extends State<RemoteScreen>
     super.dispose();
   }
 
-  // --- barra de aplicativos ---------------------------------------------------
+  // --- dock de aplicativos ----------------------------------------------------
 
-  void _toggleDock() {
-    setState(() => _dockOpen = !_dockOpen);
-    if (_dockOpen) {
-      _dockAnim.forward();
-      if (_dockApps == null && !_dockLoading) _loadDockApps();
-    } else {
-      _dockAnim.reverse();
-    }
-  }
-
+  /// Carrega os aplicativos do computador em segundo plano. Se falhar (ex.:
+  /// agente antigo), a dock simplesmente não aparece — sem atrapalhar o
+  /// controle remoto.
   Future<void> _loadDockApps() async {
-    setState(() {
-      _dockLoading = true;
-      _dockError = null;
-    });
+    if (_dockLoading) return;
+    setState(() => _dockLoading = true);
     try {
       final apps = await widget.state.listApps(widget.device);
-      if (mounted) setState(() => _dockApps = apps);
-    } catch (e) {
-      if (mounted) setState(() => _dockError = e.toString());
+      if (!mounted) return;
+      setState(() => _dockApps = apps);
+      if (apps.isNotEmpty) _dockAnim.forward();
+    } catch (_) {
+      // Silencioso: a tela de Aplicativos mostra o erro em detalhe.
     } finally {
       if (mounted) setState(() => _dockLoading = false);
     }
@@ -336,122 +331,122 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   // --- UI ---------------------------------------------------------------------
 
-  /// Barra de aplicativos. Na horizontal fica em pé à direita (rola na
-  /// vertical); na vertical fica deitada acima do teclado (rola na horizontal).
-  /// O `SizeTransition` anima a abertura e já recorta o conteúdo.
-  Widget _appDock({required bool vertical}) {
-    final curved = CurvedAnimation(
-      parent: _dockAnim,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
-    return SizeTransition(
-      axis: vertical ? Axis.horizontal : Axis.vertical,
-      axisAlignment: 1,
-      sizeFactor: curved,
-      child: FadeTransition(
-        opacity: curved,
-        child: Container(
-          width: vertical ? 92 : null,
-          height: vertical ? null : 104,
-          decoration: BoxDecoration(
-            color: const Color(0xFF14162C),
-            border: Border(
-              left: vertical
-                  ? BorderSide(color: Colors.white.withAlpha(20))
-                  : BorderSide.none,
-              top: vertical
-                  ? BorderSide.none
-                  : BorderSide(color: Colors.white.withAlpha(20)),
-            ),
+  /// Dock flutuante de aplicativos, no estilo do macOS: sempre visível sobre a
+  /// tela, compacta (só ícones) e móvel — arraste pela alça para deslocá-la ao
+  /// longo da borda. Em pé quando o celular está na horizontal; deitada quando
+  /// está na vertical.
+  Widget _appDock({required bool vertical, required Size area}) {
+    final apps = _dockApps ?? const <RemoteApp>[];
+    if (apps.isEmpty) return const SizedBox.shrink();
+
+    // Limita o comprimento a ~65% da tela: fica curta e não cobre demais.
+    final maxLength = (vertical ? area.height : area.width) * 0.65;
+    final curved = CurvedAnimation(parent: _dockAnim, curve: Curves.easeOutBack);
+
+    final pill = Container(
+      decoration: BoxDecoration(
+        color: const Color(0xE61A1D33), // escuro translúcido
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(120),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
           ),
-          child: _dockContent(vertical: vertical),
+        ],
+      ),
+      padding: const EdgeInsets.all(6),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: vertical ? maxLength : double.infinity,
+          maxWidth: vertical ? double.infinity : maxLength,
+        ),
+        child: vertical
+            ? Column(mainAxisSize: MainAxisSize.min, children: [
+                _dockGrip(vertical: true, area: area),
+                Flexible(child: _dockList(apps, vertical: true)),
+              ])
+            : Row(mainAxisSize: MainAxisSize.min, children: [
+                _dockGrip(vertical: false, area: area),
+                Flexible(child: _dockList(apps, vertical: false)),
+              ]),
+      ),
+    );
+
+    return Align(
+      // A posição ao longo da borda vem de _dockPos (-1 a 1); o Align já
+      // mantém a dock dentro da área visível.
+      alignment: vertical ? Alignment(1, _dockPos) : Alignment(_dockPos, 1),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: ScaleTransition(
+          scale: curved,
+          child: FadeTransition(opacity: _dockAnim, child: pill),
         ),
       ),
     );
   }
 
-  Widget _dockContent({required bool vertical}) {
-    final t = widget.state.t;
-    if (_dockLoading) {
-      return const Center(
-        child: SizedBox(
-          height: 24,
-          width: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
+  /// Alça de arrastar. Fica só nela para não brigar com a rolagem da lista.
+  Widget _dockGrip({required bool vertical, required Size area}) {
+    return GestureDetector(
+      onPanUpdate: (d) {
+        // Converte o arrasto em deslocamento relativo à metade da área.
+        final half = (vertical ? area.height : area.width) / 2;
+        if (half <= 0) return;
+        final delta = (vertical ? d.delta.dy : d.delta.dx) / half;
+        setState(() => _dockPos = (_dockPos + delta).clamp(-1.0, 1.0));
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(
+          vertical ? Icons.drag_handle : Icons.drag_indicator,
+          size: 18,
+          color: Colors.white38,
         ),
-      );
-    }
-    if (_dockError != null) {
-      return Center(
-        child: IconButton(
-          tooltip: t.retry,
-          icon: const Icon(Icons.refresh, color: Colors.white70),
-          onPressed: _loadDockApps,
-        ),
-      );
-    }
-    final apps = _dockApps ?? const <RemoteApp>[];
-    if (apps.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Text(
-            t.appsEmptyInstalled,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
-          ),
-        ),
-      );
-    }
+      ),
+    );
+  }
+
+  Widget _dockList(List<RemoteApp> apps, {required bool vertical}) {
     return ListView.builder(
       scrollDirection: vertical ? Axis.vertical : Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      shrinkWrap: true,
+      padding: EdgeInsets.zero,
       itemCount: apps.length,
       itemBuilder: (context, i) => _dockTile(apps[i]),
     );
   }
 
-  /// Ícone do aplicativo: quadrado com o gradiente da marca e a inicial.
+  /// Ícone do aplicativo: quadrado com o gradiente da marca e a inicial. O nome
+  /// aparece ao segurar (tooltip), mantendo a dock compacta.
   Widget _dockTile(RemoteApp app) {
     final initial =
         app.name.isEmpty ? '?' : app.name.substring(0, 1).toUpperCase();
     return Padding(
-      padding: const EdgeInsets.all(4),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => _launchFromDock(app),
-        child: SizedBox(
-          width: 68,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  gradient: auroraGradient,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  initial,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 18,
-                  ),
-                ),
+      padding: const EdgeInsets.all(3),
+      child: Tooltip(
+        message: app.name,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _launchFromDock(app),
+          child: Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: auroraGradient,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              initial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
               ),
-              const SizedBox(height: 4),
-              Text(
-                app.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, fontSize: 10),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -600,18 +595,22 @@ class _RemoteScreenState extends State<RemoteScreen>
           children: [
             _topBar(showToggle: !isPortrait),
             Expanded(
-              // Na horizontal a barra de apps fica em pé, à direita da tela;
-              // na vertical ela entra abaixo (acima do teclado).
-              child: isPortrait
-                  ? _liveView()
-                  : Row(
-                      children: [
-                        Expanded(child: _liveView()),
-                        _appDock(vertical: true),
-                      ],
-                    ),
+              // A dock flutua SOBRE a tela (não rouba espaço): em pé à direita
+              // na horizontal, deitada embaixo (acima do teclado) na vertical.
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final area = Size(constraints.maxWidth, constraints.maxHeight);
+                  return Stack(
+                    children: [
+                      Positioned.fill(child: _liveView()),
+                      // No modo lupa a dock sai da frente, para não atrapalhar.
+                      if (!_zoomMode)
+                        _appDock(vertical: !isPortrait, area: area),
+                    ],
+                  );
+                },
+              ),
             ),
-            if (isPortrait) _appDock(vertical: false),
             if (showKeyboard)
               RemoteKeyboard(
                 onText: (text) => _send({'kind': 'key_text', 'text': text}),
@@ -680,16 +679,6 @@ class _RemoteScreenState extends State<RemoteScreen>
                 '$_fps fps',
                 style: const TextStyle(color: Colors.white38, fontSize: 12),
               ),
-            ),
-            IconButton(
-              tooltip: widget.state.t.apps,
-              icon: Icon(
-                Icons.apps,
-                color: _dockOpen
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.white,
-              ),
-              onPressed: _toggleDock,
             ),
             IconButton(
               tooltip: widget.state.t.zoomEnter,

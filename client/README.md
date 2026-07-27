@@ -31,10 +31,11 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Status online/offline** de cada computador na lista (ponto verde/cinza).
 - **Aplicativos do computador** (`apps_screen.dart`): abas "Instalados" e
   "Abertos", com busca — tocar abre um programa; nos abertos, o X encerra.
-- **Barra de aplicativos na tela de controle**: botão ⠿ abre uma barra que, na
-  horizontal, fica em pé à direita (rola verticalmente) e, na vertical, deitada
-  acima do teclado (rola horizontalmente) — animada com `SizeTransition`, sem
-  sair da sessão de controle.
+- **Dock de aplicativos** na tela de controle, no estilo do macOS: barra
+  flutuante **sempre visível** sobre a tela, compacta (só ícones, nome no
+  toque longo) e **móvel** — arraste pela alça para deslocá-la ao longo da
+  borda. Fica em pé à direita na horizontal e deitada embaixo na vertical;
+  some no modo lupa.
 - **Ligar (Wake-on-LAN)**: computadores offline mostram "Ligar" no menu — o
   backend usa outro PC seu ligado na mesma rede para enviar o pacote mágico
   (peer-to-peer, sem configuração). Tela de ajuda em Configurações explica o
