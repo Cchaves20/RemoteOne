@@ -232,6 +232,11 @@ class Strings {
       "${q.fps} fps · jusqu'à ${q.maxWidth}px · qualité ${q.quality}",
       '${q.fps} fps · hasta ${q.maxWidth}px · calidad ${q.quality}');
 
+  /// Mostrado no lugar do contador quando a tela do computador está parada —
+  /// o agente para de enviar frames idênticos, então 0 fps é o esperado.
+  String get screenStill =>
+      _t('tela parada', 'screen still', '画面静止', 'écran fixe', 'pantalla fija');
+
   // Diálogos de conta
   String get newEmail => _t('Novo e-mail', 'New email', '新邮箱', 'Nouvel e-mail', 'Nuevo correo');
   String get currentPassword => _t('Senha atual', 'Current password', '当前密码',

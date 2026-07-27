@@ -23,6 +23,7 @@ Documentação por etapa:
 - [`docs/pareamento.md`](docs/pareamento.md) — vincular computador à conta (Etapa 5)
 - [`docs/controle-remoto.md`](docs/controle-remoto.md) — mouse e teclado remotos (Etapa 6)
 - [`docs/tela-remota.md`](docs/tela-remota.md) — ver a tela do PC no app (Etapa 7)
+- [`docs/video-e-latencia.md`](docs/video-e-latencia.md) — pipeline de vídeo, otimizações medidas e o caminho até o WebRTC
 - [`docs/instalar-no-iphone.md`](docs/instalar-no-iphone.md) — instalar o app no iPhone sem Mac (sideload)
 - [`docs/rodar-sem-terminal.md`](docs/rodar-sem-terminal.md) — agente e backend em segundo plano (sem terminal; base para desligar/Wake-on-LAN)
 - [`docs/pc-sempre-pronto.md`](docs/pc-sempre-pronto.md) — IP fixo + backend no boot + login automático (controlar sem tocar no PC)

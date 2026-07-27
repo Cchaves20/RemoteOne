@@ -91,6 +91,9 @@ pub async fn run(
     let mut active = stream;
     let mut frame_ticker = interval(active.frame_interval());
     frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    // Hash do último frame enviado: se a tela não mudou, não vale codificar
+    // nem transmitir de novo (o app já mostra a mesma imagem).
+    let mut last_frame = crate::capture::NO_FRAME;
 
     loop {
         tokio::select! {
@@ -102,12 +105,19 @@ pub async fn run(
                 // Captura fora do event loop (spawn_blocking) para não travar
                 // o tratamento de comandos durante a codificação do frame.
                 let (max_width, quality) = (active.max_width, active.quality);
+                let previous = last_frame;
                 let captured = tokio::task::spawn_blocking(move || {
-                    crate::capture::capture_frame(max_width, quality)
+                    crate::capture::capture_frame_dedup(max_width, quality, previous)
                 })
                 .await;
                 match captured {
-                    Ok(Ok(jpeg)) => ws.send(Message::Binary(jpeg)).await?,
+                    Ok(Ok(frame)) => {
+                        last_frame = frame.hash;
+                        // `jpeg` vazio = tela idêntica à anterior: nada a enviar.
+                        if let Some(jpeg) = frame.jpeg {
+                            ws.send(Message::Binary(jpeg)).await?;
+                        }
+                    }
                     Ok(Err(e)) => eprintln!("Falha ao capturar a tela: {e}"),
                     Err(e) => eprintln!("Falha na tarefa de captura: {e}"),
                 }
@@ -117,6 +127,7 @@ pub async fn run(
                     Some(Ok(Message::Text(text))) => {
                         match handle_server_text(
                             &text, injector.as_mut(), &mut streaming, &mut active,
+                            &mut last_frame,
                         ) {
                             // A config de fps mudou: recria o ticker no ritmo novo.
                             Some(Action::RestartFrameTicker) => {
@@ -172,6 +183,7 @@ fn handle_server_text(
     injector: &mut dyn crate::injector::InputInjector,
     streaming: &mut bool,
     active: &mut StreamConfig,
+    last_frame: &mut u64,
 ) -> Option<Action> {
     match serde_json::from_str::<ServerMessage>(text) {
         Ok(ServerMessage::Welcome { server_version }) => {
@@ -215,6 +227,9 @@ fn handle_server_text(
             max_width,
         }) => {
             *streaming = true;
+            // Sessão nova (ou qualidade nova): o app ainda não tem frame algum,
+            // então o próximo precisa ir mesmo que a tela esteja parada.
+            *last_frame = crate::capture::NO_FRAME;
             let old_fps = active.fps;
             active.fps = max_fps;
             if let Some(q) = quality {
@@ -233,6 +248,9 @@ fn handle_server_text(
         }
         Ok(ServerMessage::StopStream) => {
             *streaming = false;
+            // O backend descarta o frame guardado ao parar: zera o hash para o
+            // próximo start não concluir que "a tela não mudou".
+            *last_frame = crate::capture::NO_FRAME;
             println!("Transmissão de tela encerrada");
         }
         Ok(ServerMessage::Power { action }) => {

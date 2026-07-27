@@ -76,6 +76,12 @@ O agente responde ao `start_stream` enviando frames JPEG como mensagens
 conectados em `/ws/viewer/{device_id}` (que autenticam com
 `{"token": ...}`). A tela remota está em [`tela-remota.md`](tela-remota.md).
 
+Frames repetidos não são enviados: o agente compara um hash da imagem com o do
+frame anterior e, se a tela não mudou, não transmite nada. Um silêncio no canal
+binário significa "continua igual", não "caiu" — quem entra no meio recebe o
+último frame guardado pelo backend. Detalhes em
+[`video-e-latencia.md`](video-e-latencia.md).
+
 O pareamento está documentado em [`pareamento.md`](pareamento.md) e o controle
 remoto em [`controle-remoto.md`](controle-remoto.md).
 

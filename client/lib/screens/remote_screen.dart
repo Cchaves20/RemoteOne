@@ -40,7 +40,20 @@ class _RemoteScreenState extends State<RemoteScreen>
   static const double _dockIcon = 42;
   static const double _dockThickness = _dockIcon + 8;
 
-  Uint8List? _frame;
+  /// Frame ao vivo, já decodificado. É um `ValueNotifier` de propósito: só o
+  /// widget da imagem se reconstrói a cada frame, em vez da tela inteira
+  /// (dock, botões, gestos) — o que economiza trabalho da CPU do celular e,
+  /// com isso, latência.
+  final ValueNotifier<ui.Image?> _frame = ValueNotifier<ui.Image?>(null);
+
+  /// Se já chegou algum frame (troca "aguardando" → "ao vivo" uma única vez).
+  bool _hasFrame = false;
+
+  /// Um frame de cada vez: se um novo chega enquanto o anterior é decodificado,
+  /// o antigo é descartado. Melhor mostrar a imagem mais recente do que
+  /// acumular uma fila e ficar para trás.
+  bool _decoding = false;
+
   double _aspectRatio = 16 / 9;
   bool _aspectResolved = false;
   String? _error;
@@ -120,15 +133,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     _sub = channel.stream.listen(
       (event) {
         if (event is! List<int>) return; // ignora mensagens de texto
-        final frame =
-            event is Uint8List ? event : Uint8List.fromList(event);
+        final frame = event is Uint8List ? event : Uint8List.fromList(event);
         if (!mounted) return;
         _frameCount++;
-        setState(() {
-          _frame = frame;
-          _error = null;
-        });
-        _resolveAspect(frame);
+        _decodeFrame(frame);
       },
       onError: (Object _) => _scheduleReconnect(),
       onDone: _scheduleReconnect,
@@ -146,14 +154,41 @@ class _RemoteScreenState extends State<RemoteScreen>
     });
   }
 
-  void _resolveAspect(Uint8List bytes) {
-    if (_aspectResolved) return;
-    _aspectResolved = true;
-    ui.decodeImageFromList(bytes, (image) {
-      if (mounted && image.height > 0) {
+  /// Decodifica o JPEG e publica o frame.
+  ///
+  /// Usa `decodeImageFromList` em vez de `Image.memory`: a imagem não passa
+  /// pelo cache de imagens do Flutter, que trataria cada frame como uma
+  /// imagem nova e encheria a memória em poucos segundos de transmissão.
+  Future<void> _decodeFrame(Uint8List bytes) async {
+    if (_decoding) return; // ainda desenhando o anterior: descarta este
+    _decoding = true;
+    try {
+      final image = await decodeImageFromList(bytes);
+      if (!mounted) {
+        image.dispose();
+        return;
+      }
+      final previous = _frame.value;
+      _frame.value = image;
+      // Libera o frame anterior só depois que o novo já foi ao ar.
+      if (previous != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
+      }
+      if (!_aspectResolved && image.height > 0) {
+        _aspectResolved = true;
         setState(() => _aspectRatio = image.width / image.height);
       }
-    });
+      if (!_hasFrame || _error != null) {
+        setState(() {
+          _hasFrame = true;
+          _error = null;
+        });
+      }
+    } catch (_) {
+      // Frame corrompido (ex.: conexão instável): ignora e espera o próximo.
+    } finally {
+      _decoding = false;
+    }
   }
 
   @override
@@ -166,6 +201,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     _channel?.sink.close();
     _transform.dispose();
     _dockAnim.dispose();
+    _frame.value?.dispose();
+    _frame.dispose();
     WakelockPlus.disable();
     super.dispose();
   }
@@ -516,7 +553,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   Widget _liveView() {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 350),
-      child: _frame == null
+      child: !_hasFrame
           ? _waitingView(const ValueKey('waiting'))
           : _screenView(const ValueKey('live')),
     );
@@ -556,12 +593,18 @@ class _RemoteScreenState extends State<RemoteScreen>
             builder: (context, constraints) {
               final box = Size(constraints.maxWidth, constraints.maxHeight);
               _viewBox = box;
-              final image = Image.memory(
-                _frame!,
-                gaplessPlayback: true,
-                fit: BoxFit.fill,
-                // Suaviza a imagem quando ampliada (menos "quadradinhos").
-                filterQuality: FilterQuality.medium,
+              // Só esta folha se reconstrói quando chega um frame novo.
+              final image = ValueListenableBuilder<ui.Image?>(
+                valueListenable: _frame,
+                builder: (context, frame, _) {
+                  if (frame == null) return const SizedBox.expand();
+                  return RawImage(
+                    image: frame,
+                    fit: BoxFit.fill,
+                    // Suaviza a imagem quando ampliada (menos "quadradinhos").
+                    filterQuality: FilterQuality.medium,
+                  );
+                },
               );
 
               // Modo lupa: o InteractiveViewer amplia/move (pinça e botões +/−),
@@ -593,10 +636,16 @@ class _RemoteScreenState extends State<RemoteScreen>
               // (Transform) e deixa o GestureDetector receber os toques. Como o
               // detector fica DENTRO do Transform, o toque chega em coordenadas
               // da imagem — o zoom não distorce o mapeamento do cursor.
+              // Escuta o controlador de zoom em vez de depender de um
+              // `setState` da tela: fora do modo lupa nada mais redesenha.
               return ClipRect(
-                child: Transform(
-                  transform: _transform.value,
-                  transformHitTests: true,
+                child: ValueListenableBuilder<Matrix4>(
+                  valueListenable: _transform,
+                  builder: (context, matrix, child) => Transform(
+                    transform: matrix,
+                    transformHitTests: true,
+                    child: child,
+                  ),
                   child: GestureDetector(
                     onTapUp: (d) => _tapAt(d.localPosition, box),
                     onLongPressStart: (d) => _rightClickAt(d.localPosition, box),
@@ -718,7 +767,11 @@ class _RemoteScreenState extends State<RemoteScreen>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                '$_fps fps',
+                // 0 fps com a imagem no ar significa tela parada: o agente
+                // deixa de enviar frames idênticos para poupar rede/bateria.
+                _fps == 0 && _hasFrame
+                    ? widget.state.t.screenStill
+                    : '$_fps fps',
                 style: const TextStyle(color: Colors.white38, fontSize: 12),
               ),
             ),
