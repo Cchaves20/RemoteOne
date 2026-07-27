@@ -375,9 +375,11 @@ funcionem igual nos dois modos, sem código duplicado.
 
 Duas consequências que aparecem na interface:
 
-- O `RTCVideoView` usa `objectFit: fill`, não `contain`. O `AspectRatio` acima
-  já enquadra; deixar o vídeo enquadrar de novo colocaria barras internas e
-  desalinharia o toque do cursor.
+- O `RTCVideoView` usa `objectFit: contain`. Como o `AspectRatio` acima passa a
+  usar a proporção do próprio vídeo, as duas coincidem e a imagem preenche a
+  caixa exatamente. `cover` seria pior: num descasamento momentâneo — antes de o
+  tamanho do vídeo ser conhecido — ele **cortaria** a imagem, escondendo parte
+  da área de trabalho e fazendo o toque apontar para pixels invisíveis.
 - O contador de fps mostra "vídeo": no modo WebRTC não chegam frames JPEG para
   contar, então o número ficaria em 0 por definição.
 

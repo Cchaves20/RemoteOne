@@ -645,10 +645,16 @@ class _RemoteScreenState extends State<RemoteScreen>
               final Widget image = video != null && video.isLive
                   ? RTCVideoView(
                       video.renderer,
-                      // `fill` porque o AspectRatio acima já enquadra: deixar o
-                      // próprio vídeo enquadrar de novo distorceria o
-                      // mapeamento do toque para a coordenada do mouse.
-                      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitFill,
+                      // `contain`, e não `cover`: o AspectRatio acima já usa a
+                      // proporção do próprio vídeo, então as duas coincidem e a
+                      // imagem preenche a caixa exatamente. Se houver
+                      // descasamento momentâneo (antes de o tamanho do vídeo ser
+                      // conhecido), `contain` mostra o quadro inteiro em vez de
+                      // cortar — cortar esconderia parte da área de trabalho e
+                      // faria o toque apontar para pixels invisíveis.
+                      objectFit:
+                          RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                      filterQuality: FilterQuality.medium,
                     )
                   : ValueListenableBuilder<ui.Image?>(
                       // Só esta folha se reconstrói quando chega um frame novo.
