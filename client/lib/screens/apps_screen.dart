@@ -220,8 +220,7 @@ class _AppsScreenState extends State<AppsScreen>
             margin: const EdgeInsets.symmetric(vertical: 4),
             child: ListTile(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              leading:
-                  Icon(isRunning ? Icons.play_circle_outline : Icons.apps),
+              leading: _appIcon(app, isRunning: isRunning),
               title: Text(app.name, maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: isRunning
                   ? IconButton(
@@ -235,6 +234,26 @@ class _AppsScreenState extends State<AppsScreen>
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Ícone real do programa quando o computador enviou; senão, um ícone
+  /// genérico conforme a aba.
+  Widget _appIcon(RemoteApp app, {required bool isRunning}) {
+    final bytes = app.iconBytes;
+    if (bytes == null) {
+      return Icon(isRunning ? Icons.play_circle_outline : Icons.apps);
+    }
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: Image.memory(
+        bytes,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, __, ___) =>
+            Icon(isRunning ? Icons.play_circle_outline : Icons.apps),
       ),
     );
   }

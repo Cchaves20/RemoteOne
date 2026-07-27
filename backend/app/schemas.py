@@ -98,10 +98,14 @@ class PowerRequest(BaseModel):
 
 
 class AppOut(BaseModel):
-    """Um aplicativo do computador. `id` = caminho do atalho ou PID."""
+    """Um aplicativo do computador. `id` = caminho do atalho ou PID.
+
+    `icon`: ícone real do programa em PNG base64 (quando disponível).
+    """
 
     id: str
     name: str
+    icon: str | None = None
 
 
 class AppActionRequest(BaseModel):

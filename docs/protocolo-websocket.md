@@ -32,7 +32,7 @@ Agente                          Backend
 |---|---|---|
 | `hello` | `device_id`, `hostname`, `os`, `agent_version`, `mac?` | Primeira mensagem ao conectar (`mac` opcional, para Wake-on-LAN) |
 | `heartbeat` | — | Periódico, mantém a sessão viva |
-| `app_list` | `request_id`, `apps[]` | Resposta a um `list_apps` (ver "pergunta e resposta" abaixo) |
+| `app_list` | `request_id`, `apps[]` (`id`, `name`, `icon?`) | Resposta a um `list_apps`; `icon` é o ícone real do programa em PNG base64 (ver "pergunta e resposta" abaixo) |
 
 ## Mensagens do backend → agente
 
@@ -48,7 +48,7 @@ Agente                          Backend
 | `stop_stream` | — | Encerra a transmissão da tela |
 | `power` | `action` (`shutdown`/`restart`/`suspend`) | Desliga, reinicia ou suspende o computador |
 | `wake` | `mac` | Pede a este agente que acorde (Wake-on-LAN) um vizinho da LAN pelo MAC |
-| `list_apps` | `request_id`, `kind` (`installed`/`running`) | Pede a lista de aplicativos; o agente responde com `app_list` |
+| `list_apps` | `request_id`, `kind` (`desktop`/`installed`/`running`) | Pede a lista de aplicativos; o agente responde com `app_list`. `desktop` = atalhos da área de trabalho (com ícones), usado pela dock |
 | `launch_app` | `id` (caminho do atalho) | Abre um programa no computador |
 | `close_app` | `id` (PID) | Encerra um programa em execução |
 

@@ -36,6 +36,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     with SingleTickerProviderStateMixin {
   static const _scrollDivisor = 24.0;
 
+  /// Tamanho do ícone e a espessura da dock (ícone + respiro).
+  static const double _dockIcon = 42;
+  static const double _dockThickness = _dockIcon + 8;
+
   Uint8List? _frame;
   double _aspectRatio = 16 / 9;
   bool _aspectResolved = false;
@@ -411,21 +415,42 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
+  /// Lista de ícones. O tamanho no eixo cruzado é fixo: sem isso a lista
+  /// ocuparia todo o espaço disponível e esticaria os ícones.
   Widget _dockList(List<RemoteApp> apps, {required bool vertical}) {
-    return ListView.builder(
-      scrollDirection: vertical ? Axis.vertical : Axis.horizontal,
-      shrinkWrap: true,
-      padding: EdgeInsets.zero,
-      itemCount: apps.length,
-      itemBuilder: (context, i) => _dockTile(apps[i]),
+    return SizedBox(
+      width: vertical ? _dockThickness : null,
+      height: vertical ? null : _dockThickness,
+      child: ListView.builder(
+        scrollDirection: vertical ? Axis.vertical : Axis.horizontal,
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: apps.length,
+        itemBuilder: (context, i) => _dockTile(apps[i]),
+      ),
     );
   }
 
-  /// Ícone do aplicativo: quadrado com o gradiente da marca e a inicial. O nome
-  /// aparece ao segurar (tooltip), mantendo a dock compacta.
+  /// Ícone do aplicativo: o ícone real do programa quando o computador
+  /// conseguiu enviá-lo; senão, a inicial no gradiente da marca. O nome aparece
+  /// ao segurar (tooltip), mantendo a dock compacta.
   Widget _dockTile(RemoteApp app) {
-    final initial =
-        app.name.isEmpty ? '?' : app.name.substring(0, 1).toUpperCase();
+    final icon = app.iconBytes;
+    final Widget content = icon != null
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.memory(
+              icon,
+              width: _dockIcon,
+              height: _dockIcon,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.medium,
+              // Ícone ilegível: cai para a inicial, sem quebrar a dock.
+              errorBuilder: (_, __, ___) => _initialTile(app),
+            ),
+          )
+        : _initialTile(app);
+
     return Padding(
       padding: const EdgeInsets.all(3),
       child: Tooltip(
@@ -433,23 +458,32 @@ class _RemoteScreenState extends State<RemoteScreen>
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () => _launchFromDock(app),
-          child: Container(
-            width: 44,
-            height: 44,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: auroraGradient,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              initial,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 18,
-              ),
-            ),
+          // Center evita que a restrição justa do eixo cruzado da lista
+          // estique o ícone (era o motivo das "barras" alongadas).
+          child: Center(
+            child: SizedBox(width: _dockIcon, height: _dockIcon, child: content),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Alternativa quando não há ícone: inicial do nome no gradiente da marca.
+  Widget _initialTile(RemoteApp app) {
+    final initial =
+        app.name.isEmpty ? '?' : app.name.substring(0, 1).toUpperCase();
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: auroraGradient,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 18,
         ),
       ),
     );

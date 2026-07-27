@@ -180,7 +180,13 @@ void main() {
         seen = req.url;
         return http.Response(
           jsonEncode([
-            {'id': r'C:\Spotify.lnk', 'name': 'Spotify'},
+            // PNG 1x1 válido em base64, para exercitar a decodificação.
+            {
+              'id': r'C:\Spotify.lnk',
+              'name': 'Spotify',
+              'icon':
+                  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            },
             {'id': r'C:\Chrome.lnk', 'name': 'Chrome'},
           ]),
           200,
@@ -192,6 +198,10 @@ void main() {
     expect(seen?.query, 'kind=running');
     expect(apps.length, 2);
     expect(apps.first.name, 'Spotify');
+    // O ícone vem em base64 e é decodificado para bytes.
+    expect(apps.first.iconBytes, isNotNull);
+    // Sem campo `icon`, fica sem ícone (o app mostra a inicial).
+    expect(apps[1].iconBytes, isNull);
   });
 
   test('launchApp e closeApp enviam o id e aceitam 204', () async {

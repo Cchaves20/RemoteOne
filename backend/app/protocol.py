@@ -32,10 +32,15 @@ class Heartbeat(BaseModel):
 
 
 class AppInfo(BaseModel):
-    """Um aplicativo: `id` é o caminho do atalho (instalado) ou o PID (aberto)."""
+    """Um aplicativo: `id` é o caminho do atalho (instalado) ou o PID (aberto).
+
+    `icon` é o ícone real do programa (PNG em base64), quando o agente
+    conseguiu extrair.
+    """
 
     id: str
     name: str
+    icon: str | None = None
 
 
 class AppList(BaseModel):

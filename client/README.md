@@ -37,7 +37,8 @@ Aplicativo usado no celular/tablet para controlar os computadores.
   flutuante **sempre visível** sobre a tela, compacta (só ícones, nome no
   toque longo) e **móvel** — arraste pela alça para deslocá-la ao longo da
   borda. Fica em pé à direita na horizontal e deitada embaixo na vertical;
-  some no modo lupa.
+  some no modo lupa. Os ícones são os **reais** de cada programa (o agente
+  extrai do atalho); sem ícone, mostra a inicial do nome.
 - **Ligar (Wake-on-LAN)**: computadores offline mostram "Ligar" no menu — o
   backend usa outro PC seu ligado na mesma rede para enviar o pacote mágico
   (peer-to-peer, sem configuração). Tela de ajuda em Configurações explica o

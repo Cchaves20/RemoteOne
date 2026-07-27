@@ -7,11 +7,15 @@
 use serde::{Deserialize, Serialize};
 
 /// Um aplicativo. `id` é o que se usa para agir sobre ele: o caminho do atalho
-/// (instalados) ou o PID (em execução).
+/// (área de trabalho/instalados) ou o PID (em execução). `icon` é o ícone real
+/// do programa em PNG codificado em base64 — ausente quando não foi possível
+/// extrair (aí o app mostra a inicial do nome).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppInfo {
     pub id: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// O que listar: os atalhos da área de trabalho (o conjunto que o usuário
@@ -70,7 +74,35 @@ fn parse_running(text: &str) -> Vec<AppInfo> {
             Some(AppInfo {
                 id: id.to_string(),
                 name,
+                icon: None,
             })
+        })
+        .collect()
+}
+
+/// Interpreta o JSON dos atalhos da área de trabalho (id/name/icon). Função
+/// pura — testada em qualquer SO.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn parse_desktop(text: &str) -> Vec<AppInfo> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
+        return Vec::new();
+    };
+    let items = match value {
+        serde_json::Value::Array(items) => items,
+        other => vec![other],
+    };
+    items
+        .into_iter()
+        .filter_map(|item| {
+            let id = item.get("id")?.as_str()?.to_string();
+            let name = item.get("name")?.as_str()?.to_string();
+            // String vazia = não deu para extrair o ícone.
+            let icon = item
+                .get("icon")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            Some(AppInfo { id, name, icon })
         })
         .collect()
 }
@@ -82,25 +114,50 @@ mod imp {
 
     use super::{tidy, AppInfo};
 
-    /// Atalhos da **área de trabalho** (do usuário e a pública). É o conjunto
-    /// que a própria pessoa escolheu deixar à mão — por isso é o que alimenta a
-    /// dock, em vez das centenas de entradas do menu Iniciar.
+    /// Script que lista os atalhos da área de trabalho e já extrai o **ícone
+    /// real** de cada programa: resolve o alvo do atalho (WScript.Shell) e
+    /// converte o ícone associado em PNG base64. Tudo numa chamada só, porque
+    /// abrir um PowerShell por atalho seria lento demais.
+    const DESKTOP_SCRIPT: &str = r#"
+Add-Type -AssemblyName System.Drawing
+$sh = New-Object -ComObject WScript.Shell
+$dirs = @("$env:USERPROFILE\Desktop", "$env:PUBLIC\Desktop", "$env:USERPROFILE\Área de Trabalho")
+$out = @()
+foreach ($d in $dirs) {
+  if (-not (Test-Path -LiteralPath $d)) { continue }
+  Get-ChildItem -LiteralPath $d -Filter *.lnk -File -ErrorAction SilentlyContinue | ForEach-Object {
+    $icon = ''
+    try {
+      $t = $sh.CreateShortcut($_.FullName).TargetPath
+      if ($t -and (Test-Path -LiteralPath $t)) {
+        $i = [System.Drawing.Icon]::ExtractAssociatedIcon($t)
+        if ($i) {
+          $b = $i.ToBitmap()
+          $ms = New-Object System.IO.MemoryStream
+          $b.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+          $icon = [Convert]::ToBase64String($ms.ToArray())
+          $ms.Dispose(); $b.Dispose(); $i.Dispose()
+        }
+      }
+    } catch { }
+    $out += [PSCustomObject]@{ id = $_.FullName; name = $_.BaseName; icon = $icon }
+  }
+}
+ConvertTo-Json -InputObject @($out) -Compress -Depth 3
+"#;
+
+    /// Atalhos da **área de trabalho** (do usuário e a pública), com os ícones
+    /// reais. É o conjunto que a própria pessoa escolheu deixar à mão — por
+    /// isso alimenta a dock, em vez das centenas de entradas do menu Iniciar.
     pub fn list_desktop() -> Vec<AppInfo> {
-        let mut roots: Vec<PathBuf> = Vec::new();
-        if let Some(up) = std::env::var_os("USERPROFILE") {
-            roots.push(Path::new(&up).join("Desktop"));
-            // Windows em português usa a pasta traduzida em algumas versões.
-            roots.push(Path::new(&up).join("Área de Trabalho"));
-        }
-        if let Some(pb) = std::env::var_os("PUBLIC") {
-            roots.push(Path::new(&pb).join("Desktop"));
-        }
-        let mut out = Vec::new();
-        for root in roots {
-            // Sem recursão: só o que está solto na área de trabalho.
-            collect_shortcuts(&root, 0, 0, &mut out);
-        }
-        tidy(out)
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-Command", DESKTOP_SCRIPT])
+            .output();
+        let Ok(output) = output else {
+            return Vec::new();
+        };
+        let text = String::from_utf8_lossy(&output.stdout);
+        tidy(super::parse_desktop(&text))
     }
 
     /// Programas instalados = atalhos (.lnk) dos menus Iniciar do sistema e do
@@ -149,6 +206,9 @@ mod imp {
                     out.push(AppInfo {
                         id: path.to_string_lossy().to_string(),
                         name: name.to_string(),
+                        // O menu Iniciar não extrai ícones (seria lento para
+                        // centenas de itens); só a área de trabalho traz.
+                        icon: None,
                     });
                 }
             }
@@ -227,9 +287,9 @@ mod tests {
     #[test]
     fn tidy_sorts_and_dedups_by_name() {
         let apps = tidy(vec![
-            AppInfo { id: "b".into(), name: "Spotify".into() },
-            AppInfo { id: "a".into(), name: "Chrome".into() },
-            AppInfo { id: "c".into(), name: "spotify".into() },
+            AppInfo { id: "b".into(), name: "Spotify".into(), icon: None },
+            AppInfo { id: "a".into(), name: "Chrome".into(), icon: None },
+            AppInfo { id: "c".into(), name: "spotify".into(), icon: None },
         ]);
         assert_eq!(apps.len(), 2);
         assert_eq!(apps[0].name, "Chrome");
@@ -248,11 +308,41 @@ mod tests {
 
         // Um só processo: o PowerShell devolve objeto, não array.
         let one = parse_running(r#"{"Id":7,"ProcessName":"code"}"#);
-        assert_eq!(one, vec![AppInfo { id: "7".into(), name: "code".into() }]);
+        assert_eq!(
+            one,
+            vec![AppInfo { id: "7".into(), name: "code".into(), icon: None }]
+        );
 
         // Saída vazia ou inválida não quebra.
         assert!(parse_running("").is_empty());
         assert!(parse_running("nada disso").is_empty());
+    }
+
+    #[test]
+    fn parses_desktop_shortcuts_with_and_without_icon() {
+        let apps = parse_desktop(
+            r#"[{"id":"C:\\a.lnk","name":"iTunes","icon":"iVBORw0KGgo="},
+                {"id":"C:\\b.lnk","name":"Steam","icon":""}]"#,
+        );
+        assert_eq!(apps.len(), 2);
+        assert_eq!(apps[0].name, "iTunes");
+        assert_eq!(apps[0].icon.as_deref(), Some("iVBORw0KGgo="));
+        // Ícone vazio vira None (o app mostra a inicial do nome).
+        assert_eq!(apps[1].icon, None);
+
+        // Um só atalho: o PowerShell pode devolver objeto em vez de array.
+        let one = parse_desktop(r#"{"id":"C:\\c.lnk","name":"Chrome","icon":""}"#);
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].name, "Chrome");
+
+        assert!(parse_desktop("").is_empty());
+    }
+
+    #[test]
+    fn app_info_omits_icon_when_absent() {
+        // Sem ícone, o campo nem entra no JSON (mensagem menor no WebSocket).
+        let sem = AppInfo { id: "1".into(), name: "X".into(), icon: None };
+        assert_eq!(serde_json::to_string(&sem).unwrap(), r#"{"id":"1","name":"X"}"#);
     }
 
     #[test]
