@@ -26,6 +26,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/remoteone_glyph.png
 
 # Ícone do app (gerado por `dart run flutter_launcher_icons`).
 flutter_launcher_icons:
@@ -36,8 +38,8 @@ flutter_launcher_icons:
 
 # Splash screen (gerada por `dart run flutter_native_splash:create`).
 flutter_native_splash:
-  color: "#0E1022"
-  image: assets/icon/remoteone_splash.png
+  color: "#0D0F20"
+  image: assets/icon/remoteone_glyph.png
   fullscreen: true
   ios: true
   android: false

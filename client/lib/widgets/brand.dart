@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// Símbolo do RemoteOne: um quadrado com o gradiente da marca e o ícone de
-/// "tela + sinal". Usado no login, no "Sobre" e como identidade visual.
+/// Símbolo do RemoteOne: a "tela com cursor" em gradiente (mesmo glifo do
+/// ícone do app). Usado no login e no "Sobre".
 class RemoteOneMark extends StatelessWidget {
   const RemoteOneMark({super.key, this.size = 72});
 
@@ -11,22 +11,15 @@ class RemoteOneMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: size,
       height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        gradient: auroraGradient,
-        borderRadius: BorderRadius.circular(size * 0.28),
-        boxShadow: [
-          BoxShadow(
-            color: auroraViolet.withAlpha(110),
-            blurRadius: size * 0.35,
-            offset: Offset(0, size * 0.14),
-          ),
-        ],
+      child: Image.asset(
+        'assets/icon/remoteone_glyph.png',
+        width: size,
+        height: size,
+        filterQuality: FilterQuality.medium,
       ),
-      child: Icon(Icons.cast_connected, color: Colors.white, size: size * 0.5),
     );
   }
 }
