@@ -139,6 +139,18 @@ def test_list_apps_rejects_unknown_kind():
     assert resp.status_code == 422
 
 
+def test_list_apps_accepts_the_three_kinds():
+    """desktop (dock), installed (menu Iniciar) e running são aceitos — o 503
+    mostra que passaram da validação e chegaram ao relay."""
+    headers, uid = _auth_headers("apps6@example.com")
+    _add_device(uid, "dev-kinds")
+    for kind in ("desktop", "installed", "running"):
+        resp = client.get(
+            f"/api/v1/devices/dev-kinds/apps?kind={kind}", headers=headers
+        )
+        assert resp.status_code == 503, kind
+
+
 def test_list_apps_sends_request_to_agent_and_times_out():
     """Com o agente conectado mas mudo, o pedido é enviado e o backend
     responde 504 em vez de ficar preso para sempre."""

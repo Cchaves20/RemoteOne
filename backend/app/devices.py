@@ -149,11 +149,14 @@ async def power_device(
 @router.get("/devices/{device_id}/apps", response_model=list[AppOut])
 async def list_apps(
     device_id: str,
-    kind: str = Query("installed", pattern="^(installed|running)$"),
+    kind: str = Query("installed", pattern="^(desktop|installed|running)$"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AppOut]:
-    """Lista os aplicativos do computador: instalados ou em execução.
+    """Lista os aplicativos do computador.
+
+    `kind`: `desktop` (atalhos da área de trabalho — o que a dock usa),
+    `installed` (menu Iniciar) ou `running` (abertos agora).
 
     Diferente dos outros comandos, aqui o backend **espera a resposta** do
     agente (pergunta e resposta com `request_id`), com tempo limite.

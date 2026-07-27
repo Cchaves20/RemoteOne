@@ -175,7 +175,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (_dockLoading) return;
     setState(() => _dockLoading = true);
     try {
-      final apps = await widget.state.listApps(widget.device);
+      // Só os atalhos da área de trabalho: é o conjunto que a pessoa escolheu
+      // deixar à mão, então a dock fica curta e útil.
+      final apps = await widget.state.listApps(widget.device, kind: 'desktop');
       if (!mounted) return;
       setState(() => _dockApps = apps);
       if (apps.isNotEmpty) _dockAnim.forward();
@@ -601,6 +603,10 @@ class _RemoteScreenState extends State<RemoteScreen>
                 builder: (context, constraints) {
                   final area = Size(constraints.maxWidth, constraints.maxHeight);
                   return Stack(
+                    // expand é essencial: sem ele o Stack se dimensiona pelo
+                    // filho não posicionado (a dock) e, quando ela está vazia,
+                    // a tela inteira encolheria para um ponto.
+                    fit: StackFit.expand,
                     children: [
                       Positioned.fill(child: _liveView()),
                       // No modo lupa a dock sai da frente, para não atrapalhar.

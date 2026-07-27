@@ -119,6 +119,8 @@ class Strings {
 
   // Aplicativos do computador
   String get apps => _t('Aplicativos', 'Apps', '应用', 'Applications', 'Aplicaciones');
+  String get appsDesktop => _t('Área de trabalho', 'Desktop', '桌面',
+      'Bureau', 'Escritorio');
   String get appsInstalled =>
       _t('Instalados', 'Installed', '已安装', 'Installées', 'Instaladas');
   String get appsRunning => _t('Abertos', 'Running', '运行中', 'Ouvertes', 'Abiertas');

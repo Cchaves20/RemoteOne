@@ -14,16 +14,20 @@ pub struct AppInfo {
     pub name: String,
 }
 
-/// O que listar: programas instalados ou os que estão abertos agora.
+/// O que listar: os atalhos da área de trabalho (o conjunto que o usuário
+/// mesmo montou — usado na dock), todos os programas instalados, ou os que
+/// estão abertos agora.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AppKind {
+    Desktop,
     Installed,
     Running,
 }
 
 pub fn list(kind: AppKind) -> Vec<AppInfo> {
     match kind {
+        AppKind::Desktop => imp::list_desktop(),
         AppKind::Installed => imp::list_installed(),
         AppKind::Running => imp::list_running(),
     }
@@ -78,6 +82,27 @@ mod imp {
 
     use super::{tidy, AppInfo};
 
+    /// Atalhos da **área de trabalho** (do usuário e a pública). É o conjunto
+    /// que a própria pessoa escolheu deixar à mão — por isso é o que alimenta a
+    /// dock, em vez das centenas de entradas do menu Iniciar.
+    pub fn list_desktop() -> Vec<AppInfo> {
+        let mut roots: Vec<PathBuf> = Vec::new();
+        if let Some(up) = std::env::var_os("USERPROFILE") {
+            roots.push(Path::new(&up).join("Desktop"));
+            // Windows em português usa a pasta traduzida em algumas versões.
+            roots.push(Path::new(&up).join("Área de Trabalho"));
+        }
+        if let Some(pb) = std::env::var_os("PUBLIC") {
+            roots.push(Path::new(&pb).join("Desktop"));
+        }
+        let mut out = Vec::new();
+        for root in roots {
+            // Sem recursão: só o que está solto na área de trabalho.
+            collect_shortcuts(&root, 0, 0, &mut out);
+        }
+        tidy(out)
+    }
+
     /// Programas instalados = atalhos (.lnk) dos menus Iniciar do sistema e do
     /// usuário. É o que o usuário reconhece como "seus programas".
     pub fn list_installed() -> Vec<AppInfo> {
@@ -94,25 +119,27 @@ mod imp {
         }
         let mut out = Vec::new();
         for root in roots {
-            collect_shortcuts(&root, 0, &mut out);
+            collect_shortcuts(&root, 0, 4, &mut out);
         }
         tidy(out)
     }
 
-    /// Percorre a pasta em busca de .lnk (profundidade limitada, para não
-    /// varrer a árvore inteira em máquinas com muitos programas).
-    fn collect_shortcuts(dir: &Path, depth: usize, out: &mut Vec<AppInfo>) {
-        if depth > 4 {
-            return;
-        }
+    /// Percorre a pasta em busca de atalhos, até `max_depth` níveis (0 = só o
+    /// nível atual). O limite evita varrer árvores enormes no menu Iniciar.
+    fn collect_shortcuts(dir: &Path, depth: usize, max_depth: usize, out: &mut Vec<AppInfo>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                collect_shortcuts(&path, depth + 1, out);
-            } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("lnk")) {
+                if depth < max_depth {
+                    collect_shortcuts(&path, depth + 1, max_depth, out);
+                }
+            } else if path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("lnk") || e.eq_ignore_ascii_case("url"))
+            {
                 if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
                     // Ignora desinstaladores e afins.
                     let lower = name.to_lowercase();
@@ -166,6 +193,11 @@ mod imp {
 #[cfg(not(windows))]
 mod imp {
     use super::AppInfo;
+
+    pub fn list_desktop() -> Vec<AppInfo> {
+        println!("[apps-stub] listar área de trabalho (vazio fora do Windows)");
+        Vec::new()
+    }
 
     pub fn list_installed() -> Vec<AppInfo> {
         println!("[apps-stub] listar instalados (vazio fora do Windows)");

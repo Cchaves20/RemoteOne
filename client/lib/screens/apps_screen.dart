@@ -19,7 +19,10 @@ class AppsScreen extends StatefulWidget {
 
 class _AppsScreenState extends State<AppsScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this)
+  /// Abas: 0 = área de trabalho, 1 = instalados (menu Iniciar), 2 = abertos.
+  static const _kinds = ['desktop', 'installed', 'running'];
+
+  late final TabController _tabs = TabController(length: _kinds.length, vsync: this)
     ..addListener(_onTabChanged);
   final _search = TextEditingController();
 
@@ -56,7 +59,7 @@ class _AppsScreenState extends State<AppsScreen>
     try {
       final apps = await widget.state.listApps(
         widget.device,
-        kind: tab == 0 ? 'installed' : 'running',
+        kind: _kinds[tab],
       );
       if (mounted) setState(() => _apps[tab] = apps);
     } catch (e) {
@@ -101,7 +104,7 @@ class _AppsScreenState extends State<AppsScreen>
     try {
       await widget.state.closeApp(widget.device, app.id);
       messenger.showSnackBar(SnackBar(content: Text(t.appClosed(app.name))));
-      _load(1); // a lista de abertos mudou
+      _load(2); // a lista de abertos mudou
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
     }
@@ -128,7 +131,9 @@ class _AppsScreenState extends State<AppsScreen>
         ],
         bottom: TabBar(
           controller: _tabs,
+          isScrollable: true,
           tabs: [
+            Tab(text: t.appsDesktop),
             Tab(text: t.appsInstalled),
             Tab(text: t.appsRunning),
           ],
@@ -150,7 +155,7 @@ class _AppsScreenState extends State<AppsScreen>
           Expanded(
             child: TabBarView(
               controller: _tabs,
-              children: [_tabBody(0), _tabBody(1)],
+              children: [_tabBody(0), _tabBody(1), _tabBody(2)],
             ),
           ),
         ],
@@ -176,10 +181,14 @@ class _AppsScreenState extends State<AppsScreen>
       ));
     }
 
+    // A última aba lista os programas ABERTOS (que se encerram); as outras
+    // listam programas para ABRIR.
+    final isRunning = tab == 2;
+
     final apps = _filtered(tab);
     if (apps.isEmpty) {
       return _centered(Text(
-        tab == 0 ? t.appsEmptyInstalled : t.appsEmptyRunning,
+        isRunning ? t.appsEmptyRunning : t.appsEmptyInstalled,
         textAlign: TextAlign.center,
       ));
     }
@@ -209,17 +218,18 @@ class _AppsScreenState extends State<AppsScreen>
             margin: const EdgeInsets.symmetric(vertical: 4),
             child: ListTile(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              leading: Icon(tab == 0 ? Icons.apps : Icons.play_circle_outline),
+              leading:
+                  Icon(isRunning ? Icons.play_circle_outline : Icons.apps),
               title: Text(app.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-              trailing: tab == 0
-                  ? const Icon(Icons.open_in_new, size: 20)
-                  : IconButton(
+              trailing: isRunning
+                  ? IconButton(
                       tooltip: t.appClose,
                       icon: Icon(Icons.close,
                           color: Theme.of(context).colorScheme.error),
                       onPressed: () => _close(app),
-                    ),
-              onTap: tab == 0 ? () => _launch(app) : null,
+                    )
+                  : const Icon(Icons.open_in_new, size: 20),
+              onTap: isRunning ? null : () => _launch(app),
             ),
           );
         },
