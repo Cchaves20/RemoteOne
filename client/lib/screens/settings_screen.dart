@@ -4,6 +4,7 @@ import '../l10n/strings.dart';
 import '../models/stream_quality.dart';
 import '../services/app_state.dart';
 import '../widgets/brand.dart';
+import '../widgets/transitions.dart';
 import 'gesture_tutorial_screen.dart';
 import 'two_factor_screen.dart';
 import 'wake_on_lan_screen.dart';
@@ -25,95 +26,91 @@ class SettingsScreen extends StatelessWidget {
         listenable: state,
         builder: (context, _) {
           final t = state.t;
+          var i = 0;
+          Widget staggered(Widget child) => FadeSlideIn(
+                delay: Duration(milliseconds: 40 * i++),
+                child: child,
+              );
           return ListView(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
             children: [
-              _SectionHeader(t.appearance),
-              _themeTile(t.themeAuto, ThemeMode.system),
-              _themeTile(t.themeLight, ThemeMode.light),
-              _themeTile(t.themeDark, ThemeMode.dark),
-              const Divider(),
-              _SectionHeader(t.language),
-              _langTile(t.languageSystem, AppLanguage.system),
-              _langTile('Português', AppLanguage.ptBr),
-              _langTile('English', AppLanguage.en),
-              _langTile('中文', AppLanguage.zh),
-              _langTile('Français', AppLanguage.fr),
-              _langTile('Español', AppLanguage.es),
-              const Divider(),
-              _SectionHeader(t.screenQuality),
-              for (final q in StreamQuality.values) _qualityTile(q),
-              const Divider(),
-              _SectionHeader(t.security),
-              SwitchListTile(
-                secondary: const Icon(Icons.lock_outline),
-                title: Text(t.faceIdLock),
-                subtitle: Text(t.faceIdLockSub),
-                value: state.appLockEnabled,
-                onChanged: state.setAppLockEnabled,
-              ),
-              SwitchListTile(
-                secondary: const Icon(Icons.verified_user_outlined),
-                title: Text(t.twoFactor),
-                subtitle: Text(t.twoFactorSub),
-                value: state.twoFactorEnabled,
-                onChanged: (value) => value
-                    ? _startTwoFactor(context)
-                    : _disableTwoFactor(context),
-              ),
-              const Divider(),
-              _SectionHeader(t.account),
-              ListTile(
-                leading: const Icon(Icons.alternate_email),
-                title: Text(t.changeEmail),
-                onTap: () => _showChangeEmail(context),
-              ),
-              ListTile(
-                leading: const Icon(Icons.password),
-                title: Text(t.changePassword),
-                onTap: () => _showChangePassword(context),
-              ),
-              ListTile(
-                leading: const Icon(Icons.logout),
-                title: Text(t.signOut),
-                onTap: () {
+              staggered(_card(context, t.appearance, Icons.palette_outlined, [
+                _themeSelector(context),
+                const SizedBox(height: 16),
+                _label(context, t.language),
+                const SizedBox(height: 8),
+                _languageChips(context),
+              ])),
+              staggered(_card(context, t.screenQuality, Icons.hd_outlined, [
+                _qualityChips(context),
+                const SizedBox(height: 10),
+                Text(
+                  t.qualitySubtitle(state.streamQuality),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ])),
+              staggered(_card(context, t.security, Icons.shield_outlined, [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.lock_outline),
+                  title: Text(t.faceIdLock),
+                  subtitle: Text(t.faceIdLockSub),
+                  value: state.appLockEnabled,
+                  onChanged: state.setAppLockEnabled,
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.verified_user_outlined),
+                  title: Text(t.twoFactor),
+                  subtitle: Text(t.twoFactorSub),
+                  value: state.twoFactorEnabled,
+                  onChanged: (value) => value
+                      ? _startTwoFactor(context)
+                      : _disableTwoFactor(context),
+                ),
+              ])),
+              staggered(_card(context, t.account, Icons.person_outline, [
+                _action(context, Icons.alternate_email, t.changeEmail,
+                    () => _showChangeEmail(context)),
+                _action(context, Icons.password, t.changePassword,
+                    () => _showChangePassword(context)),
+                _action(context, Icons.logout, t.signOut, () {
                   state.logout();
                   Navigator.of(context).pop();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.delete_forever,
-                    color: Theme.of(context).colorScheme.error),
-                title: Text(t.deleteAccount,
-                    style:
-                        TextStyle(color: Theme.of(context).colorScheme.error)),
-                onTap: () => _showDeleteAccount(context),
-              ),
-              const Divider(),
-              _SectionHeader(t.help),
-              ListTile(
-                leading: const Icon(Icons.touch_app),
-                title: Text(t.howToControl),
-                subtitle: Text(t.howToControlSub),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => GestureTutorialScreen(state: state)),
+                }),
+                _action(context, Icons.delete_forever, t.deleteAccount,
+                    () => _showDeleteAccount(context),
+                    danger: true),
+              ])),
+              staggered(_card(context, t.help, Icons.help_outline, [
+                _action(context, Icons.touch_app, t.howToControl,
+                    () => Navigator.of(context)
+                        .push(fadeThroughRoute(GestureTutorialScreen(state: state))),
+                    subtitle: t.howToControlSub),
+                _action(context, Icons.power, t.turnOnPc,
+                    () => Navigator.of(context)
+                        .push(fadeThroughRoute(WakeOnLanScreen(state: state))),
+                    subtitle: t.turnOnPcSub),
+              ])),
+              staggered(_card(context, t.about, Icons.info_outline, [
+                Row(
+                  children: [
+                    const RemoteOneMark(size: 44),
+                    const SizedBox(width: 14),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('RemoteOne',
+                            style: Theme.of(context).textTheme.titleMedium),
+                        Text(t.version(_appVersion),
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ],
                 ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.power),
-                title: Text(t.turnOnPc),
-                subtitle: Text(t.turnOnPcSub),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => WakeOnLanScreen(state: state)),
-                ),
-              ),
-              const Divider(),
-              _SectionHeader(t.about),
-              ListTile(
-                leading: const RemoteOneMark(size: 40),
-                title: const Text('RemoteOne'),
-                subtitle: Text(t.version(_appVersion)),
-              ),
+              ])),
             ],
           );
         },
@@ -121,37 +118,140 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _langTile(String label, AppLanguage lang) {
-    final selected = state.language == lang;
-    return ListTile(
-      leading: Icon(
-        selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+  // --- blocos visuais ---------------------------------------------------------
+
+  /// Card de seção com título, ícone e conteúdo.
+  Widget _card(
+      BuildContext context, String title, IconData icon, List<Widget> children) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: theme.textTheme.labelLarge
+                      ?.copyWith(color: theme.colorScheme.primary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...children,
+          ],
+        ),
       ),
-      title: Text(label),
-      onTap: () => state.setLanguage(lang),
     );
   }
 
-  Widget _themeTile(String label, ThemeMode mode) {
-    final selected = state.themeMode == mode;
+  Widget _label(BuildContext context, String text) => Text(
+        text,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+      );
+
+  /// Linha de ação com ícone, título e (opcional) subtítulo.
+  Widget _action(
+    BuildContext context,
+    IconData icon,
+    String title,
+    VoidCallback onTap, {
+    String? subtitle,
+    bool danger = false,
+  }) {
+    final color = danger ? Theme.of(context).colorScheme.error : null;
     return ListTile(
-      leading: Icon(
-        selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-      ),
-      title: Text(label),
-      onTap: () => state.setThemeMode(mode),
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: color),
+      title: Text(title, style: TextStyle(color: color)),
+      subtitle: subtitle == null ? null : Text(subtitle),
+      trailing: const Icon(Icons.chevron_right, size: 20),
+      onTap: onTap,
     );
   }
 
-  Widget _qualityTile(StreamQuality quality) {
-    final selected = state.streamQuality == quality;
-    return ListTile(
-      leading: Icon(
-        selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+  /// Tema em controle segmentado (Auto / Claro / Escuro).
+  Widget _themeSelector(BuildContext context) {
+    final t = state.t;
+    return SizedBox(
+      width: double.infinity,
+      child: SegmentedButton<ThemeMode>(
+        showSelectedIcon: false,
+        segments: [
+          ButtonSegment(
+            value: ThemeMode.system,
+            icon: const Icon(Icons.brightness_auto, size: 18),
+            label: Text(t.autoShort),
+          ),
+          ButtonSegment(
+            value: ThemeMode.light,
+            icon: const Icon(Icons.light_mode_outlined, size: 18),
+            label: Text(t.themeLight),
+          ),
+          ButtonSegment(
+            value: ThemeMode.dark,
+            icon: const Icon(Icons.dark_mode_outlined, size: 18),
+            label: Text(t.themeDark),
+          ),
+        ],
+        selected: {state.themeMode},
+        onSelectionChanged: (s) => state.setThemeMode(s.first),
       ),
-      title: Text(state.t.qualityLabel(quality)),
-      subtitle: Text(state.t.qualitySubtitle(quality)),
-      onTap: () => state.setStreamQuality(quality),
+    );
+  }
+
+  /// Idiomas como chips (acomoda 6 opções sem estourar a largura).
+  Widget _languageChips(BuildContext context) {
+    final t = state.t;
+    const options = <(AppLanguage, String)>[
+      (AppLanguage.ptBr, 'Português'),
+      (AppLanguage.en, 'English'),
+      (AppLanguage.zh, '中文'),
+      (AppLanguage.fr, 'Français'),
+      (AppLanguage.es, 'Español'),
+    ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        ChoiceChip(
+          label: Text(t.autoShort),
+          selected: state.language == AppLanguage.system,
+          onSelected: (_) => state.setLanguage(AppLanguage.system),
+        ),
+        for (final (lang, label) in options)
+          ChoiceChip(
+            label: Text(label),
+            selected: state.language == lang,
+            onSelected: (_) => state.setLanguage(lang),
+          ),
+      ],
+    );
+  }
+
+  /// Qualidade da tela como chips (o detalhe técnico vai abaixo, em texto).
+  Widget _qualityChips(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final q in StreamQuality.values)
+          ChoiceChip(
+            label: Text(state.t.qualityLabel(q)),
+            selected: state.streamQuality == q,
+            onSelected: (_) => state.setStreamQuality(q),
+          ),
+      ],
     );
   }
 
@@ -159,7 +259,7 @@ class SettingsScreen extends StatelessWidget {
 
   Future<void> _startTwoFactor(BuildContext context) async {
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => TwoFactorScreen(state: state)),
+      fadeThroughRoute(TwoFactorScreen(state: state)),
     );
   }
 
@@ -360,23 +460,5 @@ class SettingsScreen extends StatelessWidget {
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
     }
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
-      ),
-    );
   }
 }

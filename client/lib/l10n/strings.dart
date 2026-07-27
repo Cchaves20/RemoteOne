@@ -131,6 +131,8 @@ class Strings {
       'Automatique (système)', 'Automático (sistema)');
   String get themeLight => _t('Claro', 'Light', '浅色', 'Clair', 'Claro');
   String get themeDark => _t('Escuro', 'Dark', '深色', 'Sombre', 'Oscuro');
+  /// Rótulo curto para o seletor segmentado (evita quebrar em telas estreitas).
+  String get autoShort => _t('Auto', 'Auto', '自动', 'Auto', 'Auto');
   String get faceIdLock => _t('Bloquear com Face ID / biometria',
       'Lock with Face ID / biometrics', '使用 Face ID / 生物识别锁定',
       'Verrouiller avec Face ID / biométrie', 'Bloquear con Face ID / biometría');

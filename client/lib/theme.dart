@@ -17,9 +17,6 @@ const LinearGradient auroraGradient = LinearGradient(
   colors: [auroraViolet, auroraBlue, auroraCyan],
 );
 
-/// Raio de canto padrão do app.
-const double kRadius = 18;
-
 ThemeData buildTheme(Brightness brightness) {
   final isDark = brightness == Brightness.dark;
   final scheme = ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);

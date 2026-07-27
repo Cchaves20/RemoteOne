@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/device.dart';
 import '../services/app_state.dart';
 import '../widgets/remote_keyboard.dart';
+import '../widgets/transitions.dart';
 import 'gesture_tutorial_screen.dart';
 
 /// Controle remoto por toque direto: a tela do computador ocupa a tela inteira
@@ -79,8 +80,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         Navigator.of(context).push(
-          MaterialPageRoute(
-              builder: (_) => GestureTutorialScreen(state: widget.state)),
+          fadeThroughRoute(GestureTutorialScreen(state: widget.state)),
         );
       });
     }
@@ -297,22 +297,38 @@ class _RemoteScreenState extends State<RemoteScreen> {
     );
   }
 
+  /// Alterna entre "aguardando" e a tela ao vivo com um fade suave. As chaves
+  /// são estáveis, então a animação ocorre só na troca de estado — não a cada
+  /// frame recebido.
   Widget _liveView() {
-    if (_frame == null) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 16),
-          Text(
-            _error ?? widget.state.t.waitingScreen,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70),
-          ),
-        ],
-      );
-    }
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 350),
+      child: _frame == null
+          ? _waitingView(const ValueKey('waiting'))
+          : _screenView(const ValueKey('live')),
+    );
+  }
+
+  Widget _waitingView(Key key) {
+    return Column(
+      key: key,
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const CircularProgressIndicator(),
+        const SizedBox(height: 16),
+        Text(
+          _error ?? widget.state.t.waitingScreen,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white70),
+        ),
+      ],
+    );
+  }
+
+  Widget _screenView(Key key) {
     return Center(
+      key: key,
       child: AspectRatio(
         aspectRatio: _aspectRatio,
         child: Container(
@@ -419,8 +435,15 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   Widget _topBar({required bool showToggle}) {
     return Container(
-      color: Colors.black,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      // Faixa escura com um leve brilho da marca, separando a barra da tela.
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF14162C), Colors.black],
+        ),
+      ),
       child: Row(
         children: [
           IconButton(
@@ -431,7 +454,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
             child: Text(
               widget.device.name,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white70),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           if (_zoomMode) ...[

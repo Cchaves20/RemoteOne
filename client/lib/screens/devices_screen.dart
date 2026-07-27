@@ -4,6 +4,7 @@ import '../models/device.dart';
 import '../services/app_state.dart';
 import '../theme.dart';
 import '../widgets/pulse.dart';
+import '../widgets/transitions.dart';
 import 'remote_screen.dart';
 import 'settings_screen.dart';
 
@@ -78,9 +79,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
   void _openControl(Device device) {
     widget.state.selectDevice(device);
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => RemoteScreen(state: widget.state, device: device),
-      ),
+      fadeThroughRoute(RemoteScreen(state: widget.state, device: device)),
     );
   }
 
@@ -396,9 +395,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
             tooltip: t.settings,
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SettingsScreen(state: widget.state),
-              ),
+              fadeThroughRoute(SettingsScreen(state: widget.state)),
             ),
           ),
         ],
@@ -414,7 +411,11 @@ class _DevicesScreenState extends State<DevicesScreen> {
             child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
               itemCount: devices.length,
-              itemBuilder: (context, i) => _deviceCard(devices[i]),
+              // Entrada em cascata: cada card aparece um pouco depois do anterior.
+              itemBuilder: (context, i) => FadeSlideIn(
+                delay: Duration(milliseconds: 50 * i),
+                child: _deviceCard(devices[i]),
+              ),
             ),
           );
         },
