@@ -31,7 +31,22 @@ class Heartbeat(BaseModel):
     type: Literal["heartbeat"] = "heartbeat"
 
 
-ClientMessage = Annotated[Hello | Heartbeat, Field(discriminator="type")]
+class AppInfo(BaseModel):
+    """Um aplicativo: `id` é o caminho do atalho (instalado) ou o PID (aberto)."""
+
+    id: str
+    name: str
+
+
+class AppList(BaseModel):
+    """Resposta do agente a um `list_apps`, com o `request_id` do pedido."""
+
+    type: Literal["app_list"] = "app_list"
+    request_id: str
+    apps: list[AppInfo] = []
+
+
+ClientMessage = Annotated[Hello | Heartbeat | AppList, Field(discriminator="type")]
 _client_adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 
 

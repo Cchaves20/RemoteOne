@@ -29,6 +29,8 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Tutorial de gestos** na primeira vez que se controla um PC (e revisável em
   Configurações → Ajuda).
 - **Status online/offline** de cada computador na lista (ponto verde/cinza).
+- **Aplicativos do computador** (`apps_screen.dart`): abas "Instalados" e
+  "Abertos", com busca — tocar abre um programa; nos abertos, o X encerra.
 - **Ligar (Wake-on-LAN)**: computadores offline mostram "Ligar" no menu — o
   backend usa outro PC seu ligado na mesma rede para enviar o pacote mágico
   (peer-to-peer, sem configuração). Tela de ajuda em Configurações explica o

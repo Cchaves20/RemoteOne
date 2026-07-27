@@ -97,6 +97,19 @@ class PowerRequest(BaseModel):
     action: Literal["shutdown", "restart", "suspend"]
 
 
+class AppOut(BaseModel):
+    """Um aplicativo do computador. `id` = caminho do atalho ou PID."""
+
+    id: str
+    name: str
+
+
+class AppActionRequest(BaseModel):
+    """Abrir (id = caminho do atalho) ou encerrar (id = PID) um aplicativo."""
+
+    id: str = Field(min_length=1, max_length=1024)
+
+
 class DeviceOut(BaseModel):
     device_id: str
     name: str

@@ -115,10 +115,30 @@ pub async fn run(
             incoming = ws.next() => {
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
-                        // Se a config de fps mudou, recria o ticker no ritmo novo.
-                        if handle_server_text(&text, injector.as_mut(), &mut streaming, &mut active) {
-                            frame_ticker = interval(active.frame_interval());
-                            frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                        match handle_server_text(
+                            &text, injector.as_mut(), &mut streaming, &mut active,
+                        ) {
+                            // A config de fps mudou: recria o ticker no ritmo novo.
+                            Some(Action::RestartFrameTicker) => {
+                                frame_ticker = interval(active.frame_interval());
+                                frame_ticker
+                                    .set_missed_tick_behavior(MissedTickBehavior::Delay);
+                            }
+                            // Listar aplicativos pode demorar (varre o menu
+                            // Iniciar / consulta processos): roda fora do event
+                            // loop e responde ao backend com o mesmo request_id.
+                            Some(Action::ListApps { request_id, kind }) => {
+                                let apps = tokio::task::spawn_blocking(move || {
+                                    crate::apps::list(kind)
+                                })
+                                .await
+                                .unwrap_or_default();
+                                let reply = serde_json::to_string(
+                                    &ClientMessage::AppList { request_id, apps },
+                                )?;
+                                ws.send(Message::Text(reply)).await?;
+                            }
+                            None => {}
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
@@ -133,14 +153,26 @@ pub async fn run(
     }
 }
 
-/// Trata uma mensagem de texto do servidor. Retorna `true` se o intervalo de
-/// frames mudou (o chamador deve recriar o `frame_ticker`).
+/// Algo que o laço principal precisa fazer depois de tratar uma mensagem —
+/// tarefas que exigem `await` (recriar o ticker, responder ao servidor).
+enum Action {
+    /// O fps mudou: recriar o `frame_ticker`.
+    RestartFrameTicker,
+    /// Listar aplicativos e responder ao backend.
+    ListApps {
+        request_id: String,
+        kind: crate::apps::AppKind,
+    },
+}
+
+/// Trata uma mensagem de texto do servidor. O que exige `await` volta como
+/// [`Action`] para o laço principal executar.
 fn handle_server_text(
     text: &str,
     injector: &mut dyn crate::injector::InputInjector,
     streaming: &mut bool,
     active: &mut StreamConfig,
-) -> bool {
+) -> Option<Action> {
     match serde_json::from_str::<ServerMessage>(text) {
         Ok(ServerMessage::Welcome { server_version }) => {
             println!("Registrado no backend (servidor v{server_version})");
@@ -195,7 +227,9 @@ fn handle_server_text(
                 "Transmissão de tela iniciada (~{} fps, largura máx. {}px, qualidade {})",
                 active.fps, active.max_width, active.quality
             );
-            return active.fps != old_fps;
+            if active.fps != old_fps {
+                return Some(Action::RestartFrameTicker);
+            }
         }
         Ok(ServerMessage::StopStream) => {
             *streaming = false;
@@ -213,9 +247,24 @@ fn handle_server_text(
                 eprintln!("Falha ao enviar pacote mágico: {e}");
             }
         }
+        Ok(ServerMessage::ListApps { request_id, kind }) => {
+            return Some(Action::ListApps { request_id, kind });
+        }
+        Ok(ServerMessage::LaunchApp { id }) => {
+            println!("Abrindo aplicativo: {id}");
+            if let Err(e) = crate::apps::launch(&id) {
+                eprintln!("Falha ao abrir aplicativo: {e}");
+            }
+        }
+        Ok(ServerMessage::CloseApp { id }) => {
+            println!("Encerrando aplicativo (PID {id})");
+            if let Err(e) = crate::apps::close(&id) {
+                eprintln!("Falha ao encerrar aplicativo: {e}");
+            }
+        }
         Err(e) => eprintln!("Mensagem desconhecida do servidor: {text} ({e})"),
     }
-    false
+    None
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/strings.dart';
 import '../models/device.dart';
+import '../models/remote_app.dart';
 import '../models/stream_quality.dart';
 import 'api_client.dart';
 
@@ -204,6 +205,17 @@ class AppState extends ChangeNotifier {
   Future<void> wakeDevice(Device device) async {
     await api.wakeDevice(device.deviceId);
   }
+
+  // --- aplicativos do computador ---------------------------------------------
+
+  Future<List<RemoteApp>> listApps(Device device, {String kind = 'installed'}) =>
+      api.listApps(device.deviceId, kind: kind);
+
+  Future<void> launchApp(Device device, String id) =>
+      api.launchApp(device.deviceId, id);
+
+  Future<void> closeApp(Device device, String id) =>
+      api.closeApp(device.deviceId, id);
 
   // --- conta -----------------------------------------------------------------
 

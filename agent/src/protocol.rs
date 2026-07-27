@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::apps::{AppInfo, AppKind};
 use crate::input::InputAction;
 
 /// Mensagens que o agente envia ao backend.
@@ -22,6 +23,12 @@ pub enum ClientMessage {
         mac: Option<String>,
     },
     Heartbeat,
+    /// Resposta a um `list_apps`: a lista pedida, com o mesmo `request_id`
+    /// para o backend casar com quem está esperando.
+    AppList {
+        request_id: String,
+        apps: Vec<AppInfo>,
+    },
 }
 
 /// Mensagens que o backend envia ao agente.
@@ -67,6 +74,20 @@ pub enum ServerMessage {
     /// enviando o pacote mágico para o MAC informado.
     Wake {
         mac: String,
+    },
+    /// Pede a lista de aplicativos (instalados ou em execução). O agente
+    /// responde com `app_list` carregando o mesmo `request_id`.
+    ListApps {
+        request_id: String,
+        kind: AppKind,
+    },
+    /// Abre um aplicativo (id = caminho do atalho).
+    LaunchApp {
+        id: String,
+    },
+    /// Encerra um aplicativo em execução (id = PID).
+    CloseApp {
+        id: String,
     },
 }
 

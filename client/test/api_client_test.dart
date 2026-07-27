@@ -171,6 +171,51 @@ void main() {
     expect(body?['code'], '654321');
   });
 
+  test('listApps pede o kind certo e devolve os aplicativos', () async {
+    Uri? seen;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        seen = req.url;
+        return http.Response(
+          jsonEncode([
+            {'id': r'C:\Spotify.lnk', 'name': 'Spotify'},
+            {'id': r'C:\Chrome.lnk', 'name': 'Chrome'},
+          ]),
+          200,
+        );
+      }),
+    );
+    final apps = await client.listApps('dev-1', kind: 'running');
+    expect(seen?.path, '/api/v1/devices/dev-1/apps');
+    expect(seen?.query, 'kind=running');
+    expect(apps.length, 2);
+    expect(apps.first.name, 'Spotify');
+  });
+
+  test('launchApp e closeApp enviam o id e aceitam 204', () async {
+    final paths = <String>[];
+    final bodies = <Map<String, dynamic>>[];
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        paths.add(req.url.path);
+        bodies.add(jsonDecode(req.body) as Map<String, dynamic>);
+        return http.Response('', 204);
+      }),
+    );
+    await client.launchApp('dev-1', r'C:\Spotify.lnk');
+    await client.closeApp('dev-1', '4321');
+    expect(paths, [
+      '/api/v1/devices/dev-1/apps/launch',
+      '/api/v1/devices/dev-1/apps/close',
+    ]);
+    expect(bodies[0]['id'], r'C:\Spotify.lnk');
+    expect(bodies[1]['id'], '4321');
+  });
+
   test('wakeDevice chama o endpoint /wake e aceita 204', () async {
     Uri? seen;
     final client = ApiClient(

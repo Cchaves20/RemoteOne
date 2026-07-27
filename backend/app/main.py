@@ -15,6 +15,7 @@ from app.db import SessionLocal, init_db
 from app.devices import router as devices_router
 from app.protocol import (
     Ack,
+    AppList,
     Error,
     Hello,
     PairCode,
@@ -22,6 +23,7 @@ from app.protocol import (
     Welcome,
     parse_client_message,
 )
+from app.rpc import pending
 from app.screen import frame_store
 from app.security import decode_token
 
@@ -172,7 +174,13 @@ async def agent_ws(websocket: WebSocket) -> None:
                 await websocket.send_json(Error(message="mensagem inválida").model_dump())
                 continue
 
-            if isinstance(message, Hello):
+            if isinstance(message, AppList):
+                # Resposta a um pedido de lista de aplicativos: entrega a quem
+                # está esperando (o endpoint HTTP que fez a pergunta).
+                pending.resolve(
+                    message.request_id, [a.model_dump() for a in message.apps]
+                )
+            elif isinstance(message, Hello):
                 # Re-identificação (ex.: após reconexão na mesma sessão).
                 device_id = message.device_id
                 hostname = message.hostname

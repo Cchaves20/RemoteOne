@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
+import '../models/remote_app.dart';
 import 'token_store.dart';
 
 /// Erro de API com o código HTTP e uma mensagem amigável.
@@ -259,6 +260,48 @@ class ApiClient {
     final res = await _http.post(
       _uri('/api/v1/devices/$deviceId/wake'),
       headers: _authHeaders,
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  // --- aplicativos do computador ---------------------------------------------
+
+  /// Lista os aplicativos: `kind` = 'installed' (instalados) ou 'running'
+  /// (abertos agora). Pode demorar alguns segundos — o computador é consultado
+  /// na hora.
+  Future<List<RemoteApp>> listApps(String deviceId, {String kind = 'installed'}) async {
+    final res = await _http
+        .get(
+          _uri('/api/v1/devices/$deviceId/apps?kind=$kind'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(seconds: 25));
+    final data = _decode(res) as List<dynamic>;
+    return data
+        .map((e) => RemoteApp.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Abre um aplicativo no computador (id = caminho do atalho).
+  Future<void> launchApp(String deviceId, String id) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/apps/launch'),
+      headers: _authHeaders,
+      body: jsonEncode({'id': id}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Encerra um aplicativo em execução (id = PID).
+  Future<void> closeApp(String deviceId, String id) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/apps/close'),
+      headers: _authHeaders,
+      body: jsonEncode({'id': id}),
     );
     if (res.statusCode != 204) {
       throw _error(res);

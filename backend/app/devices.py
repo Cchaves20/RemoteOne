@@ -1,6 +1,8 @@
 """Rotas de pareamento e gerenciamento de dispositivos (Etapas 5 e 7.2)."""
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+import asyncio
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app import pairing
@@ -9,7 +11,15 @@ from app.connections import manager
 from app.db import get_db
 from app.input import InputAction
 from app.models import Device, User
-from app.schemas import ClaimRequest, DeviceOut, PowerRequest, RenameDeviceRequest
+from app.rpc import pending
+from app.schemas import (
+    AppActionRequest,
+    AppOut,
+    ClaimRequest,
+    DeviceOut,
+    PowerRequest,
+    RenameDeviceRequest,
+)
 from app.screen import frame_store
 
 router = APIRouter(prefix="/api/v1", tags=["devices"])
@@ -20,6 +30,8 @@ _STREAM_FPS = 3
 _FPS_RANGE = (1, 30)
 _QUALITY_RANGE = (20, 90)
 _WIDTH_RANGE = (640, 1920)
+# Tempo máximo esperando o agente responder com a lista de aplicativos.
+_APPS_TIMEOUT_SECONDS = 15
 
 
 def _device_out(device: Device) -> DeviceOut:
@@ -128,6 +140,70 @@ async def power_device(
     """Desliga, reinicia ou suspende o computador pareado."""
     _owned_device_or_404(db, device_id, current_user)
     message = {"type": "power", "action": body.action}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.get("/devices/{device_id}/apps", response_model=list[AppOut])
+async def list_apps(
+    device_id: str,
+    kind: str = Query("installed", pattern="^(installed|running)$"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[AppOut]:
+    """Lista os aplicativos do computador: instalados ou em execução.
+
+    Diferente dos outros comandos, aqui o backend **espera a resposta** do
+    agente (pergunta e resposta com `request_id`), com tempo limite.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    request_id, future = pending.create()
+    message = {"type": "list_apps", "request_id": request_id, "kind": kind}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        apps = await asyncio.wait_for(future, timeout=_APPS_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return [AppOut(**app) for app in apps]
+
+
+@router.post("/devices/{device_id}/apps/launch", status_code=status.HTTP_204_NO_CONTENT)
+async def launch_app(
+    device_id: str,
+    body: AppActionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Abre um aplicativo no computador (id = caminho do atalho)."""
+    _owned_device_or_404(db, device_id, current_user)
+    message = {"type": "launch_app", "id": body.id}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post("/devices/{device_id}/apps/close", status_code=status.HTTP_204_NO_CONTENT)
+async def close_app(
+    device_id: str,
+    body: AppActionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Encerra um aplicativo em execução (id = PID)."""
+    _owned_device_or_404(db, device_id, current_user)
+    message = {"type": "close_app", "id": body.id}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"

@@ -32,6 +32,7 @@ Agente                          Backend
 |---|---|---|
 | `hello` | `device_id`, `hostname`, `os`, `agent_version`, `mac?` | Primeira mensagem ao conectar (`mac` opcional, para Wake-on-LAN) |
 | `heartbeat` | — | Periódico, mantém a sessão viva |
+| `app_list` | `request_id`, `apps[]` | Resposta a um `list_apps` (ver "pergunta e resposta" abaixo) |
 
 ## Mensagens do backend → agente
 
@@ -47,6 +48,28 @@ Agente                          Backend
 | `stop_stream` | — | Encerra a transmissão da tela |
 | `power` | `action` (`shutdown`/`restart`/`suspend`) | Desliga, reinicia ou suspende o computador |
 | `wake` | `mac` | Pede a este agente que acorde (Wake-on-LAN) um vizinho da LAN pelo MAC |
+| `list_apps` | `request_id`, `kind` (`installed`/`running`) | Pede a lista de aplicativos; o agente responde com `app_list` |
+| `launch_app` | `id` (caminho do atalho) | Abre um programa no computador |
+| `close_app` | `id` (PID) | Encerra um programa em execução |
+
+## Pergunta e resposta (aplicativos)
+
+Quase tudo aqui é mão única (o backend manda, o agente executa). Listar
+aplicativos é a exceção: o backend precisa **esperar a resposta**. Para isso,
+cada pedido leva um `request_id`, e o backend guarda um "pedido pendente"
+([`backend/app/rpc.py`](../backend/app/rpc.py)) até chegar o `app_list` com o
+mesmo id — ou até estourar o tempo limite (15 s → HTTP 504).
+
+```
+App          Backend                         Agente
+ |  GET /apps   |                               |
+ |  ──────────► |  ── list_apps (request_id) ─► |  varre menu Iniciar
+ |              |  ◄──── app_list (request_id)  |  (ou lista processos)
+ |  ◄────────── |                               |
+```
+
+O agente lista fora do laço de eventos (`spawn_blocking`), então varrer os
+programas não trava o controle remoto que estiver em andamento.
 
 O agente responde ao `start_stream` enviando frames JPEG como mensagens
 **binárias** (agente → backend). O backend os repassa em tempo real aos apps

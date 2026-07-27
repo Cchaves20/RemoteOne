@@ -25,6 +25,7 @@ class Strings {
   String get remove => _t('Remover', 'Remove', '移除', 'Retirer', 'Quitar');
   String get delete => _t('Excluir', 'Delete', '删除', 'Supprimer', 'Eliminar');
   String get enable => _t('Ativar', 'Enable', '启用', 'Activer', 'Activar');
+  String get retry => _t('Tentar de novo', 'Try again', '重试', 'Réessayer', 'Reintentar');
   String get disable => _t('Desativar', 'Disable', '停用', 'Désactiver', 'Desactivar');
 
   // Login
@@ -115,6 +116,43 @@ class Strings {
       '信号已发送。电脑应该很快开机。',
       "Signal envoyé. L'ordinateur devrait s'allumer sous peu.",
       'Señal enviada. El equipo debería encenderse en breve.');
+
+  // Aplicativos do computador
+  String get apps => _t('Aplicativos', 'Apps', '应用', 'Applications', 'Aplicaciones');
+  String get appsInstalled =>
+      _t('Instalados', 'Installed', '已安装', 'Installées', 'Instaladas');
+  String get appsRunning => _t('Abertos', 'Running', '运行中', 'Ouvertes', 'Abiertas');
+  String get appsSearch => _t('Buscar aplicativo', 'Search app', '搜索应用',
+      'Rechercher une application', 'Buscar aplicación');
+  String get appsEmptyInstalled => _t(
+      'Nenhum aplicativo encontrado no computador.',
+      'No apps found on the computer.',
+      '在电脑上没有找到应用。',
+      "Aucune application trouvée sur l'ordinateur.",
+      'No se encontraron aplicaciones en el equipo.');
+  String get appsEmptyRunning => _t(
+      'Nenhum aplicativo aberto no momento.',
+      'No apps are open right now.',
+      '当前没有打开的应用。',
+      'Aucune application ouverte pour le moment.',
+      'No hay aplicaciones abiertas ahora mismo.');
+  String appOpening(String name) => _t('Abrindo $name…', 'Opening $name…',
+      '正在打开 $name…', 'Ouverture de $name…', 'Abriendo $name…');
+  String appClosed(String name) => _t('$name encerrado.', '$name closed.',
+      '$name 已关闭。', '$name fermé.', '$name cerrado.');
+  String get appClose => _t('Encerrar', 'Close', '关闭', 'Fermer', 'Cerrar');
+  String appCloseConfirm(String name) => _t(
+      'Encerrar "$name" no computador?',
+      'Close "$name" on the computer?',
+      '在电脑上关闭"$name"？',
+      'Fermer « $name » sur l\'ordinateur ?',
+      '¿Cerrar «$name» en el equipo?');
+  String get appsHint => _t(
+      'Toque para abrir. A lista vem do computador, pode levar alguns segundos.',
+      'Tap to open. The list comes from the computer and may take a few seconds.',
+      '点击打开。列表来自电脑，可能需要几秒钟。',
+      "Touchez pour ouvrir. La liste vient de l'ordinateur et peut prendre quelques secondes.",
+      'Toca para abrir. La lista viene del equipo y puede tardar unos segundos.');
 
   // Configurações
   String get appearance => _t('Aparência', 'Appearance', '外观', 'Apparence', 'Apariencia');

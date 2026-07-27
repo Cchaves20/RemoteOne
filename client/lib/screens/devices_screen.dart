@@ -5,6 +5,7 @@ import '../services/app_state.dart';
 import '../theme.dart';
 import '../widgets/pulse.dart';
 import '../widgets/transitions.dart';
+import 'apps_screen.dart';
 import 'remote_screen.dart';
 import 'settings_screen.dart';
 
@@ -206,6 +207,10 @@ class _DevicesScreenState extends State<DevicesScreen> {
             _wake(d);
           case 'open':
             _openControl(d);
+          case 'apps':
+            Navigator.of(context).push(
+              fadeThroughRoute(AppsScreen(state: widget.state, device: d)),
+            );
           case 'rename':
             _showRenameDialog(d);
           case 'shutdown':
@@ -232,6 +237,14 @@ class _DevicesScreenState extends State<DevicesScreen> {
             child: ListTile(
               leading: const Icon(Icons.play_arrow),
               title: Text(t.control),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'apps',
+            enabled: d.online,
+            child: ListTile(
+              leading: const Icon(Icons.apps),
+              title: Text(t.apps),
             ),
           ),
           PopupMenuItem(
