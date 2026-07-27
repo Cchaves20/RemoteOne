@@ -30,3 +30,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg"] }
 [target.'cfg(windows)'.dependencies]
 enigo = "0.2"
 xcap = "0.0.14"
+
+[dev-dependencies]
+image = { version = "0.25", features = ["png"] }
+openh264 = "0.9.7"

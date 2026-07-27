@@ -13,8 +13,8 @@ diferente:
 
 1. **Codec de vídeo.** JPEG não tem quadro de diferença: mover o cursor sobre
    uma tela parada reenvia a imagem inteira. Um codec envia só os blocos que
-   mudaram. É a maior economia das três — a estimativa é ~11 Mbps hoje contra
-   0,5–1,5 Mbps com H.264 a 720p30 em conteúdo de desktop.
+   mudaram. É a maior economia das três, e o [S2](#resultado-do-s2) já a mediu:
+   16–21 Mbps hoje contra 0,08–0,22 Mbps com H.264, na mesma qualidade.
 2. **Caminho direto (P2P).** Hoje cada frame sobe do PC ao VPS e desce ao
    celular. O WebRTC negocia conexão direta quando a rede permite, cortando uma
    perna inteira do trajeto — e o VPS deixa de pagar esse tráfego.
@@ -48,7 +48,10 @@ construir.
 
 - **`openh264`** (Cisco, via crate) — software, Constrained Baseline,
   multiplataforma, fácil de integrar. A 720p30 é perfeitamente viável, e já
-  reduzimos para 1280px de largura, então 720p é exatamente o alvo.
+  reduzimos para 1280px de largura, então 720p é exatamente o alvo. O S2
+  confirmou: custa **menos** CPU que o JPEG de hoje.
+  Tem um perfil próprio para conteúdo de tela (`ScreenContentRealTime`), que é
+  o que usamos na medição.
 - **Media Foundation** (encoder de hardware do Windows, QuickSync/NVENC) — bem
   mais leve para a CPU, mas é API COM chamada do Rust. Fica como otimização
   depois que o caminho todo estiver funcionando.
@@ -119,13 +122,60 @@ por vez, o caminho JPEG **tem que continuar funcionando no mesmo binário**. Um
 
 ### Fase 0 — Spikes (antes de qualquer compromisso)
 
-| # | Pergunta | Como responder |
-|---|---|---|
-| S1 | O `flutter_webrtc` sideloada? | App mínimo, build no Codemagic, instalar e abrir uma `RTCPeerConnection` |
-| S2 | Quanto custa codificar H.264 no agente? | `openh264` sobre frames capturados; medir ms/frame e KB/s contra o JPEG de hoje |
-| S3 | O P2P fecha na rede real? | iPhone no 4G ↔ PC em casa; medir quantas vezes conecta sem TURN |
+| # | Pergunta | Como responder | Estado |
+|---|---|---|---|
+| S1 | O `flutter_webrtc` sideloada? | App mínimo, build no Codemagic, instalar e abrir uma `RTCPeerConnection` | pendente |
+| S2 | Quanto custa codificar H.264 no agente? | `openh264` sobre quadros capturados; medir ms/quadro e Mbps contra o JPEG de hoje | **feito** ↓ |
+| S3 | O P2P fecha na rede real? | iPhone no 4G ↔ PC em casa; medir quantas vezes conecta sem TURN | pendente |
 
-S1 é bloqueante. S2 e S3 podem correr em paralelo.
+S1 é bloqueante. S3 pode correr em paralelo.
+
+#### Resultado do S2
+
+Medido com `cargo run --release --example bench_h264`, 1280×720 a 30 fps, 90
+quadros por cenário, alvo de 1,5 Mbps, contra o JPEG q50 **com a deduplicação
+que já está no ar**. O PSNR é medido decodificando os dois formatos de volta e
+comparando com o original, para que a comparação de banda seja honesta.
+
+| Cenário | Codec | ms/quadro | Mbps | PSNR dB |
+| --- | --- | ---: | ---: | ---: |
+| Parada + cursor | JPEG q50 | 30,7 | 16,38 | 39,7 |
+| | **H.264** | **23,0** | **0,08** | **39,3** |
+| Digitando | JPEG q50 | 31,1 | 16,40 | 39,7 |
+| | **H.264** | **24,2** | **0,09** | **39,3** |
+| Rolando | JPEG q50 | 30,4 | 21,33 | 38,4 |
+| | **H.264** | **25,0** | **0,22** | **39,0** |
+| Ruído (teto) | JPEG q50 | 34,0 | 41,90 | 25,2 |
+| | H.264 (descartando) | 5,8 | 2,05 | 25,4 |
+| | H.264 (sem descarte) | 49,3 | 26,28 | 25,4 |
+
+Três conclusões:
+
+1. **O ganho de banda é de duas ordens de grandeza, com a mesma qualidade.**
+   97× a 213× menos tráfego em uso normal, e o PSNR fica empatado (na rolagem o
+   H.264 é até melhor: 39,0 contra 38,4). Não é troca de qualidade por banda —
+   é o JPEG desperdiçando por não ter quadro de diferença.
+2. **A CPU melhora.** O H.264 custa 0,8× o JPEG, não mais. A preocupação de que
+   codificar vídeo pesaria mais que codificar imagem estava errada.
+3. **A política de descarte de quadros precisa ser decidida.** O padrão do
+   openh264 é jogar quadros fora para caber no teto de banda: no cenário
+   extremo ele entregou 7 de 90 quadros (~2 fps). Desligando o descarte, os 90
+   quadros passam, mas a CPU dobra e a banda estoura o alvo. Para controle
+   remoto, travar é pior que borrar — a inclinação é desligar o descarte e
+   deixar o controle de congestionamento do WebRTC governar a taxa. Fica como
+   decisão da Fase 2, agora com número em mãos.
+
+**Ressalva importante:** os quadros são sintéticos e mais simples que uma tela
+real (sem suavização de fontes, sem ícones, sem fotos), então os números do
+H.264 estão otimistas. Para fechar essa lacuna há um par de exemplos que grava
+e mede quadros reais **no Windows**:
+
+```bash
+cargo run --release --example capture_frames -- 90 quadros/   # mexa na tela
+cargo run --release --example bench_h264 -- quadros/
+```
+
+A ordem de grandeza do ganho não deve mudar; os valores absolutos, sim.
 
 ### Fase 1 — Sinalização (backend)
 
@@ -188,8 +238,9 @@ o que já é o caso hoje.
 
 1. **`flutter_webrtc` + sideload** — bloqueante, e é por isso que é o S1.
 2. **Interoperar webrtc-rs ↔ libwebrtc** — costuma funcionar; verificar cedo.
-3. **Compilar o `openh264` no Windows** — pode pedir cmake/nasm e dar atrito no
-   ambiente de build.
+3. ~~**Compilar o `openh264`**~~ — resolvido no S2: a crate compila a fonte
+   embutida sem cmake nem nasm, em menos de um minuto. Falta confirmar no
+   Windows.
 4. **Tamanho e tempo de build do .ipa** — Codemagic tem cota mensal.
 5. **A captura vira o novo gargalo.** Com H.264 queremos 30 fps, e o `xcap`
    custa dezenas de ms por quadro. A resposta certa é a **Desktop Duplication
@@ -205,6 +256,13 @@ O H.264 é coberto por patentes administradas por um pool (Via LA). Distribuir
 um produto comercial que codifica/decodifica H.264 pode implicar royalties,
 ainda que existam faixas isentas por volume. A distribuição do `openh264` pela
 Cisco tem um arranjo próprio, que depende de usar o binário deles.
+
+Detalhe prático descoberto no S2: a crate tem duas formas de obter o codec —
+`source` (compila a fonte junto, que é o que a medição usou) e `libloading`
+(carrega em tempo de execução a biblioteca já compilada e distribuída pela
+Cisco). É justamente a segunda que se encaixa no arranjo da Cisco. Se o
+licenciamento virar um problema, trocar de uma para a outra é uma mudança
+pequena — vale saber disso antes de escolher.
 
 Não é conselho jurídico e eu não vou fingir que é. É um item para checar antes
 de cobrar pelo produto — não antes de construí-lo. Se virar um problema, o

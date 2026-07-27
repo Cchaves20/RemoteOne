@@ -133,6 +133,19 @@ pub fn capture_frame(max_width: u32, quality: u8) -> Result<Vec<u8>, String> {
     rgba_to_jpeg(rgba, width, height, max_width, quality)
 }
 
+/// Captura a tela já reduzida, em RGB e sem compressão: `(pixels, largura,
+/// altura)`.
+///
+/// É a saída do pipeline logo antes da codificação. Serve para alimentar um
+/// codificador que não seja o JPEG — hoje, a medição do H.264 em
+/// `examples/bench_h264.rs`; adiante, o próprio encoder de vídeo.
+pub fn capture_rgb(max_width: u32) -> Result<(Vec<u8>, u32, u32), String> {
+    let (rgba, width, height) = capture_rgba()?;
+    let image = rgba_to_rgb_scaled(rgba, width, height, max_width)?;
+    let (w, h) = (image.width(), image.height());
+    Ok((image.into_raw(), w, h))
+}
+
 /// Captura a tela e só codifica o JPEG se o conteúdo mudou desde `last_hash`.
 ///
 /// Numa tela parada (lendo um documento, vídeo pausado, computador ocioso) isso
