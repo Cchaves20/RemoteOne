@@ -71,6 +71,17 @@ async fn main() {
         fps: env_u32("REMOTEONE_STREAM_FPS", default.fps),
         max_width: env_u32("REMOTEONE_STREAM_MAX_WIDTH", default.max_width),
         quality: env_u32("REMOTEONE_STREAM_QUALITY", default.quality as u32) as u8,
+        video_bitrate: env_u32("REMOTEONE_VIDEO_BITRATE", default.video_bitrate),
+        // Lista separada por vírgulas; vazio desliga o STUN (só rede local).
+        ice_servers: match std::env::var("REMOTEONE_ICE_SERVERS") {
+            Err(_) => default.ice_servers.clone(),
+            Ok(list) => list
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect(),
+        },
     };
 
     println!(
@@ -79,15 +90,31 @@ async fn main() {
     );
     println!("device_id: {device_id}");
     println!(
-        "Tela: {} fps, largura máx. {}px, qualidade {}",
+        "Tela: {} fps, largura máx. {}px, qualidade {} (JPEG)",
         stream.fps, stream.max_width, stream.quality
+    );
+    println!(
+        "Vídeo: H.264 a {} kbps, STUN: {}",
+        stream.video_bitrate / 1000,
+        if stream.ice_servers.is_empty() {
+            "nenhum (só rede local)".to_string()
+        } else {
+            stream.ice_servers.join(", ")
+        }
     );
     println!("Conectando a {url} ...");
 
     // Laço de reconexão: se a conexão cair, espera e tenta de novo.
     loop {
-        if let Err(e) =
-            client::run(&url, &identity, Duration::from_secs(HEARTBEAT_SECS), stream).await
+        // `stream` é clonado a cada tentativa: a config carrega a lista de
+        // servidores STUN, então não é mais `Copy`.
+        if let Err(e) = client::run(
+            &url,
+            &identity,
+            Duration::from_secs(HEARTBEAT_SECS),
+            stream.clone(),
+        )
+        .await
         {
             eprintln!("Conexão perdida: {e}");
         }

@@ -1,6 +1,12 @@
 # Plano: migrar o vídeo para WebRTC
 
-Documento de planejamento. Nada aqui está implementado ainda.
+Plano e diário de bordo da migração. As decisões estão registradas com o motivo,
+e cada fase concluída traz o que foi medido — inclusive onde a medição contrariou
+a expectativa.
+
+**Onde está:** spikes S1 e S2 respondidos, Fases 1 e 2 feitas (sinalização e
+agente transmitindo). Falta o app receber (Fase 3), o fallback (Fase 4) e o
+spike S3 (se o P2P fecha na rede real).
 
 O ponto de partida é o pipeline atual, medido em
 [`video-e-latencia.md`](video-e-latencia.md): JPEG frame a frame, sempre
@@ -19,7 +25,10 @@ diferente:
    celular. O WebRTC negocia conexão direta quando a rede permite, cortando uma
    perna inteira do trajeto — e o VPS deixa de pagar esse tráfego.
 3. **Controle de congestionamento.** Hoje o agente envia no ritmo do relógio,
-   sem saber se a rede aguenta. O WebRTC mede e ajusta a taxa sozinho.
+   sem saber se a rede aguenta. O WebRTC mede a capacidade e tem para onde
+   reportar isso — mas a Fase 2 mostrou que *usar* essa medida para segurar a
+   taxa não sai de graça: nenhuma configuração do codificador limita a banda sem
+   travar a imagem. Quem vai fechar essa alça é a Fase 4b.
 
 ## O que o WebRTC *não* resolve
 
@@ -274,13 +283,78 @@ Como esperado, é a fase mais verificável: **36 testes** cobrem tradução,
 roteamento por sessão, recusa de sessão alheia, prioridade e não-descarte da
 fila, e o formato de fio dos dois lados (Python e Rust fixam o mesmo JSON).
 
-### Fase 2 — Agente transmite
+### Fase 2 — Agente transmite — **feita**
 
-`webrtc` + `openh264`, alimentado pela captura atual. A deduplicação e o filtro
-de caixa continuam valendo: economizam CPU *antes* de qualquer codificação.
+`webrtc` (webrtc-rs) + `openh264`, alimentados pela captura que já existia. O
+agente agora recebe a oferta de um app, responde, troca candidatos e escreve
+quadros H.264 na faixa de vídeo.
 
-Com N espectadores: codifica **uma vez** e entrega a mesma amostra para as N
-conexões.
+O que foi construído:
+
+- **`agent/src/h264.rs`** — o codificador, persistente entre quadros. Isso não é
+  detalhe: é guardar o quadro anterior que permite mandar só a diferença. Um
+  codificador por quadro produziria um quadro-chave a cada vez e jogaria fora
+  todo o ganho — há um teste que fixa essa proporção justamente para pegar essa
+  regressão.
+- **`agent/src/webrtc.rs`** — as conexões, indexadas por sessão. O quadro é
+  codificado **uma vez** e a mesma amostra vai para todas as faixas conectadas:
+  o custo de CPU não cresce com o número de espectadores, só o de rede.
+- **`agent/src/client.rs`** — um tique de quadro serve os dois caminhos: se há
+  sessão de WebRTC conectada, o vídeo vai por lá; senão, segue o JPEG.
+
+Duas decisões de arquitetura que valem registro:
+
+1. **A sinalização sai por um canal, não daqui.** Quem tem o WebSocket é o laço
+   principal do cliente, e o webrtc-rs chama de volta de dentro das tarefas
+   dele. Um `mpsc` resolve: o módulo de vídeo publica `Signal`, o laço converte
+   em mensagem e envia.
+2. **Sessão em negociação não conta como pronta.** `wants_video()` só devolve
+   `true` para conexão de fato `Connected`. Codificar para uma conexão que ainda
+   não fechou (ou que falhou) seria gastar CPU à toa.
+
+#### A decisão de controle de taxa, medida
+
+O openh264 avisa, em tempo de execução, que **com o descarte de quadros
+desligado o teto de banda não é respeitado**. Isso explica os 26 Mbps que o S2
+tinha visto no cenário extremo. Como "desligar o descarte" sozinho não é uma
+decisão completa, as alternativas foram medidas (ruído em tela cheia, alvo de
+1,5 Mbps):
+
+| Política | Mbps | Quadros entregues | PSNR dB |
+| --- | ---: | ---: | ---: |
+| Descarta quadros (padrão) | 2,05 | **7 de 90** | 25,4 |
+| Sem limite | 26,28 | 90 | 25,4 |
+| Teto de quantização | 22,17 | 90 | 24,8 |
+| Controle por buffer | **68,55** | 90 | 31,4 |
+
+O modo por buffer, que a documentação descreve como "ajusta a qualidade pelo
+estado do buffer", fez o **oposto** do esperado: subiu a qualidade e triplicou a
+banda. Bom ter medido em vez de escolhido pela descrição.
+
+Conclusão honesta: **nenhuma configuração do openh264 limita a banda sem
+descartar quadros.** A escolha é entre travar e estourar. Ficou:
+
+- **sem descarte**, porque para controle remoto imagem borrada é usável e
+  imagem travada não é;
+- **com teto de quantização**, que corta pouco (~16%) mas não custa nada.
+
+Isso é aceitável porque o cenário extremo não é o nosso: em conteúdo de desktop
+o S2 mediu 0,08–0,22 Mbps, uma ordem de grandeza abaixo do alvo, e o teto nunca
+entra em jogo. O caminho certo para limitar de verdade é **reduzir resolução e
+fps quando a rede aperta** — degrada suave, sem travar — e isso é etapa de
+refino, registrada abaixo.
+
+#### Como está verificado
+
+**11 testes** rodando no Linux, sem tela e sem Windows. O que fecha a fase é o
+`video_h264_atravessa_a_conexao`: sobe duas conexões de verdade, negocia, troca
+candidatos até conectar, codifica quadros H.264 reais e confere que eles
+atravessaram como RTP do outro lado. É o caminho inteiro — codificador → faixa →
+RTP/DTLS → receptor — que é justamente o que não dá para verificar por partes.
+
+Há também um `examples/smoke_webrtc.rs`: uma checagem rápida de que o webrtc-rs
+sobe e a mídia atravessa numa plataforma nova. Vale rodar no Windows antes de
+subir o agente lá, já que nada disso pôde ser testado em Windows aqui.
 
 ### Fase 3 — App recebe
 
@@ -295,6 +369,16 @@ segundos, o app fecha a conexão WebRTC e reabre o caminho JPEG. O usuário vê,
 no máximo, uma pausa.
 
 Sem isso, uma rede ruim vira "o app não funciona".
+
+### Fase 4b — Qualidade adaptativa (novo, saiu da Fase 2)
+
+Como nenhuma configuração do codificador limita a banda sem travar a imagem, o
+limite de verdade tem que vir de fora: **baixar resolução e fps quando a rede
+aperta**, e subir de volta quando sobra. É o que degrada suave.
+
+Não estava no plano original — apareceu ao medir o controle de taxa na Fase 2.
+Só vale fazer depois da Fase 3, quando houver rede real para medir em vez de
+palpite.
 
 ### Fase 5 — TURN, se o S3 disser que precisa
 
@@ -331,8 +415,10 @@ o que já é o caso hoje.
    não assinado com Apple ID grátis, sem entitlement especial.
 2. **Interoperar webrtc-rs ↔ libwebrtc** — costuma funcionar; verificar cedo.
 3. ~~**Compilar o `openh264`**~~ — resolvido no S2: a crate compila a fonte
-   embutida sem cmake nem nasm, em menos de um minuto. Falta confirmar no
-   Windows.
+   embutida sem cmake nem nasm, em menos de um minuto. **Falta confirmar no
+   Windows**, junto com o `webrtc-rs`: nada da Fase 2 pôde ser compilado em
+   Windows aqui, e o `openh264` compila C++ (precisa do MSVC). É o primeiro
+   ponto a verificar ao subir o agente novo.
 4. **Tamanho e tempo de build do .ipa** — Codemagic tem cota mensal.
 5. **A captura vira o novo gargalo.** Com H.264 queremos 30 fps, e o `xcap`
    custa dezenas de ms por quadro. A resposta certa é a **Desktop Duplication

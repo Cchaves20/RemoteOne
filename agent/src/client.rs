@@ -5,6 +5,7 @@
 //! servidor. A construção das mensagens (parte pura) é testável; o laço de
 //! conexão em si é exercitado manualmente e pela validação ponta a ponta.
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -15,11 +16,17 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::protocol::{ClientMessage, ServerMessage};
 
 /// Parâmetros da transmissão de tela (ajustáveis por variável de ambiente).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct StreamConfig {
     pub fps: u32,
     pub max_width: u32,
     pub quality: u8,
+    /// Taxa alvo do H.264, em bits por segundo. O spike S2 mediu conteúdo de
+    /// desktop entre 0,08 e 0,22 Mbps; 1,5 Mbps deixa folga larga para
+    /// movimento e o controle de congestionamento reduz sozinho se precisar.
+    pub video_bitrate: u32,
+    /// Servidores STUN para descobrir o endereço externo (P2P). Vazio = só LAN.
+    pub ice_servers: Vec<String>,
 }
 
 impl Default for StreamConfig {
@@ -28,6 +35,8 @@ impl Default for StreamConfig {
             fps: 60,
             max_width: 1280,
             quality: 50,
+            video_bitrate: 1_500_000,
+            ice_servers: vec!["stun:stun.l.google.com:19302".to_string()],
         }
     }
 }
@@ -72,6 +81,7 @@ pub async fn run(
     heartbeat: Duration,
     stream: StreamConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let video_bitrate = stream.video_bitrate;
     let (mut ws, _response) = connect_async(url).await?;
     println!("Conectado ao backend em {url}");
 
@@ -88,16 +98,24 @@ pub async fn run(
     // Transmissão de tela: enquanto ativa, captura e envia frames JPEG. A
     // config é mutável porque o app pode ajustar fps/qualidade por sessão.
     let mut streaming = false;
-    let mut active = stream;
+    let mut active = stream.clone();
     let mut frame_ticker = interval(active.frame_interval());
     frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
     // Hash do último frame enviado: se a tela não mudou, não vale codificar
     // nem transmitir de novo (o app já mostra a mesma imagem).
     let mut last_frame = crate::capture::NO_FRAME;
 
-    // Sessões de WebRTC em negociação. Na Fase 1 só acompanham o estado; a
-    // negociação de verdade entra na Fase 2 (docs/webrtc-plano.md).
-    let mut sessions = crate::webrtc::Sessions::new();
+    // Vídeo por WebRTC. O que precisa voltar ao backend (resposta SDP,
+    // candidatos ICE) sai por este canal, porque o webrtc-rs chama de volta de
+    // dentro das tarefas dele e quem tem o WebSocket é este laço.
+    let (signal_tx, mut signal_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut video = crate::webrtc::Video::new(signal_tx, stream.ice_servers.clone())
+        .map_err(|e| format!("não consegui iniciar o vídeo por WebRTC: {e}"))?;
+
+    // Codificador H.264, compartilhado com a thread de codificação. Precisa
+    // viver entre quadros: é guardar o anterior que permite mandar só a
+    // diferença. `None` até o primeiro quadro definir a resolução.
+    let encoder: Arc<Mutex<Option<crate::h264::Encoder>>> = Arc::new(Mutex::new(None));
 
     loop {
         tokio::select! {
@@ -105,25 +123,70 @@ pub async fn run(
                 let hb = serde_json::to_string(&ClientMessage::Heartbeat)?;
                 ws.send(Message::Text(hb)).await?;
             }
-            _ = frame_ticker.tick(), if streaming => {
-                // Captura fora do event loop (spawn_blocking) para não travar
-                // o tratamento de comandos durante a codificação do frame.
-                let (max_width, quality) = (active.max_width, active.quality);
-                let previous = last_frame;
-                let captured = tokio::task::spawn_blocking(move || {
-                    crate::capture::capture_frame_dedup(max_width, quality, previous)
-                })
-                .await;
-                match captured {
-                    Ok(Ok(frame)) => {
-                        last_frame = frame.hash;
-                        // `jpeg` vazio = tela idêntica à anterior: nada a enviar.
-                        if let Some(jpeg) = frame.jpeg {
-                            ws.send(Message::Binary(jpeg)).await?;
-                        }
+            // Sinalização vinda do webrtc-rs (resposta SDP, candidatos locais):
+            // este laço é quem tem o WebSocket, então é quem despacha.
+            Some(signal) = signal_rx.recv() => {
+                let message = match signal {
+                    crate::webrtc::Signal::Answer { session_id, sdp } => {
+                        ClientMessage::WebrtcAnswer { session_id, sdp }
                     }
-                    Ok(Err(e)) => eprintln!("Falha ao capturar a tela: {e}"),
-                    Err(e) => eprintln!("Falha na tarefa de captura: {e}"),
+                    crate::webrtc::Signal::Ice {
+                        session_id, candidate, sdp_mid, sdp_mline_index,
+                    } => ClientMessage::WebrtcIce {
+                        session_id, candidate, sdp_mid, sdp_mline_index,
+                    },
+                };
+                ws.send(Message::Text(serde_json::to_string(&message)?)).await?;
+            }
+            // Um tique de quadro serve os dois caminhos. Quando há sessão de
+            // WebRTC conectada, o vídeo vai por lá (banda ~100x menor, medida
+            // no S2); senão, segue o JPEG, que continua sendo o fallback.
+            _ = frame_ticker.tick(), if streaming || video.wants_video() => {
+                if video.wants_video() {
+                    let (max_width, fps) = (active.max_width, active.fps.clamp(1, 60));
+                    let shared = Arc::clone(&encoder);
+                    // Captura e codificação na mesma tarefa bloqueante: separá-las
+                    // custaria uma cópia do quadro e outra ida ao pool de threads.
+                    let encoded = tokio::task::spawn_blocking(move || {
+                        let (rgb, w, h) = crate::capture::capture_rgb(max_width)?;
+                        let mut slot = shared.lock().unwrap_or_else(|e| e.into_inner());
+                        // Resolução nova (trocou de monitor, mudou a tela):
+                        // recria o codificador em vez de remendar o atual.
+                        if !slot.as_ref().is_some_and(|enc| enc.fits(w, h)) {
+                            *slot = Some(crate::h264::Encoder::new(w, h, fps, video_bitrate)?);
+                        }
+                        slot.as_mut().expect("acabou de ser criado").encode(&rgb, w, h)
+                    })
+                    .await;
+                    match encoded {
+                        Ok(Ok(frame)) => {
+                            video.write(&frame, Duration::from_micros(
+                                1_000_000 / active.fps.clamp(1, 60) as u64,
+                            )).await;
+                        }
+                        Ok(Err(e)) => eprintln!("Falha ao codificar a tela: {e}"),
+                        Err(e) => eprintln!("Falha na tarefa de vídeo: {e}"),
+                    }
+                } else {
+                    // Captura fora do event loop (spawn_blocking) para não travar
+                    // o tratamento de comandos durante a codificação do frame.
+                    let (max_width, quality) = (active.max_width, active.quality);
+                    let previous = last_frame;
+                    let captured = tokio::task::spawn_blocking(move || {
+                        crate::capture::capture_frame_dedup(max_width, quality, previous)
+                    })
+                    .await;
+                    match captured {
+                        Ok(Ok(frame)) => {
+                            last_frame = frame.hash;
+                            // `jpeg` vazio = tela idêntica à anterior: nada a enviar.
+                            if let Some(jpeg) = frame.jpeg {
+                                ws.send(Message::Binary(jpeg)).await?;
+                            }
+                        }
+                        Ok(Err(e)) => eprintln!("Falha ao capturar a tela: {e}"),
+                        Err(e) => eprintln!("Falha na tarefa de captura: {e}"),
+                    }
                 }
             }
             incoming = ws.next() => {
@@ -131,7 +194,7 @@ pub async fn run(
                     Some(Ok(Message::Text(text))) => {
                         match handle_server_text(
                             &text, injector.as_mut(), &mut streaming, &mut active,
-                            &mut last_frame, &mut sessions,
+                            &mut last_frame,
                         ) {
                             // A config de fps mudou: recria o ticker no ritmo novo.
                             Some(Action::RestartFrameTicker) => {
@@ -153,15 +216,52 @@ pub async fn run(
                                 )?;
                                 ws.send(Message::Text(reply)).await?;
                             }
+                            // Negociação de vídeo. A resposta e os candidatos
+                            // locais voltam pelo canal de sinalização, não aqui.
+                            Some(Action::WebrtcOffer { session_id, sdp }) => {
+                                if let Err(e) = video.offer(&session_id, &sdp).await {
+                                    eprintln!("Falha ao negociar vídeo ({session_id}): {e}");
+                                } else {
+                                    println!(
+                                        "Vídeo por WebRTC negociado (sessão {session_id})"
+                                    );
+                                }
+                            }
+                            Some(Action::WebrtcIce {
+                                session_id, candidate, sdp_mid, sdp_mline_index,
+                            }) => {
+                                let conhecida = video.candidate(
+                                    &session_id, &candidate, sdp_mid, sdp_mline_index,
+                                ).await;
+                                if !conhecida {
+                                    // Candidato atrasado de sessão encerrada:
+                                    // ignorar é o certo, não é falha.
+                                    println!(
+                                        "Candidato ICE de sessão desconhecida \
+                                         ({session_id}): ignorado"
+                                    );
+                                }
+                            }
+                            Some(Action::WebrtcClose { session_id }) => {
+                                if video.close(&session_id).await {
+                                    println!("Sessão de vídeo encerrada ({session_id})");
+                                }
+                            }
                             None => {}
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
                         println!("Conexão encerrada pelo servidor");
+                        // Sem o backend não há como sinalizar: solta as sessões
+                        // de vídeo em vez de deixá-las penduradas.
+                        video.close_all().await;
                         return Ok(());
                     }
                     Some(Ok(_)) => {} // ping/pong/binário: ignorados por ora
-                    Some(Err(e)) => return Err(Box::new(e)),
+                    Some(Err(e)) => {
+                        video.close_all().await;
+                        return Err(Box::new(e));
+                    }
                 }
             }
         }
@@ -178,6 +278,17 @@ enum Action {
         request_id: String,
         kind: crate::apps::AppKind,
     },
+    /// Negociar uma sessão de vídeo por WebRTC (criar a conexão e responder).
+    WebrtcOffer { session_id: String, sdp: String },
+    /// Adicionar um candidato ICE do app a uma sessão.
+    WebrtcIce {
+        session_id: String,
+        candidate: String,
+        sdp_mid: Option<String>,
+        sdp_mline_index: Option<u32>,
+    },
+    /// Encerrar a sessão de vídeo de um app que saiu.
+    WebrtcClose { session_id: String },
 }
 
 /// Trata uma mensagem de texto do servidor. O que exige `await` volta como
@@ -188,7 +299,6 @@ fn handle_server_text(
     streaming: &mut bool,
     active: &mut StreamConfig,
     last_frame: &mut u64,
-    sessions: &mut crate::webrtc::Sessions,
 ) -> Option<Action> {
     match serde_json::from_str::<ServerMessage>(text) {
         Ok(ServerMessage::Welcome { server_version }) => {
@@ -285,37 +395,26 @@ fn handle_server_text(
                 eprintln!("Falha ao encerrar aplicativo: {e}");
             }
         }
-        // Sinalização de WebRTC. A Fase 1 do plano só encaminha e acompanha; a
-        // negociação (responder com SDP e transmitir vídeo) é a Fase 2, então
-        // aqui não se inventa resposta nenhuma — o app cai no caminho JPEG.
+        // Sinalização de WebRTC: tudo aqui precisa de `await` (criar conexão,
+        // aplicar SDP, fechar), então volta como ação para o laço principal.
         Ok(ServerMessage::WebrtcOffer { session_id, sdp }) => {
-            let nova = sessions.offer(&session_id);
-            println!(
-                "Oferta de WebRTC recebida (sessão {session_id}, {} bytes de SDP, {}). \
-                 A negociação entra na Fase 2 — seguindo com a tela por JPEG.",
-                sdp.len(),
-                if nova {
-                    "sessão nova"
-                } else {
-                    "renegociação"
-                },
-            );
+            return Some(Action::WebrtcOffer { session_id, sdp });
         }
         Ok(ServerMessage::WebrtcIce {
             session_id,
             candidate,
-            ..
+            sdp_mid,
+            sdp_mline_index,
         }) => {
-            if !sessions.candidate(&session_id, &candidate) {
-                // Candidato atrasado de uma sessão já encerrada: ignorar é o
-                // comportamento certo, não é falha.
-                println!("Candidato ICE de sessão desconhecida ({session_id}): ignorado");
-            }
+            return Some(Action::WebrtcIce {
+                session_id,
+                candidate,
+                sdp_mid,
+                sdp_mline_index,
+            });
         }
         Ok(ServerMessage::WebrtcClose { session_id }) => {
-            if sessions.close(&session_id) {
-                println!("Sessão de WebRTC encerrada ({session_id})");
-            }
+            return Some(Action::WebrtcClose { session_id });
         }
         Err(e) => eprintln!("Mensagem desconhecida do servidor: {text} ({e})"),
     }

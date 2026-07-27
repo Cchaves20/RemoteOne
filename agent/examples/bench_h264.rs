@@ -19,7 +19,9 @@
 
 use image::codecs::jpeg::JpegEncoder;
 use image::ExtendedColorType;
-use openh264::encoder::{BitRate, Encoder, EncoderConfig, FrameRate, FrameType, UsageType};
+use openh264::encoder::{
+    BitRate, Encoder, EncoderConfig, FrameRate, FrameType, QpRange, RateControlMode, UsageType,
+};
 use openh264::formats::{RgbSliceU8, YUVBuffer};
 use openh264::{OpenH264API, Timestamp};
 use std::time::Instant;
@@ -292,17 +294,59 @@ fn run_jpeg(clip: &Clip) -> Measurement {
     }
 }
 
+/// Como o codificador reage quando o conteúdo pede mais banda do que o alvo.
+///
+/// Existe porque o openh264 avisa que, com o descarte de quadros desligado, o
+/// teto de banda **não é respeitado** — então "desligar o descarte" sozinho não
+/// é uma decisão completa. Estas são as saídas possíveis, medidas.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Rc {
+    /// Padrão do openh264: descarta quadros inteiros para caber no teto.
+    DescartaQuadros,
+    /// Sem descarte, qualidade livre: nada segura a banda.
+    SemLimite,
+    /// Sem descarte, com teto de quantização: piora a imagem em vez de travar.
+    TetoDeQp,
+    /// Sem descarte, controle pelo estado do buffer.
+    Buffer,
+}
+
+impl Rc {
+    fn label(self) -> &'static str {
+        match self {
+            Rc::DescartaQuadros => "descarta quadros",
+            Rc::SemLimite => "sem limite",
+            Rc::TetoDeQp => "teto de QP",
+            Rc::Buffer => "buffer",
+        }
+    }
+
+    fn apply(self, config: EncoderConfig) -> EncoderConfig {
+        match self {
+            Rc::DescartaQuadros => config.skip_frames(true),
+            Rc::SemLimite => config.skip_frames(false),
+            // QP até 42: a imagem fica visivelmente mais grosseira, mas a
+            // sequência continua fluindo.
+            Rc::TetoDeQp => config.skip_frames(false).qp(QpRange::new(24, 42)),
+            Rc::Buffer => config
+                .skip_frames(false)
+                .rate_control_mode(RateControlMode::Bufferbased),
+        }
+    }
+}
+
 /// Caminho proposto: H.264, perfil de conteúdo de tela, tempo real.
 ///
 /// `skip_frames` é o padrão do openh264: sob pressão de banda ele **descarta
 /// quadros inteiros** em vez de baixar a qualidade. Medimos os dois modos
 /// porque a diferença decide o comportamento em rede ruim.
-fn run_h264(clip: &Clip, skip_frames: bool, target_bps: u32) -> (Measurement, u32) {
-    let config = EncoderConfig::new()
-        .usage_type(UsageType::ScreenContentRealTime)
-        .skip_frames(skip_frames)
-        .max_frame_rate(FrameRate::from_hz(FPS as f32))
-        .bitrate(BitRate::from_bps(target_bps));
+fn run_h264(clip: &Clip, policy: Rc, target_bps: u32) -> (Measurement, u32) {
+    let config = policy.apply(
+        EncoderConfig::new()
+            .usage_type(UsageType::ScreenContentRealTime)
+            .max_frame_rate(FrameRate::from_hz(FPS as f32))
+            .bitrate(BitRate::from_bps(target_bps)),
+    );
     let mut encoder = Encoder::with_api_config(OpenH264API::from_source(), config).unwrap();
     let mut yuv = YUVBuffer::new(clip.w, clip.h);
 
@@ -430,7 +474,7 @@ fn synthetic_clip(scenario: Scenario, w: usize, h: usize) -> Clip {
 fn report(clip: &Clip) {
     let n = clip.frames.len();
     let jpeg = run_jpeg(clip);
-    let (h264, keyframes) = run_h264(clip, true, TARGET_BPS);
+    let (h264, keyframes) = run_h264(clip, Rc::DescartaQuadros, TARGET_BPS);
 
     for (name, m) in [("JPEG q50", &jpeg), ("H.264", &h264)] {
         println!(
@@ -452,20 +496,23 @@ fn report(clip: &Clip) {
         h264.ms_per_frame / jpeg.ms_per_frame.max(0.0001),
     );
 
-    // Quando o encoder descartou quadros para caber no teto, mede-se de novo
-    // sem descarte: é a diferença entre "trava" e "borra" em rede ruim.
+    // Se o codificador precisou descartar quadros para caber no teto, o
+    // conteúdo é pesado o bastante para a política de taxa importar: mede-se
+    // cada alternativa.
     if (h264.sent_frames as usize) < n {
-        let (full, _) = run_h264(clip, false, TARGET_BPS);
-        println!(
-            "{:<22} {:>12} {:>9.1} {:>8.2} {:>9.1} {:>9} {:>8.1}",
-            "",
-            "H.264 s/skip",
-            full.ms_per_frame,
-            full.mbps(n),
-            full.kb_per_sent_frame(),
-            full.sent_frames,
-            full.psnr_db,
-        );
+        for policy in [Rc::SemLimite, Rc::TetoDeQp, Rc::Buffer] {
+            let (m, _) = run_h264(clip, policy, TARGET_BPS);
+            println!(
+                "{:<22} {:>12} {:>9.1} {:>8.2} {:>9.1} {:>9} {:>8.1}",
+                "",
+                policy.label(),
+                m.ms_per_frame,
+                m.mbps(n),
+                m.kb_per_sent_frame(),
+                m.sent_frames,
+                m.psnr_db,
+            );
+        }
     }
     println!();
 }

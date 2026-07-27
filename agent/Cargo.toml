@@ -24,6 +24,9 @@ mac_address = "1"
 base64 = "0.22"
 # Codificação JPEG dos frames (multiplataforma; usada também pelo stub).
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
+# Codificação H.264 do vídeo por WebRTC (medido no spike S2 do plano).
+openh264 = "0.9.7"
+webrtc = "0.17.2"
 
 # Só no Windows (única plataforma testável aqui). Linux/macOS usam os stubs
 # em src/injector.rs e src/capture.rs, sem estas dependências.
@@ -33,4 +36,3 @@ xcap = "0.0.14"
 
 [dev-dependencies]
 image = { version = "0.25", features = ["png"] }
-openh264 = "0.9.7"
