@@ -19,6 +19,9 @@ uuid = { version = "1", features = ["v4"] }
 gethostname = "0.5"
 # MAC da placa de rede local, para Wake-on-LAN (multiplataforma).
 mac_address = "1"
+# Usado para passar scripts ao PowerShell via -EncodedCommand (sem problemas
+# de escape de aspas na linha de comando).
+base64 = "0.22"
 # Codificação JPEG dos frames (multiplataforma; usada também pelo stub).
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 

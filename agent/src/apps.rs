@@ -110,9 +110,27 @@ fn parse_desktop(text: &str) -> Vec<AppInfo> {
 #[cfg(windows)]
 mod imp {
     use std::path::{Path, PathBuf};
-    use std::process::Command;
+    use std::process::{Command, Output};
+
+    use base64::Engine;
 
     use super::{tidy, AppInfo};
+
+    /// Executa um script no PowerShell via `-EncodedCommand`.
+    ///
+    /// O script vai em base64 (UTF-16LE), então aspas, `$`, `{}` e afins
+    /// chegam intactos — passar scripts grandes por `-Command` na linha de
+    /// comando é frágil, porque o PowerShell reinterpreta as aspas.
+    fn run_powershell(script: &str) -> std::io::Result<Output> {
+        let utf16: Vec<u8> = script
+            .encode_utf16()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect();
+        let encoded = base64::engine::general_purpose::STANDARD.encode(utf16);
+        Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
+            .output()
+    }
 
     /// Script que lista os atalhos da área de trabalho e já extrai o **ícone
     /// real** de cada programa: resolve o alvo do atalho (WScript.Shell) e
@@ -127,10 +145,16 @@ foreach ($d in $dirs) {
   if (-not (Test-Path -LiteralPath $d)) { continue }
   Get-ChildItem -LiteralPath $d -Filter *.lnk -File -ErrorAction SilentlyContinue | ForEach-Object {
     $icon = ''
-    try {
-      $t = $sh.CreateShortcut($_.FullName).TargetPath
-      if ($t -and (Test-Path -LiteralPath $t)) {
-        $i = [System.Drawing.Icon]::ExtractAssociatedIcon($t)
+    # Tenta o ícone do programa apontado pelo atalho; se não der, o do próprio
+    # atalho (alguns apontam para caminhos que não resolvem).
+    $alvos = @()
+    try { $t = $sh.CreateShortcut($_.FullName).TargetPath; if ($t) { $alvos += $t } } catch { }
+    $alvos += $_.FullName
+    foreach ($alvo in $alvos) {
+      if ($icon -ne '') { break }
+      try {
+        if (-not (Test-Path -LiteralPath $alvo)) { continue }
+        $i = [System.Drawing.Icon]::ExtractAssociatedIcon($alvo)
         if ($i) {
           $b = $i.ToBitmap()
           $ms = New-Object System.IO.MemoryStream
@@ -138,8 +162,8 @@ foreach ($d in $dirs) {
           $icon = [Convert]::ToBase64String($ms.ToArray())
           $ms.Dispose(); $b.Dispose(); $i.Dispose()
         }
-      }
-    } catch { }
+      } catch { }
+    }
     $out += [PSCustomObject]@{ id = $_.FullName; name = $_.BaseName; icon = $icon }
   }
 }
@@ -150,14 +174,28 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
     /// reais. É o conjunto que a própria pessoa escolheu deixar à mão — por
     /// isso alimenta a dock, em vez das centenas de entradas do menu Iniciar.
     pub fn list_desktop() -> Vec<AppInfo> {
-        let output = Command::new("powershell")
-            .args(["-NoProfile", "-Command", DESKTOP_SCRIPT])
-            .output();
-        let Ok(output) = output else {
-            return Vec::new();
+        let output = match run_powershell(DESKTOP_SCRIPT) {
+            Ok(output) => output,
+            Err(e) => {
+                eprintln!("Falha ao listar a área de trabalho: {e}");
+                return Vec::new();
+            }
         };
+        if !output.stderr.is_empty() {
+            eprintln!(
+                "PowerShell (área de trabalho): {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
         let text = String::from_utf8_lossy(&output.stdout);
-        tidy(super::parse_desktop(&text))
+        let apps = tidy(super::parse_desktop(&text));
+        let com_icone = apps.iter().filter(|a| a.icon.is_some()).count();
+        println!(
+            "Área de trabalho: {} programa(s), {} com ícone",
+            apps.len(),
+            com_icone
+        );
+        apps
     }
 
     /// Programas instalados = atalhos (.lnk) dos menus Iniciar do sistema e do
@@ -220,10 +258,7 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
     pub fn list_running() -> Vec<AppInfo> {
         let script = "Get-Process | Where-Object {$_.MainWindowTitle -ne ''} | \
                       Select-Object Id,ProcessName | ConvertTo-Json -Compress";
-        let output = Command::new("powershell")
-            .args(["-NoProfile", "-Command", script])
-            .output();
-        let Ok(output) = output else {
+        let Ok(output) = run_powershell(script) else {
             return Vec::new();
         };
         let text = String::from_utf8_lossy(&output.stdout);
