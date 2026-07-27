@@ -3,12 +3,14 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
 import '../models/remote_app.dart';
 import '../services/app_state.dart';
+import '../services/video_session.dart';
 import '../theme.dart';
 import '../widgets/remote_keyboard.dart';
 import '../widgets/transitions.dart';
@@ -53,6 +55,11 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// o antigo é descartado. Melhor mostrar a imagem mais recente do que
   /// acumular uma fila e ficar para trás.
   bool _decoding = false;
+
+  /// Tentativa de receber a tela por WebRTC. Enquanto ela não estiver ao vivo,
+  /// o que aparece é o JPEG — que o agente continua mandando exatamente até o
+  /// vídeo conectar. É esse encaixe que faz o fallback ser automático.
+  VideoSession? _video;
 
   double _aspectRatio = 16 / 9;
   bool _aspectResolved = false;
@@ -130,11 +137,25 @@ class _RemoteScreenState extends State<RemoteScreen>
       maxWidth: q.maxWidth,
     );
     _channel = channel;
+
+    // O mesmo socket carrega os frames JPEG (binário) e a sinalização de
+    // WebRTC (texto). A sessão de vídeo é criada aqui e negocia em paralelo.
+    _video?.dispose();
+    final video = widget.state.webrtcVideoEnabled
+        ? (VideoSession(channel: channel)..addListener(_onVideoChanged))
+        : null;
+    _video = video;
+
     _sub = channel.stream.listen(
       (event) {
-        if (event is! List<int>) return; // ignora mensagens de texto
-        final frame = event is Uint8List ? event : Uint8List.fromList(event);
         if (!mounted) return;
+        // Texto = sinalização de WebRTC.
+        if (event is String) {
+          video?.handleSignal(event);
+          return;
+        }
+        if (event is! List<int>) return;
+        final frame = event is Uint8List ? event : Uint8List.fromList(event);
         _frameCount++;
         _decodeFrame(frame);
       },
@@ -142,6 +163,27 @@ class _RemoteScreenState extends State<RemoteScreen>
       onDone: _scheduleReconnect,
       cancelOnError: true,
     );
+
+    // Só depois de o ouvinte estar no ar, senão a resposta do agente poderia
+    // chegar antes de haver quem a tratasse.
+    video?.start();
+  }
+
+  /// A sessão de vídeo mudou de estado: pode ser hora de trocar o que aparece.
+  void _onVideoChanged() {
+    final video = _video;
+    if (!mounted || video == null) return;
+    setState(() {
+      if (video.isLive) {
+        _hasFrame = true; // já há imagem, mesmo que nenhum JPEG tenha chegado
+        _error = null;
+        final ratio = video.aspectRatio;
+        if (ratio != null && ratio > 0) {
+          _aspectRatio = ratio;
+          _aspectResolved = true;
+        }
+      }
+    });
   }
 
   /// Reconecta automaticamente se a conexão de tela cair (#12).
@@ -199,6 +241,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     _reconnectTimer?.cancel();
     _sub?.cancel();
     _channel?.sink.close();
+    _video?.removeListener(_onVideoChanged);
+    _video?.dispose();
     _transform.dispose();
     _dockAnim.dispose();
     _frame.value?.dispose();
@@ -593,19 +637,32 @@ class _RemoteScreenState extends State<RemoteScreen>
             builder: (context, constraints) {
               final box = Size(constraints.maxWidth, constraints.maxHeight);
               _viewBox = box;
-              // Só esta folha se reconstrói quando chega um frame novo.
-              final image = ValueListenableBuilder<ui.Image?>(
-                valueListenable: _frame,
-                builder: (context, frame, _) {
-                  if (frame == null) return const SizedBox.expand();
-                  return RawImage(
-                    image: frame,
-                    fit: BoxFit.fill,
-                    // Suaviza a imagem quando ampliada (menos "quadradinhos").
-                    filterQuality: FilterQuality.medium,
-                  );
-                },
-              );
+              // A imagem é a única folha que troca: vídeo por WebRTC quando ele
+              // está ao vivo, JPEG no resto do tempo. Tudo em volta (zoom,
+              // gestos, dock, mapeamento do cursor) fica igual nos dois casos —
+              // é por isso que a substituição acontece só aqui.
+              final video = _video;
+              final Widget image = video != null && video.isLive
+                  ? RTCVideoView(
+                      video.renderer,
+                      // `fill` porque o AspectRatio acima já enquadra: deixar o
+                      // próprio vídeo enquadrar de novo distorceria o
+                      // mapeamento do toque para a coordenada do mouse.
+                      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitFill,
+                    )
+                  : ValueListenableBuilder<ui.Image?>(
+                      // Só esta folha se reconstrói quando chega um frame novo.
+                      valueListenable: _frame,
+                      builder: (context, frame, _) {
+                        if (frame == null) return const SizedBox.expand();
+                        return RawImage(
+                          image: frame,
+                          fit: BoxFit.fill,
+                          // Suaviza quando ampliada (menos "quadradinhos").
+                          filterQuality: FilterQuality.medium,
+                        );
+                      },
+                    );
 
               // Modo lupa: o InteractiveViewer amplia/move (pinça e botões +/−),
               // e as setas nas bordas deslocam a visão sem precisar arrastar.
@@ -767,11 +824,15 @@ class _RemoteScreenState extends State<RemoteScreen>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                // 0 fps com a imagem no ar significa tela parada: o agente
-                // deixa de enviar frames idênticos para poupar rede/bateria.
-                _fps == 0 && _hasFrame
-                    ? widget.state.t.screenStill
-                    : '$_fps fps',
+                // No vídeo por WebRTC não chegam frames JPEG, então o contador
+                // fica em 0 por definição — mostrar "0 fps" pareceria defeito.
+                _video?.isLive == true
+                    ? widget.state.t.videoMode
+                    // 0 fps com a imagem no ar significa tela parada: o agente
+                    // deixa de enviar frames idênticos para poupar rede/bateria.
+                    : (_fps == 0 && _hasFrame
+                        ? widget.state.t.screenStill
+                        : '$_fps fps'),
                 style: const TextStyle(color: Colors.white38, fontSize: 12),
               ),
             ),

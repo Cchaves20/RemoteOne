@@ -4,9 +4,10 @@ Plano e diário de bordo da migração. As decisões estão registradas com o mo
 e cada fase concluída traz o que foi medido — inclusive onde a medição contrariou
 a expectativa.
 
-**Onde está:** spikes S1 e S2 respondidos, Fases 1 e 2 feitas (sinalização e
-agente transmitindo). Falta o app receber (Fase 3), o fallback (Fase 4) e o
-spike S3 (se o P2P fecha na rede real).
+**Onde está:** spikes S1 e S2 respondidos; Fases 1 a 4 feitas — sinalização,
+agente transmitindo, app recebendo e fallback automático. O caminho está
+fechado ponta a ponta, faltando **validar em rede real** (spike S3) e a
+qualidade adaptativa (Fase 4b).
 
 O ponto de partida é o pipeline atual, medido em
 [`video-e-latencia.md`](video-e-latencia.md): JPEG frame a frame, sempre
@@ -356,19 +357,55 @@ Há também um `examples/smoke_webrtc.rs`: uma checagem rápida de que o webrtc-
 sobe e a mídia atravessa numa plataforma nova. Vale rodar no Windows antes de
 subir o agente lá, já que nada disso pôde ser testado em Windows aqui.
 
-### Fase 3 — App recebe
+### Fase 3 — App recebe — **feita**
 
-`RTCVideoRenderer` no lugar do `RawImage`. O mapeamento de toque → coordenada
-do mouse precisa ser refeito em cima do tamanho do vídeo, e o modo lupa
-(`InteractiveViewer` / `Transform`) precisa continuar funcionando por cima.
+O app monta a oferta com um transceptor `recvonly`, manda pelo mesmo WebSocket
+que já trazia os frames, e troca o `RawImage` por um `RTCVideoView` quando o
+vídeo entra.
 
-### Fase 4 — Fallback automático (entra junto com a Fase 3)
+A negociação vive em `client/lib/services/video_session.dart`, fora da tela de
+controle: ela tem estado próprio (oferta, resposta, candidatos, conexão) e a
+tela já carrega gestos, zoom e a dock.
 
-Se o ICE falhar, se a conexão cair, ou se nenhum quadro chegar em alguns
-segundos, o app fecha a conexão WebRTC e reabre o caminho JPEG. O usuário vê,
-no máximo, uma pausa.
+**Só a folha da árvore troca.** O `AspectRatio` → `Container` → `LayoutBuilder`
+→ `ClipRect` → `Transform` → `GestureDetector` continua idêntico; o que muda é
+apenas o widget da imagem no fim. Isso não é economia de esforço, é o que
+garante que zoom, lupa, dock e o mapeamento de toque → coordenada do mouse
+funcionem igual nos dois modos, sem código duplicado.
 
-Sem isso, uma rede ruim vira "o app não funciona".
+Duas consequências que aparecem na interface:
+
+- O `RTCVideoView` usa `objectFit: fill`, não `contain`. O `AspectRatio` acima
+  já enquadra; deixar o vídeo enquadrar de novo colocaria barras internas e
+  desalinharia o toque do cursor.
+- O contador de fps mostra "vídeo": no modo WebRTC não chegam frames JPEG para
+  contar, então o número ficaria em 0 por definição.
+
+Há também um interruptor em **Configurações → Qualidade da tela**, ligado por
+padrão. Serve de escape: se o vídeo se comportar mal, dá para voltar ao JPEG
+sem reinstalar o app — o que importa quando o aparelho de teste é o único
+telefone da pessoa e o `.ipa` expira em 7 dias.
+
+### Fase 4 — Fallback automático — **feita** (junto com a Fase 3)
+
+Caiu quase de graça, por causa de como a Fase 2 ficou: **o agente só para de
+mandar JPEG enquanto existe uma sessão de WebRTC conectada.** Então o JPEG
+continua chegando durante toda a negociação, e volta sozinho se o vídeo cair.
+
+Do lado do app, três gatilhos levam ao JPEG: `RTCPeerConnectionStateFailed`,
+fechamento antes de completar, e um tempo limite de 20 s na negociação. Em
+qualquer um deles a sessão vira `failed`, a tela volta a desenhar o JPEG e o
+motivo vai para o log (`debugPrint`) — sem isso, uma falha seria invisível.
+
+**Limitação conhecida:** se dois apps assistem ao mesmo computador e um tem o
+vídeo desligado, o que está no JPEG congela — o agente entra em modo vídeo por
+causa do outro e para de mandar frames. Com um espectador (o caso normal)
+funciona; com dois, um fica sem imagem nova.
+
+O conserto certo é o app avisar o backend que seu vídeo está no ar, e o backend
+só pedir `stop_stream` quando **nenhum** espectador precisar mais de JPEG. Não
+entrou aqui porque é protocolo novo, e meia-implementação de coordenação seria
+pior que a limitação declarada.
 
 ### Fase 4b — Qualidade adaptativa (novo, saiu da Fase 2)
 

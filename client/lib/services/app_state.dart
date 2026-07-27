@@ -22,6 +22,11 @@ class AppState extends ChangeNotifier {
   bool twoFactorEnabled = false;
   bool gestureTutorialSeen = false;
   StreamQuality streamQuality = StreamQuality.equilibrado;
+
+  /// Se o app tenta receber a tela por WebRTC (vídeo H.264) antes de cair no
+  /// JPEG. Ligado por padrão — é o caminho bom —, mas desligável: se o WebRTC
+  /// se comportar mal, dá para voltar ao que funciona sem reinstalar o app.
+  bool webrtcVideoEnabled = true;
   AppLanguage language = AppLanguage.system;
 
   bool get isAuthenticated => api.isAuthenticated;
@@ -58,6 +63,7 @@ class AppState extends ChangeNotifier {
     appLockEnabled = prefs.getBool('appLock') ?? false;
     gestureTutorialSeen = prefs.getBool('gestureTutorialSeen') ?? false;
     streamQuality = StreamQuality.fromName(prefs.getString('streamQuality'));
+    webrtcVideoEnabled = prefs.getBool('webrtcVideo') ?? true;
     language = AppLanguage.values.firstWhere(
       (l) => l.name == prefs.getString('language'),
       orElse: () => AppLanguage.system,
@@ -76,6 +82,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('streamQuality', quality.name);
+  }
+
+  Future<void> setWebrtcVideoEnabled(bool enabled) async {
+    webrtcVideoEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('webrtcVideo', enabled);
   }
 
   Future<void> markGestureTutorialSeen() async {

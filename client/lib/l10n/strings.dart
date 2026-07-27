@@ -237,6 +237,21 @@ class Strings {
   String get screenStill =>
       _t('tela parada', 'screen still', '画面静止', 'écran fixe', 'pantalla fija');
 
+  /// Mostrado no lugar do contador quando a tela chega por vídeo (WebRTC): não
+  /// há frames JPEG para contar, então o número ficaria em 0 por definição.
+  String get videoMode => _t('vídeo', 'video', '视频', 'vidéo', 'vídeo');
+
+  // Preferência do vídeo por WebRTC
+  String get webrtcVideo =>
+      _t('Vídeo em alta eficiência', 'High-efficiency video', '高效视频',
+          'Vidéo haute efficacité', 'Vídeo de alta eficiencia');
+  String get webrtcVideoSub => _t(
+      'Usa muito menos internet. Se der problema, desligue para voltar ao modo antigo.',
+      'Uses far less data. If it misbehaves, turn it off to go back to the old mode.',
+      '流量消耗大幅降低。如出现问题，可关闭以恢复旧模式。',
+      "Consomme beaucoup moins de données. En cas de problème, désactivez pour revenir à l'ancien mode.",
+      'Consume mucho menos datos. Si falla, desactívalo para volver al modo anterior.');
+
   // Diálogos de conta
   String get newEmail => _t('Novo e-mail', 'New email', '新邮箱', 'Nouvel e-mail', 'Nuevo correo');
   String get currentPassword => _t('Senha atual', 'Current password', '当前密码',

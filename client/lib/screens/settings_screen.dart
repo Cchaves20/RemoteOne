@@ -43,6 +43,15 @@ class SettingsScreen extends StatelessWidget {
                 _languageChips(context),
               ])),
               staggered(_card(context, t.screenQuality, Icons.hd_outlined, [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.bolt_outlined),
+                  title: Text(t.webrtcVideo),
+                  subtitle: Text(t.webrtcVideoSub),
+                  value: state.webrtcVideoEnabled,
+                  onChanged: state.setWebrtcVideoEnabled,
+                ),
+                const Divider(height: 20),
                 _qualityChips(context),
                 const SizedBox(height: 10),
                 Text(
