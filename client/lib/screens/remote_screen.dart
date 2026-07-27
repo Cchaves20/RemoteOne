@@ -444,7 +444,9 @@ class _RemoteScreenState extends State<RemoteScreen>
               width: _dockIcon,
               height: _dockIcon,
               fit: BoxFit.contain,
-              filterQuality: FilterQuality.medium,
+              // Os ícones vêm em 128px e são exibidos em ~42: a reamostragem
+              // de melhor qualidade evita serrilhado.
+              filterQuality: FilterQuality.high,
               // Ícone ilegível: cai para a inicial, sem quebrar a dock.
               errorBuilder: (_, __, ___) => _initialTile(app),
             ),

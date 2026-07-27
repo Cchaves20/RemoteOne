@@ -138,6 +138,34 @@ mod imp {
     /// abrir um PowerShell por atalho seria lento demais.
     const DESKTOP_SCRIPT: &str = r#"
 Add-Type -AssemblyName System.Drawing
+Add-Type -Namespace RemoteOne -Name IconApi -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern int PrivateExtractIcons(string szFileName, int nIconIndex,
+    int cxIcon, int cyIcon, IntPtr[] phicon, int[] piconid, int nIcons, int flags);
+[DllImport("user32.dll")]
+public static extern bool DestroyIcon(IntPtr hIcon);
+'@
+
+# Extrai o ícone no tamanho pedido. ExtractAssociatedIcon só devolve 32x32
+# (fica pixelado numa tela retina); PrivateExtractIcons aceita a resolução,
+# então pegamos a versão grande que os programas modernos embutem.
+function Get-IconBase64($caminho, $indice, $tamanho) {
+  $h = New-Object IntPtr[] 1
+  $ids = New-Object int[] 1
+  try {
+    $n = [RemoteOne.IconApi]::PrivateExtractIcons($caminho, $indice, $tamanho, $tamanho, $h, $ids, 1, 0)
+    if ($n -le 0 -or $h[0] -eq [IntPtr]::Zero) { return '' }
+    $ico = [System.Drawing.Icon]::FromHandle($h[0])
+    $bmp = $ico.ToBitmap()
+    $ms = New-Object System.IO.MemoryStream
+    $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+    $b64 = [Convert]::ToBase64String($ms.ToArray())
+    $ms.Dispose(); $bmp.Dispose(); $ico.Dispose()
+    return $b64
+  } catch { return '' }
+  finally { if ($h[0] -ne [IntPtr]::Zero) { [void][RemoteOne.IconApi]::DestroyIcon($h[0]) } }
+}
+
 $sh = New-Object -ComObject WScript.Shell
 $dirs = @("$env:USERPROFILE\Desktop", "$env:PUBLIC\Desktop", "$env:USERPROFILE\Área de Trabalho")
 $out = @()
@@ -145,19 +173,38 @@ foreach ($d in $dirs) {
   if (-not (Test-Path -LiteralPath $d)) { continue }
   Get-ChildItem -LiteralPath $d -Filter *.lnk -File -ErrorAction SilentlyContinue | ForEach-Object {
     $icon = ''
-    # Tenta o ícone do programa apontado pelo atalho; se não der, o do próprio
-    # atalho (alguns apontam para caminhos que não resolvem).
-    $alvos = @()
-    try { $t = $sh.CreateShortcut($_.FullName).TargetPath; if ($t) { $alvos += $t } } catch { }
-    $alvos += $_.FullName
-    foreach ($alvo in $alvos) {
+    # Candidatos, em ordem: o ícone declarado no atalho (é o que o Windows
+    # mostra), o programa apontado por ele, e o próprio atalho.
+    $cands = @()
+    try {
+      $lnk = $sh.CreateShortcut($_.FullName)
+      if ($lnk.IconLocation) {
+        $partes = $lnk.IconLocation -split ',', 2
+        $p = $partes[0].Trim('"')
+        $idx = 0
+        if ($partes.Count -gt 1) { [int]::TryParse($partes[1], [ref]$idx) | Out-Null }
+        if ($p) { $cands += ,@($p, $idx) }
+      }
+      if ($lnk.TargetPath) { $cands += ,@($lnk.TargetPath, 0) }
+    } catch { }
+    $cands += ,@($_.FullName, 0)
+
+    foreach ($c in $cands) {
       if ($icon -ne '') { break }
+      if (-not (Test-Path -LiteralPath $c[0])) { continue }
+      # 128px cobre telas retina (ícone de 42pt em 3x); cai para menores se o
+      # programa não embutir uma versão grande.
+      foreach ($tam in 128, 96, 64, 48, 32) {
+        $icon = Get-IconBase64 $c[0] $c[1] $tam
+        if ($icon -ne '') { break }
+      }
+    }
+    # Último recurso: a API antiga (32x32), melhor que nenhum ícone.
+    if ($icon -eq '') {
       try {
-        if (-not (Test-Path -LiteralPath $alvo)) { continue }
-        $i = [System.Drawing.Icon]::ExtractAssociatedIcon($alvo)
+        $i = [System.Drawing.Icon]::ExtractAssociatedIcon($_.FullName)
         if ($i) {
-          $b = $i.ToBitmap()
-          $ms = New-Object System.IO.MemoryStream
+          $b = $i.ToBitmap(); $ms = New-Object System.IO.MemoryStream
           $b.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
           $icon = [Convert]::ToBase64String($ms.ToArray())
           $ms.Dispose(); $b.Dispose(); $i.Dispose()
@@ -189,6 +236,13 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
         }
         let text = String::from_utf8_lossy(&output.stdout);
         let apps = tidy(super::parse_desktop(&text));
+        if apps.is_empty() {
+            // O script não produziu nada (erro de sintaxe, política de execução,
+            // System.Drawing indisponível...). Cai para a varredura simples em
+            // Rust: sem ícones, mas com a lista — nunca pior do que antes.
+            eprintln!("Ícones indisponíveis; listando a área de trabalho sem eles.");
+            return list_desktop_sem_icones();
+        }
         let com_icone = apps.iter().filter(|a| a.icon.is_some()).count();
         println!(
             "Área de trabalho: {} programa(s), {} com ícone",
@@ -196,6 +250,24 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
             com_icone
         );
         apps
+    }
+
+    /// Plano B: varre as pastas da área de trabalho direto pelo sistema de
+    /// arquivos, sem depender do PowerShell (e, portanto, sem ícones).
+    fn list_desktop_sem_icones() -> Vec<AppInfo> {
+        let mut roots: Vec<PathBuf> = Vec::new();
+        if let Some(up) = std::env::var_os("USERPROFILE") {
+            roots.push(Path::new(&up).join("Desktop"));
+            roots.push(Path::new(&up).join("Área de Trabalho"));
+        }
+        if let Some(pb) = std::env::var_os("PUBLIC") {
+            roots.push(Path::new(&pb).join("Desktop"));
+        }
+        let mut out = Vec::new();
+        for root in roots {
+            collect_shortcuts(&root, 0, 0, &mut out);
+        }
+        tidy(out)
     }
 
     /// Programas instalados = atalhos (.lnk) dos menus Iniciar do sistema e do
