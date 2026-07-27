@@ -7,7 +7,9 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
+import '../models/remote_app.dart';
 import '../services/app_state.dart';
+import '../theme.dart';
 import '../widgets/remote_keyboard.dart';
 import '../widgets/transitions.dart';
 import 'gesture_tutorial_screen.dart';
@@ -30,7 +32,8 @@ class RemoteScreen extends StatefulWidget {
   State<RemoteScreen> createState() => _RemoteScreenState();
 }
 
-class _RemoteScreenState extends State<RemoteScreen> {
+class _RemoteScreenState extends State<RemoteScreen>
+    with SingleTickerProviderStateMixin {
   static const _scrollDivisor = 24.0;
 
   Uint8List? _frame;
@@ -57,6 +60,18 @@ class _RemoteScreenState extends State<RemoteScreen> {
   bool _zoomMode = false;
   final TransformationController _transform = TransformationController();
   Size _viewBox = Size.zero;
+
+  // Barra de aplicativos: à direita na horizontal, acima do teclado na
+  // vertical. Abre/fecha com animação (SizeTransition cuida do recorte).
+  late final AnimationController _dockAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+    reverseDuration: const Duration(milliseconds: 220),
+  );
+  bool _dockOpen = false;
+  List<RemoteApp>? _dockApps;
+  bool _dockLoading = false;
+  String? _dockError;
 
   @override
   void initState() {
@@ -144,8 +159,51 @@ class _RemoteScreenState extends State<RemoteScreen> {
     _sub?.cancel();
     _channel?.sink.close();
     _transform.dispose();
+    _dockAnim.dispose();
     WakelockPlus.disable();
     super.dispose();
+  }
+
+  // --- barra de aplicativos ---------------------------------------------------
+
+  void _toggleDock() {
+    setState(() => _dockOpen = !_dockOpen);
+    if (_dockOpen) {
+      _dockAnim.forward();
+      if (_dockApps == null && !_dockLoading) _loadDockApps();
+    } else {
+      _dockAnim.reverse();
+    }
+  }
+
+  Future<void> _loadDockApps() async {
+    setState(() {
+      _dockLoading = true;
+      _dockError = null;
+    });
+    try {
+      final apps = await widget.state.listApps(widget.device);
+      if (mounted) setState(() => _dockApps = apps);
+    } catch (e) {
+      if (mounted) setState(() => _dockError = e.toString());
+    } finally {
+      if (mounted) setState(() => _dockLoading = false);
+    }
+  }
+
+  Future<void> _launchFromDock(RemoteApp app) async {
+    HapticFeedback.selectionClick();
+    final messenger = ScaffoldMessenger.of(context);
+    final t = widget.state.t;
+    try {
+      await widget.state.launchApp(widget.device, app.id);
+      messenger.showSnackBar(SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text(t.appOpening(app.name)),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   // --- zoom (lupa) ------------------------------------------------------------
@@ -277,6 +335,128 @@ class _RemoteScreenState extends State<RemoteScreen> {
   }
 
   // --- UI ---------------------------------------------------------------------
+
+  /// Barra de aplicativos. Na horizontal fica em pé à direita (rola na
+  /// vertical); na vertical fica deitada acima do teclado (rola na horizontal).
+  /// O `SizeTransition` anima a abertura e já recorta o conteúdo.
+  Widget _appDock({required bool vertical}) {
+    final curved = CurvedAnimation(
+      parent: _dockAnim,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return SizeTransition(
+      axis: vertical ? Axis.horizontal : Axis.vertical,
+      axisAlignment: 1,
+      sizeFactor: curved,
+      child: FadeTransition(
+        opacity: curved,
+        child: Container(
+          width: vertical ? 92 : null,
+          height: vertical ? null : 104,
+          decoration: BoxDecoration(
+            color: const Color(0xFF14162C),
+            border: Border(
+              left: vertical
+                  ? BorderSide(color: Colors.white.withAlpha(20))
+                  : BorderSide.none,
+              top: vertical
+                  ? BorderSide.none
+                  : BorderSide(color: Colors.white.withAlpha(20)),
+            ),
+          ),
+          child: _dockContent(vertical: vertical),
+        ),
+      ),
+    );
+  }
+
+  Widget _dockContent({required bool vertical}) {
+    final t = widget.state.t;
+    if (_dockLoading) {
+      return const Center(
+        child: SizedBox(
+          height: 24,
+          width: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    if (_dockError != null) {
+      return Center(
+        child: IconButton(
+          tooltip: t.retry,
+          icon: const Icon(Icons.refresh, color: Colors.white70),
+          onPressed: _loadDockApps,
+        ),
+      );
+    }
+    final apps = _dockApps ?? const <RemoteApp>[];
+    if (apps.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            t.appsEmptyInstalled,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      scrollDirection: vertical ? Axis.vertical : Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      itemCount: apps.length,
+      itemBuilder: (context, i) => _dockTile(apps[i]),
+    );
+  }
+
+  /// Ícone do aplicativo: quadrado com o gradiente da marca e a inicial.
+  Widget _dockTile(RemoteApp app) {
+    final initial =
+        app.name.isEmpty ? '?' : app.name.substring(0, 1).toUpperCase();
+    return Padding(
+      padding: const EdgeInsets.all(4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _launchFromDock(app),
+        child: SizedBox(
+          width: 68,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: auroraGradient,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                app.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 10),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   /// Seta de deslocamento posicionada numa borda (só no modo lupa).
   Widget _panArrow(Alignment alignment, IconData icon, VoidCallback onTap) {
@@ -419,7 +599,19 @@ class _RemoteScreenState extends State<RemoteScreen> {
         child: Column(
           children: [
             _topBar(showToggle: !isPortrait),
-            Expanded(child: _liveView()),
+            Expanded(
+              // Na horizontal a barra de apps fica em pé, à direita da tela;
+              // na vertical ela entra abaixo (acima do teclado).
+              child: isPortrait
+                  ? _liveView()
+                  : Row(
+                      children: [
+                        Expanded(child: _liveView()),
+                        _appDock(vertical: true),
+                      ],
+                    ),
+            ),
+            if (isPortrait) _appDock(vertical: false),
             if (showKeyboard)
               RemoteKeyboard(
                 onText: (text) => _send({'kind': 'key_text', 'text': text}),
@@ -488,6 +680,16 @@ class _RemoteScreenState extends State<RemoteScreen> {
                 '$_fps fps',
                 style: const TextStyle(color: Colors.white38, fontSize: 12),
               ),
+            ),
+            IconButton(
+              tooltip: widget.state.t.apps,
+              icon: Icon(
+                Icons.apps,
+                color: _dockOpen
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.white,
+              ),
+              onPressed: _toggleDock,
             ),
             IconButton(
               tooltip: widget.state.t.zoomEnter,
