@@ -92,27 +92,27 @@ para a troca de SDP.
 Só podem ser repassados entre pares já autenticados e pareados — a mesma
 verificação que o `viewer_ws` faz hoje, sem exceção.
 
-## O risco que decide tudo: o .ipa
-
-Antes de escrever uma linha de Rust, é preciso responder:
+## O risco que decidia tudo: o .ipa — resolvido
 
 > **O `flutter_webrtc` funciona num .ipa não assinado, instalado pelo Sideloadly
 > com Apple ID grátis?**
+>
+> **Sim.** Verificado no [S1](#resultado-do-s1), num iPhone real. Nenhum
+> entitlement especial foi necessário.
 
-Se a resposta for não, todo o resto do plano muda e é melhor descobrir isso no
-primeiro dia. Pontos concretos a verificar:
+O que foi preciso ajustar para chegar lá — tudo já no `codemagic.yaml`:
 
-- O `flutter_webrtc` traz o framework binário do WebRTC, que é grande. O .ipa
-  cresce bastante e o `max_build_duration: 45` do `codemagic.yaml` pode ficar
-  curto.
-- A pasta `ios/` não é versionada — é gerada com `flutter create` a cada build.
-  Então o Podfile (mínimo iOS 13) e o `Info.plist` precisam ser remendados por
-  script, do mesmo jeito que já é feito hoje com a chave do Face ID.
-- Mesmo sendo só receptor de vídeo, convém adicionar
-  `NSCameraUsageDescription` e `NSMicrophoneUsageDescription`: o binário
-  referencia essas APIs e o iOS derruba o app se a chave faltar.
-- Apple ID grátis: 3 apps e 7 dias. Nenhum entitlement especial é necessário
-  para WebRTC, o que é a boa notícia aqui.
+- **Mínimo de iOS 13.** É o que o podspec do `flutter_webrtc` exige. Como a
+  pasta `ios/` não é versionada (é gerada com `flutter create` a cada build), o
+  Podfile e o `project.pbxproj` são remendados por script antes do
+  `pod install`.
+- **Chaves de câmera e microfone no `Info.plist`.** O app só recebe vídeo e
+  nunca usa nenhum dos dois, mas o binário do WebRTC referencia essas APIs e o
+  iOS encerra o processo se a chave faltar.
+- **Teto de build maior**, de 45 para 90 minutos: o framework binário
+  (`WebRTC-SDK`) é grande e o `pod install` pesa.
+- **Apple ID grátis: 3 apps e 7 dias.** Continua valendo, e é o que amarra a
+  consequência abaixo.
 
 **Consequência prática para as fases:** como só dá para ter um .ipa instalado
 por vez, o caminho JPEG **tem que continuar funcionando no mesmo binário**. Um
@@ -124,11 +124,41 @@ por vez, o caminho JPEG **tem que continuar funcionando no mesmo binário**. Um
 
 | # | Pergunta | Como responder | Estado |
 |---|---|---|---|
-| S1 | O `flutter_webrtc` sideloada? | Diagnóstico embutido no app, build no Codemagic, sideload e rodar | **pronto para rodar** ↓ |
+| S1 | O `flutter_webrtc` sideloada? | Diagnóstico embutido no app, build no Codemagic, sideload e rodar | **passou** ↓ |
 | S2 | Quanto custa codificar H.264 no agente? | `openh264` sobre quadros capturados; medir ms/quadro e Mbps contra o JPEG de hoje | **feito** ↓ |
-| S3 | O P2P fecha na rede real? | iPhone no 4G ↔ PC em casa; medir quantas vezes conecta sem TURN | pendente |
+| S3 | O P2P fecha na rede real? | iPhone no 4G ↔ PC em casa; medir quantas vezes conecta sem TURN | pendente (parcial ↓) |
 
-S1 é bloqueante. S3 pode correr em paralelo.
+S1 era bloqueante e está resolvido: **o plano segue como está.** S3 pode correr
+em paralelo com a implementação.
+
+#### Resultado do S1
+
+Rodado num iPhone, com `.ipa` não assinado gerado pelo Codemagic e instalado
+pelo Sideloadly com Apple ID grátis. Os três testes passaram:
+
+| Teste | Resultado |
+| --- | --- |
+| 1. O framework carrega | Conexão criada e fechada sem erro |
+| 2. Duas conexões conversam | Ida e volta completa em **32 ms** |
+| 3. O STUN enxerga o IP | IP externo obtido; 12 endereços locais |
+
+Três leituras:
+
+1. **A pergunta bloqueante está respondida.** O `flutter_webrtc` sobrevive ao
+   sideload com Apple ID grátis, sem entitlement especial. Nenhuma decisão do
+   plano precisa mudar.
+2. **A pilha é rápida.** Os 32 ms são estabelecimento de conexão *mais* uma ida
+   e volta, dentro do próprio aparelho — não é medida de rede. Mas mostra que
+   ICE, DTLS e o canal de dados não são o gargalo, o que reforça antecipar a
+   Fase 6 (entrada pelo canal de dados).
+3. **O S3 só foi parcialmente respondido.** Obter um candidato *server
+   reflexive* prova que o NAT do celular deixa descobrir o endereço externo —
+   é necessário, mas não suficiente. Se o P2P fecha depende do par: o NAT do
+   celular **e** o do computador. NAT simétrico ou CGNAT da operadora ainda
+   podem forçar TURN. O teste iPhone ↔ PC continua valendo.
+
+A tela de diagnóstico fica no app durante as Fases 1–3 — é útil para depurar —
+e sai quando o vídeo por WebRTC estiver funcionando.
 
 #### Como rodar o S1
 
@@ -266,7 +296,8 @@ o que já é o caso hoje.
 
 ## Riscos
 
-1. **`flutter_webrtc` + sideload** — bloqueante, e é por isso que é o S1.
+1. ~~**`flutter_webrtc` + sideload**~~ — **resolvido no S1**: funciona num `.ipa`
+   não assinado com Apple ID grátis, sem entitlement especial.
 2. **Interoperar webrtc-rs ↔ libwebrtc** — costuma funcionar; verificar cedo.
 3. ~~**Compilar o `openh264`**~~ — resolvido no S2: a crate compila a fonte
    embutida sem cmake nem nasm, em menos de um minuto. Falta confirmar no
