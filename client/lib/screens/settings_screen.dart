@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/strings.dart';
 import '../models/stream_quality.dart';
 import '../services/app_state.dart';
+import '../widgets/brand.dart';
 import 'gesture_tutorial_screen.dart';
 import 'two_factor_screen.dart';
 import 'wake_on_lan_screen.dart';
@@ -109,7 +110,7 @@ class SettingsScreen extends StatelessWidget {
               const Divider(),
               _SectionHeader(t.about),
               ListTile(
-                leading: const Icon(Icons.info_outline),
+                leading: const RemoteOneMark(size: 40),
                 title: const Text('RemoteOne'),
                 subtitle: Text(t.version(_appVersion)),
               ),

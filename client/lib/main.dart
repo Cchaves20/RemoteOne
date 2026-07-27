@@ -5,6 +5,7 @@ import 'screens/lock_gate.dart';
 import 'screens/login_screen.dart';
 import 'services/api_client.dart';
 import 'services/app_state.dart';
+import 'theme.dart';
 
 /// URL padrão do backend. Pode ser sobrescrita no build com
 /// --dart-define=REMOTEONE_BACKEND=http://SEU_IP:8000 ou editada na tela de
@@ -31,14 +32,6 @@ class RemoteOneApp extends StatelessWidget {
 
   final AppState state;
 
-  ThemeData _theme(Brightness brightness) => ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.indigo,
-          brightness: brightness,
-        ),
-        useMaterial3: true,
-      );
-
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -46,8 +39,8 @@ class RemoteOneApp extends StatelessWidget {
       builder: (context, _) {
         return MaterialApp(
           title: 'RemoteOne',
-          theme: _theme(Brightness.light),
-          darkTheme: _theme(Brightness.dark),
+          theme: buildTheme(Brightness.light),
+          darkTheme: buildTheme(Brightness.dark),
           themeMode: state.themeMode,
           home: LockGate(
             state: state,

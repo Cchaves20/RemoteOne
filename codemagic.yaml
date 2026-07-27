@@ -29,6 +29,10 @@ workflows:
           fi
       - name: Dependências
         script: flutter pub get
+      - name: Ícone e splash (não bloqueia o build se falhar)
+        script: |
+          dart run flutter_launcher_icons || echo "aviso: geração de ícone falhou"
+          dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
       - name: Permissão de Face ID no Info.plist
         script: |
           PLIST=ios/Runner/Info.plist

@@ -21,6 +21,23 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.1
 
 flutter:
   uses-material-design: true
+
+# Ícone do app (gerado por `dart run flutter_launcher_icons`).
+flutter_launcher_icons:
+  image_path: "assets/icon/remoteone.png"
+  remove_alpha_ios: true
+  ios: true
+  android: false
+
+# Splash screen (gerada por `dart run flutter_native_splash:create`).
+flutter_native_splash:
+  color: "#0E1022"
+  image: assets/icon/remoteone_splash.png
+  fullscreen: true
+  ios: true
+  android: false

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/device.dart';
 import '../services/app_state.dart';
+import '../theme.dart';
+import '../widgets/pulse.dart';
 import 'remote_screen.dart';
 import 'settings_screen.dart';
 
@@ -16,12 +18,19 @@ class DevicesScreen extends StatefulWidget {
 }
 
 class _DevicesScreenState extends State<DevicesScreen> {
+  bool _loading = true;
+
   @override
   void initState() {
     super.initState();
     // Atualiza a lista ao abrir (ignora erros de rede iniciais).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      widget.state.refreshDevices().catchError((_) {});
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await widget.state.refreshDevices();
+      } catch (_) {
+        // Sem rede: mostra o que tiver (ou o estado vazio).
+      }
+      if (mounted) setState(() => _loading = false);
     });
   }
 
@@ -271,6 +280,111 @@ class _DevicesScreenState extends State<DevicesScreen> {
     );
   }
 
+  Widget _emptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.devices_other,
+                size: 72, color: theme.colorScheme.primary.withAlpha(140)),
+            const SizedBox(height: 16),
+            Text(widget.state.t.noComputers,
+                textAlign: TextAlign.center, style: theme.textTheme.bodyLarge),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _deviceCard(Device d) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => _openControl(d),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
+          child: Row(
+            children: [
+              _osAvatar(d),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(d.name,
+                        style: theme.textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 4),
+                    Text('${d.os} · ${d.hostname}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 8),
+                    _statusPill(d.online),
+                  ],
+                ),
+              ),
+              _deviceMenu(d),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _osAvatar(Device d) {
+    final icon = d.os.toLowerCase().contains('win')
+        ? Icons.desktop_windows
+        : Icons.computer;
+    return Container(
+      width: 48,
+      height: 48,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: auroraGradient,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Icon(icon, color: Colors.white, size: 24),
+    );
+  }
+
+  Widget _statusPill(bool online) {
+    final t = widget.state.t;
+    final color =
+        online ? const Color(0xFF22C55E) : Theme.of(context).colorScheme.outline;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withAlpha(38),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(online ? t.online : t.offline,
+              style: TextStyle(
+                  color: color, fontWeight: FontWeight.w600, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = widget.state.t;
@@ -293,30 +407,14 @@ class _DevicesScreenState extends State<DevicesScreen> {
         listenable: widget.state,
         builder: (context, _) {
           final devices = widget.state.devices;
-          if (devices.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(t.noComputers, textAlign: TextAlign.center),
-              ),
-            );
-          }
+          if (devices.isEmpty && _loading) return const _SkeletonList();
+          if (devices.isEmpty) return _emptyState(context);
           return RefreshIndicator(
             onRefresh: widget.state.refreshDevices,
             child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
               itemCount: devices.length,
-              itemBuilder: (context, i) {
-                final d = devices[i];
-                return ListTile(
-                  leading: _StatusIcon(online: d.online),
-                  title: Text(d.name),
-                  subtitle: Text(
-                    '${d.online ? t.online : t.offline} · ${d.os} · ${d.hostname}',
-                  ),
-                  trailing: _deviceMenu(d),
-                  onTap: () => _openControl(d),
-                );
-              },
+              itemBuilder: (context, i) => _deviceCard(devices[i]),
             ),
           );
         },
@@ -330,32 +428,45 @@ class _DevicesScreenState extends State<DevicesScreen> {
   }
 }
 
-/// Ícone de computador com um ponto de status (verde = online, cinza = offline).
-class _StatusIcon extends StatelessWidget {
-  const _StatusIcon({required this.online});
-
-  final bool online;
+/// Placeholder animado enquanto a lista de computadores carrega.
+class _SkeletonList extends StatelessWidget {
+  const _SkeletonList();
 
   @override
   Widget build(BuildContext context) {
-    final color = online ? Colors.green : Theme.of(context).disabledColor;
-    return Stack(
-      alignment: Alignment.bottomRight,
-      children: [
-        const Icon(Icons.computer),
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              width: 1.5,
+    final scheme = Theme.of(context).colorScheme;
+    return Pulse(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        children: List.generate(
+          4,
+          (_) => Card(
+            elevation: 0,
+            color: scheme.surfaceContainerHighest,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            child: const Padding(
+              padding: EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  SkeletonBox(width: 48, height: 48, radius: 14),
+                  SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SkeletonBox(width: 140, height: 14),
+                        SizedBox(height: 8),
+                        SkeletonBox(width: 90, height: 12),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
