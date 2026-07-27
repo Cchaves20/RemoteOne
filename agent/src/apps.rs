@@ -275,14 +275,10 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
     pub fn list_installed() -> Vec<AppInfo> {
         let mut roots: Vec<PathBuf> = Vec::new();
         if let Some(pd) = std::env::var_os("ProgramData") {
-            roots.push(
-                Path::new(&pd).join(r"Microsoft\Windows\Start Menu\Programs"),
-            );
+            roots.push(Path::new(&pd).join(r"Microsoft\Windows\Start Menu\Programs"));
         }
         if let Some(ad) = std::env::var_os("APPDATA") {
-            roots.push(
-                Path::new(&ad).join(r"Microsoft\Windows\Start Menu\Programs"),
-            );
+            roots.push(Path::new(&ad).join(r"Microsoft\Windows\Start Menu\Programs"));
         }
         let mut out = Vec::new();
         for root in roots {
@@ -394,9 +390,21 @@ mod tests {
     #[test]
     fn tidy_sorts_and_dedups_by_name() {
         let apps = tidy(vec![
-            AppInfo { id: "b".into(), name: "Spotify".into(), icon: None },
-            AppInfo { id: "a".into(), name: "Chrome".into(), icon: None },
-            AppInfo { id: "c".into(), name: "spotify".into(), icon: None },
+            AppInfo {
+                id: "b".into(),
+                name: "Spotify".into(),
+                icon: None,
+            },
+            AppInfo {
+                id: "a".into(),
+                name: "Chrome".into(),
+                icon: None,
+            },
+            AppInfo {
+                id: "c".into(),
+                name: "spotify".into(),
+                icon: None,
+            },
         ]);
         assert_eq!(apps.len(), 2);
         assert_eq!(apps[0].name, "Chrome");
@@ -417,7 +425,11 @@ mod tests {
         let one = parse_running(r#"{"Id":7,"ProcessName":"code"}"#);
         assert_eq!(
             one,
-            vec![AppInfo { id: "7".into(), name: "code".into(), icon: None }]
+            vec![AppInfo {
+                id: "7".into(),
+                name: "code".into(),
+                icon: None
+            }]
         );
 
         // Saída vazia ou inválida não quebra.
@@ -448,8 +460,15 @@ mod tests {
     #[test]
     fn app_info_omits_icon_when_absent() {
         // Sem ícone, o campo nem entra no JSON (mensagem menor no WebSocket).
-        let sem = AppInfo { id: "1".into(), name: "X".into(), icon: None };
-        assert_eq!(serde_json::to_string(&sem).unwrap(), r#"{"id":"1","name":"X"}"#);
+        let sem = AppInfo {
+            id: "1".into(),
+            name: "X".into(),
+            icon: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&sem).unwrap(),
+            r#"{"id":"1","name":"X"}"#
+        );
     }
 
     #[test]

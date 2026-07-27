@@ -25,10 +25,7 @@ const FPS: u64 = 30;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let count: u32 = args
-        .next()
-        .and_then(|a| a.parse().ok())
-        .unwrap_or(90);
+    let count: u32 = args.next().and_then(|a| a.parse().ok()).unwrap_or(90);
     let dir = PathBuf::from(args.next().unwrap_or_else(|| "quadros".into()));
 
     if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -65,5 +62,8 @@ fn main() {
     }
 
     println!("Pronto: {written} quadros em {}", dir.display());
-    println!("Agora rode: cargo run --release --example bench_h264 -- {}", dir.display());
+    println!(
+        "Agora rode: cargo run --release --example bench_h264 -- {}",
+        dir.display()
+    );
 }

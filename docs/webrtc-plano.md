@@ -237,11 +237,42 @@ cargo run --release --example bench_h264 -- quadros/
 
 A ordem de grandeza do ganho não deve mudar; os valores absolutos, sim.
 
-### Fase 1 — Sinalização (backend)
+### Fase 1 — Sinalização (backend) — **feita**
 
-Repasse de `offer`/`answer`/`ice_candidate` entre app e agente pelos canais que
-já existem. Sem vídeo ainda — o teste é a sinalização chegar inteira dos dois
-lados. É a fase mais fácil de testar automaticamente.
+Repasse de `webrtc_offer` / `webrtc_answer` / `webrtc_ice` entre app e agente
+pelos canais que já existem, mais um `webrtc_close` que o backend emite sozinho
+quando um app sai. O formato está documentado em
+[`protocolo-websocket.md`](protocolo-websocket.md#sinalização-de-webrtc).
+
+O que foi construído:
+
+- **`app/signaling.py`** — tradução e validação, em funções puras. Recusa o que
+  vem malformado em vez de repassar; o agente confia no que sai do backend.
+- **`session_id` por app** — o `Viewer` ganhou um id e o `ViewerRegistry` um
+  índice por sessão, porque um agente pode negociar com vários apps ao mesmo
+  tempo. O app não vê esse id: o backend acrescenta na ida e remove na volta.
+- **Fila de saída no `Viewer`** — frames podem ser descartados (só o mais
+  recente interessa), mas sinalização **não**: perder uma resposta SDP ou um
+  candidato quebra a negociação. As duas coisas saem pelo mesmo `run_sender`,
+  de propósito: dois `send` concorrentes no mesmo WebSocket embaralhariam os
+  quadros do protocolo.
+- **Agente (`webrtc.rs`)** — reconhece a sinalização e controla as sessões
+  abertas, mas **não responde**: inventar um SDP falso aqui só criaria uma
+  falha difícil de achar na Fase 2. Enquanto isso, o app segue no JPEG.
+
+Três decisões que valem registro:
+
+1. **O backend confere que a sessão pertence ao dispositivo** antes de repassar
+   a resposta do agente. Sem isso, um agente que se comportasse mal poderia
+   injetar sinalização na sessão de outro computador chutando um `session_id`.
+2. **`candidate` vazio é repassado**, não filtrado: é o sinal de "acabaram os
+   meus candidatos", e descartá-lo deixaria a outra ponta esperando para sempre.
+3. **`sdp_mline_index` recusa `bool`.** Em Python `bool` é subclasse de `int`, e
+   um `True` viraria o índice 1 sem ninguém notar.
+
+Como esperado, é a fase mais verificável: **36 testes** cobrem tradução,
+roteamento por sessão, recusa de sessão alheia, prioridade e não-descarte da
+fila, e o formato de fio dos dois lados (Python e Rust fixam o mesmo JSON).
 
 ### Fase 2 — Agente transmite
 

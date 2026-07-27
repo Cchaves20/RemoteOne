@@ -60,9 +60,8 @@ mod imp {
         let minutes = expires_in_seconds / 60;
         // Texto ASCII para evitar problemas de code page ao passar o argumento.
         // O `code` vem de um alfabeto fixo [A-Z2-9], sem aspas: seguro na string.
-        let message = format!(
-            "Codigo de pareamento: {code}  (expira em {minutes} min). Informe no app."
-        );
+        let message =
+            format!("Codigo de pareamento: {code}  (expira em {minutes} min). Informe no app.");
         let script = format!(
             "Add-Type -AssemblyName System.Windows.Forms; \
              [System.Windows.Forms.MessageBox]::Show('{message}','RemoteOne - pareamento') | Out-Null"

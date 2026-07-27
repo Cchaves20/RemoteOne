@@ -82,6 +82,42 @@ binário significa "continua igual", não "caiu" — quem entra no meio recebe o
 último frame guardado pelo backend. Detalhes em
 [`video-e-latencia.md`](video-e-latencia.md).
 
+## Sinalização de WebRTC
+
+O mesmo par de canais transporta a negociação de WebRTC, que vai substituir o
+JPEG pelo vídeo comprimido (plano em [`webrtc-plano.md`](webrtc-plano.md)). O
+backend **não participa** da negociação: só encaminha.
+
+Cada app conectado em `/ws/viewer/{device_id}` recebe um `session_id` interno,
+porque o mesmo agente pode negociar com vários apps ao mesmo tempo. O app nunca
+vê esse identificador — o backend o acrescenta na ida e o remove na volta.
+
+App → backend → agente:
+
+| Tipo | Campos | O que é |
+| --- | --- | --- |
+| `webrtc_offer` | `sdp` | Oferta do app, que quer receber a tela |
+| `webrtc_ice` | `candidate`, `sdp_mid?`, `sdp_mline_index?` | Candidato ICE |
+
+Agente → backend → app:
+
+| Tipo | Campos | O que é |
+| --- | --- | --- |
+| `webrtc_answer` | `session_id`, `sdp` | Resposta do agente |
+| `webrtc_ice` | `session_id`, `candidate`, … | Candidato ICE |
+
+E o backend avisa o agente por conta própria quando um app sai, com
+`webrtc_close` — assim a conexão daquela sessão não fica pendurada.
+
+Dois detalhes que importam:
+
+- **`candidate` vazio é válido** e significa "acabaram os meus candidatos".
+  Descartá-lo deixaria a outra ponta esperando para sempre.
+- **O backend confere que a sessão pertence ao dispositivo** antes de repassar
+  a resposta do agente. Sem essa checagem, um agente que se comportasse mal
+  poderia injetar sinalização na sessão de outro computador chutando um
+  `session_id`.
+
 O pareamento está documentado em [`pareamento.md`](pareamento.md) e o controle
 remoto em [`controle-remoto.md`](controle-remoto.md).
 

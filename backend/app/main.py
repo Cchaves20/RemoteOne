@@ -20,12 +20,21 @@ from app.protocol import (
     Hello,
     PairCode,
     Paired,
+    WebrtcAnswer,
+    WebrtcIce,
     Welcome,
     parse_client_message,
 )
 from app.rpc import pending
 from app.screen import frame_store
 from app.security import decode_token
+from app.signaling import (
+    SignalingError,
+    close_session,
+    is_signaling,
+    to_agent,
+    to_viewer,
+)
 
 logger = logging.getLogger("remoteone")
 
@@ -180,6 +189,19 @@ async def agent_ws(websocket: WebSocket) -> None:
                 pending.resolve(
                     message.request_id, [a.model_dump() for a in message.apps]
                 )
+            elif isinstance(message, (WebrtcAnswer, WebrtcIce)):
+                # Sinalização de volta: acha o app daquela sessão e repassa.
+                # `by_session` confere que a sessão é deste dispositivo — sem
+                # isso, um agente poderia responder na sessão de outro PC.
+                viewer = viewers.by_session(message.session_id, device_id)
+                if viewer is None:
+                    logger.info(
+                        "sinalização descartada: sessão %s não é de %s",
+                        message.session_id,
+                        device_id,
+                    )
+                else:
+                    viewer.signal(to_viewer(message.model_dump()))
             elif isinstance(message, Hello):
                 # Re-identificação (ex.: após reconexão na mesma sessão).
                 device_id = message.device_id
@@ -324,11 +346,32 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
         if cached is not None:
             viewer.offer(cached)
 
-        # Mantém a conexão viva; os frames são empurrados pelo sender.
+        # Daqui em diante os frames são empurrados pelo sender. O que chega do
+        # app é sinalização de WebRTC, repassada ao agente com o `session_id`
+        # desta conexão.
         while True:
             packet = await websocket.receive()
             if packet["type"] == "websocket.disconnect":
                 break
+            text = packet.get("text")
+            if text is None:
+                continue
+            try:
+                incoming = json.loads(text)
+            except json.JSONDecodeError:
+                viewer.signal({"type": "error", "message": "json inválido"})
+                continue
+            if not is_signaling(incoming):
+                continue  # mensagem desconhecida: ignorada, não é erro fatal
+            try:
+                outgoing = to_agent(incoming, viewer.session_id)
+            except SignalingError as exc:
+                viewer.signal({"type": "error", "message": str(exc)})
+                continue
+            if not await manager.send_to_agent(device_id, outgoing):
+                viewer.signal(
+                    {"type": "error", "message": "computador não está conectado"}
+                )
     except WebSocketDisconnect:
         pass
     finally:
@@ -336,6 +379,9 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
             sender_task.cancel()
         if registered:
             remaining = viewers.remove(device_id, viewer)
+            # Avisa o agente que a sessão morreu, para ele soltar a conexão
+            # WebRTC correspondente em vez de mantê-la pendurada.
+            await manager.send_to_agent(device_id, close_session(viewer.session_id))
             if remaining == 0 and device_id not in _pending_stops:
                 # Agenda a parada com carência (mantém o stream aquecido).
                 _pending_stops[device_id] = asyncio.create_task(

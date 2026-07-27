@@ -41,8 +41,14 @@ def test_unregister_only_removes_matching_socket():
 
 
 class FakeViewer:
+    _next = 0
+
     def __init__(self):
         self.offered = []
+        # O registro indexa viewers por sessão (sinalização de WebRTC), então o
+        # dublê precisa de um id único como o Viewer de verdade.
+        FakeViewer._next += 1
+        self.session_id = f"sessao-{FakeViewer._next}"
 
     def offer(self, frame):
         self.offered.append(frame)

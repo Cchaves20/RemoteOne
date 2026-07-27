@@ -51,7 +51,31 @@ class AppList(BaseModel):
     apps: list[AppInfo] = []
 
 
-ClientMessage = Annotated[Hello | Heartbeat | AppList, Field(discriminator="type")]
+class WebrtcAnswer(BaseModel):
+    """Resposta SDP do agente à oferta de um app (negociação de vídeo)."""
+
+    type: Literal["webrtc_answer"] = "webrtc_answer"
+    session_id: str
+    sdp: str
+
+
+class WebrtcIce(BaseModel):
+    """Um candidato ICE. Trafega nos dois sentidos, com o mesmo formato.
+
+    `candidate` vazio é o sinal de "acabaram os candidatos" e é válido.
+    """
+
+    type: Literal["webrtc_ice"] = "webrtc_ice"
+    session_id: str
+    candidate: str
+    sdp_mid: str | None = None
+    sdp_mline_index: int | None = None
+
+
+ClientMessage = Annotated[
+    Hello | Heartbeat | AppList | WebrtcAnswer | WebrtcIce,
+    Field(discriminator="type"),
+]
 _client_adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 
 

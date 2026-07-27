@@ -7,6 +7,8 @@ passa a usar um canal Redis (pub/sub) entre instâncias.
 """
 
 import asyncio
+import uuid
+from collections import deque
 
 from fastapi import WebSocket
 
@@ -50,15 +52,26 @@ class ConnectionManager:
 class Viewer:
     """Um app assistindo à tela.
 
-    Mantém apenas o frame **mais recente** (descarta os anteriores ainda não
-    enviados). Assim, se a rede é mais lenta que a captura, o app não acumula
-    atraso — ele sempre pula para o frame atual em vez de exibir uma fila de
-    frames velhos.
+    Para os frames, mantém apenas o **mais recente** (descarta os anteriores
+    ainda não enviados). Assim, se a rede é mais lenta que a captura, o app não
+    acumula atraso — ele sempre pula para o frame atual em vez de exibir uma
+    fila de frames velhos.
+
+    Para a sinalização de WebRTC vale o contrário: **nada pode ser descartado**,
+    porque uma resposta SDP ou um candidato ICE perdido quebra a negociação. Por
+    isso ela vai numa fila, e não num slot único.
+
+    Tudo sai por um único `run_sender`, de propósito: dois `send` concorrentes no
+    mesmo WebSocket embaralhariam os quadros do protocolo.
     """
 
     def __init__(self, websocket: WebSocket) -> None:
         self.websocket = websocket
+        # Identifica esta sessão nas mensagens trocadas com o agente, que pode
+        # estar negociando com vários apps ao mesmo tempo.
+        self.session_id = uuid.uuid4().hex
         self._latest: bytes | None = None
+        self._signals: deque[dict] = deque()
         self._event = asyncio.Event()
 
     def offer(self, frame: bytes) -> None:
@@ -66,11 +79,19 @@ class Viewer:
         self._latest = frame
         self._event.set()
 
+    def signal(self, message: dict) -> None:
+        """Enfileira uma mensagem de sinalização (não pode ser descartada)."""
+        self._signals.append(message)
+        self._event.set()
+
     async def run_sender(self) -> None:
-        """Envia sempre o frame mais recente disponível, no ritmo da rede."""
+        """Envia a sinalização pendente e o frame mais recente, nessa ordem."""
         while True:
             await self._event.wait()
             self._event.clear()
+            # Sinalização primeiro: é pequena e atrasá-la atrasa a negociação.
+            while self._signals:
+                await self.websocket.send_json(self._signals.popleft())
             frame, self._latest = self._latest, None
             if frame is not None:
                 await self.websocket.send_bytes(frame)
@@ -81,15 +102,20 @@ class ViewerRegistry:
 
     def __init__(self) -> None:
         self._viewers: dict[str, set[Viewer]] = {}
+        # session_id → (device_id, viewer), para devolver ao app certo o que o
+        # agente responder na negociação de WebRTC.
+        self._sessions: dict[str, tuple[str, Viewer]] = {}
 
     def add(self, device_id: str, viewer: Viewer) -> int:
         """Registra um viewer. Retorna quantos viewers o dispositivo tem agora."""
         viewers = self._viewers.setdefault(device_id, set())
         viewers.add(viewer)
+        self._sessions[viewer.session_id] = (device_id, viewer)
         return len(viewers)
 
     def remove(self, device_id: str, viewer: Viewer) -> int:
         """Remove um viewer. Retorna quantos viewers restam."""
+        self._sessions.pop(viewer.session_id, None)
         viewers = self._viewers.get(device_id)
         if viewers is None:
             return 0
@@ -98,6 +124,19 @@ class ViewerRegistry:
         if remaining == 0:
             self._viewers.pop(device_id, None)
         return remaining
+
+    def by_session(self, session_id: str, device_id: str) -> Viewer | None:
+        """Viewer de uma sessão, **desde que** pertença a `device_id`.
+
+        A checagem de dispositivo não é decorativa: sem ela, um agente que se
+        comportasse mal poderia mandar sinalização para a sessão de outro
+        computador só chutando um `session_id`.
+        """
+        entry = self._sessions.get(session_id)
+        if entry is None:
+            return None
+        owner, viewer = entry
+        return viewer if owner == device_id else None
 
     def count(self, device_id: str) -> int:
         return len(self._viewers.get(device_id, ()))

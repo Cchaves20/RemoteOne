@@ -20,8 +20,12 @@ mod imp {
     pub fn apply(action: PowerAction) -> Result<(), String> {
         let status = match action {
             // /t 0 = sem contagem regressiva; /f força fechar apps travados.
-            PowerAction::Shutdown => Command::new("shutdown").args(["/s", "/f", "/t", "0"]).status(),
-            PowerAction::Restart => Command::new("shutdown").args(["/r", "/f", "/t", "0"]).status(),
+            PowerAction::Shutdown => Command::new("shutdown")
+                .args(["/s", "/f", "/t", "0"])
+                .status(),
+            PowerAction::Restart => Command::new("shutdown")
+                .args(["/r", "/f", "/t", "0"])
+                .status(),
             // Suspende (S3). O 2º parâmetro 0 = suspender (não hibernar).
             PowerAction::Suspend => Command::new("rundll32.exe")
                 .args(["powrprof.dll,SetSuspendState", "0,1,0"])

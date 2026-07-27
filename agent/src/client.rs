@@ -95,6 +95,10 @@ pub async fn run(
     // nem transmitir de novo (o app já mostra a mesma imagem).
     let mut last_frame = crate::capture::NO_FRAME;
 
+    // Sessões de WebRTC em negociação. Na Fase 1 só acompanham o estado; a
+    // negociação de verdade entra na Fase 2 (docs/webrtc-plano.md).
+    let mut sessions = crate::webrtc::Sessions::new();
+
     loop {
         tokio::select! {
             _ = ticker.tick() => {
@@ -127,7 +131,7 @@ pub async fn run(
                     Some(Ok(Message::Text(text))) => {
                         match handle_server_text(
                             &text, injector.as_mut(), &mut streaming, &mut active,
-                            &mut last_frame,
+                            &mut last_frame, &mut sessions,
                         ) {
                             // A config de fps mudou: recria o ticker no ritmo novo.
                             Some(Action::RestartFrameTicker) => {
@@ -184,6 +188,7 @@ fn handle_server_text(
     streaming: &mut bool,
     active: &mut StreamConfig,
     last_frame: &mut u64,
+    sessions: &mut crate::webrtc::Sessions,
 ) -> Option<Action> {
     match serde_json::from_str::<ServerMessage>(text) {
         Ok(ServerMessage::Welcome { server_version }) => {
@@ -278,6 +283,38 @@ fn handle_server_text(
             println!("Encerrando aplicativo (PID {id})");
             if let Err(e) = crate::apps::close(&id) {
                 eprintln!("Falha ao encerrar aplicativo: {e}");
+            }
+        }
+        // Sinalização de WebRTC. A Fase 1 do plano só encaminha e acompanha; a
+        // negociação (responder com SDP e transmitir vídeo) é a Fase 2, então
+        // aqui não se inventa resposta nenhuma — o app cai no caminho JPEG.
+        Ok(ServerMessage::WebrtcOffer { session_id, sdp }) => {
+            let nova = sessions.offer(&session_id);
+            println!(
+                "Oferta de WebRTC recebida (sessão {session_id}, {} bytes de SDP, {}). \
+                 A negociação entra na Fase 2 — seguindo com a tela por JPEG.",
+                sdp.len(),
+                if nova {
+                    "sessão nova"
+                } else {
+                    "renegociação"
+                },
+            );
+        }
+        Ok(ServerMessage::WebrtcIce {
+            session_id,
+            candidate,
+            ..
+        }) => {
+            if !sessions.candidate(&session_id, &candidate) {
+                // Candidato atrasado de uma sessão já encerrada: ignorar é o
+                // comportamento certo, não é falha.
+                println!("Candidato ICE de sessão desconhecida ({session_id}): ignorado");
+            }
+        }
+        Ok(ServerMessage::WebrtcClose { session_id }) => {
+            if sessions.close(&session_id) {
+                println!("Sessão de WebRTC encerrada ({session_id})");
             }
         }
         Err(e) => eprintln!("Mensagem desconhecida do servidor: {text} ({e})"),

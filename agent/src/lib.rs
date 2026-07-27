@@ -15,4 +15,5 @@ pub mod pairing;
 pub mod platform;
 pub mod power;
 pub mod protocol;
+pub mod webrtc;
 pub mod wol;

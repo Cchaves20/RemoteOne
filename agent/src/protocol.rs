@@ -29,6 +29,20 @@ pub enum ClientMessage {
         request_id: String,
         apps: Vec<AppInfo>,
     },
+    /// Resposta SDP à oferta de um app (negociação de vídeo por WebRTC).
+    WebrtcAnswer {
+        session_id: String,
+        sdp: String,
+    },
+    /// Um candidato ICE. Mesmo formato nos dois sentidos.
+    WebrtcIce {
+        session_id: String,
+        candidate: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sdp_mid: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sdp_mline_index: Option<u32>,
+    },
 }
 
 /// Mensagens que o backend envia ao agente.
@@ -88,6 +102,27 @@ pub enum ServerMessage {
     /// Encerra um aplicativo em execução (id = PID).
     CloseApp {
         id: String,
+    },
+    /// Oferta SDP de um app querendo receber a tela por WebRTC. O `session_id`
+    /// identifica o app: o mesmo agente pode negociar com vários ao mesmo
+    /// tempo, e a resposta tem que voltar carregando este mesmo id.
+    WebrtcOffer {
+        session_id: String,
+        sdp: String,
+    },
+    /// Candidato ICE vindo de um app. `candidate` vazio significa que os
+    /// candidatos daquele lado acabaram.
+    WebrtcIce {
+        session_id: String,
+        candidate: String,
+        #[serde(default)]
+        sdp_mid: Option<String>,
+        #[serde(default)]
+        sdp_mline_index: Option<u32>,
+    },
+    /// O app saiu: a conexão WebRTC daquela sessão pode ser descartada.
+    WebrtcClose {
+        session_id: String,
     },
 }
 
@@ -221,12 +256,106 @@ mod tests {
     #[test]
     fn deserializes_power_actions() {
         for (json, expected) in [
-            (r#"{"type":"power","action":"shutdown"}"#, PowerAction::Shutdown),
-            (r#"{"type":"power","action":"restart"}"#, PowerAction::Restart),
-            (r#"{"type":"power","action":"suspend"}"#, PowerAction::Suspend),
+            (
+                r#"{"type":"power","action":"shutdown"}"#,
+                PowerAction::Shutdown,
+            ),
+            (
+                r#"{"type":"power","action":"restart"}"#,
+                PowerAction::Restart,
+            ),
+            (
+                r#"{"type":"power","action":"suspend"}"#,
+                PowerAction::Suspend,
+            ),
         ] {
             let msg: ServerMessage = serde_json::from_str(json).unwrap();
             assert_eq!(msg, ServerMessage::Power { action: expected });
         }
+    }
+
+    #[test]
+    fn deserializes_webrtc_offer_and_close() {
+        let offer: ServerMessage =
+            serde_json::from_str(r#"{"type":"webrtc_offer","session_id":"s1","sdp":"v=0\r\n"}"#)
+                .unwrap();
+        assert_eq!(
+            offer,
+            ServerMessage::WebrtcOffer {
+                session_id: "s1".into(),
+                sdp: "v=0\r\n".into(),
+            }
+        );
+
+        let close: ServerMessage =
+            serde_json::from_str(r#"{"type":"webrtc_close","session_id":"s1"}"#).unwrap();
+        assert_eq!(
+            close,
+            ServerMessage::WebrtcClose {
+                session_id: "s1".into()
+            }
+        );
+    }
+
+    #[test]
+    fn deserializes_webrtc_ice_with_and_without_optionals() {
+        let full: ServerMessage = serde_json::from_str(
+            r#"{"type":"webrtc_ice","session_id":"s1","candidate":"candidate:1 1 udp 1 10.0.0.2 5000 typ host","sdp_mid":"0","sdp_mline_index":0}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            full,
+            ServerMessage::WebrtcIce {
+                session_id: "s1".into(),
+                candidate: "candidate:1 1 udp 1 10.0.0.2 5000 typ host".into(),
+                sdp_mid: Some("0".into()),
+                sdp_mline_index: Some(0),
+            }
+        );
+
+        // Fim dos candidatos: candidato vazio, opcionais ausentes. O backend
+        // manda `null` nesses campos, e `null` tem que virar None.
+        let end: ServerMessage = serde_json::from_str(
+            r#"{"type":"webrtc_ice","session_id":"s1","candidate":"","sdp_mid":null,"sdp_mline_index":null}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            end,
+            ServerMessage::WebrtcIce {
+                session_id: "s1".into(),
+                candidate: String::new(),
+                sdp_mid: None,
+                sdp_mline_index: None,
+            }
+        );
+    }
+
+    #[test]
+    fn webrtc_answer_serializes_for_the_backend() {
+        let json = serde_json::to_string(&ClientMessage::WebrtcAnswer {
+            session_id: "s1".into(),
+            sdp: "v=0".into(),
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"webrtc_answer","session_id":"s1","sdp":"v=0"}"#
+        );
+    }
+
+    #[test]
+    fn webrtc_ice_omits_absent_optionals_when_serializing() {
+        // Mensagem menor no fio, e o backend aceita os campos ausentes.
+        let json = serde_json::to_string(&ClientMessage::WebrtcIce {
+            session_id: "s1".into(),
+            candidate: String::new(),
+            sdp_mid: None,
+            sdp_mline_index: None,
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"webrtc_ice","session_id":"s1","candidate":""}"#
+        );
     }
 }
