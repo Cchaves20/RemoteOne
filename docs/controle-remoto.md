@@ -128,10 +128,13 @@ computador.
 
 ## Realce da tecla
 
-Enquanto o dedo está numa tecla de caractere, um balão com a letra aparece
-acima dela. É o mesmo motivo do teclado do iPhone: o dedo cobre justamente a
-tecla que acabou de ser tocada, e sem o balão não há como confirmar o que foi
-digitado sem olhar para a tela do computador.
+Enquanto o dedo está numa tecla, um balão com o que ela faz aparece acima dela.
+É o mesmo motivo do teclado do iPhone: o dedo cobre justamente a tecla que
+acabou de ser tocada, e sem o balão não há como confirmar o que foi digitado
+sem olhar para a tela do computador.
 
-Só nas teclas de caractere. Em Ctrl, Esc ou nas setas não há dúvida sobre o que
-se apertou, e um balão ali seria só barulho.
+Vale para **todas** as teclas, não só as letras — numa tela pequena, a de Esc
+ou a de seta somem debaixo do dedo tanto quanto a de letra. O balão mostra o
+próprio rótulo da tecla, ampliado: quem tem ícone aparece como ícone.
+
+Nas teclas das pontas o balão encosta na borda em vez de sair da tela.

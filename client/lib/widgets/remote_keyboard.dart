@@ -177,22 +177,31 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
   /// Balão com a letra, mostrado acima da tecla enquanto o dedo está nela.
   ///
   /// Serve para o dedo não esconder a confirmação do que foi tocado — o mesmo
-  /// motivo pelo qual o teclado do iPhone faz isso. Só nas teclas de caractere:
-  /// em Ctrl ou Esc não há dúvida sobre o que se apertou.
+  /// motivo pelo qual o teclado do iPhone faz isso. Vale para **todas** as
+  /// teclas: numa tela pequena, a de Esc ou a de seta somem debaixo do dedo
+  /// tanto quanto a de letra.
   OverlayEntry? _preview;
 
-  void _showPreview(BuildContext keyContext, String label) {
+  void _showPreview(BuildContext keyContext, Widget rotulo) {
     _hidePreview();
     final box = keyContext.findRenderObject();
     final overlay = Overlay.maybeOf(keyContext);
     if (box is! RenderBox || !box.hasSize || overlay == null) return;
     final topo = box.localToGlobal(Offset.zero);
     final cores = Theme.of(keyContext).colorScheme;
+
+    // O balão é um pouco mais largo que a tecla, e nas das pontas isso o
+    // jogaria para fora da tela. Preso à borda quando não cabe.
+    final largura = box.size.width + 24;
+    final tela = MediaQuery.of(keyContext).size.width;
+    final limite = tela - largura - 4;
+    final esquerda = limite <= 4.0 ? 4.0 : (topo.dx - 12).clamp(4.0, limite);
+
     _preview = OverlayEntry(
       builder: (_) => Positioned(
-        left: topo.dx - 12,
+        left: esquerda,
         top: topo.dy - 48,
-        width: box.size.width + 24,
+        width: largura,
         // Sem toque: o balão nasce debaixo do dedo e não pode roubar o gesto
         // que o criou.
         child: IgnorePointer(
@@ -202,13 +211,21 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
             borderRadius: BorderRadius.circular(10),
             child: SizedBox(
               height: 44,
-              child: Center(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w600,
-                    color: cores.onSurface,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                // FittedBox amplia o rótulo da tecla, seja letra ou ícone: é o
+                // mesmo widget, e assim uma seta aparece como seta em vez de
+                // virar texto ou sumir.
+                child: FittedBox(
+                  child: IconTheme(
+                    data: IconTheme.of(keyContext).copyWith(color: cores.onSurface),
+                    child: DefaultTextStyle(
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: cores.onSurface,
+                      ),
+                      child: rotulo,
+                    ),
                   ),
                 ),
               ),
@@ -236,7 +253,9 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
     VoidCallback onTap, {
     int flex = 2,
     bool active = false,
-    String? preview,
+    // Todas as teclas realçam. Fica como parâmetro só para o caso de alguma
+    // tecla futura em que o balão atrapalhe.
+    bool preview = true,
   }) {
     // `final`, e num nome que não é reatribuído: a versão anterior fazia
     // `botao = Builder(... child: botao)`, e a closure captura a **variável**,
@@ -249,11 +268,11 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
           : OutlinedButton(onPressed: onTap, style: _style, child: FittedBox(child: child)),
     );
 
-    final Widget botao = preview == null
+    final Widget botao = !preview
         ? conteudo
         : Builder(
             builder: (keyContext) => Listener(
-              onPointerDown: (_) => _showPreview(keyContext, preview),
+              onPointerDown: (_) => _showPreview(keyContext, child),
               onPointerUp: (_) => _hidePreview(),
               onPointerCancel: (_) => _hidePreview(),
               child: conteudo,
@@ -268,7 +287,7 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
 
   Widget _charKey(String c) {
     final label = _mods.contains('shift') ? c.toUpperCase() : c;
-    return _key(Text(label), () => _typeChar(c), preview: label);
+    return _key(Text(label), () => _typeChar(c));
   }
 
   Row _charRow(List<String> chars) => Row(children: [for (final c in chars) _charKey(c)]);
