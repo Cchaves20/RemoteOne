@@ -1,18 +1,36 @@
 # Vídeo e latência
 
-Como a imagem do computador chega ao celular, o que já foi otimizado e o que
-vem a seguir (WebRTC).
+Como a imagem do computador chega ao celular.
 
-## O caminho de um frame
+Hoje existem **dois caminhos**, e o app usa o melhor disponível. A migração para
+WebRTC está descrita em [`webrtc-plano.md`](webrtc-plano.md), que também é o
+diário das decisões e das medições.
+
+## Caminho principal: vídeo por WebRTC
 
 ```
-Windows → xcap (captura RGBA) → RGB → reduz → hash → JPEG → WebSocket
+Windows → captura contínua (WGC) → RGB reduzido → H.264 → RTP/DTLS
+       → iPhone (decodificação por hardware) → RTCVideoView
+```
+
+Vai **direto** do computador ao celular, sem passar pelo servidor, que só
+intermedia a negociação. Mouse e teclado seguem pelo mesmo caminho, num canal de
+dados.
+
+## Caminho de segurança: JPEG por WebSocket
+
+```
+Windows → captura → RGB → reduz → hash → JPEG → WebSocket
        → backend (FrameStore + broadcast) → WebSocket → iPhone
        → decodifica → RawImage
 ```
 
-Tudo o que é caro acontece no computador (agente). O backend só repassa bytes,
-e o celular só decodifica e desenha.
+Continua no ar e assume sozinho se o WebRTC não fechar — o agente só para de
+mandar JPEG enquanto existe uma sessão de vídeo **conectada**. É o que garante
+que uma rede hostil degrade a experiência em vez de quebrá-la.
+
+O resto deste documento é sobre as otimizações do caminho JPEG, que continuam
+valendo: várias delas (a captura reduzida, o filtro de caixa) alimentam os dois.
 
 ## O que foi otimizado
 
@@ -86,9 +104,10 @@ tráfego vai a zero.
 O JPEG ficou 2 KB maior porque o filtro de caixa preserva um pouco mais de
 detalhe fino que o triangular; é uma troca boa por 50 ms.
 
-## Limites que sobram (e por que WebRTC é o próximo passo)
+## Por que isso não bastou, e o WebRTC entrou
 
-O gargalo agora é o formato, não o código:
+Estes eram os limites do caminho JPEG. Todos foram confirmados na prática, e
+juntos motivaram a migração:
 
 - **JPEG não tem quadro-chave nem quadro de diferença.** Mover o cursor sobre
   uma tela parada obriga a reenviar a imagem inteira. Um codec de vídeo
@@ -102,5 +121,8 @@ O gargalo agora é o formato, não o código:
 - **A deduplicação é tudo ou nada.** Um pixel diferente reenvia o frame
   completo. Um codec resolve isso por blocos.
 
-A deduplicação e o filtro de caixa continuam úteis depois do WebRTC: economizam
+A deduplicação e o filtro de caixa continuaram úteis depois do WebRTC: economizam
 CPU antes de qualquer codificação.
+
+Como isso se resolveu, com os números medidos, está em
+[`webrtc-plano.md`](webrtc-plano.md).
