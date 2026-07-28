@@ -97,6 +97,28 @@ class PowerRequest(BaseModel):
     action: Literal["shutdown", "restart", "suspend"]
 
 
+class MediaRequest(BaseModel):
+    """Tecla de mídia a acionar no computador pareado.
+
+    São as teclas globais de um teclado multimídia: valem para quem estiver
+    tocando som, sem precisar deixar o player em foco.
+    """
+
+    action: Literal["play_pause", "next", "previous", "volume_up", "volume_down", "mute"]
+
+
+class SystemStatsOut(BaseModel):
+    """Métricas do computador: CPU em %, o resto em bytes."""
+
+    cpu_percent: float
+    memory_used: int
+    memory_total: int
+    disk_used: int
+    disk_total: int
+    disk_name: str
+    uptime_seconds: int
+
+
 class AppOut(BaseModel):
     """Um aplicativo do computador. `id` = caminho do atalho ou PID.
 

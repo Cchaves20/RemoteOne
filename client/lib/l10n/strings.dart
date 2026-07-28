@@ -266,6 +266,42 @@ class Strings {
       "Consomme beaucoup moins de données. En cas de problème, désactivez pour revenir à l'ancien mode.",
       'Consume mucho menos datos. Si falla, desactívalo para volver al modo anterior.');
 
+  // Painel de métricas do computador
+  String get systemPanel =>
+      _t('Computador', 'Computer', '电脑', 'Ordinateur', 'Equipo');
+  String get systemCpu => _t('CPU', 'CPU', '处理器', 'Processeur', 'CPU');
+  String get systemMemory =>
+      _t('Memória', 'Memory', '内存', 'Mémoire', 'Memoria');
+  String get systemDisk => _t('Disco', 'Disk', '磁盘', 'Disque', 'Disco');
+  String get systemUptime =>
+      _t('Ligado há', 'Powered on for', '已开机', 'Allumé depuis', 'Encendido hace');
+  /// Abreviações de tempo. Curtas de propósito: cabem no painel retraído.
+  String get unitDay => _t('d', 'd', '天', 'j', 'd');
+  String get unitHour => _t('h', 'h', '时', 'h', 'h');
+  String get unitMinute => _t('min', 'min', '分', 'min', 'min');
+  String get systemUnavailable => _t(
+      'Não consegui medir agora.',
+      "Couldn't measure right now.",
+      '暂时无法测量。',
+      'Mesure impossible pour le moment.',
+      'No se pudo medir ahora.');
+
+  // Controle de mídia
+  String get mediaPanel => _t('Mídia', 'Media', '媒体', 'Média', 'Medios');
+  String get mediaPlayPause =>
+      _t('Tocar ou pausar', 'Play or pause', '播放/暂停', 'Lire ou mettre en pause',
+          'Reproducir o pausar');
+  String get mediaNext =>
+      _t('Próxima', 'Next', '下一首', 'Suivant', 'Siguiente');
+  String get mediaPrevious =>
+      _t('Anterior', 'Previous', '上一首', 'Précédent', 'Anterior');
+  String get mediaVolumeUp =>
+      _t('Aumentar volume', 'Volume up', '音量加', 'Augmenter le volume', 'Subir volumen');
+  String get mediaVolumeDown =>
+      _t('Diminuir volume', 'Volume down', '音量减', 'Baisser le volume', 'Bajar volumen');
+  String get mediaMute =>
+      _t('Silenciar', 'Mute', '静音', 'Couper le son', 'Silenciar');
+
   // Diálogos de conta
   String get newEmail => _t('Novo e-mail', 'New email', '新邮箱', 'Nouvel e-mail', 'Nuevo correo');
   String get currentPassword => _t('Senha atual', 'Current password', '当前密码',

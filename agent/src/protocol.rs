@@ -6,7 +6,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::apps::{AppInfo, AppKind};
-use crate::input::InputAction;
+use crate::input::{InputAction, MediaAction};
+use crate::system_info::SystemSnapshot;
 
 /// Mensagens que o agente envia ao backend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -28,6 +29,12 @@ pub enum ClientMessage {
     AppList {
         request_id: String,
         apps: Vec<AppInfo>,
+    },
+    /// Resposta a um `system_info`: as métricas do computador, com o mesmo
+    /// `request_id` do pedido.
+    SystemStats {
+        request_id: String,
+        stats: SystemSnapshot,
     },
     /// Resposta SDP à oferta de um app (negociação de vídeo por WebRTC).
     WebrtcAnswer {
@@ -94,6 +101,16 @@ pub enum ServerMessage {
     ListApps {
         request_id: String,
         kind: AppKind,
+    },
+    /// Pede as métricas do computador (CPU, memória, disco). O agente responde
+    /// com `system_stats` carregando o mesmo `request_id`.
+    SystemInfo {
+        request_id: String,
+    },
+    /// Aciona uma tecla de mídia (play/pause, faixa, volume). Mão única: não há
+    /// resposta a esperar.
+    Media {
+        action: MediaAction,
     },
     /// Abre um aplicativo (id = caminho do atalho).
     LaunchApp {
@@ -356,6 +373,47 @@ mod tests {
         assert_eq!(
             json,
             r#"{"type":"webrtc_ice","session_id":"s1","candidate":""}"#
+        );
+    }
+
+    #[test]
+    fn deserializes_system_info_and_media() {
+        let info: ServerMessage =
+            serde_json::from_str(r#"{"type":"system_info","request_id":"r1"}"#).unwrap();
+        assert_eq!(
+            info,
+            ServerMessage::SystemInfo {
+                request_id: "r1".into()
+            }
+        );
+        let media: ServerMessage =
+            serde_json::from_str(r#"{"type":"media","action":"play_pause"}"#).unwrap();
+        assert_eq!(
+            media,
+            ServerMessage::Media {
+                action: MediaAction::PlayPause
+            }
+        );
+    }
+
+    #[test]
+    fn system_stats_serializes_for_the_backend() {
+        let json = serde_json::to_string(&ClientMessage::SystemStats {
+            request_id: "r1".into(),
+            stats: SystemSnapshot {
+                cpu_percent: 37.4,
+                memory_used: 8_000_000_000,
+                memory_total: 16_000_000_000,
+                disk_used: 300_000_000_000,
+                disk_total: 500_000_000_000,
+                disk_name: "C:".into(),
+                uptime_seconds: 3600,
+            },
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"system_stats","request_id":"r1","stats":{"cpu_percent":37.4,"memory_used":8000000000,"memory_total":16000000000,"disk_used":300000000000,"disk_total":500000000000,"disk_name":"C:","uptime_seconds":3600}}"#
         );
     }
 }

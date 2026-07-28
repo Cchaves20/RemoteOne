@@ -5,17 +5,23 @@
 //! stub que apenas registra a ação (permite desenvolver e testar todo o
 //! caminho — backend → agente — sem uma sessão gráfica).
 
-use crate::input::InputAction;
+use crate::input::{InputAction, MediaAction};
 
 /// Aplica ações de entrada (mouse/teclado) no computador.
 pub trait InputInjector {
     fn apply(&mut self, action: &InputAction) -> Result<(), String>;
+
+    /// Aciona uma tecla de mídia (play/pause, faixa, volume).
+    ///
+    /// Método próprio, e não uma variante de [`InputAction`], porque o alvo é
+    /// diferente: estas teclas são globais e não vão para a janela em foco.
+    fn media(&mut self, action: MediaAction) -> Result<(), String>;
 }
 
 #[cfg(windows)]
 mod imp {
     use super::InputInjector;
-    use crate::input::{InputAction, Modifier, MouseButton, SpecialKey};
+    use crate::input::{InputAction, MediaAction, Modifier, MouseButton, SpecialKey};
     use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 
     pub struct EnigoInjector {
@@ -56,6 +62,22 @@ mod imp {
             SpecialKey::F10 => Key::F10,
             SpecialKey::F11 => Key::F11,
             SpecialKey::F12 => Key::F12,
+        }
+    }
+
+    /// Tecla multimídia correspondente à ação.
+    ///
+    /// Todas estas variantes do `enigo` existem nas três plataformas (as
+    /// específicas de macOS, como `MediaFast`, ficaram de fora justamente por
+    /// isso), então este mapa não precisa de `cfg`.
+    fn media_key(action: MediaAction) -> Key {
+        match action {
+            MediaAction::PlayPause => Key::MediaPlayPause,
+            MediaAction::Next => Key::MediaNextTrack,
+            MediaAction::Previous => Key::MediaPrevTrack,
+            MediaAction::VolumeUp => Key::VolumeUp,
+            MediaAction::VolumeDown => Key::VolumeDown,
+            MediaAction::Mute => Key::VolumeMute,
         }
     }
 
@@ -148,13 +170,19 @@ mod imp {
                 InputAction::KeyCombo { modifiers, key } => self.key_combo(modifiers, key),
             }
         }
+
+        fn media(&mut self, action: MediaAction) -> Result<(), String> {
+            self.enigo
+                .key(media_key(action), Direction::Click)
+                .map_err(|e| e.to_string())
+        }
     }
 }
 
 #[cfg(not(windows))]
 mod imp {
     use super::InputInjector;
-    use crate::input::InputAction;
+    use crate::input::{InputAction, MediaAction};
 
     /// Stub: registra a ação em vez de injetá-la (sem sessão gráfica).
     pub struct StubInjector;
@@ -166,6 +194,11 @@ mod imp {
     impl InputInjector for StubInjector {
         fn apply(&mut self, action: &InputAction) -> Result<(), String> {
             println!("[input-stub] {action:?}");
+            Ok(())
+        }
+
+        fn media(&mut self, action: MediaAction) -> Result<(), String> {
+            println!("[media-stub] {action:?}");
             Ok(())
         }
     }

@@ -20,6 +20,7 @@ from app.protocol import (
     Hello,
     PairCode,
     Paired,
+    SystemStats,
     WebrtcAnswer,
     WebrtcIce,
     Welcome,
@@ -69,6 +70,8 @@ FEATURES = [
     "wake-on-lan",
     "totp",
     "webrtc-signaling",
+    "system-stats",
+    "media-keys",
 ]
 
 
@@ -214,6 +217,9 @@ async def agent_ws(websocket: WebSocket) -> None:
                 pending.resolve(
                     message.request_id, [a.model_dump() for a in message.apps]
                 )
+            elif isinstance(message, SystemStats):
+                # Métricas medidas: entrega a quem pediu (o endpoint HTTP).
+                pending.resolve(message.request_id, message.stats.model_dump())
             elif isinstance(message, (WebrtcAnswer, WebrtcIce)):
                 # Sinalização de volta: acha o app daquela sessão e repassa.
                 # `by_session` confere que a sessão é deste dispositivo — sem

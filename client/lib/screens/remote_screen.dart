@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
 import '../models/remote_app.dart';
+import '../models/system_stats.dart';
 import '../services/app_state.dart';
 import '../services/video_session.dart';
 import '../theme.dart';
@@ -35,12 +36,16 @@ class RemoteScreen extends StatefulWidget {
 }
 
 class _RemoteScreenState extends State<RemoteScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const _scrollDivisor = 24.0;
 
   /// Tamanho do ícone e a espessura da dock (ícone + respiro).
   static const double _dockIcon = 42;
   static const double _dockThickness = _dockIcon + 8;
+
+  /// Largura de uma medida no painel do computador. Fixa para que "Memória" e
+  /// "Disco" caibam com o valor inteiro (`7,8 GB / 16,0 GB`) sem reticências.
+  static const double _metricWidth = 150;
 
   /// Frame ao vivo, já decodificado. É um `ValueNotifier` de propósito: só o
   /// widget da imagem se reconstrói a cada frame, em vez da tela inteira
@@ -99,6 +104,38 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _dockLoading = false;
   /// Posição ao longo da borda, de -1 (topo/esquerda) a 1 (base/direita).
   double _dockPos = 0;
+
+  // Painéis retráteis: as métricas do computador e o controle de mídia. Ficam
+  // fechados, e cada um tem um botão só seu — o que está em jogo aqui é a tela
+  // do computador, e tudo o que fica permanentemente em cima dela come área
+  // útil. Abrir é uma decisão do usuário, para o momento em que ele quer.
+  late final AnimationController _statsAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 260),
+  );
+  late final AnimationController _mediaAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 260),
+  );
+  /// As curvas vivem aqui, e não no `build`: criadas a cada quadro, cada uma
+  /// deixaria um ouvinte no controlador até o coletor de lixo passar.
+  late final Animation<double> _statsCurve = CurvedAnimation(
+    parent: _statsAnim,
+    curve: Curves.easeOutCubic,
+  );
+  late final Animation<double> _mediaCurve = CurvedAnimation(
+    parent: _mediaAnim,
+    curve: Curves.easeOutCubic,
+  );
+  bool _statsOpen = false;
+  bool _mediaOpen = false;
+  SystemStats? _stats;
+  bool _statsFailed = false;
+  /// Um pedido de cada vez: numa rede lenta os pedidos de 2 em 2 s se
+  /// empilhariam, e a resposta que chegasse por último venceria — que pode ser
+  /// a mais velha.
+  bool _statsInFlight = false;
+  Timer? _statsTimer;
 
   @override
   void initState() {
@@ -264,6 +301,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     _video?.dispose();
     _transform.dispose();
     _dockAnim.dispose();
+    _statsTimer?.cancel();
+    _statsAnim.dispose();
+    _mediaAnim.dispose();
     _frame.value?.dispose();
     _frame.dispose();
     WakelockPlus.disable();
@@ -304,6 +344,71 @@ class _RemoteScreenState extends State<RemoteScreen>
       ));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  // --- métricas do computador e mídia -----------------------------------------
+
+  /// Abre ou fecha o painel de métricas.
+  ///
+  /// A consulta só existe enquanto o painel está aberto: medir custa uma ida e
+  /// volta ao computador, e ninguém deve pagar isso por um painel fechado.
+  void _toggleStats() {
+    HapticFeedback.selectionClick();
+    setState(() => _statsOpen = !_statsOpen);
+    if (_statsOpen) {
+      _statsAnim.forward();
+      _refreshStats();
+      _statsTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => _refreshStats(),
+      );
+    } else {
+      _statsAnim.reverse();
+      _statsTimer?.cancel();
+      _statsTimer = null;
+    }
+  }
+
+  Future<void> _refreshStats() async {
+    if (_statsInFlight || !mounted) return;
+    _statsInFlight = true;
+    try {
+      final stats = await widget.state.systemStats(widget.device);
+      if (!mounted) return;
+      setState(() {
+        _stats = stats;
+        _statsFailed = false;
+      });
+    } catch (_) {
+      // Sem SnackBar: o painel pergunta a cada 2 s, e um erro de rede viraria
+      // uma fila de avisos. O próprio painel mostra que não conseguiu.
+      if (mounted) setState(() => _statsFailed = true);
+    } finally {
+      _statsInFlight = false;
+    }
+  }
+
+  void _toggleMedia() {
+    HapticFeedback.selectionClick();
+    setState(() => _mediaOpen = !_mediaOpen);
+    if (_mediaOpen) {
+      _mediaAnim.forward();
+    } else {
+      _mediaAnim.reverse();
+    }
+  }
+
+  Future<void> _media(String action) async {
+    HapticFeedback.selectionClick();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await widget.state.mediaKey(widget.device, action);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text(e.toString()),
+      ));
     }
   }
 
@@ -457,18 +562,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     final curved = CurvedAnimation(parent: _dockAnim, curve: Curves.easeOutBack);
 
     final pill = Container(
-      decoration: BoxDecoration(
-        color: const Color(0xE61A1D33), // escuro translúcido
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withAlpha(30)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(120),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
+      decoration: _glass(),
       padding: const EdgeInsets.all(6),
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -500,6 +594,22 @@ class _RemoteScreenState extends State<RemoteScreen>
       ),
     );
   }
+
+  /// Vidro escuro translúcido: o material de tudo o que flutua sobre a tela do
+  /// computador (dock, botões e painéis retráteis). Um só lugar para que os
+  /// elementos pareçam da mesma família.
+  BoxDecoration _glass({double radius = 22}) => BoxDecoration(
+        color: const Color(0xE61A1D33),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(120),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      );
 
   /// Alça de arrastar. Fica só nela para não brigar com a rolagem da lista.
   Widget _dockGrip({required bool vertical, required Size area}) {
@@ -594,6 +704,357 @@ class _RemoteScreenState extends State<RemoteScreen>
           fontWeight: FontWeight.w700,
           fontSize: 18,
         ),
+      ),
+    );
+  }
+
+  // --- botões e painéis retráteis ---------------------------------------------
+
+  /// Os dois botões e os dois painéis, posicionados conforme a orientação.
+  ///
+  /// A posição muda entre retrato e paisagem porque o espaço livre muda: com o
+  /// celular deitado a imagem do computador (16:9) deixa faixas em cima e nas
+  /// laterais; em pé, sobra em cima e embaixo. Cada painel nasce onde há espaço,
+  /// para não cobrir a tela que a pessoa está usando.
+  List<Widget> _panels({required bool isPortrait, required Size area}) {
+    final t = widget.state.t;
+    // Em pé a dock fica deitada na base: o painel de mídia sobe acima dela.
+    final hasDock = (_dockApps ?? const <RemoteApp>[]).isNotEmpty;
+    final aboveDock = hasDock ? _dockThickness + 30 : 16.0;
+
+    final mediaButton = _panelButton(
+      icon: Icons.music_note,
+      open: _mediaOpen,
+      tooltip: t.mediaPanel,
+      onTap: _toggleMedia,
+    );
+    final statsButton = _panelButton(
+      icon: Icons.memory,
+      open: _statsOpen,
+      tooltip: t.systemPanel,
+      onTap: _toggleStats,
+    );
+
+    if (isPortrait) {
+      return [
+        // Botões nas pontas da dock deitada.
+        Align(
+          alignment: Alignment.bottomLeft,
+          child: Padding(padding: const EdgeInsets.all(8), child: statsButton),
+        ),
+        Align(
+          alignment: Alignment.bottomRight,
+          child: Padding(padding: const EdgeInsets.all(8), child: mediaButton),
+        ),
+        _panel(
+          anim: _statsAnim,
+          curved: _statsCurve,
+          alignment: Alignment.topCenter,
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          slideFrom: const Offset(0, -0.3),
+          // Desconta o recuo do painel (24) e o recheio do cartão (28): o limite
+          // é do conteúdo, não da moldura, e sem isso o painel passa da tela.
+          // Duas colunas de medidas, o que cabe num celular em pé.
+          child: _statsCard(
+            vertical: false,
+            maxWidth: (area.width - 52).clamp(_metricWidth, _metricWidth * 2 + 16),
+          ),
+        ),
+        _panel(
+          anim: _mediaAnim,
+          curved: _mediaCurve,
+          alignment: Alignment.bottomCenter,
+          padding: EdgeInsets.fromLTRB(12, 0, 12, aboveDock),
+          slideFrom: const Offset(0, 0.3),
+          child: _mediaCard(vertical: false),
+        ),
+      ];
+    }
+    return [
+      // Deitado: a dock fica em pé à direita, e os botões nas pontas dela.
+      Align(
+        alignment: Alignment.topRight,
+        child: Padding(padding: const EdgeInsets.all(8), child: mediaButton),
+      ),
+      Align(
+        alignment: Alignment.bottomRight,
+        child: Padding(padding: const EdgeInsets.all(8), child: statsButton),
+      ),
+      _panel(
+        anim: _statsAnim,
+        curved: _statsCurve,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.all(12),
+        slideFrom: const Offset(-0.3, 0),
+        // Deitado, o painel é uma coluna estreita na faixa preta da esquerda.
+        // Pode encostar na imagem: é translúcido, e só existe enquanto aberto.
+        child: _statsCard(vertical: true, maxWidth: _metricWidth),
+      ),
+      _panel(
+        anim: _mediaAnim,
+        curved: _mediaCurve,
+        // Recuo à direita para não passar por baixo do botão que o abriu.
+        padding: const EdgeInsets.fromLTRB(12, 12, 72, 0),
+        alignment: Alignment.topCenter,
+        slideFrom: const Offset(0, -0.3),
+        child: _mediaCard(vertical: false),
+      ),
+    ];
+  }
+
+  /// Botão redondo que abre/fecha um painel. Aceso quando o painel está aberto.
+  Widget _panelButton({
+    required IconData icon,
+    required bool open,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 46,
+          height: 46,
+          decoration: _glass(radius: 16),
+          alignment: Alignment.center,
+          child: Icon(
+            icon,
+            size: 22,
+            color: open ? auroraCyan : Colors.white70,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Moldura comum dos painéis: entra deslizando do lado em que fica e sai do
+  /// mesmo jeito. Fechado, **não existe** na árvore — um painel invisível ainda
+  /// roubaria o toque destinado à tela do computador.
+  Widget _panel({
+    required AnimationController anim,
+    required Animation<double> curved,
+    required Alignment alignment,
+    required EdgeInsets padding,
+    required Offset slideFrom,
+    required Widget child,
+  }) {
+    return AnimatedBuilder(
+      animation: anim,
+      child: child,
+      builder: (context, inner) {
+        if (anim.isDismissed) return const SizedBox.shrink();
+        return Align(
+          alignment: alignment,
+          child: Padding(
+            padding: padding,
+            child: FadeTransition(
+              opacity: curved,
+              child: SlideTransition(
+                position: Tween<Offset>(begin: slideFrom, end: Offset.zero)
+                    .animate(curved),
+                child: Container(
+                  decoration: _glass(radius: 18),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  child: inner,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Painel de métricas. `vertical` = coluna (celular deitado, painel na
+  /// lateral); horizontal = uma linha de medidas (celular em pé).
+  Widget _statsCard({required bool vertical, required double maxWidth}) {
+    final t = widget.state.t;
+    final stats = _stats;
+    Widget body;
+    if (stats == null) {
+      body = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!_statsFailed)
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          if (!_statsFailed) const SizedBox(width: 10),
+          Text(
+            _statsFailed ? t.systemUnavailable : '${t.systemPanel}…',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ],
+      );
+    } else {
+      final tiles = <Widget>[
+        _metric(
+          label: t.systemCpu,
+          value: '${stats.cpuPercent.round()}%',
+          fraction: stats.cpuPercent / 100,
+          vertical: vertical,
+        ),
+        _metric(
+          label: t.systemMemory,
+          value: '${SystemStats.formatBytes(stats.memoryUsed)}'
+              ' / ${SystemStats.formatBytes(stats.memoryTotal)}',
+          fraction: stats.memoryFraction,
+          vertical: vertical,
+        ),
+        _metric(
+          label: stats.diskName.isEmpty
+              ? t.systemDisk
+              : '${t.systemDisk} ${stats.diskName}',
+          value: '${SystemStats.formatBytes(stats.diskUsed)}'
+              ' / ${SystemStats.formatBytes(stats.diskTotal)}',
+          fraction: stats.diskFraction,
+          vertical: vertical,
+        ),
+        _metric(
+          label: t.systemUptime,
+          value: stats.uptimeLabel(
+            days: t.unitDay,
+            hours: t.unitHour,
+            minutes: t.unitMinute,
+          ),
+          fraction: null,
+          vertical: vertical,
+        ),
+      ];
+      body = vertical
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: tiles,
+            )
+          // Wrap, e não Row: quatro medidas lado a lado não cabem na largura de
+          // um celular em pé, e o valor ("7,8 GB / 16,0 GB") seria cortado. Com
+          // largura fixa por medida elas se organizam em duas colunas.
+          : Wrap(
+              spacing: 16,
+              runSpacing: 10,
+              children: [
+                for (final tile in tiles)
+                  SizedBox(width: _metricWidth, child: tile),
+              ],
+            );
+      // Uma medida que falhou não apaga a última leitura boa: o painel segue
+      // mostrando o que sabe, com o aviso embaixo.
+      if (_statsFailed) {
+        body = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            body,
+            const SizedBox(height: 6),
+            Text(
+              t.systemUnavailable,
+              style: const TextStyle(color: Colors.white38, fontSize: 10),
+            ),
+          ],
+        );
+      }
+    }
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: body,
+    );
+  }
+
+  /// Uma medida: rótulo, valor e (quando faz sentido) a barra de proporção.
+  Widget _metric({
+    required String label,
+    required String value,
+    required double? fraction,
+    required bool vertical,
+  }) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: vertical ? 5 : 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white38, fontSize: 10),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (fraction != null) ...[
+            const SizedBox(height: 4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: fraction.clamp(0.0, 1.0),
+                minHeight: 4,
+                backgroundColor: Colors.white12,
+                // Vermelho quando aperta: a cor é a informação que se lê de
+                // longe, antes de ler o número.
+                valueColor: AlwaysStoppedAnimation(
+                  fraction >= 0.9
+                      ? const Color(0xFFEF5350)
+                      : fraction >= 0.7
+                          ? const Color(0xFFFFB74D)
+                          : auroraCyan,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Botões de mídia. As teclas são globais no computador: valem para quem
+  /// estiver tocando som, sem precisar deixar o player em foco.
+  Widget _mediaCard({required bool vertical}) {
+    final t = widget.state.t;
+    final buttons = <Widget>[
+      _mediaButton(Icons.volume_down, t.mediaVolumeDown, 'volume_down'),
+      _mediaButton(Icons.volume_off, t.mediaMute, 'mute'),
+      _mediaButton(Icons.skip_previous, t.mediaPrevious, 'previous'),
+      _mediaButton(Icons.play_arrow, t.mediaPlayPause, 'play_pause', big: true),
+      _mediaButton(Icons.skip_next, t.mediaNext, 'next'),
+      _mediaButton(Icons.volume_up, t.mediaVolumeUp, 'volume_up'),
+    ];
+    return vertical
+        ? Column(mainAxisSize: MainAxisSize.min, children: buttons)
+        : Row(mainAxisSize: MainAxisSize.min, children: buttons);
+  }
+
+  Widget _mediaButton(
+    IconData icon,
+    String tooltip,
+    String action, {
+    bool big = false,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        // Toque generoso: são botões que se aperta sem olhar.
+        iconSize: big ? 34 : 26,
+        constraints: const BoxConstraints(minWidth: 46, minHeight: 46),
+        padding: EdgeInsets.zero,
+        color: Colors.white,
+        icon: Icon(icon),
+        onPressed: () => _media(action),
       ),
     );
   }
@@ -783,9 +1244,12 @@ class _RemoteScreenState extends State<RemoteScreen>
                     fit: StackFit.expand,
                     children: [
                       Positioned.fill(child: _liveView()),
-                      // No modo lupa a dock sai da frente, para não atrapalhar.
-                      if (!_zoomMode)
+                      // No modo lupa a dock e os painéis saem da frente, para
+                      // não atrapalhar quem está ampliando a imagem.
+                      if (!_zoomMode) ...[
                         _appDock(vertical: !isPortrait, area: area),
+                        ..._panels(isPortrait: isPortrait, area: area),
+                      ],
                     ],
                   );
                 },

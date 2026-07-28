@@ -152,6 +152,11 @@ pub async fn run(
     // Injetor de entrada da plataforma (real no Windows, stub no restante).
     let mut injector = crate::injector::controller();
 
+    // Métricas do computador. Criado agora, e não no primeiro pedido, porque a
+    // leitura de referência da CPU precisa acontecer 200 ms antes da primeira
+    // medida de verdade — e aqui isso não custa nada a ninguém.
+    let mut monitor = crate::system_info::Monitor::new();
+
     // Transmissão de tela: enquanto ativa, captura e envia frames JPEG. A
     // config é mutável porque o app pode ajustar fps/qualidade por sessão.
     let mut streaming = false;
@@ -387,6 +392,15 @@ pub async fn run(
                                         .set_missed_tick_behavior(MissedTickBehavior::Delay);
                                 }
                             }
+                            // Métricas do computador: responde com o mesmo
+                            // request_id, como a lista de aplicativos.
+                            Some(Action::SystemInfo { request_id }) => {
+                                let stats = monitor.snapshot();
+                                let reply = serde_json::to_string(
+                                    &ClientMessage::SystemStats { request_id, stats },
+                                )?;
+                                ws.send(Message::Text(reply)).await?;
+                            }
                             // Listar aplicativos pode demorar (varre o menu
                             // Iniciar / consulta processos): roda fora do event
                             // loop e responde ao backend com o mesmo request_id.
@@ -542,6 +556,8 @@ impl VideoStats {
 enum Action {
     /// A transmissão ou o fps mudaram: reavaliar o ritmo do `frame_ticker`.
     RestartFrameTicker,
+    /// Medir CPU/memória/disco e responder ao backend.
+    SystemInfo { request_id: String },
     /// Listar aplicativos e responder ao backend.
     ListApps {
         request_id: String,
@@ -653,6 +669,15 @@ fn handle_server_text(
         }
         Ok(ServerMessage::ListApps { request_id, kind }) => {
             return Some(Action::ListApps { request_id, kind });
+        }
+        // Medir exige `&mut` no monitor, que vive no laço: volta como ação.
+        Ok(ServerMessage::SystemInfo { request_id }) => {
+            return Some(Action::SystemInfo { request_id });
+        }
+        Ok(ServerMessage::Media { action }) => {
+            if let Err(e) = injector.media(action) {
+                eprintln!("Falha ao aplicar comando de mídia: {e}");
+            }
         }
         Ok(ServerMessage::LaunchApp { id }) => {
             println!("Abrindo aplicativo: {id}");

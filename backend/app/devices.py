@@ -17,8 +17,10 @@ from app.schemas import (
     AppOut,
     ClaimRequest,
     DeviceOut,
+    MediaRequest,
     PowerRequest,
     RenameDeviceRequest,
+    SystemStatsOut,
 )
 from app.screen import frame_store
 
@@ -32,6 +34,10 @@ _QUALITY_RANGE = (20, 90)
 _WIDTH_RANGE = (640, 1920)
 # Tempo máximo esperando o agente responder com a lista de aplicativos.
 _APPS_TIMEOUT_SECONDS = 15
+# Métricas são baratas de medir (o agente mantém o monitor pronto), mas o painel
+# do app pergunta de novo a cada poucos segundos: uma espera curta evita que
+# pedidos velhos se acumulem quando a rede engasga.
+_SYSTEM_TIMEOUT_SECONDS = 5
 
 
 def _device_out(device: Device) -> DeviceOut:
@@ -140,6 +146,53 @@ async def power_device(
     """Desliga, reinicia ou suspende o computador pareado."""
     _owned_device_or_404(db, device_id, current_user)
     message = {"type": "power", "action": body.action}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.get("/devices/{device_id}/system", response_model=SystemStatsOut)
+async def system_stats(
+    device_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SystemStatsOut:
+    """Mede CPU, memória e disco do computador pareado.
+
+    Pergunta e resposta com `request_id`, como a lista de aplicativos: o backend
+    espera o agente medir.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    request_id, future = pending.create()
+    message = {"type": "system_info", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        stats = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return SystemStatsOut(**stats)
+
+
+@router.post("/devices/{device_id}/media", status_code=status.HTTP_204_NO_CONTENT)
+async def media_key(
+    device_id: str,
+    body: MediaRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Aciona uma tecla de mídia (play/pause, faixa, volume) no computador."""
+    _owned_device_or_404(db, device_id, current_user)
+    message = {"type": "media", "action": body.action}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"

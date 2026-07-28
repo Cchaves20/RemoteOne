@@ -7,6 +7,7 @@ import '../l10n/strings.dart';
 import '../models/device.dart';
 import '../models/remote_app.dart';
 import '../models/stream_quality.dart';
+import '../models/system_stats.dart';
 import 'api_client.dart';
 
 /// Estado global do app: autenticação, dispositivos e preferências.
@@ -229,6 +230,14 @@ class AppState extends ChangeNotifier {
 
   Future<void> closeApp(Device device, String id) =>
       api.closeApp(device.deviceId, id);
+
+  // --- métricas e mídia --------------------------------------------------------
+
+  Future<SystemStats> systemStats(Device device) =>
+      api.systemStats(device.deviceId);
+
+  Future<void> mediaKey(Device device, String action) =>
+      api.mediaKey(device.deviceId, action);
 
   // --- conta -----------------------------------------------------------------
 

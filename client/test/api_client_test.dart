@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:remoteone_client/models/system_stats.dart';
 import 'package:remoteone_client/services/api_client.dart';
 import 'package:remoteone_client/services/token_store.dart';
 
@@ -288,5 +289,89 @@ void main() {
           .having((e) => e.statusCode, 'statusCode', 503)
           .having((e) => e.message, 'message', 'agente offline')),
     );
+  });
+
+  test('systemStats decodifica as métricas do computador', () async {
+    Uri? seenUrl;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        seenUrl = req.url;
+        return http.Response(
+          jsonEncode({
+            'cpu_percent': 37.4,
+            'memory_used': 8000000000,
+            'memory_total': 16000000000,
+            'disk_used': 300000000000,
+            'disk_total': 500000000000,
+            'disk_name': 'C:',
+            'uptime_seconds': 3600,
+          }),
+          200,
+        );
+      }),
+    );
+
+    final stats = await client.systemStats('dev-1');
+    expect(seenUrl?.path, '/api/v1/devices/dev-1/system');
+    expect(stats.cpuPercent, 37.4);
+    expect(stats.diskName, 'C:');
+    expect(stats.memoryFraction, closeTo(0.5, 0.001));
+  });
+
+  test('mediaKey manda a ação no corpo e aceita 204', () async {
+    Map<String, dynamic>? seenBody;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        seenBody = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response('', 204);
+      }),
+    );
+
+    await client.mediaKey('dev-1', 'play_pause');
+    expect(seenBody, {'action': 'play_pause'});
+  });
+
+  group('formatação das métricas', () {
+    test('bytes viram GB/MB em base 1024, como o Windows mostra', () {
+      expect(SystemStats.formatBytes(16 * 1024 * 1024 * 1024), '16.0 GB');
+      expect(SystemStats.formatBytes(512 * 1024 * 1024), '512 MB');
+      expect(SystemStats.formatBytes(2048), '2 KB');
+      expect(SystemStats.formatBytes(7), '7 B');
+    });
+
+    test('total zero não vira divisão por zero na barra', () {
+      const vazio = SystemStats(
+        cpuPercent: 0,
+        memoryUsed: 0,
+        memoryTotal: 0,
+        diskUsed: 0,
+        diskTotal: 0,
+        diskName: '',
+        uptimeSeconds: 0,
+      );
+      expect(vazio.memoryFraction, 0);
+      expect(vazio.diskFraction, 0);
+    });
+
+    test('tempo ligado cresce de minutos para dias', () {
+      SystemStats comUptime(int segundos) => SystemStats(
+            cpuPercent: 0,
+            memoryUsed: 0,
+            memoryTotal: 1,
+            diskUsed: 0,
+            diskTotal: 1,
+            diskName: 'C:',
+            uptimeSeconds: segundos,
+          );
+      String rotulo(int segundos) => comUptime(segundos)
+          .uptimeLabel(days: 'd', hours: 'h', minutes: 'min');
+      expect(rotulo(90), '1min');
+      expect(rotulo(3 * 3600 + 25 * 60), '3h 25min');
+      expect(rotulo(2 * 86400 + 4 * 3600), '2d 4h');
+    });
   });
 }

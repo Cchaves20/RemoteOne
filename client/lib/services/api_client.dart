@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
 import '../models/remote_app.dart';
+import '../models/system_stats.dart';
 import 'token_store.dart';
 
 /// Erro de API com o código HTTP e uma mensagem amigável.
@@ -302,6 +303,29 @@ class ApiClient {
       _uri('/api/v1/devices/$deviceId/apps/close'),
       headers: _authHeaders,
       body: jsonEncode({'id': id}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  // --- métricas e mídia -------------------------------------------------------
+
+  /// Mede CPU, memória e disco do computador. O agente responde na hora.
+  Future<SystemStats> systemStats(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/system'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return SystemStats.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Aciona uma tecla de mídia: `play_pause`, `next`, `previous`, `volume_up`,
+  /// `volume_down` ou `mute`.
+  Future<void> mediaKey(String deviceId, String action) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/media'),
+      headers: _authHeaders,
+      body: jsonEncode({'action': action}),
     );
     if (res.statusCode != 204) {
       throw _error(res);

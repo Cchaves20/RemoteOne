@@ -24,7 +24,8 @@ Documentação por etapa:
 - [`docs/controle-remoto.md`](docs/controle-remoto.md) — mouse e teclado remotos (Etapa 6)
 - [`docs/tela-remota.md`](docs/tela-remota.md) — ver a tela do PC no app (Etapa 7)
 - [`docs/video-e-latencia.md`](docs/video-e-latencia.md) — pipeline de vídeo, otimizações medidas e o caminho até o WebRTC
-- [`docs/webrtc-plano.md`](docs/webrtc-plano.md) — plano de migração do vídeo para WebRTC (planejamento, ainda não implementado)
+- [`docs/webrtc-plano.md`](docs/webrtc-plano.md) — a migração do vídeo para WebRTC: plano, medições e diário das decisões
+- [`docs/monitor-e-midia.md`](docs/monitor-e-midia.md) — painéis retráteis de CPU/memória/disco e de controle de mídia
 - [`docs/instalar-no-iphone.md`](docs/instalar-no-iphone.md) — instalar o app no iPhone sem Mac (sideload)
 - [`docs/rodar-sem-terminal.md`](docs/rodar-sem-terminal.md) — agente e backend em segundo plano (sem terminal; base para desligar/Wake-on-LAN)
 - [`docs/pc-sempre-pronto.md`](docs/pc-sempre-pronto.md) — IP fixo + backend no boot + login automático (controlar sem tocar no PC)

@@ -33,6 +33,7 @@ Agente                          Backend
 | `hello` | `device_id`, `hostname`, `os`, `agent_version`, `mac?` | Primeira mensagem ao conectar (`mac` opcional, para Wake-on-LAN) |
 | `heartbeat` | — | Periódico, mantém a sessão viva |
 | `app_list` | `request_id`, `apps[]` (`id`, `name`, `icon?`) | Resposta a um `list_apps`; `icon` é o ícone real do programa em PNG base64 (ver "pergunta e resposta" abaixo) |
+| `system_stats` | `request_id`, `stats` (`cpu_percent`, `memory_used`, `memory_total`, `disk_used`, `disk_total`, `disk_name`, `uptime_seconds`) | Resposta a um `system_info`. Bytes crus e porcentagem: quem formata é o app, que sabe o idioma |
 
 ## Mensagens do backend → agente
 
@@ -51,6 +52,8 @@ Agente                          Backend
 | `list_apps` | `request_id`, `kind` (`desktop`/`installed`/`running`) | Pede a lista de aplicativos; o agente responde com `app_list`. `desktop` = atalhos da área de trabalho (com ícones), usado pela dock |
 | `launch_app` | `id` (caminho do atalho) | Abre um programa no computador |
 | `close_app` | `id` (PID) | Encerra um programa em execução |
+| `system_info` | `request_id` | Pede as métricas do computador; o agente responde com `system_stats` |
+| `media` | `action` (`play_pause`/`next`/`previous`/`volume_up`/`volume_down`/`mute`) | Aciona uma tecla multimídia. São teclas **globais**: valem para quem estiver tocando som, sem depender da janela em foco |
 
 ## Pergunta e resposta (aplicativos)
 

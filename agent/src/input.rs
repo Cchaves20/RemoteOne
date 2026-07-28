@@ -55,6 +55,23 @@ pub enum Modifier {
     Meta,
 }
 
+/// Comandos de mídia: as teclas que um teclado multimídia tem a mais.
+///
+/// Ficam fora do [`InputAction`] de propósito. São teclas globais, atendidas por
+/// quem estiver tocando som — não vão para a janela em foco, e por isso não
+/// dependem de o computador estar sendo controlado. É a diferença que permite
+/// pausar a música sem antes clicar no player.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaAction {
+    PlayPause,
+    Next,
+    Previous,
+    VolumeUp,
+    VolumeDown,
+    Mute,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InputAction {
@@ -153,5 +170,20 @@ mod tests {
                 key: "c".into()
             }
         );
+    }
+
+    #[test]
+    fn media_action_wire_format() {
+        // O backend manda estas strings; se mudarem, o botão para de funcionar.
+        assert_eq!(
+            serde_json::to_value(MediaAction::PlayPause).unwrap(),
+            "play_pause"
+        );
+        assert_eq!(
+            serde_json::to_value(MediaAction::VolumeDown).unwrap(),
+            "volume_down"
+        );
+        let action: MediaAction = serde_json::from_str(r#""previous""#).unwrap();
+        assert_eq!(action, MediaAction::Previous);
     }
 }

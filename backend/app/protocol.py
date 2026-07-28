@@ -51,6 +51,30 @@ class AppList(BaseModel):
     apps: list[AppInfo] = []
 
 
+class SystemSnapshot(BaseModel):
+    """Métricas do computador, em bytes e porcentagem.
+
+    Bytes crus de propósito: quem transforma em "7,8 GB" é o app, que sabe o
+    idioma do usuário.
+    """
+
+    cpu_percent: float = Field(ge=0, le=100)
+    memory_used: int = Field(ge=0)
+    memory_total: int = Field(ge=0)
+    disk_used: int = Field(ge=0)
+    disk_total: int = Field(ge=0)
+    disk_name: str = ""
+    uptime_seconds: int = Field(ge=0)
+
+
+class SystemStats(BaseModel):
+    """Resposta do agente a um `system_info`, com o `request_id` do pedido."""
+
+    type: Literal["system_stats"] = "system_stats"
+    request_id: str
+    stats: SystemSnapshot
+
+
 class WebrtcAnswer(BaseModel):
     """Resposta SDP do agente à oferta de um app (negociação de vídeo)."""
 
@@ -73,7 +97,7 @@ class WebrtcIce(BaseModel):
 
 
 ClientMessage = Annotated[
-    Hello | Heartbeat | AppList | WebrtcAnswer | WebrtcIce,
+    Hello | Heartbeat | AppList | SystemStats | WebrtcAnswer | WebrtcIce,
     Field(discriminator="type"),
 ]
 _client_adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
