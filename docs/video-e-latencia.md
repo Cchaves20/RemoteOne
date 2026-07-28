@@ -116,8 +116,11 @@ juntos motivaram a migração:
 - **O tráfego passa pelo servidor.** Todo frame sobe do PC ao VPS e desce ao
   celular. O WebRTC negocia uma conexão direta (P2P) quando a rede permite,
   cortando uma perna inteira do trajeto — e com ela boa parte da latência.
-- **Não há controle de congestionamento.** Hoje o agente envia no ritmo do
-  relógio, sem saber se a rede está aguentando. O WebRTC ajusta a taxa sozinho.
+- **Não há controle de congestionamento.** O agente envia no ritmo do relógio,
+  sem saber se a rede está aguentando. O WebRTC *mede* a capacidade e tem para
+  onde reportar isso — mas usar a medida para segurar a taxa ainda não está
+  feito (Fase 4b): nenhuma configuração do codificador limita a banda sem travar
+  a imagem, então falta baixar resolução/fps sob pressão.
 - **A deduplicação é tudo ou nada.** Um pixel diferente reenvia o frame
   completo. Um codec resolve isso por blocos.
 
