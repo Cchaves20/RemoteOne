@@ -38,7 +38,9 @@ Isso faz, em ordem:
 3. **app** — `flutter pub get` e `flutter analyze`;
 4. **VPS** — por SSH: busca o branch, força o código e sobe o `docker compose`;
 5. **conferência** — pergunta ao `/health` o que o servidor tem e compara com o
-   que este código espera.
+   que este código espera. Com paciência: o `docker compose up` volta quando o
+   contêiner **inicia**, não quando a aplicação está pronta, então a checagem
+   tenta algumas vezes antes de desistir.
 
 ## Variações
 

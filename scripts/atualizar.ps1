@@ -183,8 +183,27 @@ $esperado = @(
 )
 
 Titulo "Conferência"
-try {
-    $saude = Invoke-RestMethod "https://$Dominio/health" -TimeoutSec 15
+# Com paciência: o "docker compose up" volta quando o contêiner **inicia**, não
+# quando a aplicação está pronta para responder. Perguntar na mesma hora acusa
+# um servidor fora do ar que na verdade está só levantando.
+$saude = $null
+$tentativas = 6
+for ($n = 1; $n -le $tentativas; $n++) {
+    try {
+        $saude = Invoke-RestMethod "https://$Dominio/health" -TimeoutSec 10
+        break
+    } catch {
+        if ($n -lt $tentativas) {
+            Passo "servidor ainda subindo, tentando de novo ($n/$tentativas)"
+            Start-Sleep -Seconds 5
+        }
+    }
+}
+
+if ($null -eq $saude) {
+    Write-Host "  Não consegui falar com https://$Dominio/health" -ForegroundColor Red
+    $falhas += "health"
+} else {
     $faltando = $esperado | Where-Object { $saude.features -notcontains $_ }
     if ($faltando) {
         Write-Host "  O servidor não tem: $($faltando -join ', ')" -ForegroundColor Red
@@ -193,9 +212,6 @@ try {
     } else {
         Write-Host "  Servidor com tudo o que este código espera." -ForegroundColor Green
     }
-} catch {
-    Write-Host "  Não consegui falar com https://$Dominio/health" -ForegroundColor Red
-    $falhas += "health"
 }
 
 # --- resumo ------------------------------------------------------------------
