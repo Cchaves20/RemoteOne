@@ -49,10 +49,16 @@ class ProfileBar extends StatefulWidget {
 
 class _ProfileBarState extends State<ProfileBar>
     with SingleTickerProviderStateMixin {
-  /// Lado do botão de perfil e do botão de atalho. O de atalho é mais largo
-  /// porque carrega o nome do atalho embaixo do ícone ("Ctrl+Shift+Esc").
+  /// Lado do botão de perfil e do botão de atalho.
+  ///
+  /// O botão de atalho é mais largo que alto: a largura carrega o nome do
+  /// atalho embaixo do ícone, a altura não precisa dele. A diferença importa
+  /// porque a barra mora na tarja preta ao lado (ou acima) da imagem, que tem
+  /// uns 140 nas fotos do aparelho - cada ponto a menos é imagem do computador
+  /// que continua à mostra. Aberta, ela fica em 133.
   static const double _profileTile = 44;
-  static const double _actionTile = 58;
+  static const double _actionTile = 54;
+  static const double _actionHeight = 50;
 
   late final AnimationController _anim = AnimationController(
     vsync: this,
@@ -100,7 +106,9 @@ class _ProfileBarState extends State<ProfileBar>
       if (selected != null) ...[
         _divider(vertical: vertical),
         _lane(
-          thickness: _actionTile,
+          // Deitada, a pista é uma coluna e o que se fixa é a largura; em pé é
+          // uma linha, e o que se fixa é a altura - que pode ser menor.
+          thickness: vertical ? _actionTile : _actionHeight,
           vertical: vertical,
           children: [for (final a in selected.actions) _actionButton(a)],
         ),
@@ -129,7 +137,7 @@ class _ProfileBarState extends State<ProfileBar>
 
     final pill = Container(
       decoration: glassPill(),
-      padding: const EdgeInsets.all(6),
+      padding: const EdgeInsets.all(5),
       // Cresce e encolhe junto com a segunda pista, em vez de aparecer de uma
       // vez: sem isso, escolher um perfil dá um solavanco na tela.
       child: AnimatedSize(
@@ -208,7 +216,7 @@ class _ProfileBarState extends State<ProfileBar>
     return Container(
       width: vertical ? 1 : 28,
       height: vertical ? 28 : 1,
-      margin: const EdgeInsets.all(5),
+      margin: const EdgeInsets.all(4),
       color: Colors.white24,
     );
   }
