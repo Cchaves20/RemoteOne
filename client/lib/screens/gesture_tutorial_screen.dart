@@ -12,6 +12,7 @@ class GestureTutorialScreen extends StatelessWidget {
   static const _icons = [
     Icons.touch_app,
     Icons.swipe,
+    Icons.text_select_start,
     Icons.ads_click,
     Icons.pinch,
     Icons.zoom_in,

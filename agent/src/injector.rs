@@ -26,12 +26,31 @@ mod imp {
 
     pub struct EnigoInjector {
         enigo: Enigo,
+        /// Botões apertados e ainda não soltos. Existe por causa do `Drop`
+        /// abaixo, que é a rede de segurança contra o pior defeito possível
+        /// aqui: a conexão cair no meio de uma seleção e o computador ficar
+        /// com o botão do mouse preso, arrastando tudo o que o cursor tocar.
+        held: std::collections::HashSet<MouseButton>,
     }
 
     pub fn controller() -> Box<dyn InputInjector> {
         let enigo = Enigo::new(&Settings::default())
             .expect("não foi possível inicializar a injeção de entrada");
-        Box::new(EnigoInjector { enigo })
+        Box::new(EnigoInjector {
+            enigo,
+            held: std::collections::HashSet::new(),
+        })
+    }
+
+    impl Drop for EnigoInjector {
+        fn drop(&mut self) {
+            // O injetor vive enquanto a conexão vive: quando ela cai, isto
+            // roda. Soltar aqui cobre todo caminho de saída de uma vez, sem
+            // depender de o app conseguir mandar o `mouse_release`.
+            for button in self.held.clone() {
+                let _ = self.enigo.button(mouse_button(&button), Direction::Release);
+            }
+        }
     }
 
     fn special_key(key: &SpecialKey) -> Key {
@@ -78,6 +97,14 @@ mod imp {
             MediaAction::VolumeUp => Key::VolumeUp,
             MediaAction::VolumeDown => Key::VolumeDown,
             MediaAction::Mute => Key::VolumeMute,
+        }
+    }
+
+    fn mouse_button(button: &MouseButton) -> Button {
+        match button {
+            MouseButton::Left => Button::Left,
+            MouseButton::Right => Button::Right,
+            MouseButton::Middle => Button::Middle,
         }
     }
 
@@ -142,14 +169,28 @@ mod imp {
                         .move_mouse(px, py, Coordinate::Abs)
                         .map_err(|e| e.to_string())
                 }
-                InputAction::MouseClick { button } => {
-                    let b = match button {
-                        MouseButton::Left => Button::Left,
-                        MouseButton::Right => Button::Right,
-                        MouseButton::Middle => Button::Middle,
-                    };
+                InputAction::MouseClick { button } => self
+                    .enigo
+                    .button(mouse_button(button), Direction::Click)
+                    .map_err(|e| e.to_string()),
+                InputAction::MousePress { button, clicks } => {
+                    let b = mouse_button(button);
+                    // Os cliques completos vêm antes; o último aperto fica
+                    // segurando, e é ele que faz o arrasto virar seleção.
+                    for _ in 1..(*clicks).clamp(1, 3) {
+                        self.enigo
+                            .button(b, Direction::Click)
+                            .map_err(|e| e.to_string())?;
+                    }
+                    self.held.insert(*button);
                     self.enigo
-                        .button(b, Direction::Click)
+                        .button(b, Direction::Press)
+                        .map_err(|e| e.to_string())
+                }
+                InputAction::MouseRelease { button } => {
+                    self.held.remove(button);
+                    self.enigo
+                        .button(mouse_button(button), Direction::Release)
                         .map_err(|e| e.to_string())
                 }
                 InputAction::MouseScroll { dy } => self

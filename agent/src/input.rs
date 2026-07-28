@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MouseButton {
     Left,
@@ -113,6 +113,10 @@ pub enum MediaAction {
     Mute,
 }
 
+fn um_clique() -> u8 {
+    1
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InputAction {
@@ -123,6 +127,25 @@ pub enum InputAction {
     MouseMoveTo { x: f64, y: f64 },
     /// Clique de um botão do mouse.
     MouseClick { button: MouseButton },
+    /// Aperta um botão e **segura**, opcionalmente depois de `clicks - 1`
+    /// cliques completos.
+    ///
+    /// É o que permite selecionar texto: `clicks: 2` faz o agente dar um
+    /// clique e apertar de novo sem soltar, que é como o Windows entende
+    /// "duplo clique e arrasta" e passa a estender a seleção palavra por
+    /// palavra enquanto o dedo se move.
+    ///
+    /// Os cliques são dados **pelo agente**, em sequência local. Se o app
+    /// mandasse clique-clique-aperta em mensagens separadas, a latência da
+    /// rede poderia espaçá-los além do intervalo de duplo clique do Windows,
+    /// e o que era uma seleção viraria dois cliques soltos.
+    MousePress {
+        button: MouseButton,
+        #[serde(default = "um_clique")]
+        clicks: u8,
+    },
+    /// Solta um botão que estava sendo segurado.
+    MouseRelease { button: MouseButton },
     /// Rolagem vertical (positivo = para cima).
     MouseScroll { dy: i32 },
     /// Digitação de texto (uma ou mais letras).
@@ -216,6 +239,37 @@ mod tests {
             InputAction::KeyCombo {
                 modifiers: vec![Modifier::Ctrl, Modifier::Shift],
                 key: "c".into()
+            }
+        );
+    }
+
+    #[test]
+    fn deserializa_apertar_e_soltar() {
+        let apertar: InputAction =
+            serde_json::from_str(r#"{"kind":"mouse_press","button":"left","clicks":2}"#).unwrap();
+        assert_eq!(
+            apertar,
+            InputAction::MousePress {
+                button: MouseButton::Left,
+                clicks: 2
+            }
+        );
+        // Sem `clicks` = um só: aperta e segura, sem clicar antes.
+        let simples: InputAction =
+            serde_json::from_str(r#"{"kind":"mouse_press","button":"left"}"#).unwrap();
+        assert_eq!(
+            simples,
+            InputAction::MousePress {
+                button: MouseButton::Left,
+                clicks: 1
+            }
+        );
+        let soltar: InputAction =
+            serde_json::from_str(r#"{"kind":"mouse_release","button":"left"}"#).unwrap();
+        assert_eq!(
+            soltar,
+            InputAction::MouseRelease {
+                button: MouseButton::Left
             }
         );
     }

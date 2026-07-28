@@ -22,6 +22,7 @@ import 'gesture_tutorial_screen.dart';
 ///
 /// - Toque: move o cursor ao ponto + clique esquerdo
 /// - Arrastar (1 dedo): o cursor segue o dedo
+/// - Duplo toque: seleciona a palavra; arrastando no segundo toque, estende
 /// - Segurar: clique direito no ponto
 /// - 2 dedos: rolar
 /// - Botão de teclado: abre o teclado com teclas especiais
@@ -543,11 +544,65 @@ class _RemoteScreenState extends State<RemoteScreen>
         y: (local.dy / box.height).clamp(0.0, 1.0),
       );
 
+  /// Quando e onde terminou o toque anterior, para reconhecer o duplo toque.
+  ///
+  /// O `GestureDetector` tem `onDoubleTap`, mas ele **consome** o ponteiro: um
+  /// arrasto depois do segundo toque não chegaria ao `onScaleUpdate`, e é
+  /// justamente o arrasto que estende a seleção. Reconhecer aqui, pelo tempo e
+  /// pela distância, mantém o gesto inteiro nas mãos do mesmo detector.
+  DateTime _lastTapEnd = DateTime.fromMillisecondsSinceEpoch(0);
+  Offset _lastTapSpot = Offset.zero;
+
+  /// Selecionando agora: o botão está apertado no computador, e cada movimento
+  /// do dedo estende a seleção em vez de só mover o cursor.
+  bool _selecting = false;
+
+  static const _doubleTapWindow = Duration(milliseconds: 320);
+  static const _doubleTapSlop = 44.0;
+
+  bool _isSecondTap(Offset local) {
+    final agora = DateTime.now();
+    final perto = (local - _lastTapSpot).distance <= _doubleTapSlop;
+    return perto && agora.difference(_lastTapEnd) < _doubleTapWindow;
+  }
+
+  /// Começo de um toque. Se for o segundo em sequência, vira duplo clique que
+  /// **segura** — a partir daí, arrastar seleciona.
+  void _touchDown(Offset local, Size box) {
+    // O detector avisa o mesmo dedo por dois caminhos (`onTapDown` e
+    // `onScaleStart`). Sem esta guarda, o duplo clique sairia em dobro.
+    if (_selecting || !_isSecondTap(local)) return;
+    HapticFeedback.selectionClick();
+    _selecting = true;
+    final p = _norm(local, box);
+    _send({'kind': 'mouse_move_to', 'x': p.x, 'y': p.y});
+    // clicks: 2 = um clique completo e um segundo aperto que fica segurando.
+    // Se o dedo sair sem se mexer, o `mouse_release` fecha o duplo clique e a
+    // palavra fica selecionada; se ele arrastar, a seleção cresce.
+    _send({'kind': 'mouse_press', 'button': 'left', 'clicks': 2});
+  }
+
+  /// Fim de um toque, em qualquer caminho (soltou, cancelou, saiu da tela).
+  void _touchUp() {
+    _lastTapEnd = DateTime.now();
+    if (!_selecting) return;
+    _selecting = false;
+    _send({'kind': 'mouse_release', 'button': 'left'});
+  }
+
   void _tapAt(Offset local, Size box) {
+    _lastTapSpot = local;
+    // O segundo toque já mandou apertar; aqui só solta, senão sairia um clique
+    // extra que desfaria a seleção que acabou de ser feita.
+    if (_selecting) {
+      _touchUp();
+      return;
+    }
     HapticFeedback.selectionClick();
     final p = _norm(local, box);
     _send({'kind': 'mouse_move_to', 'x': p.x, 'y': p.y});
     _send({'kind': 'mouse_click', 'button': 'left'});
+    _lastTapEnd = DateTime.now();
   }
 
   void _rightClickAt(Offset local, Size box) {
@@ -1157,15 +1212,25 @@ class _RemoteScreenState extends State<RemoteScreen>
                     child: child,
                   ),
                   child: GestureDetector(
+                    onTapDown: (d) => _touchDown(d.localPosition, box),
                     onTapUp: (d) => _tapAt(d.localPosition, box),
+                    // Sem `onTapCancel`: ele dispara assim que o dedo anda
+                    // além do limiar de toque, que é exatamente o começo do
+                    // arrasto de seleção. Quem solta o botão é o `onScaleEnd`,
+                    // que vale para os dois desfechos.
                     onLongPressStart: (d) => _rightClickAt(d.localPosition, box),
+                    onScaleStart: (d) {
+                      if (d.pointerCount < 2) _touchDown(d.localFocalPoint, box);
+                    },
                     onScaleUpdate: (d) {
                       if (d.pointerCount >= 2) {
                         _pendingScroll += d.focalPointDelta.dy;
                       } else {
+                        // Com o botão segurado, mover é estender a seleção.
                         _moveTo(d.localFocalPoint, box);
                       }
                     },
+                    onScaleEnd: (_) => _touchUp(),
                     child: image,
                   ),
                 ),

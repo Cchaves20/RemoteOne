@@ -192,3 +192,24 @@ def test_key_replace_e_atomico_e_limitado():
         except ValidationError:
             continue
         raise AssertionError(f"deveria recusar {invalido}")
+
+
+def test_apertar_e_soltar_para_selecionar_texto():
+    """Duplo clique que segura: e como se seleciona texto arrastando."""
+    adaptador = TypeAdapter(InputAction)
+    apertar = adaptador.validate_python(
+        {"kind": "mouse_press", "button": "left", "clicks": 2}
+    )
+    assert apertar.clicks == 2
+    # Sem clicks = aperta e segura, sem clicar antes.
+    assert adaptador.validate_python({"kind": "mouse_press"}).clicks == 1
+    assert adaptador.validate_python({"kind": "mouse_release"}).button == "left"
+
+    # Triplo clique existe (seleciona o paragrafo); quadruplo nao.
+    assert adaptador.validate_python({"kind": "mouse_press", "clicks": 3}).clicks == 3
+    for invalido in (0, 4):
+        try:
+            adaptador.validate_python({"kind": "mouse_press", "clicks": invalido})
+        except ValidationError:
+            continue
+        raise AssertionError(f"clicks={invalido} deveria ser recusado")

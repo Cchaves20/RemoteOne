@@ -138,3 +138,35 @@ ou a de seta somem debaixo do dedo tanto quanto a de letra. O balão mostra o
 próprio rótulo da tecla, ampliado: quem tem ícone aparece como ícone.
 
 Nas teclas das pontas o balão encosta na borda em vez de sair da tela.
+
+## Selecionar texto
+
+Três caminhos, porque não existe um só que sirva sempre:
+
+**Duplo toque** seleciona a palavra. Sem tirar o dedo do segundo toque,
+**arraste** e a seleção cresce - como no celular. Funciona em qualquer lugar,
+inclusive onde não dá para digitar: página da web, PDF, mensagem de erro.
+
+**Shift + setas** (no teclado do app) seleciona caractere a caractere, e
+Shift + Home/End até o fim da linha. Só onde há cursor de texto.
+
+**Ctrl+A** seleciona tudo.
+
+### Por que o duplo toque não é um "duplo clique" mandado duas vezes
+
+O app manda uma ação só: `mouse_press` com `clicks: 2`. O agente dá um clique
+completo e **aperta de novo sem soltar** - que é como o Windows entende "duplo
+clique e arrasta" e passa a estender a seleção palavra por palavra.
+
+Se o app mandasse clique, clique e aperta em mensagens separadas, a latência da
+rede poderia espaçá-los além do intervalo de duplo clique do Windows, e o que
+era uma seleção viraria dois cliques soltos. A sequência é feita pelo agente,
+localmente, onde o tempo é confiável.
+
+### O botão preso
+
+O pior defeito possível aqui é a conexão cair no meio de uma seleção e o
+computador ficar com o botão do mouse apertado, arrastando tudo o que o cursor
+tocar. Por isso o injetor de entrada guarda quais botões estão apertados e os
+solta no `Drop` - que roda quando a conexão morre, por qualquer caminho, sem
+depender de o app conseguir mandar o `mouse_release`.

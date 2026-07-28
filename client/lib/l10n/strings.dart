@@ -446,6 +446,15 @@ class Strings {
               'Mueve el cursor siguiendo tu dedo.'),
         ),
         (
+          _t('Duplo toque', 'Double tap', '双击', 'Double toucher', 'Doble toque'),
+          _t(
+              'Seleciona a palavra. Sem tirar o dedo do segundo toque, arraste para selecionar mais.',
+              'Selects the word. Without lifting your finger on the second tap, drag to select more.',
+              '选中该词。第二次点击时不抬起手指，拖动可继续选择。',
+              'Sélectionne le mot. Sans lever le doigt au second toucher, glissez pour sélectionner plus.',
+              'Selecciona la palabra. Sin levantar el dedo en el segundo toque, arrastra para seleccionar más.'),
+        ),
+        (
           _t('Segurar', 'Hold', '长按', 'Maintenir', 'Mantener'),
           _t('Clique com o botão direito (menu de contexto).', 'Right-click (context menu).',
               '右键单击（上下文菜单）。', 'Clic droit (menu contextuel).',

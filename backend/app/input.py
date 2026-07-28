@@ -42,6 +42,30 @@ SpecialKey = Literal[
 Modifier = Literal["ctrl", "alt", "shift", "meta"]
 
 
+class MousePress(BaseModel):
+    """Aperta um botão e segura, depois de `clicks - 1` cliques completos.
+
+    É o que permite selecionar texto: `clicks=2` faz o agente dar um clique e
+    apertar de novo sem soltar - como o Windows entende "duplo clique e
+    arrasta", que estende a seleção palavra por palavra.
+
+    Os cliques são dados pelo agente, em sequência local: em mensagens
+    separadas, a latência da rede poderia espaçá-los além do intervalo de duplo
+    clique do Windows, e a seleção viraria dois cliques soltos.
+    """
+
+    kind: Literal["mouse_press"] = "mouse_press"
+    button: Literal["left", "right", "middle"] = "left"
+    clicks: int = Field(default=1, ge=1, le=3)
+
+
+class MouseRelease(BaseModel):
+    """Solta um botão que estava segurado."""
+
+    kind: Literal["mouse_release"] = "mouse_release"
+    button: Literal["left", "right", "middle"] = "left"
+
+
 class KeyText(BaseModel):
     kind: Literal["key_text"] = "key_text"
     text: str = Field(min_length=1, max_length=4096)
@@ -79,6 +103,8 @@ InputAction = Annotated[
     MouseMove
     | MouseMoveTo
     | MouseClick
+    | MousePress
+    | MouseRelease
     | MouseScroll
     | KeyText
     | KeyPress
