@@ -528,6 +528,25 @@ Duas coisas que a verificação pegou e que não apareceriam compilando no Linux
   com `*mut c_void cannot be sent between threads safely`. Verificação que não
   falha quando deveria não verifica nada.
 
+**E o cache do monitor não resolveu.** A medição seguinte trouxe a captura ainda
+em 74–103 ms, então o `Monitor::all()` por quadro era um desperdício real mas não
+*o* gargalo. Lendo o `wgc.rs` do xcap, apareceu a causa de verdade: o
+`capture_image()` é API de captura **pontual**, e por baixo ele monta e desmonta
+a pilha inteira a cada chamada — dispositivo Direct3D11, pool de quadros, handler
+de evento, sessão de captura — para tirar um único quadro.
+
+A resposta é a outra API do xcap: **`video_recorder()`**, que abre a sessão uma
+vez e entrega os quadros por um canal. É o que a captura contínua usa agora.
+
+Dois detalhes conferidos no fonte, e não supostos:
+
+- **`Frame.raw` já vem em RGBA.** O xcap converte de BGRA internamente
+  (`bgra_to_rgba`), então não há risco de vermelho e azul trocados.
+- **O canal é `sync_channel(0)`**, um encontro sem buffer: o produtor espera o
+  consumidor. Combina com querer sempre o quadro mais recente, e o tempo limite
+  da espera é generoso de propósito — numa tela parada o WGC simplesmente não
+  entrega quadro, e isso é normal, não erro.
+
 **Pendência declarada:** o caminho JPEG tem o mesmo defeito — `capture_frame_dedup`
 resolve o monitor a cada quadro. Não foi mexido nesta rodada porque é o fallback
 que precisa continuar funcionando enquanto o vídeo se estabiliza. O conserto certo

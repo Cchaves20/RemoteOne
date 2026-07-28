@@ -162,6 +162,94 @@ impl Screen {
     }
 }
 
+/// Captura contínua: a sessão fica **aberta** entre os quadros.
+///
+/// É a diferença que decidiu o desempenho. O `capture_image()` do xcap é API de
+/// captura pontual: por baixo ele cria um dispositivo Direct3D11, um pool de
+/// quadros, uma sessão de captura, espera um quadro e destrói tudo — **a cada
+/// chamada**. Medido no agente, isso custava 70–100 ms por quadro. O
+/// `video_recorder()` abre a sessão uma vez e entrega os quadros por um canal.
+struct ContinuousCapture {
+    #[cfg(windows)]
+    recorder: xcap::VideoRecorder,
+    #[cfg(windows)]
+    frames: std::sync::mpsc::Receiver<xcap::Frame>,
+    /// Quanto esperar por um quadro antes de devolver o controle ao laço.
+    timeout: std::time::Duration,
+    #[cfg(not(windows))]
+    screen: Screen,
+}
+
+impl ContinuousCapture {
+    #[cfg(windows)]
+    fn start(interval: std::time::Duration) -> Result<Self, String> {
+        let monitor = xcap::Monitor::all()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .next()
+            .ok_or("nenhum monitor encontrado")?;
+        let (recorder, frames) = monitor
+            .video_recorder()
+            .map_err(|e| format!("não consegui abrir a captura contínua: {e}"))?;
+        recorder
+            .start()
+            .map_err(|e| format!("não consegui iniciar a captura: {e}"))?;
+        Ok(Self {
+            recorder,
+            frames,
+            // Generoso de propósito: numa tela parada o WGC não entrega quadro
+            // nenhum, e isso é normal, não erro.
+            timeout: (interval * 20).max(std::time::Duration::from_millis(500)),
+        })
+    }
+
+    #[cfg(not(windows))]
+    fn start(interval: std::time::Duration) -> Result<Self, String> {
+        Ok(Self {
+            timeout: interval,
+            screen: Screen::new()?,
+        })
+    }
+
+    /// Próximo quadro já reduzido, ou `None` se nada chegou no prazo.
+    #[cfg(windows)]
+    fn next_frame(&mut self, max_width: u32) -> Result<Option<CapturedFrame>, String> {
+        use std::sync::mpsc::RecvTimeoutError;
+        let frame = match self.frames.recv_timeout(self.timeout) {
+            Ok(frame) => frame,
+            Err(RecvTimeoutError::Timeout) => return Ok(None),
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err("a captura contínua foi encerrada".to_string())
+            }
+        };
+        // `raw` já vem em RGBA: o xcap converte de BGRA antes de entregar.
+        let image = rgba_to_rgb_scaled(frame.raw, frame.width, frame.height, max_width)?;
+        let (width, height) = (image.width(), image.height());
+        Ok(Some(CapturedFrame {
+            rgb: image.into_raw(),
+            width,
+            height,
+        }))
+    }
+
+    #[cfg(not(windows))]
+    fn next_frame(&mut self, max_width: u32) -> Result<Option<CapturedFrame>, String> {
+        // O stub é síncrono: gera na hora e respeita o ritmo pedido.
+        let frame = self.screen.frame(max_width)?;
+        std::thread::sleep(self.timeout);
+        Ok(Some(frame))
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ContinuousCapture {
+    fn drop(&mut self) {
+        if let Err(e) = self.recorder.stop() {
+            eprintln!("Falha ao encerrar a captura: {e}");
+        }
+    }
+}
+
 /// Captura pontual: resolve o monitor, captura e descarta.
 ///
 /// Serve para uso de uma vez (exemplos, testes). No caminho quente use
@@ -237,18 +325,17 @@ impl FramePump {
         let slot = std::sync::Arc::clone(&latest);
         let halt = std::sync::Arc::clone(&stop);
         let meter = std::sync::Arc::clone(&cost);
-        // A criação da `Screen` acontece dentro da thread e o resultado volta
-        // por este canal. Não é preciosismo: no Windows a `Screen` guarda um
-        // handle de monitor, que **não é `Send`** e por isso não pode atravessar
-        // a fronteira de thread. Assim ela nasce onde vive, e quem chamou ainda
-        // descobre na hora se deu errado.
+        // A fonte de captura nasce **dentro** da thread e o resultado volta por
+        // este canal. Não é preciosismo: no Windows ela guarda handles que não
+        // são `Send` e por isso não podem atravessar a fronteira de thread.
+        // Assim nasce onde vive, e quem chamou ainda descobre na hora se falhou.
         let (ready_tx, ready_rx) = std::sync::mpsc::channel();
         let worker = std::thread::spawn(move || {
             use std::sync::atomic::Ordering::Relaxed;
-            let screen = match Screen::new() {
-                Ok(screen) => {
+            let mut source = match ContinuousCapture::start(interval) {
+                Ok(source) => {
                     let _ = ready_tx.send(Ok(()));
-                    screen
+                    source
                 }
                 Err(e) => {
                     let _ = ready_tx.send(Err(e));
@@ -257,8 +344,8 @@ impl FramePump {
             };
             while !halt.load(Relaxed) {
                 let started = std::time::Instant::now();
-                match screen.frame(max_width) {
-                    Ok(frame) => {
+                match source.next_frame(max_width) {
+                    Ok(Some(frame)) => {
                         meter
                             .micros
                             .fetch_add(started.elapsed().as_micros() as u64, Relaxed);
@@ -267,11 +354,13 @@ impl FramePump {
                             *guard = Some(frame); // substitui o anterior
                         }
                     }
-                    Err(e) => eprintln!("Falha ao capturar a tela: {e}"),
-                }
-                // Não adianta capturar mais rápido do que alguém consome.
-                if let Some(rest) = interval.checked_sub(started.elapsed()) {
-                    std::thread::sleep(rest);
+                    // Sem quadro novo dentro do prazo: a tela não mudou. Volta ao
+                    // laço para checar a parada.
+                    Ok(None) => {}
+                    Err(e) => {
+                        eprintln!("Falha ao capturar a tela: {e}");
+                        std::thread::sleep(std::time::Duration::from_millis(200));
+                    }
                 }
             }
         });
