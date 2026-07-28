@@ -65,11 +65,6 @@ impl StreamConfig {
         self.max_width.min(self.video_max_width)
     }
 
-    /// Intervalo entre frames, com um teto de segurança de ~60 fps.
-    fn frame_interval(&self) -> Duration {
-        Self::interval_for(self.fps)
-    }
-
     /// Intervalo do caminho de vídeo, que roda mais rápido que o do JPEG.
     fn video_interval(&self) -> Duration {
         Self::interval_for(self.video_fps)
@@ -77,6 +72,37 @@ impl StreamConfig {
 
     fn interval_for(fps: u32) -> Duration {
         Duration::from_millis(1000 / fps.clamp(1, 60) as u64)
+    }
+}
+
+/// Ritmo do ticker quando ninguém está olhando a tela.
+///
+/// Lento de propósito: só serve para perceber que alguém voltou a pedir. Sem
+/// isto o laço acordaria 60 vezes por segundo com o computador ocioso.
+const IDLE_INTERVAL: Duration = Duration::from_millis(500);
+
+/// O que a captura precisa entregar agora — `(largura, fps)` — ou `None` se
+/// ninguém está pedindo a tela.
+///
+/// Existe para que a thread de captura seja função do estado, e não de eventos:
+/// ela nasce, troca de tamanho e morre porque esta função mudou de resposta. Era
+/// por depender de eventos que a captura vazava quando o vídeo e o JPEG paravam
+/// juntos — não havia transição para observar.
+fn desired_capture(streaming: bool, video: bool, cfg: &StreamConfig) -> Option<(u32, u32)> {
+    if video {
+        Some((cfg.video_width(), cfg.video_fps.clamp(1, 60)))
+    } else if streaming {
+        Some((cfg.max_width, cfg.fps.clamp(1, 60)))
+    } else {
+        None
+    }
+}
+
+/// Intervalo do ticker de quadros para uma captura desejada.
+fn rhythm(capture: Option<(u32, u32)>) -> Duration {
+    match capture {
+        Some((_, fps)) => StreamConfig::interval_for(fps),
+        None => IDLE_INTERVAL,
     }
 }
 
@@ -130,7 +156,8 @@ pub async fn run(
     // config é mutável porque o app pode ajustar fps/qualidade por sessão.
     let mut streaming = false;
     let mut active = stream.clone();
-    let mut frame_ticker = interval(active.frame_interval());
+    let mut ticker_interval = IDLE_INTERVAL;
+    let mut frame_ticker = interval(ticker_interval);
     frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
     // Hash do último frame enviado: se a tela não mudou, não vale codificar
     // nem transmitir de novo (o app já mostra a mesma imagem).
@@ -158,10 +185,13 @@ pub async fn run(
     // pretendido, que capturar e codificar nunca alcançam de verdade.
     let mut video_clock: Option<std::time::Instant> = None;
     let mut last_video_frame: Option<std::time::Instant> = None;
-    // Se o ticker está no ritmo do vídeo ou no do JPEG, para saber quando trocar.
-    let mut ticker_is_video = false;
-    // Captura correndo à parte, para o laço só pagar a codificação.
+    // Se o quadro anterior foi de vídeo, para saber quando a sessão troca.
+    let mut was_video = false;
+    // Captura correndo à parte, para o laço só pagar a codificação. `pump_config`
+    // é a largura e a taxa com que ela foi aberta: quando o desejado difere, a
+    // thread é recriada.
     let mut pump: Option<crate::capture::FramePump> = None;
+    let mut pump_config: Option<(u32, u32)> = None;
     // Contadores do resumo periódico: sem número, "está travado" não tem
     // como virar diagnóstico.
     let mut stats = VideoStats::default();
@@ -198,32 +228,38 @@ pub async fn run(
             }
             // Um tique de quadro serve os dois caminhos. Quando há sessão de
             // WebRTC conectada, o vídeo vai por lá (banda ~100x menor, medida
-            // no S2); senão, segue o JPEG, que continua sendo o fallback.
-            _ = frame_ticker.tick(), if streaming || video.wants_video() => {
-                // O vídeo roda mais rápido que o JPEG, então o ritmo do ticker
-                // muda quando a sessão entra ou sai. Sem isto, o vídeo herdaria
-                // os 10 fps do preset e pareceria travado por falta de quadros.
+            // no S2); senão, segue o JPEG, que continua sendo o fallback. Os dois
+            // consomem a **mesma** captura contínua.
+            _ = frame_ticker.tick() => {
                 let quer_video = video.wants_video();
-                if quer_video != ticker_is_video {
-                    ticker_is_video = quer_video;
-                    let intervalo = if quer_video {
-                        active.video_interval()
-                    } else {
-                        active.frame_interval()
-                    };
-                    frame_ticker = interval(intervalo);
+                let desejada = desired_capture(streaming, quer_video, &active);
+
+                // O vídeo roda mais rápido que o JPEG e a ociosidade mais lenta
+                // que os dois. Sem acertar o ritmo, o vídeo herdaria os 10 fps
+                // do preset e pareceria travado por falta de quadros.
+                let ritmo = rhythm(desejada);
+                if ritmo != ticker_interval {
+                    ticker_interval = ritmo;
+                    frame_ticker = interval(ritmo);
                     frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-                    println!(
-                        "Ritmo da tela: {} fps ({})",
-                        1000 / intervalo.as_millis().max(1),
-                        if quer_video { "vídeo" } else { "JPEG" },
-                    );
-                    // Sessão nova de vídeo: relógio, contagem e captura
-                    // começam agora; ao sair, a thread de captura para.
+                    match desejada {
+                        Some((_, fps)) => println!(
+                            "Ritmo da tela: {fps} fps ({})",
+                            if quer_video { "vídeo" } else { "JPEG" },
+                        ),
+                        None => println!("Ritmo da tela: ocioso"),
+                    }
+                }
+
+                // Sessão de vídeo entrando ou saindo: o relógio e os contadores
+                // valem por sessão, e misturar os números dos dois caminhos no
+                // mesmo resumo tornaria o resumo inútil.
+                if quer_video != was_video {
+                    was_video = quer_video;
+                    stats = VideoStats::default();
                     if quer_video {
                         video_clock = None;
                         last_video_frame = None;
-                        stats = VideoStats::default();
                         let largura = active.video_width();
                         if largura < active.max_width {
                             println!(
@@ -233,26 +269,36 @@ pub async fn run(
                                 active.max_width,
                             );
                         }
-                        match crate::capture::FramePump::start(largura, active.video_fps) {
+                    }
+                }
+
+                // A captura é função do estado: abre quando alguém quer a tela,
+                // reabre quando a largura ou a taxa mudam, encerra quando ninguém
+                // quer mais.
+                if desejada != pump_config {
+                    pump = None; // Drop encerra a thread antiga antes de abrir outra
+                    pump_config = desejada;
+                    if let Some((largura, fps)) = desejada {
+                        match crate::capture::FramePump::start(largura, fps) {
                             Ok(started) => pump = Some(started),
                             Err(e) => {
                                 eprintln!("Não consegui iniciar a captura: {e}");
-                                pump = None;
+                                pump_config = None;
                             }
                         }
-                    } else {
-                        pump = None; // Drop encerra a thread
                     }
                 }
-                if quer_video {
-                    // Pega o quadro mais recente já capturado. Se ainda não há
-                    // nenhum novo, não vale recodificar o mesmo: espera o
-                    // próximo tique.
-                    let Some(captured) = pump.as_ref().and_then(|p| p.take()) else {
+
+                // Pega o quadro mais recente já capturado. Se ainda não há nenhum
+                // novo, a tela não mudou: não vale recodificar o mesmo.
+                let Some(captured) = pump.as_ref().and_then(|p| p.take()) else {
+                    if pump.is_some() {
                         stats.starved += 1;
-                        continue;
-                    };
-                    let size = (captured.width, captured.height);
+                    }
+                    continue;
+                };
+                let size = (captured.width, captured.height);
+                if quer_video {
                     let started = video_clock.get_or_insert_with(std::time::Instant::now);
                     let elapsed = started.elapsed();
                     let fps = active.video_fps.clamp(1, 60);
@@ -287,29 +333,35 @@ pub async fn run(
                             video.write(&frame, duration).await;
                             let capture_ms =
                                 pump.as_ref().and_then(|p| p.cost().take_average_ms());
-                            stats.report_if_due(capture_ms);
+                            stats.report_if_due("Vídeo", capture_ms);
                         }
                         Ok(Err(e)) => eprintln!("Falha ao codificar a tela: {e}"),
                         Err(e) => eprintln!("Falha na tarefa de vídeo: {e}"),
                     }
                 } else {
-                    // Captura fora do event loop (spawn_blocking) para não travar
-                    // o tratamento de comandos durante a codificação do frame.
-                    let (max_width, quality) = (active.max_width, active.quality);
+                    // Codificação fora do event loop (spawn_blocking) para não
+                    // travar o tratamento de comandos enquanto o JPEG é feito.
+                    let quality = active.quality;
                     let previous = last_frame;
-                    let captured = tokio::task::spawn_blocking(move || {
-                        crate::capture::capture_frame_dedup(max_width, quality, previous)
+                    let encode_started = std::time::Instant::now();
+                    let encoded = tokio::task::spawn_blocking(move || {
+                        crate::capture::jpeg_if_changed(&captured, quality, previous)
                     })
                     .await;
-                    match captured {
+                    match encoded {
                         Ok(Ok(frame)) => {
                             last_frame = frame.hash;
+                            let bytes = frame.jpeg.as_ref().map_or(0, |jpeg| jpeg.len());
                             // `jpeg` vazio = tela idêntica à anterior: nada a enviar.
                             if let Some(jpeg) = frame.jpeg {
                                 ws.send(Message::Binary(jpeg)).await?;
                             }
+                            stats.record(encode_started.elapsed(), bytes, size);
+                            let capture_ms =
+                                pump.as_ref().and_then(|p| p.cost().take_average_ms());
+                            stats.report_if_due("Tela", capture_ms);
                         }
-                        Ok(Err(e)) => eprintln!("Falha ao capturar a tela: {e}"),
+                        Ok(Err(e)) => eprintln!("Falha ao codificar a tela: {e}"),
                         Err(e) => eprintln!("Falha na tarefa de captura: {e}"),
                     }
                 }
@@ -321,12 +373,16 @@ pub async fn run(
                             &text, injector.as_mut(), &mut streaming, &mut active,
                             &mut last_frame,
                         ) {
-                            // A config de fps mudou: recria o ticker no ritmo novo.
+                            // A transmissão começou, parou ou trocou de fps. O
+                            // próximo tique já reavaliaria tudo, mas do ritmo
+                            // ocioso isso levaria meio segundo: acerta agora.
                             Some(Action::RestartFrameTicker) => {
-                                // Só reposiciona o ritmo se o JPEG é quem manda;
-                                // com vídeo ativo, o ritmo é o do vídeo.
-                                if !ticker_is_video {
-                                    frame_ticker = interval(active.frame_interval());
+                                let ritmo = rhythm(desired_capture(
+                                    streaming, video.wants_video(), &active,
+                                ));
+                                if ritmo != ticker_interval {
+                                    ticker_interval = ritmo;
+                                    frame_ticker = interval(ritmo);
                                     frame_ticker
                                         .set_missed_tick_behavior(MissedTickBehavior::Delay);
                                 }
@@ -455,7 +511,7 @@ impl VideoStats {
         self.size = size;
     }
 
-    fn report_if_due(&mut self, capture_ms: Option<f64>) {
+    fn report_if_due(&mut self, label: &str, capture_ms: Option<f64>) {
         let elapsed = self.since.elapsed();
         if elapsed < Self::INTERVAL || self.frames == 0 {
             return;
@@ -466,7 +522,7 @@ impl VideoStats {
             None => "?".to_string(),
         };
         println!(
-            "Vídeo {}x{}: {:.1} fps · captura {captura}/quadro · codificação \
+            "{label} {}x{}: {:.1} fps · captura {captura}/quadro · codificação \
              {:.1} ms/quadro · {:.1} KB/quadro · {:.2} Mbps · {} tique(s) sem \
              quadro novo",
             self.size.0,
@@ -484,7 +540,7 @@ impl VideoStats {
 /// Algo que o laço principal precisa fazer depois de tratar uma mensagem —
 /// tarefas que exigem `await` (recriar o ticker, responder ao servidor).
 enum Action {
-    /// O fps mudou: recriar o `frame_ticker`.
+    /// A transmissão ou o fps mudaram: reavaliar o ritmo do `frame_ticker`.
     RestartFrameTicker,
     /// Listar aplicativos e responder ao backend.
     ListApps {
@@ -558,7 +614,6 @@ fn handle_server_text(
             // Sessão nova (ou qualidade nova): o app ainda não tem frame algum,
             // então o próximo precisa ir mesmo que a tela esteja parada.
             *last_frame = crate::capture::NO_FRAME;
-            let old_fps = active.fps;
             active.fps = max_fps;
             if let Some(q) = quality {
                 active.quality = q;
@@ -570,9 +625,9 @@ fn handle_server_text(
                 "Transmissão de tela iniciada (~{} fps, largura máx. {}px, qualidade {})",
                 active.fps, active.max_width, active.quality
             );
-            if active.fps != old_fps {
-                return Some(Action::RestartFrameTicker);
-            }
+            // O ritmo (e a captura) saem da config, então basta pedir a
+            // reavaliação — não é preciso comparar com o fps anterior.
+            return Some(Action::RestartFrameTicker);
         }
         Ok(ServerMessage::StopStream) => {
             *streaming = false;
@@ -580,6 +635,9 @@ fn handle_server_text(
             // próximo start não concluir que "a tela não mudou".
             *last_frame = crate::capture::NO_FRAME;
             println!("Transmissão de tela encerrada");
+            // Se ninguém mais quer a tela, a captura precisa ser encerrada e o
+            // ticker cair para o ritmo ocioso — quem decide isso é o laço.
+            return Some(Action::RestartFrameTicker);
         }
         Ok(ServerMessage::Power { action }) => {
             println!("Comando de energia recebido: {action:?}");
@@ -657,5 +715,58 @@ mod tests {
                 mac: Some("01:23:45:AB:CD:EF".into()),
             }
         );
+    }
+
+    fn config() -> StreamConfig {
+        StreamConfig {
+            fps: 10,
+            max_width: 1600,
+            video_max_width: 1280,
+            video_fps: 30,
+            ..StreamConfig::default()
+        }
+    }
+
+    #[test]
+    fn ninguem_pedindo_a_tela_nao_pede_captura() {
+        assert_eq!(desired_capture(false, false, &config()), None);
+        assert_eq!(rhythm(None), IDLE_INTERVAL);
+    }
+
+    #[test]
+    fn jpeg_usa_a_largura_e_o_fps_do_preset() {
+        assert_eq!(desired_capture(true, false, &config()), Some((1600, 10)));
+        assert_eq!(
+            rhythm(desired_capture(true, false, &config())),
+            Duration::from_millis(100)
+        );
+    }
+
+    #[test]
+    fn video_tem_teto_proprio_e_manda_no_ritmo() {
+        // 1280 e não 1600: codificar custa por pixel (ver `video_max_width`).
+        assert_eq!(desired_capture(true, true, &config()), Some((1280, 30)));
+        assert_eq!(
+            rhythm(desired_capture(true, true, &config())),
+            Duration::from_millis(33)
+        );
+    }
+
+    #[test]
+    fn video_dispensa_a_transmissao_jpeg() {
+        // O app pode ter vídeo sem nunca pedir `start_stream`.
+        assert_eq!(desired_capture(false, true, &config()), Some((1280, 30)));
+    }
+
+    #[test]
+    fn fps_absurdo_nao_vira_intervalo_zero() {
+        let cfg = StreamConfig {
+            fps: 0,
+            video_fps: 9999,
+            ..config()
+        };
+        assert_eq!(desired_capture(true, false, &cfg), Some((1600, 1)));
+        assert_eq!(desired_capture(true, true, &cfg), Some((1280, 60)));
+        assert!(rhythm(desired_capture(true, true, &cfg)) > Duration::ZERO);
     }
 }

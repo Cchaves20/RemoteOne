@@ -214,14 +214,28 @@ impl ContinuousCapture {
     /// Próximo quadro já reduzido, ou `None` se nada chegou no prazo.
     #[cfg(windows)]
     fn next_frame(&mut self, max_width: u32) -> Result<Option<CapturedFrame>, String> {
-        use std::sync::mpsc::RecvTimeoutError;
-        let frame = match self.frames.recv_timeout(self.timeout) {
+        use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
+        let mut frame = match self.frames.recv_timeout(self.timeout) {
             Ok(frame) => frame,
             Err(RecvTimeoutError::Timeout) => return Ok(None),
             Err(RecvTimeoutError::Disconnected) => {
                 return Err("a captura contínua foi encerrada".to_string())
             }
         };
+        // O canal do gravador é ilimitado e o WGC entrega no ritmo do monitor,
+        // mais rápido do que se consegue reduzir e codificar. Sem esvaziar a
+        // fila, cada volta processa o quadro **mais antigo** e o atraso cresce
+        // sem limite — reduzir todos seria gastar CPU para exibir imagem velha.
+        // O que vale é sempre o último.
+        loop {
+            match self.frames.try_recv() {
+                Ok(newer) => frame = newer,
+                // Fila vazia, ou o gravador acabou: em ambos os casos o quadro
+                // em mãos é o mais recente que existe. Se foi encerrado, a
+                // próxima chamada devolve o erro.
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+            }
+        }
         // `raw` já vem em RGBA: o xcap converte de BGRA antes de entregar.
         let image = rgba_to_rgb_scaled(frame.raw, frame.width, frame.height, max_width)?;
         let (width, height) = (image.width(), image.height());
@@ -311,6 +325,19 @@ impl CaptureCost {
     }
 }
 
+/// Quanto ainda falta esperar antes de valer a pena preparar outro quadro.
+///
+/// Zero se nenhum quadro saiu ainda ou se o prazo já passou.
+fn remaining_budget(
+    published: Option<std::time::Instant>,
+    budget: std::time::Duration,
+) -> std::time::Duration {
+    match published {
+        Some(last) => budget.saturating_sub(last.elapsed()),
+        None => std::time::Duration::ZERO,
+    }
+}
+
 impl FramePump {
     /// Começa a capturar em `max_width`, mirando `fps` quadros por segundo.
     ///
@@ -330,6 +357,9 @@ impl FramePump {
         // são `Send` e por isso não podem atravessar a fronteira de thread.
         // Assim nasce onde vive, e quem chamou ainda descobre na hora se falhou.
         let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        // Folga de 25% sobre o intervalo pedido: o quadro fica pronto um pouco
+        // antes do tique que vai consumi-lo, sem reduzir dois para entregar um.
+        let budget = interval.mul_f32(0.75);
         let worker = std::thread::spawn(move || {
             use std::sync::atomic::Ordering::Relaxed;
             let mut source = match ContinuousCapture::start(interval) {
@@ -342,7 +372,19 @@ impl FramePump {
                     return;
                 }
             };
+            let mut published: Option<std::time::Instant> = None;
             while !halt.load(Relaxed) {
+                // Não adianta preparar mais quadros do que o laço principal
+                // consome — o excedente é CPU gasta em imagem descartada. Espera
+                // o resto do intervalo; os quadros do WGC acumulam no canal e o
+                // `next_frame` pega o mais recente.
+                let wait = remaining_budget(published, budget);
+                if !wait.is_zero() {
+                    std::thread::sleep(wait);
+                    if halt.load(Relaxed) {
+                        break;
+                    }
+                }
                 let started = std::time::Instant::now();
                 match source.next_frame(max_width) {
                     Ok(Some(frame)) => {
@@ -350,6 +392,7 @@ impl FramePump {
                             .micros
                             .fetch_add(started.elapsed().as_micros() as u64, Relaxed);
                         meter.frames.fetch_add(1, Relaxed);
+                        published = Some(std::time::Instant::now());
                         if let Ok(mut guard) = slot.lock() {
                             *guard = Some(frame); // substitui o anterior
                         }
@@ -422,11 +465,31 @@ pub fn capture_rgb(max_width: u32) -> Result<(Vec<u8>, u32, u32), String> {
 pub fn capture_frame_dedup(max_width: u32, quality: u8, last_hash: u64) -> Result<Frame, String> {
     let (rgba, width, height) = capture_rgba()?;
     let image = rgba_to_rgb_scaled(rgba, width, height, max_width)?;
-    let hash = frame_hash(image.as_raw());
+    let (width, height) = (image.width(), image.height());
+    let frame = CapturedFrame {
+        rgb: image.into_raw(),
+        width,
+        height,
+    };
+    jpeg_if_changed(&frame, quality, last_hash)
+}
+
+/// Codifica um quadro **já capturado e reduzido** em JPEG, ou devolve só o hash
+/// se ele é idêntico ao anterior.
+///
+/// É a metade do [`capture_frame_dedup`] que não captura, para o caminho JPEG
+/// poder consumir os quadros do [`FramePump`] em vez de abrir a sua própria
+/// captura a cada quadro.
+pub fn jpeg_if_changed(
+    frame: &CapturedFrame,
+    quality: u8,
+    last_hash: u64,
+) -> Result<Frame, String> {
+    let hash = frame_hash(&frame.rgb);
     if hash == last_hash {
         return Ok(Frame { jpeg: None, hash });
     }
-    let jpeg = encode_jpeg(image.as_raw(), image.width(), image.height(), quality)?;
+    let jpeg = encode_jpeg(&frame.rgb, frame.width, frame.height, quality)?;
     Ok(Frame {
         jpeg: Some(jpeg),
         hash,
@@ -483,6 +546,55 @@ mod tests {
         let hash = frame_hash(image.as_raw());
         let same = rgba_to_rgb_scaled(rgba, 64, 32, 64).unwrap();
         assert_eq!(frame_hash(same.as_raw()), hash);
+    }
+
+    fn quadro(valor: u8) -> CapturedFrame {
+        CapturedFrame {
+            rgb: vec![valor; 8 * 8 * 3],
+            width: 8,
+            height: 8,
+        }
+    }
+
+    #[test]
+    fn jpeg_if_changed_codifica_quadro_novo() {
+        let frame = jpeg_if_changed(&quadro(30), 60, NO_FRAME).unwrap();
+        assert!(is_jpeg(frame.jpeg.as_deref().unwrap()));
+        assert_ne!(frame.hash, NO_FRAME);
+    }
+
+    #[test]
+    fn jpeg_if_changed_pula_quadro_identico() {
+        let primeiro = jpeg_if_changed(&quadro(30), 60, NO_FRAME).unwrap();
+        let repetido = jpeg_if_changed(&quadro(30), 60, primeiro.hash).unwrap();
+        assert!(repetido.jpeg.is_none(), "tela igual não deve gastar encode");
+        assert_eq!(repetido.hash, primeiro.hash);
+        // Conteúdo diferente com o mesmo hash anterior: tem de codificar.
+        let outro = jpeg_if_changed(&quadro(200), 60, primeiro.hash).unwrap();
+        assert!(outro.jpeg.is_some());
+    }
+
+    #[test]
+    fn budget_espera_o_intervalo_e_nao_espera_atrasado() {
+        use std::time::{Duration, Instant};
+        // Nada saiu ainda: prepara na hora.
+        assert_eq!(
+            remaining_budget(None, Duration::from_millis(100)),
+            Duration::ZERO
+        );
+        // Quadro pronto agora: espera quase o intervalo inteiro.
+        let falta = remaining_budget(Some(Instant::now()), Duration::from_millis(100));
+        assert!(
+            falta > Duration::from_millis(80) && falta <= Duration::from_millis(100),
+            "esperou {falta:?}"
+        );
+        // Já passou do prazo (a codificação demorou): não espera mais nada, e
+        // sobretudo não estoura o `Duration`.
+        let atrasado = Instant::now() - Duration::from_millis(500);
+        assert_eq!(
+            remaining_budget(Some(atrasado), Duration::from_millis(100)),
+            Duration::ZERO
+        );
     }
 
     #[test]
