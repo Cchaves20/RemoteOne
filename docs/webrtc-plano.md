@@ -498,6 +498,41 @@ A instrumentação também ganhou o que faltava: **custo de captura e resoluçã
 mesma linha. Sem separar captura de codificação não havia como escolher entre
 atacar o `xcap` e atacar o codec.
 
+**Quarta rodada: a captura era o gargalo, e por um erro bobo.** Com o custo de
+captura separado do de codificação nas estatísticas:
+
+```
+11.1 fps · captura 72.3 ms/quadro · codificação 55.4 ms/quadro
+11.3 fps · captura 94.3 ms/quadro · codificação 31.2 ms/quadro
+```
+
+Capturar custava **mais que codificar**. Olhando o código com esse número em
+mãos, a causa apareceu: `Monitor::all()` — que enumera todos os monitores do
+sistema — era chamado **a cada quadro**, 30 vezes por segundo. O monitor agora é
+resolvido uma vez, num tipo `Screen` que a thread de captura guarda.
+
+Junto foi o **upgrade do `xcap` 0.0.14 → 0.9**, com a feature `wgc`: a versão
+nova tem backend Windows.Graphics.Capture, acelerado por hardware, no lugar do
+`BitBlt` do GDI. A feature não é padrão e precisa ser pedida explicitamente.
+
+Duas coisas que a verificação pegou e que não apareceriam compilando no Linux:
+
+- **`xcap::Monitor` não é `Send`.** O `ImplWindow` do xcap tem
+  `unsafe impl Send`, mas o `ImplMonitor` não — ele guarda um `HMONITOR`, que é
+  ponteiro cru. A primeira versão criava a `Screen` fora da thread e a movia para
+  dentro, o que **não compilaria no Windows**. Agora ela nasce dentro da thread e
+  o resultado da criação volta por um canal, para quem chamou ainda saber na hora
+  se deu errado.
+- A checagem foi feita com um shim que reproduz a API do xcap **incluindo o
+  handle não-`Send`**, e confirmada ao contrário: com o arranjo antigo ela falha
+  com `*mut c_void cannot be sent between threads safely`. Verificação que não
+  falha quando deveria não verifica nada.
+
+**Pendência declarada:** o caminho JPEG tem o mesmo defeito — `capture_frame_dedup`
+resolve o monitor a cada quadro. Não foi mexido nesta rodada porque é o fallback
+que precisa continuar funcionando enquanto o vídeo se estabiliza. O conserto certo
+é o JPEG passar a consumir o mesmo `FramePump`, que já entrega RGB reduzido.
+
 ### Fase 4b — Qualidade adaptativa (novo, saiu da Fase 2)
 
 Como nenhuma configuração do codificador limita a banda sem travar a imagem, o

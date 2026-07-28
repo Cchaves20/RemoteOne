@@ -219,10 +219,13 @@ pub async fn run(
                                 active.max_width,
                             );
                         }
-                        pump = Some(crate::capture::FramePump::start(
-                            largura,
-                            active.video_fps,
-                        ));
+                        match crate::capture::FramePump::start(largura, active.video_fps) {
+                            Ok(started) => pump = Some(started),
+                            Err(e) => {
+                                eprintln!("Não consegui iniciar a captura: {e}");
+                                pump = None;
+                            }
+                        }
                     } else {
                         pump = None; // Drop encerra a thread
                     }

@@ -89,42 +89,85 @@ fn rgba_to_jpeg(
     encode_jpeg(image.as_raw(), image.width(), image.height(), quality)
 }
 
-/// Captura a tela em RGBA, devolvendo `(pixels, largura, altura)`.
-#[cfg(windows)]
-fn capture_rgba() -> Result<(Vec<u8>, u32, u32), String> {
-    use xcap::Monitor;
-
-    let monitors = Monitor::all().map_err(|e| e.to_string())?;
-    let monitor = monitors
-        .into_iter()
-        .next()
-        .ok_or("nenhum monitor encontrado")?;
-    let image = monitor.capture_image().map_err(|e| e.to_string())?;
-    let (width, height) = (image.width(), image.height());
-    Ok((image.into_raw(), width, height))
+/// Fonte de captura, resolvida **uma vez** e reutilizada a cada quadro.
+///
+/// Existe por causa de um erro medido: a versão anterior chamava
+/// `Monitor::all()` — que enumera todos os monitores do sistema — a cada
+/// quadro, 30 vezes por segundo. A captura aparecia em 70–94 ms nas
+/// estatísticas, mais caro que codificar. Resolver o monitor uma vez e guardá-lo
+/// tira esse trabalho do caminho quente.
+pub struct Screen {
+    #[cfg(windows)]
+    monitor: xcap::Monitor,
 }
 
-/// Stub (não-Windows): gera um frame sintético — um gradiente com uma faixa
-/// vertical que se move com o tempo, para dar movimento visível ao testar.
-#[cfg(not(windows))]
-fn capture_rgba() -> Result<(Vec<u8>, u32, u32), String> {
-    let (width, height) = (640u32, 360u32);
-    let ticks = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let bar = (ticks / 16 % width as u128) as i64;
-
-    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-    for y in 0..height {
-        for x in 0..width {
-            let r = (x * 255 / width) as u8;
-            let g = (y * 255 / height) as u8;
-            let b = if (x as i64 - bar).abs() < 8 { 255 } else { 64 };
-            rgba.extend_from_slice(&[r, g, b, 255]);
-        }
+impl Screen {
+    /// Resolve o monitor a ser capturado. Chame uma vez por sessão.
+    #[cfg(windows)]
+    pub fn new() -> Result<Self, String> {
+        let monitor = xcap::Monitor::all()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .next()
+            .ok_or("nenhum monitor encontrado")?;
+        Ok(Self { monitor })
     }
-    Ok((rgba, width, height))
+
+    #[cfg(not(windows))]
+    pub fn new() -> Result<Self, String> {
+        Ok(Self {})
+    }
+
+    /// Captura a tela em RGBA, devolvendo `(pixels, largura, altura)`.
+    #[cfg(windows)]
+    fn grab_rgba(&self) -> Result<(Vec<u8>, u32, u32), String> {
+        let image = self.monitor.capture_image().map_err(|e| e.to_string())?;
+        let (width, height) = (image.width(), image.height());
+        Ok((image.into_raw(), width, height))
+    }
+
+    /// Stub (não-Windows): gera um frame sintético — um gradiente com uma faixa
+    /// vertical que se move com o tempo, para dar movimento visível ao testar.
+    #[cfg(not(windows))]
+    fn grab_rgba(&self) -> Result<(Vec<u8>, u32, u32), String> {
+        let (width, height) = (640u32, 360u32);
+        let ticks = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let bar = (ticks / 16 % width as u128) as i64;
+
+        let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+        for y in 0..height {
+            for x in 0..width {
+                let r = (x * 255 / width) as u8;
+                let g = (y * 255 / height) as u8;
+                let b = if (x as i64 - bar).abs() < 8 { 255 } else { 64 };
+                rgba.extend_from_slice(&[r, g, b, 255]);
+            }
+        }
+        Ok((rgba, width, height))
+    }
+
+    /// Captura já reduzida e em RGB, pronta para codificar.
+    pub fn frame(&self, max_width: u32) -> Result<CapturedFrame, String> {
+        let (rgba, width, height) = self.grab_rgba()?;
+        let image = rgba_to_rgb_scaled(rgba, width, height, max_width)?;
+        let (width, height) = (image.width(), image.height());
+        Ok(CapturedFrame {
+            rgb: image.into_raw(),
+            width,
+            height,
+        })
+    }
+}
+
+/// Captura pontual: resolve o monitor, captura e descarta.
+///
+/// Serve para uso de uma vez (exemplos, testes). No caminho quente use
+/// [`Screen`], que resolve o monitor só uma vez.
+fn capture_rgba() -> Result<(Vec<u8>, u32, u32), String> {
+    Screen::new()?.grab_rgba()
 }
 
 /// Captura a tela e devolve o JPEG pronto.
@@ -182,7 +225,10 @@ impl CaptureCost {
 
 impl FramePump {
     /// Começa a capturar em `max_width`, mirando `fps` quadros por segundo.
-    pub fn start(max_width: u32, fps: u32) -> Self {
+    ///
+    /// Falha se não houver monitor — melhor saber na hora de ligar do que
+    /// descobrir por uma thread que captura nada em silêncio.
+    pub fn start(max_width: u32, fps: u32) -> Result<Self, String> {
         let latest = std::sync::Arc::new(std::sync::Mutex::new(None));
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let interval = std::time::Duration::from_micros(1_000_000 / fps.clamp(1, 60) as u64);
@@ -191,17 +237,32 @@ impl FramePump {
         let slot = std::sync::Arc::clone(&latest);
         let halt = std::sync::Arc::clone(&stop);
         let meter = std::sync::Arc::clone(&cost);
+        // A criação da `Screen` acontece dentro da thread e o resultado volta
+        // por este canal. Não é preciosismo: no Windows a `Screen` guarda um
+        // handle de monitor, que **não é `Send`** e por isso não pode atravessar
+        // a fronteira de thread. Assim ela nasce onde vive, e quem chamou ainda
+        // descobre na hora se deu errado.
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
         let worker = std::thread::spawn(move || {
             use std::sync::atomic::Ordering::Relaxed;
+            let screen = match Screen::new() {
+                Ok(screen) => {
+                    let _ = ready_tx.send(Ok(()));
+                    screen
+                }
+                Err(e) => {
+                    let _ = ready_tx.send(Err(e));
+                    return;
+                }
+            };
             while !halt.load(Relaxed) {
                 let started = std::time::Instant::now();
-                match capture_rgb(max_width) {
-                    Ok((rgb, width, height)) => {
+                match screen.frame(max_width) {
+                    Ok(frame) => {
                         meter
                             .micros
                             .fetch_add(started.elapsed().as_micros() as u64, Relaxed);
                         meter.frames.fetch_add(1, Relaxed);
-                        let frame = CapturedFrame { rgb, width, height };
                         if let Ok(mut guard) = slot.lock() {
                             *guard = Some(frame); // substitui o anterior
                         }
@@ -215,12 +276,18 @@ impl FramePump {
             }
         });
 
-        Self {
+        match ready_rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err("a thread de captura morreu ao iniciar".to_string()),
+        }
+
+        Ok(Self {
             latest,
             stop,
             cost,
             worker: Some(worker),
-        }
+        })
     }
 
     /// Retira o quadro mais recente, se houver um ainda não consumido.
@@ -338,7 +405,7 @@ mod tests {
 
     #[test]
     fn pump_entrega_quadros_e_sempre_o_mais_recente() {
-        let pump = FramePump::start(1280, 30);
+        let pump = FramePump::start(1280, 30).unwrap();
         // Espera a thread produzir algo.
         let mut primeiro = None;
         for _ in 0..100 {
@@ -366,7 +433,7 @@ mod tests {
     fn pump_para_a_thread_ao_ser_descartado() {
         // Se o Drop não parasse a thread, ela seguiria capturando para sempre —
         // com o custo de CPU que isso implica depois de o app sair.
-        let pump = FramePump::start(1280, 30);
+        let pump = FramePump::start(1280, 30).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(50));
         let stop = std::sync::Arc::clone(&pump.stop);
         drop(pump);

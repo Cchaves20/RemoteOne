@@ -32,7 +32,9 @@ webrtc = "0.17.2"
 # em src/injector.rs e src/capture.rs, sem estas dependências.
 [target.'cfg(windows)'.dependencies]
 enigo = "0.2"
-xcap = "0.0.14"
+# 0.9.x traz o backend WGC (Windows.Graphics.Capture), acelerado por hardware,
+# no lugar do BitBlt do GDI. A feature não é padrão e precisa ser pedida.
+xcap = { version = "0.9", features = ["wgc"] }
 
 [dev-dependencies]
 image = { version = "0.25", features = ["png"] }
