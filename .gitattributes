@@ -1,5 +1,11 @@
 # Scripts do Windows precisam de quebra de linha do Windows: o PowerShell 5.1
 # tropeça em arquivos com LF, e um .cmd com LF pode simplesmente não rodar.
+#
+# Os .ps1 também são salvos como UTF-8 **com BOM**. É o BOM que faz o
+# PowerShell 5.1 ler o arquivo como UTF-8; sem ele, ele assume ANSI, o
+# travessão vira a aspa curva ” (que ele aceita como delimitador de string) e o
+# arquivo inteiro deixa de ser analisável, com erros apontando para linhas
+# inocentes. O git preserva esses bytes; aqui só normalizamos a quebra de linha.
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
 *.bat text eol=crlf

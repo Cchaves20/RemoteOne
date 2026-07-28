@@ -1,11 +1,11 @@
-<#
+﻿<#
 .SINOPSE
     Atualiza as três pontas do RemoteOne de um terminal só: o agente no
     Windows, o app Flutter e o backend no VPS.
 
 .DESCRIÇÃO
     Sem isto são três terminais (PowerShell do agente, PowerShell do app e SSH
-    do servidor) e a chance de esquecer um deles — que foi a causa de metade
+    do servidor) e a chance de esquecer um deles - que foi a causa de metade
     dos defeitos que investigamos: componente velho conversando com componente
     novo.
 
@@ -25,6 +25,12 @@
     .\scripts\atualizar.ps1 -Vps
     Só o servidor.
 #>
+# ATENÇÃO ao editar: salve sempre como UTF-8 COM BOM, e não use travessão.
+#
+# O PowerShell 5.1 lê .ps1 sem BOM como ANSI. Nessa leitura, o travessão vira
+# a aspa curva ", que ele aceita como delimitador de string - e uma aspa solta
+# no meio de um comentário quebra o arquivo inteiro, com erros que apontam
+# para linhas que não têm nada de errado.
 [CmdletBinding()]
 param(
     # Sem nenhuma destas três, o script faz tudo.
@@ -123,7 +129,7 @@ if ($App) {
         } else {
             # O Codemagic falha em qualquer apontamento, inclusive os "info".
             $falhas += "app (analyze)"
-            Write-Host "  O analyze apontou algo — corrija antes de gastar build do Codemagic." -ForegroundColor Red
+            Write-Host "  O analyze apontou algo - corrija antes de gastar build do Codemagic." -ForegroundColor Red
         }
     }
 }
@@ -146,7 +152,7 @@ if ($Vps) {
         Passo "ssh $Servidor (git + docker compose)"
         # Encadeado com && porque cada "ssh" abre uma sessão nova: em chamadas
         # separadas, o "cd" da primeira não valeria para a segunda. O "&&" aqui
-        # é texto dentro de uma string — quem o executa é o shell do Linux, não
+        # é texto dentro de uma string - quem o executa é o shell do Linux, não
         # o PowerShell (que nem o suporta na versão 5.1).
         $passos = @(
             "cd ~/RemoteOne",
@@ -170,7 +176,7 @@ if ($Vps) {
 # --- conferência -------------------------------------------------------------
 
 # O que este código espera do servidor. Quando um recurso novo entra, o nome
-# dele entra aqui — e o script passa a acusar servidor velho sozinho.
+# dele entra aqui - e o script passa a acusar servidor velho sozinho.
 $esperado = @(
     "pairing", "input", "screen-jpeg", "apps", "wake-on-lan", "totp",
     "webrtc-signaling", "system-stats", "media-keys", "file-transfer"

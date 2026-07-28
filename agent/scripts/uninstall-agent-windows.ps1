@@ -1,4 +1,4 @@
-# Remove o agente do RemoteOne do inicio automatico do Windows.
+﻿# Remove o agente do RemoteOne do inicio automatico do Windows.
 #
 # Uso:
 #   powershell -ExecutionPolicy Bypass -File agent\scripts\uninstall-agent-windows.ps1

@@ -1,4 +1,4 @@
-# Instala o agente do RemoteOne para iniciar em segundo plano no Windows.
+﻿# Instala o agente do RemoteOne para iniciar em segundo plano no Windows.
 #
 # Usa a pasta "Inicializar" do usuário (NÃO exige administrador). Depois disso
 # o agente:
