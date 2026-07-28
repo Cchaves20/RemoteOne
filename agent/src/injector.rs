@@ -98,18 +98,12 @@ mod imp {
         if let (Some(c), None) = (first, chars.next()) {
             return Ok(Key::Unicode(c));
         }
-        match key.to_ascii_lowercase().as_str() {
-            "enter" => Ok(Key::Return),
-            "tab" => Ok(Key::Tab),
-            "escape" | "esc" => Ok(Key::Escape),
-            "delete" | "del" => Ok(Key::Delete),
-            "space" => Ok(Key::Space),
-            "f1" => Ok(Key::F1),
-            "f2" => Ok(Key::F2),
-            "f3" => Ok(Key::F3),
-            "f4" => Ok(Key::F4),
-            other => Err(format!("tecla de atalho desconhecida: {other}")),
-        }
+        // A tabela de nomes é a mesma do `key_press`, e vive no `input.rs`
+        // justamente para não haver duas: uma tecla que funciona sozinha e
+        // falha em atalho é um defeito difícil de perceber.
+        SpecialKey::from_name(key)
+            .map(|especial| special_key(&especial))
+            .ok_or_else(|| format!("tecla de atalho desconhecida: {key}"))
     }
 
     impl EnigoInjector {
