@@ -4,10 +4,13 @@ Plano e diário de bordo da migração. As decisões estão registradas com o mo
 e cada fase concluída traz o que foi medido — inclusive onde a medição contrariou
 a expectativa.
 
-**Onde está:** spikes S1 e S2 respondidos; Fases 1 a 4 feitas — sinalização,
-agente transmitindo, app recebendo e fallback automático. O caminho está
-fechado ponta a ponta, faltando **validar em rede real** (spike S3) e a
-qualidade adaptativa (Fase 4b).
+**Onde está:** spikes S1 e S2 respondidos; Fases 1 a 4 e a Fase 6 feitas —
+sinalização, agente transmitindo, app recebendo, fallback automático e entrada
+pelo canal de dados. Vídeo e controle vão P2P, sem passar pelo servidor.
+
+Falta: **validar em rede celular** (spike S3 — o P2P fecha no Wi-Fi de casa, e o
+4G com CGNAT é a pergunta aberta), a qualidade adaptativa (Fase 4b), o TURN se o
+S3 pedir (Fase 5), e a pendência de o caminho JPEG resolver o monitor por quadro.
 
 O ponto de partida é o pipeline atual, medido em
 [`video-e-latencia.md`](video-e-latencia.md): JPEG frame a frame, sempre
@@ -34,9 +37,8 @@ diferente:
 ## O que o WebRTC *não* resolve
 
 - **A captura.** O `xcap` continua sendo o começo da fila (ver "Riscos", item 5).
-- **A latência de entrada.** Mouse e teclado continuam indo por HTTP → WebSocket
-  → agente. Isso vira a Fase 6 e é, sozinha, provavelmente a melhoria mais
-  *sentida* de todas.
+- ~~**A latência de entrada.**~~ Resolvido na Fase 6: mouse e teclado passaram
+  para o canal de dados, um salto direto. O HTTP fica como caminho de segurança.
 - **Redes hostis.** Uma parte das conexões não fecha P2P e precisa de TURN, que
   é o VPS relayando de novo — só que agora com vídeo comprimido.
 
@@ -589,13 +591,41 @@ palpite.
 de saída da Oracle é generosa e o vídeo agora está comprimido, então deve
 caber. Autenticação por credencial temporária, nunca aberto.
 
-### Fase 6 — Entrada pelo canal de dados
+### Fase 6 — Entrada pelo canal de dados — **feita**
 
-Mouse e teclado saem do HTTP e passam para um data channel do WebRTC, direto de
-ponta a ponta, sem ordenação garantida (posição de mouse antiga não interessa).
+Mouse e teclado saem do HTTP e passam para um canal de dados do WebRTC: onde
+antes eram `celular → VPS → WebSocket → agente`, agora é **um salto direto**.
 
-É a fase que a pessoa mais vai *sentir*, e por isso vale considerar antecipá-la
-para logo depois da Fase 2.
+O canal é aberto pelo **app**, não pelo agente. Isso não é detalhe: quem faz a
+oferta é o app, então o canal entra no SDP e o agente o recebe sem renegociar a
+sessão.
+
+#### A escolha de confiabilidade, e o que ela custa
+
+`ordered: false` **com** retransmissão. Cada metade resolve um problema
+diferente:
+
+- **Sem ordenação** evita bloqueio de cabeça de fila: um pacote perdido não
+  segura os que vêm atrás. Num canal ordenado, perder um movimento de mouse
+  travaria o clique que veio depois dele.
+- **Com retransmissão** porque perder um clique é inaceitável. Movimento antigo
+  não interessa; clique e tecla precisam chegar.
+
+O preço de não ordenar é que um movimento retransmitido pode chegar depois de um
+mais novo, e o cursor pularia para trás. Daí o **número de sequência**: o agente
+descarta movimentos atrasados e **nunca** descarta clique, tecla ou rolagem —
+para rolagem isso importa em particular, porque ela é incremental e descartar uma
+mensagem perde deslocamento de verdade. Sete testes fixam essas regras.
+
+#### O que não mudou de propósito
+
+O HTTP continua sendo o caminho quando o canal não está aberto. **Entrada é a
+função principal do app e não pode depender de o vídeo ter dado certo** — se o
+WebRTC falhar, o controle continua funcionando pelo caminho antigo.
+
+O indicador na tela passa a distinguir os três estados: `fps` (JPEG), `vídeo`
+(imagem por WebRTC, entrada por HTTP) e `direto` (os dois em P2P). Antes não
+havia como saber por onde o toque estava indo.
 
 ## Como testar
 

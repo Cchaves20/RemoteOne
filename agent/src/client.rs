@@ -140,8 +140,13 @@ pub async fn run(
     // candidatos ICE) sai por este canal, porque o webrtc-rs chama de volta de
     // dentro das tarefas dele e quem tem o WebSocket é este laço.
     let (signal_tx, mut signal_rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut video = crate::webrtc::Video::new(signal_tx, stream.ice_servers.clone())
+    // Entrada pelo canal de dados (Fase 6): chega P2P, sem passar pelo servidor.
+    let (input_tx, mut input_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut video = crate::webrtc::Video::new(signal_tx, input_tx, stream.ice_servers.clone())
         .map_err(|e| format!("não consegui iniciar o vídeo por WebRTC: {e}"))?;
+    // Descarta comandos de movimento que chegaram fora de ordem (o canal é
+    // deliberadamente não ordenado; ver `datachannel.rs`).
+    let mut input_order = crate::datachannel::InputOrder::new();
 
     // Codificador H.264, compartilhado com a thread de codificação. Precisa
     // viver entre quadros: é guardar o anterior que permite mandar só a
@@ -181,6 +186,15 @@ pub async fn run(
                     },
                 };
                 ws.send(Message::Text(serde_json::to_string(&message)?)).await?;
+            }
+            // Entrada vinda do canal de dados: um salto direto do celular até
+            // aqui, sem HTTP e sem passar pelo servidor.
+            Some(envelope) = input_rx.recv() => {
+                if input_order.accept(&envelope) {
+                    if let Err(e) = injector.apply(&envelope.action) {
+                        eprintln!("Falha ao aplicar entrada: {e}");
+                    }
+                }
             }
             // Um tique de quadro serve os dois caminhos. Quando há sessão de
             // WebRTC conectada, o vídeo vai por lá (banda ~100x menor, medida
@@ -350,6 +364,9 @@ pub async fn run(
                                     {
                                         enc.request_keyframe();
                                     }
+                                    // O contador de sequência do app recomeça em
+                                    // cada sessão, então o nosso também.
+                                    input_order.reset();
                                     println!(
                                         "Vídeo por WebRTC negociado (sessão {session_id}) \
                                          — próximo quadro será chave"

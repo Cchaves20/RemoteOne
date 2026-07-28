@@ -50,6 +50,9 @@ class VideoSession extends ChangeNotifier {
     {'urls': 'stun:stun.l.google.com:19302'},
   ];
 
+  /// Precisa casar com `INPUT_CHANNEL` no agente.
+  static const _inputChannel = 'input';
+
   /// Quanto se espera pela negociação antes de desistir e ficar no JPEG.
   ///
   /// O S1 mostrou a pilha fechando em 32 ms dentro do aparelho; pela rede é
@@ -74,6 +77,20 @@ class VideoSession extends ChangeNotifier {
 
   /// Proporção do vídeo recebido, quando o renderizador já a conhece.
   double? aspectRatio;
+
+  /// Canal de dados para mouse e teclado (Fase 6).
+  ///
+  /// Aberto com `ordered: false` e retransmissão ligada — cada metade resolve
+  /// um problema: sem ordenação, um pacote perdido não segura o que vem atrás
+  /// (um movimento perdido travaria o clique seguinte); com retransmissão,
+  /// porque perder um clique é inaceitável. O número de sequência deixa o
+  /// agente descartar movimentos que cheguem fora de ordem.
+  RTCDataChannel? _input;
+  int _seq = 0;
+
+  /// Se dá para enviar entrada pelo caminho direto agora.
+  bool get inputReady =>
+      _input?.state == RTCDataChannelState.RTCDataChannelOpen;
 
   RTCPeerConnection? _peer;
   Timer? _timeout;
@@ -110,6 +127,11 @@ class VideoSession extends ChangeNotifier {
         'iceServers': iceServers,
       });
       _peer = peer;
+
+      // O canal de dados nasce **antes** da oferta, de propósito: assim ele
+      // entra no SDP e o agente o recebe sem precisar renegociar a sessão.
+      final init = RTCDataChannelInit()..ordered = false;
+      _input = await peer.createDataChannel(_inputChannel, init);
 
       // Só receber: o celular não manda vídeo nenhum.
       await peer.addTransceiver(
@@ -179,6 +201,28 @@ class VideoSession extends ChangeNotifier {
       _send({'type': 'webrtc_offer', 'sdp': offer.sdp});
     } catch (e) {
       _fail('$e');
+    }
+  }
+
+  /// Envia uma ação de entrada pelo caminho direto.
+  ///
+  /// Devolve `false` se o canal não está pronto — e nesse caso quem chamou
+  /// **precisa** usar o caminho antigo (HTTP). Entrada é a função principal do
+  /// app: ela não pode depender de o vídeo ter dado certo.
+  bool sendInput(Map<String, dynamic> action) {
+    final channel = _input;
+    if (channel == null ||
+        channel.state != RTCDataChannelState.RTCDataChannelOpen) {
+      return false;
+    }
+    try {
+      channel.send(RTCDataChannelMessage(
+        jsonEncode({'seq': ++_seq, 'action': action}),
+      ));
+      return true;
+    } catch (e) {
+      debugPrint('RemoteOne: falha ao enviar entrada pelo canal — $e');
+      return false;
     }
   }
 
@@ -291,6 +335,8 @@ class VideoSession extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timeout?.cancel();
+    _input?.close();
+    _input = null;
     _peer?.close();
     _peer = null;
     if (_rendererReady) {

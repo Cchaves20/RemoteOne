@@ -33,6 +33,7 @@ use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 use webrtc::track::track_local::TrackLocal;
 
+use crate::datachannel::InputEnvelope;
 use crate::h264::EncodedFrame;
 
 /// O que precisa voltar ao backend. O laço do cliente converte em
@@ -51,6 +52,9 @@ pub enum Signal {
     },
 }
 
+/// Nome do canal de dados de entrada. Tem que casar com o que o app cria.
+pub const INPUT_CHANNEL: &str = "input";
+
 /// Uma sessão: a conexão com um app e a faixa por onde o vídeo sai.
 struct Peer {
     connection: Arc<RTCPeerConnection>,
@@ -63,12 +67,20 @@ pub struct Video {
     ice_servers: Vec<String>,
     peers: HashMap<String, Peer>,
     outbox: UnboundedSender<Signal>,
+    /// Entrada recebida pelo canal de dados. Sai por aqui porque o injetor de
+    /// teclado/mouse vive no laço principal, e o webrtc-rs chama de volta de
+    /// dentro das tarefas dele — mesmo desenho da sinalização.
+    input: UnboundedSender<InputEnvelope>,
 }
 
 impl Video {
     /// Monta o motor de mídia. `ice_servers` são URLs de STUN (ex.:
     /// `stun:stun.l.google.com:19302`); vazio significa só rede local.
-    pub fn new(outbox: UnboundedSender<Signal>, ice_servers: Vec<String>) -> Result<Self, String> {
+    pub fn new(
+        outbox: UnboundedSender<Signal>,
+        input: UnboundedSender<InputEnvelope>,
+        ice_servers: Vec<String>,
+    ) -> Result<Self, String> {
         let mut media = MediaEngine::default();
         media
             .register_default_codecs()
@@ -84,6 +96,7 @@ impl Video {
             ice_servers,
             peers: HashMap::new(),
             outbox,
+            input,
         })
     }
 
@@ -151,6 +164,34 @@ impl Video {
                     },
                 };
                 let _ = outbox.send(signal);
+            })
+        }));
+
+        // O canal de dados é criado pelo **app** (que faz a oferta), então aqui
+        // só se recebe. Fosse o contrário, precisaria renegociar a sessão.
+        let input = self.input.clone();
+        let session = session_id.to_string();
+        connection.on_data_channel(Box::new(move |channel| {
+            let input = input.clone();
+            let session = session.clone();
+            let label = channel.label().to_string();
+            Box::pin(async move {
+                if label != INPUT_CHANNEL {
+                    println!("Canal de dados desconhecido ignorado: {label}");
+                    return;
+                }
+                println!("Canal de entrada aberto (sessão {session})");
+                channel.on_message(Box::new(move |message| {
+                    let input = input.clone();
+                    Box::pin(async move {
+                        match serde_json::from_slice::<InputEnvelope>(&message.data) {
+                            Ok(envelope) => {
+                                let _ = input.send(envelope);
+                            }
+                            Err(e) => eprintln!("Entrada inválida no canal: {e}"),
+                        }
+                    })
+                }));
             })
         }));
 
@@ -313,7 +354,11 @@ mod tests {
 
     fn video() -> (Video, mpsc::UnboundedReceiver<Signal>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Video::new(tx, vec![]).unwrap(), rx)
+        let (input_tx, _input_rx) = mpsc::unbounded_channel();
+        // O receptor de entrada é descartado de propósito: estes testes cuidam
+        // da negociação e do vídeo. O envio pelo canal é coberto no `datachannel`.
+        std::mem::forget(_input_rx);
+        (Video::new(tx, input_tx, vec![]).unwrap(), rx)
     }
 
     #[tokio::test]

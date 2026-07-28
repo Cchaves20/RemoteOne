@@ -7,6 +7,7 @@
 pub mod apps;
 pub mod capture;
 pub mod client;
+pub mod datachannel;
 pub mod h264;
 pub mod identity;
 pub mod injector;

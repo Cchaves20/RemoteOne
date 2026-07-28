@@ -241,6 +241,11 @@ class Strings {
   /// há frames JPEG para contar, então o número ficaria em 0 por definição.
   String get videoMode => _t('vídeo', 'video', '视频', 'vidéo', 'vídeo');
 
+  /// Vídeo **e** entrada indo direto ao computador, sem passar pelo servidor.
+  /// Vale distinguir: é o estado em que o toque tem a menor latência possível.
+  String get videoDirectMode =>
+      _t('direto', 'direct', '直连', 'direct', 'directo');
+
   /// Aviso quando o vídeo não entra: a tela segue no modo antigo, então sem
   /// dizer nada o usuário nem saberia que houve uma tentativa.
   String get videoUnavailable => _t(

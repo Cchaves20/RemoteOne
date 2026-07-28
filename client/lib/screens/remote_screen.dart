@@ -393,7 +393,14 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   // --- envio de comandos ------------------------------------------------------
 
+  /// Envia um comando de entrada pelo caminho mais curto disponível.
+  ///
+  /// Com a conexão P2P de pé, vai pelo canal de dados: **um salto direto** até o
+  /// computador. Sem ela, cai no HTTP, que atravessa `celular → VPS → agente`.
+  /// A ordem importa — entrada é a função principal do app e não pode depender
+  /// de o vídeo ter dado certo.
   Future<void> _send(Map<String, dynamic> action) async {
+    if (_video?.sendInput(action) == true) return;
     try {
       await widget.state.api.sendInput(widget.device.deviceId, action);
     } catch (_) {
@@ -852,7 +859,9 @@ class _RemoteScreenState extends State<RemoteScreen>
                 // No vídeo por WebRTC não chegam frames JPEG, então o contador
                 // fica em 0 por definição — mostrar "0 fps" pareceria defeito.
                 _video?.isLive == true
-                    ? widget.state.t.videoMode
+                    ? (_video?.inputReady == true
+                        ? widget.state.t.videoDirectMode
+                        : widget.state.t.videoMode)
                     // 0 fps com a imagem no ar significa tela parada: o agente
                     // deixa de enviar frames idênticos para poupar rede/bateria.
                     : (_fps == 0 && _hasFrame
