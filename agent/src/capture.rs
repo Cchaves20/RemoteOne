@@ -153,7 +153,31 @@ pub struct CapturedFrame {
 pub struct FramePump {
     latest: std::sync::Arc<std::sync::Mutex<Option<CapturedFrame>>>,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Custo acumulado das capturas e quantas foram, para o resumo periódico.
+    /// Sem isto, não há como distinguir "a captura é lenta" de "o codificador é
+    /// lento" — e a resposta certa é diferente em cada caso.
+    cost: std::sync::Arc<CaptureCost>,
     worker: Option<std::thread::JoinHandle<()>>,
+}
+
+/// Custo de captura observado, compartilhado com a thread.
+#[derive(Default)]
+pub struct CaptureCost {
+    micros: std::sync::atomic::AtomicU64,
+    frames: std::sync::atomic::AtomicU64,
+}
+
+impl CaptureCost {
+    /// Média em milissegundos desde a última leitura, zerando os contadores.
+    pub fn take_average_ms(&self) -> Option<f64> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let frames = self.frames.swap(0, Relaxed);
+        let micros = self.micros.swap(0, Relaxed);
+        if frames == 0 {
+            return None;
+        }
+        Some(micros as f64 / frames as f64 / 1000.0)
+    }
 }
 
 impl FramePump {
@@ -163,13 +187,20 @@ impl FramePump {
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let interval = std::time::Duration::from_micros(1_000_000 / fps.clamp(1, 60) as u64);
 
+        let cost = std::sync::Arc::new(CaptureCost::default());
         let slot = std::sync::Arc::clone(&latest);
         let halt = std::sync::Arc::clone(&stop);
+        let meter = std::sync::Arc::clone(&cost);
         let worker = std::thread::spawn(move || {
-            while !halt.load(std::sync::atomic::Ordering::Relaxed) {
+            use std::sync::atomic::Ordering::Relaxed;
+            while !halt.load(Relaxed) {
                 let started = std::time::Instant::now();
                 match capture_rgb(max_width) {
                     Ok((rgb, width, height)) => {
+                        meter
+                            .micros
+                            .fetch_add(started.elapsed().as_micros() as u64, Relaxed);
+                        meter.frames.fetch_add(1, Relaxed);
                         let frame = CapturedFrame { rgb, width, height };
                         if let Ok(mut guard) = slot.lock() {
                             *guard = Some(frame); // substitui o anterior
@@ -187,6 +218,7 @@ impl FramePump {
         Self {
             latest,
             stop,
+            cost,
             worker: Some(worker),
         }
     }
@@ -194,6 +226,11 @@ impl FramePump {
     /// Retira o quadro mais recente, se houver um ainda não consumido.
     pub fn take(&self) -> Option<CapturedFrame> {
         self.latest.lock().ok()?.take()
+    }
+
+    /// Custo médio de captura desde a última leitura.
+    pub fn cost(&self) -> &CaptureCost {
+        &self.cost
     }
 }
 

@@ -458,6 +458,46 @@ tela parada o H.264 gasta 0,3 KB por quadro, e manter o fluxo constante é o que
 sustenta a linha de tempo do buffer de jitter. Deduplicar abriria buracos e faria
 a reprodução hesitar — o oposto do que a dedup faz de bom no JPEG.
 
+**Terceira rodada: os números.** Com a instrumentação no ar, o primeiro teste em
+máquina real deu:
+
+```
+9.6 fps · codificação 69.9 ms/quadro · 6.5 KB/quadro · 0.51 Mbps · 40 tique(s) sem quadro novo
+6.7 fps · codificação 105.5 ms/quadro · 5.1 KB/quadro · 0.28 Mbps · 35 tique(s) sem quadro novo
+```
+
+Codificar em 60–105 ms contra 23 ms medidos no S2. A diferença precisava de
+explicação, então cada ajuste do codificador foi medido
+(`examples/bench_encoder_tuning.rs`):
+
+| Config | 1280×720 | 1600×1066 |
+| --- | ---: | ---: |
+| atual (Medium, QP 20–42) | 36,8 ms | 67,8 ms |
+| sem piso de QP | 36,9 ms | 67,1 ms |
+| Complexity::Low | 32,5 ms | 63,2 ms |
+| threads = núcleos | 33,9 ms | 61,2 ms |
+
+**Complexity, threads e QP quase não mudam nada** (~12% no melhor caso). O custo
+é praticamente **linear no número de pixels**, e os 68 ms de 1600×1066 explicam
+exatamente a medição real: o preset em uso era o "Nítido" (1600px) numa tela 3:2.
+
+Duas consequências:
+
+1. **O vídeo ganhou teto de resolução próprio** (`REMOTEONE_VIDEO_MAX_WIDTH`,
+   padrão 1280), usando o menor entre ele e o do preset. Os presets do app foram
+   dimensionados pela banda do JPEG; no vídeo a banda sobra (0,2–0,5 Mbps
+   medidos) e quem aperta é a CPU. Só isso corta o custo de codificação quase
+   pela metade.
+2. **O piso de QP 20 foi removido.** Eu o havia adicionado depois do S2 dizendo
+   que "não custa nada", tendo medido apenas banda no cenário extremo. Medido
+   agora no caso real, ele *aumentava* a banda (1,6 contra 1,3 KB por quadro) sem
+   economizar um milissegundo — forçava qualidade alta em conteúdo fácil. O teto
+   ficou; o piso saiu.
+
+A instrumentação também ganhou o que faltava: **custo de captura e resolução** na
+mesma linha. Sem separar captura de codificação não havia como escolher entre
+atacar o `xcap` e atacar o codec.
+
 ### Fase 4b — Qualidade adaptativa (novo, saiu da Fase 2)
 
 Como nenhuma configuração do codificador limita a banda sem travar a imagem, o

@@ -27,6 +27,14 @@ pub struct StreamConfig {
     pub video_bitrate: u32,
     /// Servidores STUN para descobrir o endereço externo (P2P). Vazio = só LAN.
     pub ice_servers: Vec<String>,
+    /// Largura máxima **do vídeo**, independente da do JPEG.
+    ///
+    /// O custo de codificar é praticamente linear no número de pixels: medido,
+    /// 1280x720 custa 37 ms por quadro e 1600x1066 custa 68 ms. Os presets do
+    /// app (960, 1280, 1600) foram dimensionados pela banda do JPEG, mas no
+    /// vídeo a banda sobra (0,2–0,5 Mbps medidos) e o gargalo é a CPU. Então o
+    /// vídeo tem o seu próprio teto, e usa o menor entre este e o do preset.
+    pub video_max_width: u32,
     /// Taxa de quadros alvo **do vídeo**, independente da do JPEG.
     ///
     /// Os presets do app (5, 10, 15 fps) foram escolhidos para caber na banda do
@@ -45,12 +53,18 @@ impl Default for StreamConfig {
             quality: 50,
             video_bitrate: 1_500_000,
             ice_servers: vec!["stun:stun.l.google.com:19302".to_string()],
+            video_max_width: 1280,
             video_fps: 30,
         }
     }
 }
 
 impl StreamConfig {
+    /// Largura efetiva do vídeo: o menor entre o pedido do app e o teto próprio.
+    fn video_width(&self) -> u32 {
+        self.max_width.min(self.video_max_width)
+    }
+
     /// Intervalo entre frames, com um teto de segurança de ~60 fps.
     fn frame_interval(&self) -> Duration {
         Self::interval_for(self.fps)
@@ -196,8 +210,17 @@ pub async fn run(
                         video_clock = None;
                         last_video_frame = None;
                         stats = VideoStats::default();
+                        let largura = active.video_width();
+                        if largura < active.max_width {
+                            println!(
+                                "Vídeo limitado a {largura}px de largura (o preset pede \
+                                 {}px). Codificar custa por pixel; ajuste com \
+                                 REMOTEONE_VIDEO_MAX_WIDTH.",
+                                active.max_width,
+                            );
+                        }
                         pump = Some(crate::capture::FramePump::start(
-                            active.max_width,
+                            largura,
                             active.video_fps,
                         ));
                     } else {
@@ -212,6 +235,7 @@ pub async fn run(
                         stats.starved += 1;
                         continue;
                     };
+                    let size = (captured.width, captured.height);
                     let started = video_clock.get_or_insert_with(std::time::Instant::now);
                     let elapsed = started.elapsed();
                     let fps = active.video_fps.clamp(1, 60);
@@ -242,9 +266,11 @@ pub async fn run(
                                 .map(|previous| now.duration_since(previous))
                                 .unwrap_or_else(|| active.video_interval());
                             last_video_frame = Some(now);
-                            stats.record(encode_started.elapsed(), frame.data.len());
+                            stats.record(encode_started.elapsed(), frame.data.len(), size);
                             video.write(&frame, duration).await;
-                            stats.report_if_due();
+                            let capture_ms =
+                                pump.as_ref().and_then(|p| p.cost().take_average_ms());
+                            stats.report_if_due(capture_ms);
                         }
                         Ok(Err(e)) => eprintln!("Falha ao codificar a tela: {e}"),
                         Err(e) => eprintln!("Falha na tarefa de vídeo: {e}"),
@@ -368,6 +394,8 @@ struct VideoStats {
     starved: u32,
     encode_total: Duration,
     bytes: usize,
+    /// Resolução em uso, para dar contexto aos milissegundos.
+    size: (u32, u32),
 }
 
 impl Default for VideoStats {
@@ -378,6 +406,7 @@ impl Default for VideoStats {
             starved: 0,
             encode_total: Duration::ZERO,
             bytes: 0,
+            size: (0, 0),
         }
     }
 }
@@ -385,21 +414,29 @@ impl Default for VideoStats {
 impl VideoStats {
     const INTERVAL: Duration = Duration::from_secs(5);
 
-    fn record(&mut self, encode: Duration, bytes: usize) {
+    fn record(&mut self, encode: Duration, bytes: usize, size: (u32, u32)) {
         self.frames += 1;
         self.encode_total += encode;
         self.bytes += bytes;
+        self.size = size;
     }
 
-    fn report_if_due(&mut self) {
+    fn report_if_due(&mut self, capture_ms: Option<f64>) {
         let elapsed = self.since.elapsed();
         if elapsed < Self::INTERVAL || self.frames == 0 {
             return;
         }
         let seconds = elapsed.as_secs_f64();
+        let captura = match capture_ms {
+            Some(ms) => format!("{ms:.1} ms"),
+            None => "?".to_string(),
+        };
         println!(
-            "Vídeo: {:.1} fps · codificação {:.1} ms/quadro · {:.1} KB/quadro \
-             · {:.2} Mbps · {} tique(s) sem quadro novo",
+            "Vídeo {}x{}: {:.1} fps · captura {captura}/quadro · codificação \
+             {:.1} ms/quadro · {:.1} KB/quadro · {:.2} Mbps · {} tique(s) sem \
+             quadro novo",
+            self.size.0,
+            self.size.1,
             self.frames as f64 / seconds,
             self.encode_total.as_secs_f64() * 1000.0 / self.frames as f64,
             self.bytes as f64 / self.frames as f64 / 1024.0,

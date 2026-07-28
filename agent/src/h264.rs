@@ -73,11 +73,12 @@ impl Encoder {
             .skip_frames(false)
             .max_frame_rate(FrameRate::from_hz(fps as f32))
             .bitrate(BitRate::from_bps(bitrate_bps))
-            // Teto de quantização: sozinho corta pouco (~16% no pior caso
-            // medido), mas custa nada e evita que conteúdo pesado dispare mais
-            // do que o necessário. O piso em 20 impede gastar banda buscando
-            // uma perfeição que ninguém vê numa tela de celular.
-            .qp(QpRange::new(20, 42));
+            // Só teto, sem piso. O piso que havia aqui (20) foi medido e fazia
+            // o oposto do pretendido: forçava qualidade alta em conteúdo fácil,
+            // gastando 1,6 KB por quadro onde o controle de taxa gastava 1,3 —
+            // e sem economizar tempo algum. O teto continua, porque limita o
+            // pior caso e custa zero.
+            .qp(QpRange::new(0, 46));
         let inner = Openh264Encoder::with_api_config(OpenH264API::from_source(), config)
             .map_err(|e| format!("não consegui criar o codificador H.264: {e}"))?;
         Ok(Self {
