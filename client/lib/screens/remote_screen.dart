@@ -595,12 +595,11 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
-  /// Vidro escuro translúcido: o material de tudo o que flutua sobre a tela do
-  /// computador (dock, botões e painéis retráteis). Um só lugar para que os
-  /// elementos pareçam da mesma família.
-  BoxDecoration _glass({double radius = 22}) => BoxDecoration(
+  /// Vidro escuro translúcido: o material da dock, o único elemento que
+  /// flutua sobre a tela do computador.
+  BoxDecoration _glass() => BoxDecoration(
         color: const Color(0xE61A1D33),
-        borderRadius: BorderRadius.circular(radius),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.white.withAlpha(30)),
         boxShadow: [
           BoxShadow(
@@ -708,135 +707,54 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
-  // --- botões e painéis retráteis ---------------------------------------------
+  // --- faixas retráteis (métricas e mídia) ------------------------------------
 
-  /// Os dois botões e os dois painéis, posicionados conforme a orientação.
+  /// Faixa das métricas do computador.
   ///
-  /// A posição muda entre retrato e paisagem porque o espaço livre muda: com o
-  /// celular deitado a imagem do computador (16:9) deixa faixas em cima e nas
-  /// laterais; em pé, sobra em cima e embaixo. Cada painel nasce onde há espaço,
-  /// para não cobrir a tela que a pessoa está usando.
-  List<Widget> _panels({required bool isPortrait, required Size area}) {
-    final t = widget.state.t;
-    // Em pé a dock fica deitada na base: o painel de mídia sobe acima dela.
-    final hasDock = (_dockApps ?? const <RemoteApp>[]).isNotEmpty;
-    final aboveDock = hasDock ? _dockThickness + 30 : 16.0;
-
-    final mediaButton = _panelButton(
-      icon: Icons.music_note,
-      open: _mediaOpen,
-      tooltip: t.mediaPanel,
-      onTap: _toggleMedia,
-    );
-    final statsButton = _panelButton(
-      icon: Icons.memory,
-      open: _statsOpen,
-      tooltip: t.systemPanel,
-      onTap: _toggleStats,
-    );
-
-    if (isPortrait) {
-      return [
-        // Botões nas pontas da dock deitada.
-        Align(
-          alignment: Alignment.bottomLeft,
-          child: Padding(padding: const EdgeInsets.all(8), child: statsButton),
-        ),
-        Align(
-          alignment: Alignment.bottomRight,
-          child: Padding(padding: const EdgeInsets.all(8), child: mediaButton),
-        ),
-        _panel(
-          anim: _statsAnim,
-          curved: _statsCurve,
-          alignment: Alignment.topCenter,
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-          slideFrom: const Offset(0, -0.3),
-          // Desconta o recuo do painel (24) e o recheio do cartão (28): o limite
-          // é do conteúdo, não da moldura, e sem isso o painel passa da tela.
-          // Duas colunas de medidas, o que cabe num celular em pé.
-          child: _statsCard(
-            vertical: false,
-            maxWidth: (area.width - 52).clamp(_metricWidth, _metricWidth * 2 + 16),
-          ),
-        ),
-        _panel(
-          anim: _mediaAnim,
-          curved: _mediaCurve,
-          alignment: Alignment.bottomCenter,
-          padding: EdgeInsets.fromLTRB(12, 0, 12, aboveDock),
-          slideFrom: const Offset(0, 0.3),
-          child: _mediaCard(vertical: false),
-        ),
-      ];
-    }
-    return [
-      // Deitado: a dock fica em pé à direita, e os botões nas pontas dela.
-      Align(
-        alignment: Alignment.topRight,
-        child: Padding(padding: const EdgeInsets.all(8), child: mediaButton),
-      ),
-      Align(
-        alignment: Alignment.bottomRight,
-        child: Padding(padding: const EdgeInsets.all(8), child: statsButton),
-      ),
-      _panel(
-        anim: _statsAnim,
-        curved: _statsCurve,
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.all(12),
-        slideFrom: const Offset(-0.3, 0),
-        // Deitado, o painel é uma coluna estreita na faixa preta da esquerda.
-        // Pode encostar na imagem: é translúcido, e só existe enquanto aberto.
-        child: _statsCard(vertical: true, maxWidth: _metricWidth),
-      ),
-      _panel(
-        anim: _mediaAnim,
-        curved: _mediaCurve,
-        // Recuo à direita para não passar por baixo do botão que o abriu.
-        padding: const EdgeInsets.fromLTRB(12, 12, 72, 0),
-        alignment: Alignment.topCenter,
-        slideFrom: const Offset(0, -0.3),
-        child: _mediaCard(vertical: false),
-      ),
-    ];
-  }
-
-  /// Botão redondo que abre/fecha um painel. Aceso quando o painel está aberto.
-  Widget _panelButton({
-    required IconData icon,
-    required bool open,
-    required String tooltip,
-    required VoidCallback onTap,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 46,
-          height: 46,
-          decoration: _glass(radius: 16),
-          alignment: Alignment.center,
-          child: Icon(
-            icon,
-            size: 22,
-            color: open ? auroraCyan : Colors.white70,
-          ),
-        ),
-      ),
+  /// `vertical` = coluna ao lado da imagem (celular deitado, onde a altura é
+  /// escassa); horizontal = faixa sob a barra de cima (celular em pé, onde
+  /// sobra altura). Nos dois casos ela **empurra** a imagem em vez de cobri-la.
+  Widget _statsStrip({required bool vertical}) {
+    return _strip(
+      anim: _statsAnim,
+      curved: _statsCurve,
+      axis: vertical ? Axis.horizontal : Axis.vertical,
+      // Sempre a partir da borda em que encosta: da esquerda quando é coluna,
+      // de cima quando é faixa.
+      axisAlignment: -1.0,
+      border: vertical
+          ? const Border(right: BorderSide(color: Colors.white12))
+          : const Border(bottom: BorderSide(color: Colors.white12)),
+      child: _statsCard(vertical: vertical),
     );
   }
 
-  /// Moldura comum dos painéis: entra deslizando do lado em que fica e sai do
-  /// mesmo jeito. Fechado, **não existe** na árvore — um painel invisível ainda
-  /// roubaria o toque destinado à tela do computador.
-  Widget _panel({
+  /// Faixa dos botões de mídia: no topo com o celular deitado, embaixo (acima
+  /// do teclado) com ele em pé.
+  Widget _mediaStrip({required bool atBottom}) {
+    return _strip(
+      anim: _mediaAnim,
+      curved: _mediaCurve,
+      axis: Axis.vertical,
+      // Em pé ela nasce embaixo e sobe; deitada, nasce em cima e desce.
+      axisAlignment: atBottom ? 1.0 : -1.0,
+      border: const Border(
+        top: BorderSide(color: Colors.white12),
+        bottom: BorderSide(color: Colors.white12),
+      ),
+      child: _mediaCard(),
+    );
+  }
+
+  /// Moldura comum das faixas: abre e fecha crescendo no próprio eixo, o que
+  /// faz a imagem ceder espaço em vez de ficar coberta. Fechada, **não existe**
+  /// na árvore — nem ocupa espaço, nem intercepta toque.
+  Widget _strip({
     required AnimationController anim,
     required Animation<double> curved,
-    required Alignment alignment,
-    required EdgeInsets padding,
-    required Offset slideFrom,
+    required Axis axis,
+    required double axisAlignment,
+    required Border border,
     required Widget child,
   }) {
     return AnimatedBuilder(
@@ -844,24 +762,21 @@ class _RemoteScreenState extends State<RemoteScreen>
       child: child,
       builder: (context, inner) {
         if (anim.isDismissed) return const SizedBox.shrink();
-        return Align(
-          alignment: alignment,
-          child: Padding(
-            padding: padding,
-            child: FadeTransition(
-              opacity: curved,
-              child: SlideTransition(
-                position: Tween<Offset>(begin: slideFrom, end: Offset.zero)
-                    .animate(curved),
-                child: Container(
-                  decoration: _glass(radius: 18),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  child: inner,
-                ),
+        return SizeTransition(
+          sizeFactor: curved,
+          axis: axis,
+          axisAlignment: axisAlignment,
+          child: FadeTransition(
+            opacity: curved,
+            child: Container(
+              // Mesma faixa escura da barra de cima: é parte da moldura do
+              // app, não um cartão flutuando.
+              decoration: BoxDecoration(
+                color: const Color(0xFF14162C),
+                border: border,
               ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: inner,
             ),
           ),
         );
@@ -869,101 +784,107 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
-  /// Painel de métricas. `vertical` = coluna (celular deitado, painel na
-  /// lateral); horizontal = uma linha de medidas (celular em pé).
-  Widget _statsCard({required bool vertical, required double maxWidth}) {
+  /// Conteúdo do painel de métricas.
+  ///
+  /// `vertical` = uma coluna estreita (ao lado da imagem); horizontal = as
+  /// medidas em `Wrap`, que vira duas colunas num celular e quatro num tablet
+  /// — uma linha só de quatro cortaria "7,8 GB / 16,0 GB" com reticências.
+  Widget _statsCard({required bool vertical}) {
     final t = widget.state.t;
     final stats = _stats;
-    Widget body;
     if (stats == null) {
-      body = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!_statsFailed)
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
+      return SizedBox(
+        width: vertical ? _metricWidth : null,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (!_statsFailed) ...[
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Flexible(
+              child: Text(
+                _statsFailed ? t.systemUnavailable : '${t.systemPanel}…',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
             ),
-          if (!_statsFailed) const SizedBox(width: 10),
-          Text(
-            _statsFailed ? t.systemUnavailable : '${t.systemPanel}…',
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-        ],
+          ],
+        ),
       );
-    } else {
-      final tiles = <Widget>[
-        _metric(
-          label: t.systemCpu,
-          value: '${stats.cpuPercent.round()}%',
-          fraction: stats.cpuPercent / 100,
-          vertical: vertical,
+    }
+
+    final tiles = <Widget>[
+      _metric(
+        label: t.systemCpu,
+        value: '${stats.cpuPercent.round()}%',
+        fraction: stats.cpuPercent / 100,
+        vertical: vertical,
+      ),
+      _metric(
+        label: t.systemMemory,
+        value: '${SystemStats.formatBytes(stats.memoryUsed)}'
+            ' / ${SystemStats.formatBytes(stats.memoryTotal)}',
+        fraction: stats.memoryFraction,
+        vertical: vertical,
+      ),
+      _metric(
+        label: stats.diskName.isEmpty
+            ? t.systemDisk
+            : '${t.systemDisk} ${stats.diskName}',
+        value: '${SystemStats.formatBytes(stats.diskUsed)}'
+            ' / ${SystemStats.formatBytes(stats.diskTotal)}',
+        fraction: stats.diskFraction,
+        vertical: vertical,
+      ),
+      _metric(
+        label: t.systemUptime,
+        value: stats.uptimeLabel(
+          days: t.unitDay,
+          hours: t.unitHour,
+          minutes: t.unitMinute,
         ),
-        _metric(
-          label: t.systemMemory,
-          value: '${SystemStats.formatBytes(stats.memoryUsed)}'
-              ' / ${SystemStats.formatBytes(stats.memoryTotal)}',
-          fraction: stats.memoryFraction,
-          vertical: vertical,
-        ),
-        _metric(
-          label: stats.diskName.isEmpty
-              ? t.systemDisk
-              : '${t.systemDisk} ${stats.diskName}',
-          value: '${SystemStats.formatBytes(stats.diskUsed)}'
-              ' / ${SystemStats.formatBytes(stats.diskTotal)}',
-          fraction: stats.diskFraction,
-          vertical: vertical,
-        ),
-        _metric(
-          label: t.systemUptime,
-          value: stats.uptimeLabel(
-            days: t.unitDay,
-            hours: t.unitHour,
-            minutes: t.unitMinute,
-          ),
-          fraction: null,
-          vertical: vertical,
-        ),
-      ];
-      body = vertical
-          ? Column(
+        fraction: null,
+        vertical: vertical,
+      ),
+    ];
+
+    final Widget medidas = vertical
+        ? SizedBox(
+            width: _metricWidth,
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: tiles,
-            )
-          // Wrap, e não Row: quatro medidas lado a lado não cabem na largura de
-          // um celular em pé, e o valor ("7,8 GB / 16,0 GB") seria cortado. Com
-          // largura fixa por medida elas se organizam em duas colunas.
-          : Wrap(
-              spacing: 16,
-              runSpacing: 10,
-              children: [
-                for (final tile in tiles)
-                  SizedBox(width: _metricWidth, child: tile),
-              ],
-            );
-      // Uma medida que falhou não apaga a última leitura boa: o painel segue
-      // mostrando o que sabe, com o aviso embaixo.
-      if (_statsFailed) {
-        body = Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            body,
-            const SizedBox(height: 6),
-            Text(
-              t.systemUnavailable,
-              style: const TextStyle(color: Colors.white38, fontSize: 10),
             ),
-          ],
-        );
-      }
-    }
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth),
-      child: body,
+          )
+        : Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 16,
+            runSpacing: 10,
+            children: [
+              for (final tile in tiles)
+                SizedBox(width: _metricWidth, child: tile),
+            ],
+          );
+
+    // Uma medida que falhou não apaga a última leitura boa: o painel segue
+    // mostrando o que sabe, com o aviso embaixo.
+    if (!_statsFailed) return medidas;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        medidas,
+        const SizedBox(height: 6),
+        Text(
+          t.systemUnavailable,
+          style: const TextStyle(color: Colors.white38, fontSize: 10),
+        ),
+      ],
     );
   }
 
@@ -1024,19 +945,21 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   /// Botões de mídia. As teclas são globais no computador: valem para quem
   /// estiver tocando som, sem precisar deixar o player em foco.
-  Widget _mediaCard({required bool vertical}) {
+  Widget _mediaCard() {
     final t = widget.state.t;
-    final buttons = <Widget>[
-      _mediaButton(Icons.volume_down, t.mediaVolumeDown, 'volume_down'),
-      _mediaButton(Icons.volume_off, t.mediaMute, 'mute'),
-      _mediaButton(Icons.skip_previous, t.mediaPrevious, 'previous'),
-      _mediaButton(Icons.play_arrow, t.mediaPlayPause, 'play_pause', big: true),
-      _mediaButton(Icons.skip_next, t.mediaNext, 'next'),
-      _mediaButton(Icons.volume_up, t.mediaVolumeUp, 'volume_up'),
-    ];
-    return vertical
-        ? Column(mainAxisSize: MainAxisSize.min, children: buttons)
-        : Row(mainAxisSize: MainAxisSize.min, children: buttons);
+    return Row(
+      // A faixa ocupa a largura toda; os botões ficam centrados nela.
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _mediaButton(Icons.volume_down, t.mediaVolumeDown, 'volume_down'),
+        _mediaButton(Icons.volume_off, t.mediaMute, 'mute'),
+        _mediaButton(Icons.skip_previous, t.mediaPrevious, 'previous'),
+        _mediaButton(Icons.play_arrow, t.mediaPlayPause, 'play_pause',
+            big: true),
+        _mediaButton(Icons.skip_next, t.mediaNext, 'next'),
+        _mediaButton(Icons.volume_up, t.mediaVolumeUp, 'volume_up'),
+      ],
+    );
   }
 
   Widget _mediaButton(
@@ -1225,36 +1148,51 @@ class _RemoteScreenState extends State<RemoteScreen>
     // horizontal, é opcional (mais tela). Layout em Column: a barra de
     // controles e o teclado ficam FORA da imagem, sem cobri-la.
     final showKeyboard = isPortrait || _keyboardVisible;
+    // A dock continua flutuando sobre a imagem (é o comportamento de dock, e
+    // ela é estreita); os painéis, não. Eles ocupam espaço próprio e empurram
+    // a imagem, do mesmo jeito que o teclado — assim nada fica por cima da
+    // tela do computador, que é o que a pessoa veio olhar.
+    final Widget viewArea = LayoutBuilder(
+      builder: (context, constraints) {
+        final area = Size(constraints.maxWidth, constraints.maxHeight);
+        return Stack(
+          // expand é essencial: sem ele o Stack se dimensiona pelo filho não
+          // posicionado (a dock) e, quando ela está vazia, a tela inteira
+          // encolheria para um ponto.
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(child: _liveView()),
+            // No modo lupa a dock sai da frente, para não atrapalhar quem
+            // está ampliando a imagem.
+            if (!_zoomMode) _appDock(vertical: !isPortrait, area: area),
+          ],
+        );
+      },
+    );
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           children: [
             _topBar(showToggle: !isPortrait),
+            // Deitado, as métricas viram uma coluna ao lado da imagem: a tela
+            // é baixa e uma faixa horizontal comeria altura demais. Em pé, o
+            // contrário — sobra altura, e a faixa fica no topo.
+            if (isPortrait) _statsStrip(vertical: false),
+            if (!isPortrait) _mediaStrip(atBottom: false),
             Expanded(
-              // A dock flutua SOBRE a tela (não rouba espaço): em pé à direita
-              // na horizontal, deitada embaixo (acima do teclado) na vertical.
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final area = Size(constraints.maxWidth, constraints.maxHeight);
-                  return Stack(
-                    // expand é essencial: sem ele o Stack se dimensiona pelo
-                    // filho não posicionado (a dock) e, quando ela está vazia,
-                    // a tela inteira encolheria para um ponto.
-                    fit: StackFit.expand,
-                    children: [
-                      Positioned.fill(child: _liveView()),
-                      // No modo lupa a dock e os painéis saem da frente, para
-                      // não atrapalhar quem está ampliando a imagem.
-                      if (!_zoomMode) ...[
-                        _appDock(vertical: !isPortrait, area: area),
-                        ..._panels(isPortrait: isPortrait, area: area),
+              child: isPortrait
+                  ? viewArea
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _statsStrip(vertical: true),
+                        Expanded(child: viewArea),
                       ],
-                    ],
-                  );
-                },
-              ),
+                    ),
             ),
+            if (isPortrait) _mediaStrip(atBottom: true),
             if (showKeyboard)
               RemoteKeyboard(
                 onText: (text) => _send({'kind': 'key_text', 'text': text}),
@@ -1265,6 +1203,23 @@ class _RemoteScreenState extends State<RemoteScreen>
           ],
         ),
       ),
+    );
+  }
+
+  /// Botão da barra de cima que abre/fecha um painel. Aceso quando aberto —
+  /// é o que diz de onde veio a faixa que apareceu.
+  Widget _barToggle({
+    required IconData icon,
+    required bool open,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      // Compacto: a barra já carrega voltar, nome, indicador, lupa e teclado.
+      visualDensity: VisualDensity.compact,
+      icon: Icon(icon, color: open ? auroraCyan : Colors.white),
+      onPressed: onPressed,
     );
   }
 
@@ -1333,6 +1288,20 @@ class _RemoteScreenState extends State<RemoteScreen>
                         : '$_fps fps'),
                 style: const TextStyle(color: Colors.white38, fontSize: 12),
               ),
+            ),
+            // Os dois painéis retráteis moram aqui, na moldura do app: fora
+            // da imagem do computador, que é o que a pessoa veio olhar.
+            _barToggle(
+              icon: Icons.memory,
+              open: _statsOpen,
+              tooltip: widget.state.t.systemPanel,
+              onPressed: _toggleStats,
+            ),
+            _barToggle(
+              icon: Icons.music_note,
+              open: _mediaOpen,
+              tooltip: widget.state.t.mediaPanel,
+              onPressed: _toggleMedia,
             ),
             IconButton(
               tooltip: widget.state.t.zoomEnter,

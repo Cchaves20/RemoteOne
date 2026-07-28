@@ -1,26 +1,36 @@
 # Monitor do sistema e controle de mídia
 
-Dois painéis retráteis na tela de controle: um mostra como está o computador
-(CPU, memória, disco), o outro comanda o que ele está tocando.
+Duas faixas retráteis na tela de controle: uma mostra como está o computador
+(CPU, memória, disco), a outra comanda o que ele está tocando.
 
 São **retráteis** por decisão de projeto. O que está em jogo naquela tela é a
 imagem do computador; tudo o que fica permanentemente sobre ela come área útil.
-Cada painel tem o seu botão e só aparece quando alguém pede.
+Cada faixa tem o seu botão e só aparece quando alguém pede.
 
 ## Onde ficam
 
-A posição muda com a orientação, porque o espaço livre muda: a imagem do
-computador é 16:9, então com o celular deitado sobram faixas nas laterais e em
-cima, e em pé sobram faixas em cima e embaixo.
+Os dois botões moram na **barra de cima**, ao lado da lupa: fora da imagem do
+computador. Acesos quando o painel correspondente está aberto — é o que diz de
+onde veio a faixa que apareceu.
 
-| | Botão do monitor | Botão de mídia | Painel do monitor | Botões de mídia |
-|---|---|---|---|---|
-| Em pé | canto inferior esquerdo | canto inferior direito | faixa de cima | acima da dock |
-| Deitado | canto inferior direito | canto superior direito | coluna à esquerda | faixa de cima |
+As faixas **empurram a imagem** em vez de cobri-la, do mesmo jeito que o teclado
+já fazia. Nada fica por cima da tela do computador, que é o que a pessoa veio
+olhar. Fechada, a faixa não existe na árvore de widgets: não ocupa espaço nem
+intercepta toque.
 
-Os botões ficam nas pontas da dock de aplicativos, que é o eixo que já organiza
-os controles flutuantes: em pé ela é deitada na base, e deitado ela fica em pé à
-direita.
+Onde cada faixa abre depende da orientação, porque o espaço barato é diferente:
+
+| | Métricas | Mídia |
+|---|---|---|
+| Em pé | faixa sob a barra de cima | faixa acima do teclado |
+| Deitado | coluna à esquerda da imagem | faixa sob a barra de cima |
+
+Deitado a tela é baixa, e uma faixa horizontal de métricas comeria altura que
+falta; a coluna lateral gasta largura, que sobra (a imagem é 16:9 e fica
+encaixotada com margens nos lados). Em pé é o contrário.
+
+A dock de aplicativos continua flutuando sobre a imagem — é o comportamento
+esperado de uma dock, e ela é estreita o bastante para não atrapalhar.
 
 ## Monitor do sistema
 
@@ -105,11 +115,14 @@ revelam o uso da máquina, e apertar teclas nela é agir sobre ela.
 ## Verificação manual
 
 1. Abra o controle de um computador.
-2. Toque no botão do monitor (ícone de chip). Os quatro números aparecem e se
-   atualizam de 2 em 2 s. Abra algo pesado no PC e veja a CPU subir.
+2. Toque no botão do monitor (ícone de chip, na barra de cima). Os quatro
+   números aparecem e se atualizam de 2 em 2 s. Abra algo pesado no PC e veja a
+   CPU subir.
 3. Toque no botão de mídia (ícone de nota). Ponha uma música no PC e teste
    pausar, trocar de faixa e mudar o volume — sem colocar o player em foco.
-4. Gire o celular: os painéis mudam de lugar conforme a tabela acima.
+4. Confira que a imagem do computador **encolhe** ao abrir uma faixa, em vez de
+   ficar coberta por ela.
+5. Gire o celular: as faixas mudam de lugar conforme a tabela acima.
 
 Para conferir se o backend no VPS já tem isto:
 
