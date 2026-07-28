@@ -72,6 +72,18 @@ class VideoSession extends ChangeNotifier {
   bool _disposed = false;
   bool _rendererReady = false;
 
+  /// Candidatos que chegaram antes de a resposta ser aplicada.
+  ///
+  /// A ordem não é garantida: o agente começa a emitir candidatos ao aplicar a
+  /// descrição local, o que acontece **antes** de a resposta ser despachada.
+  /// E `addCandidate` antes de `setRemoteDescription` falha. Então tudo que
+  /// chega cedo espera aqui e entra de uma vez.
+  final List<RTCIceCandidate> _pendingCandidates = [];
+
+  /// Se a resposta do agente já foi aplicada (aí sim dá para adicionar
+  /// candidatos). Só vira `true` quando o `await` termina, não antes.
+  bool _remoteReady = false;
+
   bool get isLive => state == VideoState.live;
 
   /// Negocia a sessão: cria a conexão, manda a oferta e espera.
@@ -184,6 +196,13 @@ class VideoSession extends ChangeNotifier {
     if (peer == null || sdp == null) return;
     try {
       await peer.setRemoteDescription(RTCSessionDescription(sdp, 'answer'));
+      _remoteReady = true;
+      // Agora os candidatos que chegaram adiantados podem entrar.
+      final queued = List<RTCIceCandidate>.from(_pendingCandidates);
+      _pendingCandidates.clear();
+      for (final candidate in queued) {
+        await _addCandidate(peer, candidate);
+      }
     } catch (e) {
       _fail('resposta do computador recusada: $e');
     }
@@ -195,14 +214,27 @@ class VideoSession extends ChangeNotifier {
     final candidate = message['candidate'] as String? ?? '';
     // Candidato vazio significa que o outro lado terminou: nada a adicionar.
     if (candidate.isEmpty) return;
+    final ice = RTCIceCandidate(
+      candidate,
+      message['sdp_mid'] as String?,
+      message['sdp_mline_index'] as int?,
+    );
+    if (!_remoteReady) {
+      _pendingCandidates.add(ice);
+      return;
+    }
+    await _addCandidate(peer, ice);
+  }
+
+  Future<void> _addCandidate(
+      RTCPeerConnection peer, RTCIceCandidate candidate) async {
     try {
-      await peer.addCandidate(RTCIceCandidate(
-        candidate,
-        message['sdp_mid'] as String?,
-        message['sdp_mline_index'] as int?,
-      ));
-    } catch (_) {
-      // Candidato recusado não derruba a sessão: o ICE tenta os outros.
+      await peer.addCandidate(candidate);
+    } catch (e) {
+      // Um candidato recusado não derruba a sessão — o ICE tenta os outros —
+      // mas engolir isso em silêncio esconderia justamente o tipo de problema
+      // que faz a conexão nunca fechar.
+      debugPrint('RemoteOne: candidato ICE recusado — $e');
     }
   }
 

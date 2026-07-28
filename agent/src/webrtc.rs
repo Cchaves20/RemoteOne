@@ -170,17 +170,24 @@ impl Video {
             .create_answer(None)
             .await
             .map_err(|e| format!("não consegui criar a resposta: {e}"))?;
-        connection
-            .set_local_description(answer.clone())
-            .await
-            .map_err(|e| format!("não consegui aplicar a resposta: {e}"))?;
 
+        // A resposta vai para a fila **antes** de aplicar a descrição local, e a
+        // ordem importa: aplicar a descrição é o que dispara os candidatos ICE.
+        // Se a resposta saísse depois, candidatos poderiam chegar ao app antes
+        // dela — e `addCandidate` sem descrição remota falha. O app também
+        // enfileira por conta própria, mas não custa nada garantir dos dois
+        // lados, e aqui a garantia é absoluta.
         self.outbox
             .send(Signal::Answer {
                 session_id: session_id.to_string(),
-                sdp: answer.sdp,
+                sdp: answer.sdp.clone(),
             })
             .map_err(|_| "canal de sinalização fechado".to_string())?;
+
+        connection
+            .set_local_description(answer)
+            .await
+            .map_err(|e| format!("não consegui aplicar a resposta: {e}"))?;
 
         self.peers
             .insert(session_id.to_string(), Peer { connection, track });
@@ -345,6 +352,35 @@ mod tests {
             agent.is_empty(),
             "sessão inválida não deve ficar registrada"
         );
+    }
+
+    /// A resposta tem que sair **antes** de qualquer candidato.
+    ///
+    /// Não é preciosismo: no app, `addCandidate` antes de `setRemoteDescription`
+    /// falha, e um candidato perdido é exatamente o tipo de coisa que faz a
+    /// conexão nunca fechar sem dar erro em lugar nenhum.
+    #[tokio::test]
+    async fn a_resposta_sai_antes_dos_candidatos() {
+        let (mut agent, mut signals) = video();
+        let app = app_peer().await;
+        let offer = app.create_offer(None).await.unwrap();
+        agent.offer("s1", &offer.sdp).await.unwrap();
+
+        // Deixa os candidatos serem gerados antes de olhar a fila, para o teste
+        // não passar só por chegar primeiro na corrida.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let mut recebidos = Vec::new();
+        while let Ok(signal) = signals.try_recv() {
+            recebidos.push(signal);
+        }
+        assert!(!recebidos.is_empty(), "nada foi emitido");
+        assert!(
+            matches!(recebidos[0], Signal::Answer { .. }),
+            "o primeiro sinal precisa ser a resposta, veio {:?}",
+            recebidos[0]
+        );
+        agent.close_all().await;
     }
 
     #[tokio::test]

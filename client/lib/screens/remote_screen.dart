@@ -61,6 +61,9 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// vídeo conectar. É esse encaixe que faz o fallback ser automático.
   VideoSession? _video;
 
+  /// Avisa uma vez por sessão, não a cada mudança de estado.
+  bool _videoFailureShown = false;
+
   double _aspectRatio = 16 / 9;
   bool _aspectResolved = false;
   String? _error;
@@ -141,6 +144,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     // O mesmo socket carrega os frames JPEG (binário) e a sinalização de
     // WebRTC (texto). A sessão de vídeo é criada aqui e negocia em paralelo.
     _video?.dispose();
+    _videoFailureShown = false;
     final video = widget.state.webrtcVideoEnabled
         ? (VideoSession(channel: channel)..addListener(_onVideoChanged))
         : null;
@@ -184,6 +188,21 @@ class _RemoteScreenState extends State<RemoteScreen>
         }
       }
     });
+
+    // Falha no vídeo não pode ser silenciosa. A tela continua funcionando por
+    // JPEG, então nada "quebra" visivelmente — e sem este aviso o motivo ficaria
+    // só no log do aparelho, que num app instalado por sideload ninguém lê.
+    if (video.state == VideoState.failed && !_videoFailureShown) {
+      _videoFailureShown = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 8),
+          content: Text(
+            '${widget.state.t.videoUnavailable}\n${video.error ?? ''}'.trim(),
+          ),
+        ),
+      );
+    }
   }
 
   /// Reconecta automaticamente se a conexão de tela cair (#12).

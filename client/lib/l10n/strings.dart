@@ -241,6 +241,15 @@ class Strings {
   /// há frames JPEG para contar, então o número ficaria em 0 por definição.
   String get videoMode => _t('vídeo', 'video', '视频', 'vidéo', 'vídeo');
 
+  /// Aviso quando o vídeo não entra: a tela segue no modo antigo, então sem
+  /// dizer nada o usuário nem saberia que houve uma tentativa.
+  String get videoUnavailable => _t(
+      'Vídeo em alta eficiência indisponível; usando o modo antigo.',
+      'High-efficiency video unavailable; using the old mode.',
+      '高效视频不可用，改用旧模式。',
+      "Vidéo haute efficacité indisponible ; retour à l'ancien mode.",
+      'Vídeo de alta eficiencia no disponible; usando el modo anterior.');
+
   // Preferência do vídeo por WebRTC
   String get webrtcVideo =>
       _t('Vídeo em alta eficiência', 'High-efficiency video', '高效视频',
