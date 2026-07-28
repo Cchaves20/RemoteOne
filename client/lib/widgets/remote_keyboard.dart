@@ -238,22 +238,28 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
     bool active = false,
     String? preview,
   }) {
-    Widget botao = SizedBox(
+    // `final`, e num nome que não é reatribuído: a versão anterior fazia
+    // `botao = Builder(... child: botao)`, e a closure captura a **variável**,
+    // não o valor dela. Quando o builder rodava, `botao` já era o próprio
+    // Builder — cada tecla se construía dentro de si mesma, sem fim.
+    final Widget conteudo = SizedBox(
       height: 34,
       child: active
           ? FilledButton(onPressed: onTap, style: _style, child: FittedBox(child: child))
           : OutlinedButton(onPressed: onTap, style: _style, child: FittedBox(child: child)),
     );
-    if (preview != null) {
-      botao = Builder(
-        builder: (keyContext) => Listener(
-          onPointerDown: (_) => _showPreview(keyContext, preview),
-          onPointerUp: (_) => _hidePreview(),
-          onPointerCancel: (_) => _hidePreview(),
-          child: botao,
-        ),
-      );
-    }
+
+    final Widget botao = preview == null
+        ? conteudo
+        : Builder(
+            builder: (keyContext) => Listener(
+              onPointerDown: (_) => _showPreview(keyContext, preview),
+              onPointerUp: (_) => _hidePreview(),
+              onPointerCancel: (_) => _hidePreview(),
+              child: conteudo,
+            ),
+          );
+
     return Expanded(
       flex: flex,
       child: Padding(padding: const EdgeInsets.all(1.5), child: botao),
