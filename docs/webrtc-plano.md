@@ -431,6 +431,23 @@ que a do JPEG. Três causas, e a terceira é de projeto:
    saltos. O caminho de vídeo passou a ter taxa própria
    (`REMOTEONE_VIDEO_FPS`, padrão 30), desacoplada do preset do JPEG.
 
+**Segunda rodada, ainda travado.** O pipeline era totalmente serial: cada tique
+esperava captura + conversão + escala + codificação antes de enviar, então o
+ritmo era a **soma** de tudo — e variava com o conteúdo, o que aparece como
+irregularidade. A captura passou para uma thread própria (`FramePump`), que
+publica sempre o quadro mais recente; o laço principal só paga a codificação.
+
+E o agente passou a **medir**, imprimindo a cada 5 s:
+
+```
+Vídeo: 24.3 fps · codificação 18.2 ms/quadro · 0.8 KB/quadro · 0.16 Mbps · 3 tique(s) sem quadro novo
+```
+
+Isso existe porque "está travado" não é diagnóstico. O campo decisivo é o último:
+**muitos tiques sem quadro novo significa que o gargalo é a captura**, não o
+codificador — e aí a resposta é a Desktop Duplication API (risco 5), não mexer no
+H.264.
+
 De passagem, o `request_keyframe` foi corrigido: eu tinha inventado uma gambiarra
 (zerar o contador de quadros) supondo que o openh264 não expunha
 `force_intra_frame`. Ele expõe. A gambiarra faria os timestamps voltarem no

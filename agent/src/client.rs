@@ -141,6 +141,11 @@ pub async fn run(
     let mut last_video_frame: Option<std::time::Instant> = None;
     // Se o ticker está no ritmo do vídeo ou no do JPEG, para saber quando trocar.
     let mut ticker_is_video = false;
+    // Captura correndo à parte, para o laço só pagar a codificação.
+    let mut pump: Option<crate::capture::FramePump> = None;
+    // Contadores do resumo periódico: sem número, "está travado" não tem
+    // como virar diagnóstico.
+    let mut stats = VideoStats::default();
 
     loop {
         tokio::select! {
@@ -185,21 +190,35 @@ pub async fn run(
                         1000 / intervalo.as_millis().max(1),
                         if quer_video { "vídeo" } else { "JPEG" },
                     );
-                    // Sessão nova de vídeo: relógio e contagem começam agora.
+                    // Sessão nova de vídeo: relógio, contagem e captura
+                    // começam agora; ao sair, a thread de captura para.
                     if quer_video {
                         video_clock = None;
                         last_video_frame = None;
+                        stats = VideoStats::default();
+                        pump = Some(crate::capture::FramePump::start(
+                            active.max_width,
+                            active.video_fps,
+                        ));
+                    } else {
+                        pump = None; // Drop encerra a thread
                     }
                 }
                 if quer_video {
+                    // Pega o quadro mais recente já capturado. Se ainda não há
+                    // nenhum novo, não vale recodificar o mesmo: espera o
+                    // próximo tique.
+                    let Some(captured) = pump.as_ref().and_then(|p| p.take()) else {
+                        stats.starved += 1;
+                        continue;
+                    };
                     let started = video_clock.get_or_insert_with(std::time::Instant::now);
                     let elapsed = started.elapsed();
-                    let (max_width, fps) = (active.max_width, active.video_fps.clamp(1, 60));
+                    let fps = active.video_fps.clamp(1, 60);
                     let shared = Arc::clone(&encoder);
-                    // Captura e codificação na mesma tarefa bloqueante: separá-las
-                    // custaria uma cópia do quadro e outra ida ao pool de threads.
+                    let encode_started = std::time::Instant::now();
                     let encoded = tokio::task::spawn_blocking(move || {
-                        let (rgb, w, h) = crate::capture::capture_rgb(max_width)?;
+                        let (w, h) = (captured.width, captured.height);
                         let mut slot = shared.lock().unwrap_or_else(|e| e.into_inner());
                         // Resolução nova (trocou de monitor, mudou a tela):
                         // recria o codificador em vez de remendar o atual.
@@ -208,7 +227,7 @@ pub async fn run(
                         }
                         slot.as_mut()
                             .expect("acabou de ser criado")
-                            .encode(&rgb, w, h, elapsed)
+                            .encode(&captured.rgb, w, h, elapsed)
                     })
                     .await;
                     match encoded {
@@ -223,7 +242,9 @@ pub async fn run(
                                 .map(|previous| now.duration_since(previous))
                                 .unwrap_or_else(|| active.video_interval());
                             last_video_frame = Some(now);
+                            stats.record(encode_started.elapsed(), frame.data.len());
                             video.write(&frame, duration).await;
+                            stats.report_if_due();
                         }
                         Ok(Err(e)) => eprintln!("Falha ao codificar a tela: {e}"),
                         Err(e) => eprintln!("Falha na tarefa de vídeo: {e}"),
@@ -330,6 +351,62 @@ pub async fn run(
                 }
             }
         }
+    }
+}
+
+/// Resumo periódico da transmissão de vídeo.
+///
+/// Existe porque "está travado" não é diagnóstico. Com o ritmo real, o custo de
+/// codificação e o tamanho do quadro em mãos, dá para saber se o gargalo é a
+/// captura, o codificador ou a rede — em vez de trocar palpites.
+#[derive(Debug)]
+struct VideoStats {
+    since: std::time::Instant,
+    frames: u32,
+    /// Tiques em que a captura ainda não tinha quadro novo: se este número é
+    /// alto, o gargalo é a captura, não a codificação.
+    starved: u32,
+    encode_total: Duration,
+    bytes: usize,
+}
+
+impl Default for VideoStats {
+    fn default() -> Self {
+        Self {
+            since: std::time::Instant::now(),
+            frames: 0,
+            starved: 0,
+            encode_total: Duration::ZERO,
+            bytes: 0,
+        }
+    }
+}
+
+impl VideoStats {
+    const INTERVAL: Duration = Duration::from_secs(5);
+
+    fn record(&mut self, encode: Duration, bytes: usize) {
+        self.frames += 1;
+        self.encode_total += encode;
+        self.bytes += bytes;
+    }
+
+    fn report_if_due(&mut self) {
+        let elapsed = self.since.elapsed();
+        if elapsed < Self::INTERVAL || self.frames == 0 {
+            return;
+        }
+        let seconds = elapsed.as_secs_f64();
+        println!(
+            "Vídeo: {:.1} fps · codificação {:.1} ms/quadro · {:.1} KB/quadro \
+             · {:.2} Mbps · {} tique(s) sem quadro novo",
+            self.frames as f64 / seconds,
+            self.encode_total.as_secs_f64() * 1000.0 / self.frames as f64,
+            self.bytes as f64 / self.frames as f64 / 1024.0,
+            self.bytes as f64 * 8.0 / seconds / 1_000_000.0,
+            self.starved,
+        );
+        *self = Self::default();
     }
 }
 

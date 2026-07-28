@@ -133,6 +133,79 @@ pub fn capture_frame(max_width: u32, quality: u8) -> Result<Vec<u8>, String> {
     rgba_to_jpeg(rgba, width, height, max_width, quality)
 }
 
+/// Um quadro capturado e já reduzido, pronto para codificar.
+pub struct CapturedFrame {
+    pub rgb: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Captura contínua numa thread própria, publicando sempre o quadro mais
+/// recente.
+///
+/// Existe porque capturar e codificar em série faz o ritmo ser a **soma** dos
+/// dois. Com a captura correndo à parte, o custo por quadro do laço principal
+/// passa a ser só a codificação, e o intervalo fica mais regular — que é o que
+/// se percebe como imagem menos travada.
+///
+/// Só o quadro mais recente é guardado: se a codificação não acompanha, o certo
+/// é pular para o presente em vez de acumular atraso.
+pub struct FramePump {
+    latest: std::sync::Arc<std::sync::Mutex<Option<CapturedFrame>>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+impl FramePump {
+    /// Começa a capturar em `max_width`, mirando `fps` quadros por segundo.
+    pub fn start(max_width: u32, fps: u32) -> Self {
+        let latest = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let interval = std::time::Duration::from_micros(1_000_000 / fps.clamp(1, 60) as u64);
+
+        let slot = std::sync::Arc::clone(&latest);
+        let halt = std::sync::Arc::clone(&stop);
+        let worker = std::thread::spawn(move || {
+            while !halt.load(std::sync::atomic::Ordering::Relaxed) {
+                let started = std::time::Instant::now();
+                match capture_rgb(max_width) {
+                    Ok((rgb, width, height)) => {
+                        let frame = CapturedFrame { rgb, width, height };
+                        if let Ok(mut guard) = slot.lock() {
+                            *guard = Some(frame); // substitui o anterior
+                        }
+                    }
+                    Err(e) => eprintln!("Falha ao capturar a tela: {e}"),
+                }
+                // Não adianta capturar mais rápido do que alguém consome.
+                if let Some(rest) = interval.checked_sub(started.elapsed()) {
+                    std::thread::sleep(rest);
+                }
+            }
+        });
+
+        Self {
+            latest,
+            stop,
+            worker: Some(worker),
+        }
+    }
+
+    /// Retira o quadro mais recente, se houver um ainda não consumido.
+    pub fn take(&self) -> Option<CapturedFrame> {
+        self.latest.lock().ok()?.take()
+    }
+}
+
+impl Drop for FramePump {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 /// Captura a tela já reduzida, em RGB e sem compressão: `(pixels, largura,
 /// altura)`.
 ///
@@ -224,6 +297,46 @@ mod tests {
         assert_ne!(frame_hash(&[1, 2, 3]), frame_hash(&[1, 2, 4]));
         assert_eq!(frame_hash(&[1, 2, 3]), frame_hash(&[1, 2, 3]));
         assert_ne!(frame_hash(&[]), NO_FRAME);
+    }
+
+    #[test]
+    fn pump_entrega_quadros_e_sempre_o_mais_recente() {
+        let pump = FramePump::start(1280, 30);
+        // Espera a thread produzir algo.
+        let mut primeiro = None;
+        for _ in 0..100 {
+            if let Some(frame) = pump.take() {
+                primeiro = Some(frame);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let primeiro = primeiro.expect("a captura não produziu quadro em 1s");
+        assert!(primeiro.width > 0 && primeiro.height > 0);
+        assert_eq!(
+            primeiro.rgb.len(),
+            (primeiro.width * primeiro.height * 3) as usize
+        );
+
+        // `take` consome: sem quadro novo, devolve None na hora.
+        assert!(
+            pump.take().is_none(),
+            "o mesmo quadro não deve ser entregue duas vezes"
+        );
+    }
+
+    #[test]
+    fn pump_para_a_thread_ao_ser_descartado() {
+        // Se o Drop não parasse a thread, ela seguiria capturando para sempre —
+        // com o custo de CPU que isso implica depois de o app sair.
+        let pump = FramePump::start(1280, 30);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let stop = std::sync::Arc::clone(&pump.stop);
+        drop(pump);
+        assert!(
+            stop.load(std::sync::atomic::Ordering::Relaxed),
+            "o Drop precisa sinalizar a parada"
+        );
     }
 
     #[test]
