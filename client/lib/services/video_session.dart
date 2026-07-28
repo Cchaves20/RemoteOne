@@ -57,6 +57,14 @@ class VideoSession extends ChangeNotifier {
   /// certo. Passar disso é sinal de que não vai.
   static const _negotiationTimeout = Duration(seconds: 20);
 
+  /// Quanto se espera por um quadro **desenhado** depois de a faixa chegar.
+  ///
+  /// Existe por causa de uma falha real: a faixa chegava, a conexão ficava
+  /// `Connected`, e a tela ficava **preta** — porque sem um quadro-chave o
+  /// decodificador não tinha por onde começar. "Recebeu a faixa" não é o mesmo
+  /// que "está mostrando imagem", e só o segundo justifica abandonar o JPEG.
+  static const _firstFrameTimeout = Duration(seconds: 6);
+
   VideoState state = VideoState.idle;
   String? error;
 
@@ -111,12 +119,25 @@ class VideoSession extends ChangeNotifier {
         ),
       );
 
+      // O único sinal que autoriza abandonar o JPEG: um quadro efetivamente
+      // desenhado. Chegar a faixa não basta.
+      renderer.onFirstFrameRendered = () {
+        _timeout?.cancel();
+        if (state != VideoState.live) _set(VideoState.live);
+      };
+
       peer.onTrack = (event) {
         if (event.streams.isEmpty) return;
         renderer.srcObject = event.streams.first;
-        // Chegou mídia: é agora que vale trocar o JPEG pelo vídeo.
+        // A faixa chegou, mas ainda não há imagem. Reinicia o prazo: agora a
+        // espera é por um quadro desenhado, não pela negociação.
         _timeout?.cancel();
-        _set(VideoState.live);
+        _timeout = Timer(_firstFrameTimeout, () {
+          _fail(
+            'a faixa de vídeo chegou mas nenhum quadro foi desenhado em '
+            '${_firstFrameTimeout.inSeconds}s (provável falta de quadro-chave)',
+          );
+        });
       };
 
       peer.onIceCandidate = (candidate) {

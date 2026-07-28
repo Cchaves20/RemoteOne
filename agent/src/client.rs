@@ -337,8 +337,22 @@ pub async fn run(
                                 if let Err(e) = video.offer(&session_id, &sdp).await {
                                     eprintln!("Falha ao negociar vídeo ({session_id}): {e}");
                                 } else {
+                                    // Um app que entra no meio da transmissão
+                                    // precisa de um quadro-chave: sem ele, recebe
+                                    // quadros que referenciam imagens que nunca
+                                    // chegaram, e fica na tela preta. Vale para
+                                    // toda sessão nova — inclusive a reconexão
+                                    // que acontece ao trocar a qualidade no app.
+                                    if let Some(enc) = encoder
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner())
+                                        .as_mut()
+                                    {
+                                        enc.request_keyframe();
+                                    }
                                     println!(
-                                        "Vídeo por WebRTC negociado (sessão {session_id})"
+                                        "Vídeo por WebRTC negociado (sessão {session_id}) \
+                                         — próximo quadro será chave"
                                     );
                                 }
                             }

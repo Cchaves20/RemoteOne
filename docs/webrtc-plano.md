@@ -552,6 +552,27 @@ resolve o monitor a cada quadro. Não foi mexido nesta rodada porque é o fallba
 que precisa continuar funcionando enquanto o vídeo se estabiliza. O conserto certo
 é o JPEG passar a consumir o mesmo `FramePump`, que já entrega RGB reduzido.
 
+### Regressão: tela preta ao trocar a qualidade
+
+Trocar o preset no app faz a tela reconectar, e reconectar cria uma **sessão de
+WebRTC nova**. Um app que entra no meio da transmissão precisa de um quadro-chave
+(IDR) para começar a decodificar; sem ele recebe quadros que referenciam imagens
+que nunca chegaram, e mostra preto.
+
+O `request_keyframe()` existia para exatamente isso — o comentário dele dizia
+"sem um IDR ele não tem como começar a decodificar e fica na tela preta" — e
+**nunca era chamado**. Agora é, a cada sessão negociada.
+
+O conserto veio com uma defesa, porque a falha era pior do que parecia: o app
+considerava o vídeo "ao vivo" quando a **faixa** chegava. Faixa chegando não é o
+mesmo que imagem aparecendo, então a tela preta persistia sem acionar o fallback.
+Agora só um quadro **efetivamente desenhado**
+(`RTCVideoRenderer.onFirstFrameRendered`) autoriza abandonar o JPEG, com um prazo
+de 6 s a partir da chegada da faixa. Passado isso, volta ao JPEG e diz o motivo.
+
+A lição vale registrar: **"conectado" e "mostrando imagem" são condições
+diferentes**, e só a segunda justifica desligar o caminho que funciona.
+
 ### Fase 4b — Qualidade adaptativa (novo, saiu da Fase 2)
 
 Como nenhuma configuração do codificador limita a banda sem travar a imagem, o
