@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -27,6 +29,7 @@ class ProfileBar extends StatefulWidget {
     required this.onSelect,
     required this.onAction,
     this.profiles,
+    this.appIcons = const {},
   });
 
   /// Barra em pé (celular deitado). Deitada quando o celular está em pé.
@@ -42,6 +45,10 @@ class ProfileBar extends StatefulWidget {
 
   /// Injetável nos testes; na tela real são os perfis que vêm com o app.
   final List<ControlProfile>? profiles;
+
+  /// Ícone real do programa de cada perfil, por `id` de perfil (PNG vindo do
+  /// computador). Quando um perfil não está aqui, vale o ícone desenhado.
+  final Map<String, Uint8List> appIcons;
 
   @override
   State<ProfileBar> createState() => _ProfileBarState();
@@ -245,15 +252,43 @@ class _ProfileBarState extends State<ProfileBar>
                 color: aceso ? null : Colors.white10,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(
-                profile.icon,
-                size: 21,
-                color: aceso ? Colors.white : Colors.white70,
-              ),
+              child: _profileIcon(profile, aceso),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// O ícone do perfil: o do **programa de verdade** quando o computador já
+  /// disse qual é (o PowerPoint no perfil de apresentação, o Apple Music no de
+  /// mídia), e o desenho genérico enquanto não disse.
+  Widget _profileIcon(ControlProfile profile, bool aceso) {
+    final real = widget.appIcons[profile.id];
+    if (real != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: Image.memory(
+          real,
+          width: 26,
+          height: 26,
+          fit: BoxFit.contain,
+          // O ícone vem em 128px e aparece em 26: a reamostragem boa evita
+          // serrilhado.
+          filterQuality: FilterQuality.high,
+          // Ícone ilegível não pode apagar o botão: volta ao desenho.
+          errorBuilder: (_, __, ___) => Icon(
+            profile.icon,
+            size: 21,
+            color: aceso ? Colors.white : Colors.white70,
+          ),
+        ),
+      );
+    }
+    return Icon(
+      profile.icon,
+      size: 21,
+      color: aceso ? Colors.white : Colors.white70,
     );
   }
 

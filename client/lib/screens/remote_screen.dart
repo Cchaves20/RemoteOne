@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -150,6 +151,18 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _profilesOpen = true;
   ControlProfile? _profile;
 
+  /// Ícone real do programa de cada perfil, por `id` de perfil.
+  ///
+  /// É um acúmulo, e não um retrato do momento: o Apple Music sai da frente
+  /// quando se volta ao navegador, mas o perfil de mídia continua sendo o do
+  /// Apple Music - é ele que se está controlando. Some só ao sair da tela.
+  final Map<String, Uint8List> _profileIcons = {};
+  Timer? _foregroundTimer;
+  bool _foregroundInFlight = false;
+  /// Desliga a consulta de vez depois de uma falha (agente antigo, sem o
+  /// endpoint): insistir a cada 3 s daria erro sem fim e gastaria bateria.
+  bool _foregroundFailed = false;
+
   @override
   void initState() {
     super.initState();
@@ -168,6 +181,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     });
     // A dock de aplicativos carrega em segundo plano, sem travar a tela.
     _loadDockApps();
+    // Quem está na frente do computador, para os ícones dos perfis.
+    _startForegroundPolling();
     // Reabre no perfil de atalhos da última vez (pode não existir mais).
     _profile = ControlProfile.byId(widget.state.profileId);
     // Na primeira vez que se controla um PC, mostra o tutorial de gestos (#20).
@@ -317,6 +332,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _transform.dispose();
     _dockAnim.dispose();
     _statsTimer?.cancel();
+    _foregroundTimer?.cancel();
     _statsAnim.dispose();
     _mediaAnim.dispose();
     _typedWord.dispose();
@@ -416,6 +432,54 @@ class _RemoteScreenState extends State<RemoteScreen>
     } else {
       _mediaAnim.reverse();
     }
+  }
+
+  /// Pergunta de tempos em tempos qual programa está na frente.
+  ///
+  /// A cada 3 s, e não a cada segundo: trocar de janela é um gesto humano, e
+  /// do outro lado a resposta pode custar uma extração de ícone.
+  void _startForegroundPolling() {
+    _refreshForeground();
+    _foregroundTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _refreshForeground(),
+    );
+  }
+
+  Future<void> _refreshForeground() async {
+    // Barra escondida ou lupa aberta: ninguém está olhando os ícones.
+    if (_foregroundInFlight || _foregroundFailed) return;
+    if (!_profilesOpen || _zoomMode) return;
+    _foregroundInFlight = true;
+    try {
+      final app = await widget.state.foregroundApp(widget.device);
+      if (!mounted || app == null) return;
+      final icone = app.iconBytes;
+      if (icone == null) return;
+      final perfil = ControlProfile.forExecutable(app.exe);
+      if (perfil == null) return;
+      // Só reconstrói quando o ícone muda mesmo: isto roda a cada 3 s.
+      final atual = _profileIcons[perfil.id];
+      if (atual != null && _sameBytes(atual, icone)) return;
+      setState(() => _profileIcons[perfil.id] = icone);
+    } catch (_) {
+      // Agente antigo ou sem rede: fica com os ícones desenhados, em silêncio.
+      _foregroundFailed = true;
+      _foregroundTimer?.cancel();
+    } finally {
+      _foregroundInFlight = false;
+    }
+  }
+
+  /// Compara dois ícones. O tamanho já separa quase todos os casos; o resto é
+  /// uma varredura curta, e ela vale a pena para evitar redesenhar a tela.
+  static bool _sameBytes(Uint8List a, Uint8List b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   void _toggleProfiles() {
@@ -1289,6 +1353,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                 vertical: !isPortrait,
                 area: area,
                 selected: _profile,
+                appIcons: _profileIcons,
                 strings: widget.state.t,
                 onSelect: _selectProfile,
                 // Um toque deliberado e único, como o da sugestão do teclado:

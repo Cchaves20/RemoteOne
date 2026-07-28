@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
+import '../models/foreground_app.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
@@ -318,6 +319,16 @@ class ApiClient {
         .get(_uri('/api/v1/devices/$deviceId/system'), headers: _authHeaders)
         .timeout(const Duration(seconds: 10));
     return SystemStats.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Qual programa está em primeiro plano no computador, com o ícone dele.
+  ///
+  /// `null` quando não há nenhum em foco — resposta normal, não erro.
+  Future<ForegroundApp?> foregroundApp(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/foreground'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return ForegroundApp.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
   /// Aciona uma tecla de mídia: `play_pause`, `next`, `previous`, `volume_up`,

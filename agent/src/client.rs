@@ -157,6 +157,12 @@ pub async fn run(
     // medida de verdade — e aqui isso não custa nada a ninguém.
     let mut monitor = crate::system_info::Monitor::new();
 
+    // Quem está em primeiro plano, para a barra de perfis do app mostrar o
+    // ícone do programa de verdade. Vive num `Arc<Mutex>` porque descobrir isso
+    // pode custar um PowerShell (extração de ícone), e isso sai do laço para
+    // uma thread - o laço não pode parar por 200 ms enquanto alguém digita.
+    let foreground = Arc::new(std::sync::Mutex::new(crate::foreground::Watcher::new()));
+
     // Transferência de arquivos. Os pedaços que saem daqui passam por um canal
     // **limitado**: é ele que segura o leitor quando a rede não acompanha. Sem
     // limite, ler um arquivo de 100 MB o carregaria inteiro na memória.
@@ -420,6 +426,25 @@ pub async fn run(
                                 let stats = monitor.snapshot();
                                 let reply = serde_json::to_string(
                                     &ClientMessage::SystemStats { request_id, stats },
+                                )?;
+                                ws.send(Message::Text(reply)).await?;
+                            }
+                            // Primeiro plano: pode custar um PowerShell na
+                            // primeira vez que um programa aparece, então vai
+                            // para uma thread como as outras coisas lentas.
+                            Some(Action::ForegroundInfo { request_id }) => {
+                                let watcher = Arc::clone(&foreground);
+                                let app = tokio::task::spawn_blocking(move || {
+                                    // Um `unwrap` aqui derrubaria o agente se
+                                    // outra thread tivesse entrado em pânico
+                                    // com o cadeado na mão; sem ícone é pior
+                                    // que com, mas não é motivo para cair.
+                                    watcher.lock().ok().and_then(|mut w| w.current())
+                                })
+                                .await
+                                .unwrap_or(None);
+                                let reply = serde_json::to_string(
+                                    &ClientMessage::ForegroundApp { request_id, app },
                                 )?;
                                 ws.send(Message::Text(reply)).await?;
                             }
@@ -794,6 +819,8 @@ enum Action {
     RestartFrameTicker,
     /// Medir CPU/memória/disco e responder ao backend.
     SystemInfo { request_id: String },
+    /// Descobrir o programa em primeiro plano e responder ao backend.
+    ForegroundInfo { request_id: String },
     /// Listar uma pasta e responder ao backend.
     ListFiles { request_id: String, path: String },
     /// Ler um arquivo e mandá-lo em pedaços.
@@ -929,6 +956,11 @@ fn handle_server_text(
         // Medir exige `&mut` no monitor, que vive no laço: volta como ação.
         Ok(ServerMessage::SystemInfo { request_id }) => {
             return Some(Action::SystemInfo { request_id });
+        }
+        // Idem: o acompanhante do primeiro plano guarda memória entre uma
+        // pergunta e outra, e essa memória vive no laço.
+        Ok(ServerMessage::ForegroundInfo { request_id }) => {
+            return Some(Action::ForegroundInfo { request_id });
         }
         // Arquivos: tudo precisa do socket ou do estado das transferências, que
         // vivem no laço. Aqui só viram ação.

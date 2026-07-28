@@ -119,6 +119,22 @@ class SystemStatsOut(BaseModel):
     uptime_seconds: int
 
 
+class ForegroundAppOut(BaseModel):
+    """O programa em primeiro plano no computador.
+
+    `app` nulo é resposta normal (nenhuma janela em foco, ou um sistema sem
+    sessão gráfica): o app simplesmente fica com os ícones genéricos.
+    """
+
+    name: str = ""
+    exe: str
+    icon: str | None = None
+
+
+class ForegroundOut(BaseModel):
+    app: ForegroundAppOut | None = None
+
+
 class FileEntryOut(BaseModel):
     """Um item de uma pasta do computador."""
 

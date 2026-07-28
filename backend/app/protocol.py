@@ -75,6 +75,29 @@ class SystemStats(BaseModel):
     stats: SystemSnapshot
 
 
+class ForegroundApp(BaseModel):
+    """O programa em primeiro plano no computador, com o ícone dele."""
+
+    name: str = ""
+    #: Executável em minúsculas ("powerpnt.exe"). É a chave de comparação do
+    #: app: o nome legível muda com o idioma do Windows, o executável não.
+    exe: str
+    #: PNG em base64. Ausente quando não deu para extrair.
+    icon: str | None = None
+
+
+class Foreground(BaseModel):
+    """Resposta do agente a um `foreground_info`.
+
+    `app` vem nulo quando não deu para descobrir (nenhuma janela em foco, ou o
+    processo sumiu no meio) - situação normal, não erro.
+    """
+
+    type: Literal["foreground_app"] = "foreground_app"
+    request_id: str
+    app: ForegroundApp | None = None
+
+
 class FileEntry(BaseModel):
     """Um item de uma pasta do computador."""
 
@@ -150,6 +173,7 @@ ClientMessage = Annotated[
     | Heartbeat
     | AppList
     | SystemStats
+    | Foreground
     | FileList
     | FileChunk
     | FileDone

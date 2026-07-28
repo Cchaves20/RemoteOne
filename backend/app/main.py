@@ -20,6 +20,7 @@ from app.protocol import (
     FileChunk,
     FileDone,
     FileList,
+    Foreground,
     Hello,
     PairCode,
     Paired,
@@ -77,6 +78,7 @@ FEATURES = [
     "system-stats",
     "media-keys",
     "file-transfer",
+    "foreground-app",
 ]
 
 
@@ -250,6 +252,13 @@ async def agent_ws(websocket: WebSocket) -> None:
                         message.transfer_id,
                         {"ok": message.ok, "detail": message.detail},
                     )
+            elif isinstance(message, Foreground):
+                # Primeiro plano: o `None` é resposta legítima (nenhuma janela
+                # em foco), então vai como está para quem perguntou.
+                pending.resolve(
+                    message.request_id,
+                    {"app": message.app.model_dump() if message.app else None},
+                )
             elif isinstance(message, SystemStats):
                 # Métricas medidas: entrega a quem pediu (o endpoint HTTP).
                 pending.resolve(message.request_id, message.stats.model_dump())

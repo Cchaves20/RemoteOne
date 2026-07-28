@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:remoteone_client/l10n/strings.dart';
@@ -15,6 +18,11 @@ const _teclasComNome = {
 };
 
 const _modificadores = {'ctrl', 'alt', 'shift', 'meta'};
+
+/// PNG de 1x1 transparente: basta para o widget montar uma imagem de verdade.
+final Uint8List _png = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+);
 
 void main() {
   const t = Strings(AppLanguage.ptBr);
@@ -95,6 +103,35 @@ void main() {
       }
     });
 
+    test('cada programa pertence a um perfil só', () {
+      // Dois perfis reivindicando o mesmo executável fariam o ícone real
+      // aparecer num lugar imprevisível - o primeiro da lista venceria.
+      final vistos = <String, String>{};
+      for (final p in ControlProfile.builtIn) {
+        for (final exe in p.executables) {
+          expect(exe, exe.toLowerCase(), reason: 'executável em maiúsculas');
+          expect(exe, contains('.'), reason: '$exe: falta a extensão');
+          final dono = vistos[exe];
+          expect(dono, isNull, reason: '$exe está em $dono e em ${p.id}');
+          vistos[exe] = p.id;
+        }
+      }
+    });
+
+    test('acha o perfil pelo programa, sem ligar para a caixa', () {
+      expect(ControlProfile.forExecutable('POWERPNT.EXE')?.id, 'apresentacao');
+      expect(ControlProfile.forExecutable('applemusic.exe')?.id, 'video');
+      expect(ControlProfile.forExecutable('chrome.exe')?.id, 'navegador');
+      expect(ControlProfile.forExecutable('winword.exe')?.id, 'trabalho');
+      expect(ControlProfile.forExecutable('explorer.exe')?.id, 'sistema');
+    });
+
+    test('programa desconhecido não vira perfil nenhum', () {
+      // Sem isto, um jogo em primeiro plano trocaria o ícone de algum perfil.
+      expect(ControlProfile.forExecutable('jogo-qualquer.exe'), isNull);
+      expect(ControlProfile.forExecutable(''), isNull);
+    });
+
     test('esquece um perfil que não existe mais', () {
       expect(ControlProfile.byId('perfil-de-uma-versao-antiga'), isNull);
       expect(ControlProfile.byId(null), isNull);
@@ -140,6 +177,7 @@ void main() {
       ControlProfile? selected,
       ValueChanged<ControlProfile?>? onSelect,
       ValueChanged<ProfileAction>? onAction,
+      Map<String, Uint8List> icones = const {},
     }) {
       return MaterialApp(
         home: Scaffold(
@@ -155,6 +193,7 @@ void main() {
                       : const Size(400, 800),
                   profiles: perfis,
                   selected: selected,
+                  appIcons: icones,
                   strings: t,
                   onSelect: onSelect ?? (_) {},
                   onAction: onAction ?? (_) {},
@@ -218,6 +257,18 @@ void main() {
       expect(find.text('Space'), findsOneWidget);
       await tester.tap(find.text('Space'));
       expect(disparado?.input, {'kind': 'key_press', 'key': 'space'});
+    });
+
+    testWidgets('mostra o ícone real do programa quando ele chega',
+        (tester) async {
+      await tester.pumpWidget(montar(vertical: false, icones: {'a': _png}));
+      await tester.pumpAndSettle();
+
+      // O desenho genérico do perfil 'a' deu lugar à imagem do programa; o
+      // outro perfil, sem ícone real, continua desenhado.
+      expect(find.byType(Image), findsOneWidget);
+      expect(find.byIcon(Icons.movie), findsNothing);
+      expect(find.byIcon(Icons.public), findsOneWidget);
     });
 
     testWidgets('cabe nas duas orientações', (tester) async {

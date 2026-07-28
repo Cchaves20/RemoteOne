@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/strings.dart';
 import '../models/device.dart';
+import '../models/foreground_app.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/stream_quality.dart';
@@ -311,6 +312,11 @@ class AppState extends ChangeNotifier {
 
   Future<void> mediaKey(Device device, String action) =>
       api.mediaKey(device.deviceId, action);
+
+  /// Qual programa está em primeiro plano no computador (para os ícones dos
+  /// perfis). `null` quando não há nenhum em foco.
+  Future<ForegroundApp?> foregroundApp(Device device) =>
+      api.foregroundApp(device.deviceId);
 
   // --- arquivos ----------------------------------------------------------------
 

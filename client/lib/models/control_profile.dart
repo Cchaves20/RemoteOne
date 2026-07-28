@@ -85,6 +85,7 @@ class ControlProfile {
     required this.icon,
     required this.name,
     required this.actions,
+    this.executables = const [],
   });
 
   /// Identificador guardado no disco. Nunca traduzido — o nome muda com o
@@ -94,6 +95,24 @@ class ControlProfile {
   final IconData icon;
   final String Function(Strings) name;
   final List<ProfileAction> actions;
+
+  /// Executáveis que este perfil atende, em minúsculas e com extensão.
+  ///
+  /// É por esta lista que o ícone do perfil vira o ícone do programa de
+  /// verdade: com o PowerPoint na frente, o perfil de apresentação passa a
+  /// mostrar o ícone do PowerPoint. A comparação é pelo executável, e não pelo
+  /// nome, porque o nome muda com o idioma do Windows.
+  final List<String> executables;
+
+  bool matches(String exe) => executables.contains(exe.toLowerCase());
+
+  /// O perfil ao qual um programa pertence, se algum.
+  static ControlProfile? forExecutable(String exe) {
+    for (final p in builtIn) {
+      if (p.matches(exe)) return p;
+    }
+    return null;
+  }
 
   static ControlProfile? byId(String? id) {
     if (id == null) return null;
@@ -111,6 +130,16 @@ class ControlProfile {
   static final List<ControlProfile> builtIn = [
     ControlProfile(
       id: 'sistema',
+      executables: [
+        'explorer.exe',
+        'taskmgr.exe',
+        'cmd.exe',
+        'powershell.exe',
+        'pwsh.exe',
+        'windowsterminal.exe',
+        'control.exe',
+        'systemsettings.exe',
+      ],
       icon: Icons.desktop_windows,
       name: (t) => t.profileSystem,
       actions: [
@@ -167,6 +196,22 @@ class ControlProfile {
     ),
     ControlProfile(
       id: 'video',
+      executables: [
+        // Tocadores e serviços de música/vídeo mais comuns no Windows. O
+        // Apple Music da Microsoft Store se chama AppleMusic.exe; o iTunes
+        // antigo continua por aí.
+        'applemusic.exe',
+        'itunes.exe',
+        'spotify.exe',
+        'vlc.exe',
+        'mpc-hc64.exe',
+        'mpv.exe',
+        'potplayermini64.exe',
+        'wmplayer.exe',
+        'music.ui.exe',
+        'video.ui.exe',
+        'netflix.exe',
+      ],
       icon: Icons.movie,
       name: (t) => t.profileVideo,
       actions: [
@@ -210,6 +255,14 @@ class ControlProfile {
     ),
     ControlProfile(
       id: 'navegador',
+      executables: [
+        'chrome.exe',
+        'msedge.exe',
+        'firefox.exe',
+        'opera.exe',
+        'brave.exe',
+        'vivaldi.exe',
+      ],
       icon: Icons.public,
       name: (t) => t.profileBrowser,
       actions: [
@@ -265,6 +318,19 @@ class ControlProfile {
     ),
     ControlProfile(
       id: 'trabalho',
+      executables: [
+        'winword.exe',
+        'excel.exe',
+        'onenote.exe',
+        'notepad.exe',
+        'wordpad.exe',
+        'notepad++.exe',
+        'code.exe',
+        'acrobat.exe',
+        'acrord32.exe',
+        'soffice.bin',
+        'swriter.exe',
+      ],
       icon: Icons.description,
       name: (t) => t.profileWork,
       actions: [
@@ -321,6 +387,11 @@ class ControlProfile {
     ),
     ControlProfile(
       id: 'apresentacao',
+      executables: [
+        'powerpnt.exe',
+        'simpress.exe',
+        'prezi.exe',
+      ],
       icon: Icons.slideshow,
       name: (t) => t.profileSlides,
       actions: [

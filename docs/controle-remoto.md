@@ -213,6 +213,32 @@ sem nada aparecer na tela. Um teste percorre todos os perfis e confere cada
 tecla contra a mesma tabela - e por isso que um perfil novo com um nome
 inventado quebra no `flutter test`, e nao no bolso do usuario.
 
+### O icone do perfil e o icone do programa
+
+Quando o programa da frente e um dos que o perfil atende, o botao passa a
+mostrar o **icone real dele**: PowerPoint no perfil de apresentacao, Apple
+Music no de midia. E o mesmo icone que a dock usa, extraido pelo mesmo trecho
+de PowerShell (`ICON_HELPER`, em `agent/src/apps.rs`) - duas copias acabariam
+divergindo, e o mesmo programa apareceria com dois desenhos diferentes na
+mesma tela.
+
+O caminho: o app pergunta `GET /devices/{id}/foreground` de 3 em 3 segundos
+enquanto a barra esta visivel; o agente responde com nome, executavel e icone.
+A comparacao e pelo **executavel** (`powerpnt.exe`), nunca pelo nome legivel,
+que muda com o idioma do Windows.
+
+Tres economias, porque isso roda o tempo todo:
+
+1. O agente so pergunta ao sistema quem esta na frente quando o **PID** muda.
+2. O icone e extraido uma vez por programa e fica guardado por nome.
+3. O app guarda o icone **por perfil**, e nao o retrato do momento: sair do
+   Apple Music para o navegador nao apaga o icone do perfil de midia - e ele
+   que continua sendo controlado.
+
+Se o computador nao responder (agente antigo, sem rede), o app desliga a
+consulta e fica com os icones desenhados. Sem erro na tela: nao e uma falha
+que impeca controlar o computador.
+
 ### Por que os perfis vem prontos e nao sao editaveis (ainda)
 
 O valor esta em ter algo util no primeiro toque. Um editor de atalhos e uma

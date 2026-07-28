@@ -20,6 +20,7 @@ from app.schemas import (
     AppOut,
     ClaimRequest,
     DeviceOut,
+    ForegroundOut,
     ListingOut,
     MediaRequest,
     PowerRequest,
@@ -195,6 +196,38 @@ async def system_stats(
             detail="o computador demorou para responder",
         ) from exc
     return SystemStatsOut(**stats)
+
+
+@router.get("/devices/{device_id}/foreground", response_model=ForegroundOut)
+async def foreground_app(
+    device_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ForegroundOut:
+    """Qual programa está em primeiro plano no computador, com o ícone dele.
+
+    Serve à barra de perfis do app: o perfil que combina com o programa da
+    frente passa a mostrar o ícone real dele. Quem decide qual perfil combina
+    com qual programa é o app - aqui só se repassa o que o agente respondeu.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    request_id, future = pending.create()
+    message = {"type": "foreground_info", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return ForegroundOut(**reply)
 
 
 @router.post("/devices/{device_id}/media", status_code=status.HTTP_204_NO_CONTENT)

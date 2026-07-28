@@ -9,6 +9,7 @@ pub mod capture;
 pub mod client;
 pub mod datachannel;
 pub mod files;
+pub mod foreground;
 pub mod h264;
 pub mod identity;
 pub mod injector;

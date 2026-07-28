@@ -37,6 +37,15 @@ pub enum ClientMessage {
         request_id: String,
         stats: SystemSnapshot,
     },
+    /// Resposta a um `foreground`: o programa em primeiro plano, ou nada
+    /// quando não deu para descobrir (o app fica com os ícones genéricos).
+    ForegroundApp {
+        request_id: String,
+        /// Caminho completo do tipo: aqui `ForegroundApp` é o nome da
+        /// variante, e importar o tipo com o mesmo nome só confundiria.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app: Option<crate::foreground::ForegroundApp>,
+    },
     /// Resposta a um `list_files`: o conteúdo da pasta, **ou** o motivo de não
     /// ter conseguido. Uma pasta sem permissão não pode chegar ao app como
     /// pasta vazia — são coisas diferentes para quem procura um arquivo.
@@ -136,6 +145,11 @@ pub enum ServerMessage {
     /// Pede as métricas do computador (CPU, memória, disco). O agente responde
     /// com `system_stats` carregando o mesmo `request_id`.
     SystemInfo {
+        request_id: String,
+    },
+    /// Pergunta qual programa está em primeiro plano. O agente responde com
+    /// `foreground_app` carregando o mesmo `request_id`.
+    ForegroundInfo {
         request_id: String,
     },
     /// Aciona uma tecla de mídia (play/pause, faixa, volume). Mão única: não há

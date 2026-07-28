@@ -121,7 +121,7 @@ mod imp {
     /// O script vai em base64 (UTF-16LE), então aspas, `$`, `{}` e afins
     /// chegam intactos — passar scripts grandes por `-Command` na linha de
     /// comando é frágil, porque o PowerShell reinterpreta as aspas.
-    fn run_powershell(script: &str) -> std::io::Result<Output> {
+    pub(crate) fn run_powershell(script: &str) -> std::io::Result<Output> {
         let utf16: Vec<u8> = script
             .encode_utf16()
             .flat_map(|unit| unit.to_le_bytes())
@@ -132,11 +132,13 @@ mod imp {
             .output()
     }
 
-    /// Script que lista os atalhos da área de trabalho e já extrai o **ícone
-    /// real** de cada programa: resolve o alvo do atalho (WScript.Shell) e
-    /// converte o ícone associado em PNG base64. Tudo numa chamada só, porque
-    /// abrir um PowerShell por atalho seria lento demais.
-    const DESKTOP_SCRIPT: &str = r#"
+    /// Trecho de PowerShell que extrai o ícone real de um arquivo em PNG
+    /// base64 (`Get-IconBase64 caminho indice tamanho`).
+    ///
+    /// Fica separado porque tem dois usuários: a dock, que extrai o ícone de
+    /// cada atalho da área de trabalho, e a barra de perfis, que extrai o do
+    /// programa em primeiro plano. Uma cópia para cada acabaria divergindo.
+    pub(crate) const ICON_HELPER: &str = r#"
 Add-Type -AssemblyName System.Drawing
 Add-Type -Namespace RemoteOne -Name IconApi -MemberDefinition @'
 [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -165,7 +167,11 @@ function Get-IconBase64($caminho, $indice, $tamanho) {
   } catch { return '' }
   finally { if ($h[0] -ne [IntPtr]::Zero) { [void][RemoteOne.IconApi]::DestroyIcon($h[0]) } }
 }
+"#;
 
+    /// Corpo do script da dock: varre a área de trabalho e usa o
+    /// `Get-IconBase64` do [`ICON_HELPER`], que é anexado antes dele.
+    const DESKTOP_BODY: &str = r#"
 $sh = New-Object -ComObject WScript.Shell
 $dirs = @("$env:USERPROFILE\Desktop", "$env:PUBLIC\Desktop", "$env:USERPROFILE\Área de Trabalho")
 $out = @()
@@ -221,7 +227,8 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
     /// reais. É o conjunto que a própria pessoa escolheu deixar à mão — por
     /// isso alimenta a dock, em vez das centenas de entradas do menu Iniciar.
     pub fn list_desktop() -> Vec<AppInfo> {
-        let output = match run_powershell(DESKTOP_SCRIPT) {
+        let script = format!("{ICON_HELPER}\n{DESKTOP_BODY}");
+        let output = match run_powershell(&script) {
             Ok(output) => output,
             Err(e) => {
                 eprintln!("Falha ao listar a área de trabalho: {e}");
