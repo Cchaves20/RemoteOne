@@ -1,0 +1,8 @@
+# Scripts do Windows precisam de quebra de linha do Windows: o PowerShell 5.1
+# tropeça em arquivos com LF, e um .cmd com LF pode simplesmente não rodar.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# O resto fica com LF, que é o que o agente, o backend e o app usam.
+* text=auto eol=lf

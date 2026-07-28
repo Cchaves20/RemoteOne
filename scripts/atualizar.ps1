@@ -121,7 +121,7 @@ if ($App) {
         if (Executar "flutter" @("analyze") $cliente) {
             Write-Host "  App sem apontamentos." -ForegroundColor Green
         } else {
-            # O Codemagic falha em qualquer apontamento, inclusive `info`.
+            # O Codemagic falha em qualquer apontamento, inclusive os "info".
             $falhas += "app (analyze)"
             Write-Host "  O analyze apontou algo — corrija antes de gastar build do Codemagic." -ForegroundColor Red
         }
@@ -134,8 +134,8 @@ if ($Vps) {
     Titulo "Backend (VPS)"
     if ($ChaveSsh -eq "") {
         # A chave da Oracle costuma estar em Downloads; pega a mais recente.
-        $achada = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "*.key" -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $chaves = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "*.key" -ErrorAction SilentlyContinue
+        $achada = $chaves | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if ($achada) { $ChaveSsh = $achada.FullName }
     }
 
@@ -144,11 +144,19 @@ if ($Vps) {
         Write-Host "  Não achei a chave SSH. Rode com -ChaveSsh C:\caminho\sua-chave.key" -ForegroundColor Red
     } else {
         Passo "ssh $Servidor (git + docker compose)"
-        # Numa linha só: cada `ssh` abre uma sessão nova, então encadear aqui
-        # é o que mantém tudo numa ida só.
-        $remoto = "cd ~/RemoteOne && git fetch origin $Branch && git checkout $Branch && " +
-                  "git reset --hard origin/$Branch && cd deploy && " +
-                  "sudo docker compose -f docker-compose.lite.yml up -d --build"
+        # Encadeado com && porque cada "ssh" abre uma sessão nova: em chamadas
+        # separadas, o "cd" da primeira não valeria para a segunda. O "&&" aqui
+        # é texto dentro de uma string — quem o executa é o shell do Linux, não
+        # o PowerShell (que nem o suporta na versão 5.1).
+        $passos = @(
+            "cd ~/RemoteOne",
+            "git fetch origin $Branch",
+            "git checkout $Branch",
+            "git reset --hard origin/$Branch",
+            "cd deploy",
+            "sudo docker compose -f docker-compose.lite.yml up -d --build"
+        )
+        $remoto = $passos -join " && "
         & ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $remoto
         if ($LASTEXITCODE -eq 0) {
             Write-Host "  Backend atualizado." -ForegroundColor Green
