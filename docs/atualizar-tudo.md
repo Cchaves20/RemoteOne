@@ -14,7 +14,20 @@ palavra).
 No PowerShell, na pasta do projeto:
 
 ```powershell
-.\scripts\atualizar.ps1
+.\scripts\atualizar
+```
+
+Repare que é `atualizar`, sem o `.ps1`: quem responde é o `atualizar.cmd`, um
+atalho de três linhas. Ele existe porque o Windows **bloqueia qualquer `.ps1`
+por padrão** (a política de execução). O `.cmd` não passa por essa política e
+chama o PowerShell já com a exceção — assim o comando funciona em qualquer
+máquina sem afrouxar a política do sistema inteiro, que é a solução que se
+costuma dar e que baixa a guarda para todo script, não só para este.
+
+Chamar o `.ps1` direto funciona igual, desde que a política permita:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\atualizar.ps1
 ```
 
 Isso faz, em ordem:
@@ -30,10 +43,10 @@ Isso faz, em ordem:
 ## Variações
 
 ```powershell
-.\scripts\atualizar.ps1 -Agente -Rodar    # só o agente, e o deixa rodando à vista
-.\scripts\atualizar.ps1 -Vps              # só o servidor
-.\scripts\atualizar.ps1 -App              # só o app
-.\scripts\atualizar.ps1 -Ocultar          # atualiza tudo e instala o agente para subir no logon
+.\scripts\atualizar -Agente -Rodar    # só o agente, e o deixa rodando à vista
+.\scripts\atualizar -Vps              # só o servidor
+.\scripts\atualizar -App              # só o app
+.\scripts\atualizar -Ocultar          # atualiza tudo e instala o agente para subir no logon
 ```
 
 Se a sua chave SSH não estiver em `Downloads` (o script pega o `.key` mais
