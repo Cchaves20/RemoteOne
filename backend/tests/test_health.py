@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app import signaling
 from app.main import app
 
 client = TestClient(app)
@@ -11,6 +12,14 @@ def test_health_returns_ok():
     body = response.json()
     assert body["status"] == "ok"
     assert body["version"]
+
+
+def test_health_lista_os_recursos_do_codigo():
+    """Serve para conferir qual código está no ar, sem depender de dedução."""
+    body = client.get("/health").json()
+    assert "webrtc-signaling" in body["features"]
+    # A sinalização de WebRTC precisa realmente existir, senão a lista mente.
+    assert callable(getattr(signaling, "to_agent", None))
 
 
 def test_api_root_returns_app_name():

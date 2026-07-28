@@ -54,10 +54,35 @@ app.include_router(devices_router)
 registry = AgentRegistry()
 
 
+# Recursos que este código sabe fazer, para dar de responder "o que está no ar
+# é novo?" sem adivinhação. A versão do app sobe devagar e não serve para isso;
+# um recurso que aparece aqui é um recurso que o binário implantado tem.
+#
+# Nasceu de um problema repetido: por três vezes um defeito foi rastreado até
+# um componente desatualizado, e cada diagnóstico começou por dedução em vez de
+# medida. `curl /health` agora responde direto.
+FEATURES = [
+    "pairing",
+    "input",
+    "screen-jpeg",
+    "apps",
+    "wake-on-lan",
+    "totp",
+    "webrtc-signaling",
+]
+
+
 @app.get("/health")
-def health() -> dict[str, str]:
-    """Verificação de disponibilidade usada pela CI e por orquestradores."""
-    return {"status": "ok", "version": settings.version}
+def health() -> dict:
+    """Disponibilidade e o que este backend implementa.
+
+    Usada pela CI, por orquestradores e para conferir qual código está no ar.
+    """
+    return {
+        "status": "ok",
+        "version": settings.version,
+        "features": FEATURES,
+    }
 
 
 @app.get("/api/v1")
