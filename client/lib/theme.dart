@@ -17,6 +17,23 @@ const LinearGradient auroraGradient = LinearGradient(
   colors: [auroraViolet, auroraBlue, auroraCyan],
 );
 
+/// Vidro escuro translúcido: o material das barras que flutuam sobre a tela do
+/// computador (a dock de aplicativos e a barra de perfis). Fica aqui, e não em
+/// cada tela, porque as duas precisam parecer a mesma coisa — se uma mudar de
+/// tom, a outra passa a parecer um elemento estranho ao app.
+BoxDecoration glassPill() => BoxDecoration(
+      color: const Color(0xE61A1D33),
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: Colors.white.withAlpha(30)),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withAlpha(120),
+          blurRadius: 18,
+          offset: const Offset(0, 6),
+        ),
+      ],
+    );
+
 ThemeData buildTheme(Brightness brightness) {
   final isDark = brightness == Brightness.dark;
   final scheme = ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);

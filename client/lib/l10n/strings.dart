@@ -342,6 +342,72 @@ class Strings {
   String get mediaMute =>
       _t('Silenciar', 'Mute', '静音', 'Couper le son', 'Silenciar');
 
+  // Perfis de controle (barra seletora)
+  String get profilesPanel => _t('Perfis', 'Profiles', '配置', 'Profils', 'Perfiles');
+  String get profileSystem => _t('Sistema', 'System', '系统', 'Système', 'Sistema');
+  String get profileVideo => _t('Vídeo', 'Video', '视频', 'Vidéo', 'Vídeo');
+  String get profileBrowser =>
+      _t('Navegador', 'Browser', '浏览器', 'Navigateur', 'Navegador');
+  String get profileWork => _t('Trabalho', 'Work', '办公', 'Travail', 'Trabajo');
+  String get profileSlides => _t('Apresentação', 'Presentation', '演示',
+      'Présentation', 'Presentación');
+
+  // Atalhos dos perfis
+  String get actionSwitchWindow => _t('Trocar de janela', 'Switch window',
+      '切换窗口', 'Changer de fenêtre', 'Cambiar de ventana');
+  String get actionShowDesktop => _t('Mostrar a área de trabalho',
+      'Show desktop', '显示桌面', 'Afficher le bureau', 'Mostrar el escritorio');
+  String get actionFileExplorer => _t('Abrir o explorador de arquivos',
+      'Open file explorer', '打开文件资源管理器', "Ouvrir l'explorateur de fichiers",
+      'Abrir el explorador de archivos');
+  String get actionTaskManager => _t('Gerenciador de tarefas', 'Task manager',
+      '任务管理器', 'Gestionnaire des tâches', 'Administrador de tareas');
+  String get actionSnapLeft => _t('Encaixar à esquerda', 'Snap left', '靠左分屏',
+      'Ancrer à gauche', 'Ajustar a la izquierda');
+  String get actionSnapRight => _t('Encaixar à direita', 'Snap right', '靠右分屏',
+      'Ancrer à droite', 'Ajustar a la derecha');
+  String get actionCloseWindow => _t('Fechar a janela', 'Close window', '关闭窗口',
+      'Fermer la fenêtre', 'Cerrar la ventana');
+  String get actionRewind =>
+      _t('Voltar um pouco', 'Rewind', '快退', 'Reculer', 'Retroceder');
+  String get actionForward =>
+      _t('Avançar um pouco', 'Fast forward', '快进', 'Avancer', 'Adelantar');
+  String get actionFullscreen =>
+      _t('Tela cheia', 'Fullscreen', '全屏', 'Plein écran', 'Pantalla completa');
+  String get actionExitFullscreen => _t('Sair da tela cheia', 'Exit fullscreen',
+      '退出全屏', 'Quitter le plein écran', 'Salir de pantalla completa');
+  String get actionNewTab =>
+      _t('Nova aba', 'New tab', '新标签页', 'Nouvel onglet', 'Nueva pestaña');
+  String get actionCloseTab => _t('Fechar a aba', 'Close tab', '关闭标签页',
+      "Fermer l'onglet", 'Cerrar la pestaña');
+  String get actionReopenTab => _t('Reabrir a aba fechada', 'Reopen closed tab',
+      '重新打开标签页', "Rouvrir l'onglet fermé", 'Reabrir la pestaña cerrada');
+  String get actionPageBack => _t('Voltar', 'Back', '后退', 'Retour', 'Atrás');
+  String get actionPageForward =>
+      _t('Avançar', 'Forward', '前进', 'Suivant', 'Adelante');
+  String get actionReload =>
+      _t('Atualizar a página', 'Reload page', '刷新页面', 'Actualiser la page',
+          'Recargar la página');
+  String get actionAddressBar => _t('Barra de endereço', 'Address bar', '地址栏',
+      "Barre d'adresse", 'Barra de direcciones');
+  String get actionUndo => _t('Desfazer', 'Undo', '撤销', 'Annuler', 'Deshacer');
+  String get actionRedo => _t('Refazer', 'Redo', '重做', 'Rétablir', 'Rehacer');
+  String get actionCopy => _t('Copiar', 'Copy', '复制', 'Copier', 'Copiar');
+  String get actionPaste => _t('Colar', 'Paste', '粘贴', 'Coller', 'Pegar');
+  String get actionFind => _t('Localizar', 'Find', '查找', 'Rechercher', 'Buscar');
+  String get actionPrint =>
+      _t('Imprimir', 'Print', '打印', 'Imprimer', 'Imprimir');
+  String get actionStartSlides => _t('Começar do início', 'Start from beginning',
+      '从头开始放映', 'Démarrer au début', 'Empezar desde el principio');
+  String get actionNextSlide => _t('Próximo slide', 'Next slide', '下一张',
+      'Diapositive suivante', 'Diapositiva siguiente');
+  String get actionPreviousSlide => _t('Slide anterior', 'Previous slide',
+      '上一张', 'Diapositive précédente', 'Diapositiva anterior');
+  String get actionBlackScreen =>
+      _t('Tela preta', 'Black screen', '黑屏', 'Écran noir', 'Pantalla negra');
+  String get actionExitSlides => _t('Sair da apresentação', 'Exit presentation',
+      '退出放映', 'Quitter la présentation', 'Salir de la presentación');
+
   // Diálogos de conta
   String get newEmail => _t('Novo e-mail', 'New email', '新邮箱', 'Nouvel e-mail', 'Nuevo correo');
   String get currentPassword => _t('Senha atual', 'Current password', '当前密码',

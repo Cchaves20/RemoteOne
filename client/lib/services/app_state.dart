@@ -37,6 +37,12 @@ class AppState extends ChangeNotifier {
   /// ela nunca corrige sozinha, mas quem digita comando o dia todo pode achar
   /// que ela só ocupa espaço.
   bool suggestionsEnabled = true;
+
+  /// Perfil de atalhos aberto por último na barra seletora (`null` = nenhum).
+  /// Guardado porque quem usa o app para assistir filme abre no mesmo perfil
+  /// todo dia, e reescolher a cada sessão seria um passo sem motivo.
+  String? profileId;
+
   AppLanguage language = AppLanguage.system;
 
   /// Palavras que já foram digitadas, carregadas do disco na inicialização.
@@ -89,6 +95,7 @@ class AppState extends ChangeNotifier {
     streamQuality = StreamQuality.fromName(prefs.getString('streamQuality'));
     webrtcVideoEnabled = prefs.getBool('webrtcVideo') ?? true;
     suggestionsEnabled = prefs.getBool('suggestions') ?? true;
+    profileId = prefs.getString('profileId');
     _learnedWords = _decodeLearned(prefs.getString('learnedWords'));
     language = AppLanguage.values.firstWhere(
       (l) => l.name == prefs.getString('language'),
@@ -115,6 +122,19 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('webrtcVideo', enabled);
+  }
+
+  /// Guarda (ou esquece) o perfil de atalhos escolhido. Não avisa os ouvintes:
+  /// quem manda na barra é a tela de controle, e um `notifyListeners` aqui
+  /// reconstruiria o app inteiro a cada toque num perfil.
+  Future<void> setProfile(String? id) async {
+    profileId = id;
+    final prefs = await SharedPreferences.getInstance();
+    if (id == null) {
+      await prefs.remove('profileId');
+    } else {
+      await prefs.setString('profileId', id);
+    }
   }
 
   Future<void> setSuggestionsEnabled(bool enabled) async {

@@ -7,12 +7,14 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/remote_app.dart';
 import '../models/system_stats.dart';
 import '../services/app_state.dart';
 import '../services/video_session.dart';
 import '../theme.dart';
+import '../widgets/profile_bar.dart';
 import '../widgets/remote_keyboard.dart';
 import '../widgets/transitions.dart';
 import 'gesture_tutorial_screen.dart';
@@ -142,6 +144,12 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// porque quem move o cursor é esta tela, e mover o cursor invalida o rastro.
   final TypedWord _typedWord = TypedWord();
 
+  // Barra seletora de perfis: a mesma ideia da dock, mas o que se escolhe é um
+  // conjunto de atalhos. Começa visível (são só cinco ícones finos) e some
+  // inteira pelo botão da barra de cima, para quem quer a tela limpa.
+  bool _profilesOpen = true;
+  ControlProfile? _profile;
+
   @override
   void initState() {
     super.initState();
@@ -160,6 +168,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     });
     // A dock de aplicativos carrega em segundo plano, sem travar a tela.
     _loadDockApps();
+    // Reabre no perfil de atalhos da última vez (pode não existir mais).
+    _profile = ControlProfile.byId(widget.state.profileId);
     // Na primeira vez que se controla um PC, mostra o tutorial de gestos (#20).
     if (!widget.state.gestureTutorialSeen) {
       widget.state.markGestureTutorialSeen();
@@ -408,6 +418,18 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  void _toggleProfiles() {
+    HapticFeedback.selectionClick();
+    setState(() => _profilesOpen = !_profilesOpen);
+  }
+
+  /// Escolhe (ou fecha) um perfil de atalhos. A escolha vai para o disco, sem
+  /// esperar: o toque não pode ficar preso na gravação.
+  void _selectProfile(ControlProfile? profile) {
+    setState(() => _profile = profile);
+    widget.state.setProfile(profile?.id);
+  }
+
   Future<void> _media(String action) async {
     HapticFeedback.selectionClick();
     final messenger = ScaffoldMessenger.of(context);
@@ -649,7 +671,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     final curved = CurvedAnimation(parent: _dockAnim, curve: Curves.easeOutBack);
 
     final pill = Container(
-      decoration: _glass(),
+      decoration: glassPill(),
       padding: const EdgeInsets.all(6),
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -681,21 +703,6 @@ class _RemoteScreenState extends State<RemoteScreen>
       ),
     );
   }
-
-  /// Vidro escuro translúcido: o material da dock, o único elemento que
-  /// flutua sobre a tela do computador.
-  BoxDecoration _glass() => BoxDecoration(
-        color: const Color(0xE61A1D33),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withAlpha(30)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(120),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      );
 
   /// Alça de arrastar. Fica só nela para não brigar com a rolagem da lista.
   Widget _dockGrip({required bool vertical, required Size area}) {
@@ -1274,6 +1281,23 @@ class _RemoteScreenState extends State<RemoteScreen>
             // No modo lupa a dock sai da frente, para não atrapalhar quem
             // está ampliando a imagem.
             if (!_zoomMode) _appDock(vertical: !isPortrait, area: area),
+            // A barra de perfis mora na borda oposta à da dock (esquerda com o
+            // celular deitado, topo em pé): as duas flutuam, e disputar a mesma
+            // borda faria uma cobrir a outra.
+            if (!_zoomMode && _profilesOpen)
+              ProfileBar(
+                vertical: !isPortrait,
+                area: area,
+                selected: _profile,
+                strings: widget.state.t,
+                onSelect: _selectProfile,
+                // Um toque deliberado e único, como o da sugestão do teclado:
+                // se falhar, ficar calado faria parecer que o app ignorou.
+                onAction: (a) {
+                  HapticFeedback.selectionClick();
+                  _send(a.input, avisarFalha: true);
+                },
+              ),
           ],
         );
       },
@@ -1423,6 +1447,14 @@ class _RemoteScreenState extends State<RemoteScreen>
               open: _mediaOpen,
               tooltip: widget.state.t.mediaPanel,
               onPressed: _toggleMedia,
+            ),
+            // A barra de perfis não é uma faixa: ela flutua, como a dock. Por
+            // isso este botão só a mostra ou esconde — não empurra a imagem.
+            _barToggle(
+              icon: Icons.tune,
+              open: _profilesOpen,
+              tooltip: widget.state.t.profilesPanel,
+              onPressed: _toggleProfiles,
             ),
             IconButton(
               tooltip: widget.state.t.zoomEnter,

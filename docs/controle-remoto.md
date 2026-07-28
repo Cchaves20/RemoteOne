@@ -177,3 +177,45 @@ computador ficar com o botão do mouse apertado, arrastando tudo o que o cursor
 tocar. Por isso o injetor de entrada guarda quais botões estão apertados e os
 solta no `Drop` - que roda quando a conexão morre, por qualquer caminho, sem
 depender de o app conseguir mandar o `mouse_release`.
+
+## Barra de perfis
+
+A segunda barra flutuante do app. A dock escolhe **qual programa abrir**; a
+barra de perfis escolhe **qual conjunto de atalhos fica a mão**.
+
+Ela tem duas pistas. A primeira e a seletora: cinco perfis (Sistema, Video,
+Navegador, Trabalho, Apresentacao). A segunda so existe enquanto ha um perfil
+aceso, e traz os botoes dele. Tocar de novo no perfil aceso fecha a segunda
+pista, e a barra volta a ser fininha - que e o estado normal, porque o que a
+pessoa veio ver e a tela do computador.
+
+Fica na borda **oposta a da dock**: esquerda com o celular deitado, topo com
+ele em pe. As duas flutuam, e disputar a mesma borda faria uma cobrir a outra.
+Arrasta-se pela alca, como a dock, e o botao de ajuste na barra de cima
+esconde a barra inteira.
+
+O perfil escolhido vai para o disco (`profileId`) e volta na proxima sessao.
+
+### Tres formas de tecla, e o que acontece se escolher a errada
+
+Um botao de perfil manda uma de tres mensagens, e o `ProfileAction` obriga a
+dizer qual no construtor:
+
+| Construtor | Mensagem | Para que |
+| --- | --- | --- |
+| `.combo` | `key_combo` | `Ctrl+S`, `Alt+Tab`, `Win+E` |
+| `.special` | `key_press` | teclas com nome proprio: Esc, F5, setas, Espaco |
+| `.letter` | `key_text` | uma letra solta: o `f` de tela cheia, o `m` de mudo |
+
+A separacao existe porque errar aqui falha **calado**: `key_press` so aceita
+nomes da tabela (`agent/src/input.rs`), e mandar `{"key": "f"}` seria recusado
+sem nada aparecer na tela. Um teste percorre todos os perfis e confere cada
+tecla contra a mesma tabela - e por isso que um perfil novo com um nome
+inventado quebra no `flutter test`, e nao no bolso do usuario.
+
+### Por que os perfis vem prontos e nao sao editaveis (ainda)
+
+O valor esta em ter algo util no primeiro toque. Um editor de atalhos e uma
+tela a mais para atravessar antes de o recurso servir para alguma coisa, e a
+lista pronta ja cobre o que se faz num computador pelo celular: assistir,
+navegar, escrever, apresentar.
