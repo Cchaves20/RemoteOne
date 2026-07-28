@@ -27,6 +27,14 @@ pub struct StreamConfig {
     pub video_bitrate: u32,
     /// Servidores STUN para descobrir o endereço externo (P2P). Vazio = só LAN.
     pub ice_servers: Vec<String>,
+    /// Taxa de quadros alvo **do vídeo**, independente da do JPEG.
+    ///
+    /// Os presets do app (5, 10, 15 fps) foram escolhidos para caber na banda do
+    /// JPEG, que gasta ~67 KB por quadro. O H.264 gasta 0,3–0,9 KB, então 30 fps
+    /// por vídeo custa menos rede que 5 fps por JPEG. E taxa baixa é justamente
+    /// o que faz vídeo parecer travado: sem quadros intermediários, o
+    /// movimento vira uma sequência de saltos.
+    pub video_fps: u32,
 }
 
 impl Default for StreamConfig {
@@ -37,6 +45,7 @@ impl Default for StreamConfig {
             quality: 50,
             video_bitrate: 1_500_000,
             ice_servers: vec!["stun:stun.l.google.com:19302".to_string()],
+            video_fps: 30,
         }
     }
 }
@@ -44,8 +53,16 @@ impl Default for StreamConfig {
 impl StreamConfig {
     /// Intervalo entre frames, com um teto de segurança de ~60 fps.
     fn frame_interval(&self) -> Duration {
-        let fps = self.fps.clamp(1, 60);
-        Duration::from_millis(1000 / fps as u64)
+        Self::interval_for(self.fps)
+    }
+
+    /// Intervalo do caminho de vídeo, que roda mais rápido que o do JPEG.
+    fn video_interval(&self) -> Duration {
+        Self::interval_for(self.video_fps)
+    }
+
+    fn interval_for(fps: u32) -> Duration {
+        Duration::from_millis(1000 / fps.clamp(1, 60) as u64)
     }
 }
 
@@ -117,6 +134,14 @@ pub async fn run(
     // diferença. `None` até o primeiro quadro definir a resolução.
     let encoder: Arc<Mutex<Option<crate::h264::Encoder>>> = Arc::new(Mutex::new(None));
 
+    // Relógio da transmissão de vídeo. Os timestamps do codificador e a duração
+    // das amostras RTP saem daqui, medidos — não calculados a partir do fps
+    // pretendido, que capturar e codificar nunca alcançam de verdade.
+    let mut video_clock: Option<std::time::Instant> = None;
+    let mut last_video_frame: Option<std::time::Instant> = None;
+    // Se o ticker está no ritmo do vídeo ou no do JPEG, para saber quando trocar.
+    let mut ticker_is_video = false;
+
     loop {
         tokio::select! {
             _ = ticker.tick() => {
@@ -142,8 +167,34 @@ pub async fn run(
             // WebRTC conectada, o vídeo vai por lá (banda ~100x menor, medida
             // no S2); senão, segue o JPEG, que continua sendo o fallback.
             _ = frame_ticker.tick(), if streaming || video.wants_video() => {
-                if video.wants_video() {
-                    let (max_width, fps) = (active.max_width, active.fps.clamp(1, 60));
+                // O vídeo roda mais rápido que o JPEG, então o ritmo do ticker
+                // muda quando a sessão entra ou sai. Sem isto, o vídeo herdaria
+                // os 10 fps do preset e pareceria travado por falta de quadros.
+                let quer_video = video.wants_video();
+                if quer_video != ticker_is_video {
+                    ticker_is_video = quer_video;
+                    let intervalo = if quer_video {
+                        active.video_interval()
+                    } else {
+                        active.frame_interval()
+                    };
+                    frame_ticker = interval(intervalo);
+                    frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                    println!(
+                        "Ritmo da tela: {} fps ({})",
+                        1000 / intervalo.as_millis().max(1),
+                        if quer_video { "vídeo" } else { "JPEG" },
+                    );
+                    // Sessão nova de vídeo: relógio e contagem começam agora.
+                    if quer_video {
+                        video_clock = None;
+                        last_video_frame = None;
+                    }
+                }
+                if quer_video {
+                    let started = video_clock.get_or_insert_with(std::time::Instant::now);
+                    let elapsed = started.elapsed();
+                    let (max_width, fps) = (active.max_width, active.video_fps.clamp(1, 60));
                     let shared = Arc::clone(&encoder);
                     // Captura e codificação na mesma tarefa bloqueante: separá-las
                     // custaria uma cópia do quadro e outra ida ao pool de threads.
@@ -155,14 +206,24 @@ pub async fn run(
                         if !slot.as_ref().is_some_and(|enc| enc.fits(w, h)) {
                             *slot = Some(crate::h264::Encoder::new(w, h, fps, video_bitrate)?);
                         }
-                        slot.as_mut().expect("acabou de ser criado").encode(&rgb, w, h)
+                        slot.as_mut()
+                            .expect("acabou de ser criado")
+                            .encode(&rgb, w, h, elapsed)
                     })
                     .await;
                     match encoded {
                         Ok(Ok(frame)) => {
-                            video.write(&frame, Duration::from_micros(
-                                1_000_000 / active.fps.clamp(1, 60) as u64,
-                            )).await;
+                            // Duração real do quadro anterior, não a pretendida:
+                            // é dela que saem os timestamps RTP, e um relógio
+                            // que não corresponde à realidade faz o buffer de
+                            // jitter do app corrigir o tempo todo — que é
+                            // exatamente a sensação de travado.
+                            let now = std::time::Instant::now();
+                            let duration = last_video_frame
+                                .map(|previous| now.duration_since(previous))
+                                .unwrap_or_else(|| active.video_interval());
+                            last_video_frame = Some(now);
+                            video.write(&frame, duration).await;
                         }
                         Ok(Err(e)) => eprintln!("Falha ao codificar a tela: {e}"),
                         Err(e) => eprintln!("Falha na tarefa de vídeo: {e}"),
@@ -198,9 +259,13 @@ pub async fn run(
                         ) {
                             // A config de fps mudou: recria o ticker no ritmo novo.
                             Some(Action::RestartFrameTicker) => {
-                                frame_ticker = interval(active.frame_interval());
-                                frame_ticker
-                                    .set_missed_tick_behavior(MissedTickBehavior::Delay);
+                                // Só reposiciona o ritmo se o JPEG é quem manda;
+                                // com vídeo ativo, o ritmo é o do vídeo.
+                                if !ticker_is_video {
+                                    frame_ticker = interval(active.frame_interval());
+                                    frame_ticker
+                                        .set_missed_tick_behavior(MissedTickBehavior::Delay);
+                                }
                             }
                             // Listar aplicativos pode demorar (varre o menu
                             // Iniciar / consulta processos): roda fora do event

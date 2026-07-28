@@ -564,7 +564,9 @@ mod tests {
                     rgb[i..i + 3].copy_from_slice(&[10, 60, 120]);
                 }
             }
-            let frame = encoder.encode(&rgb, w, h).unwrap();
+            let frame = encoder
+                .encode(&rgb, w, h, Duration::from_millis(step as u64 * 33))
+                .unwrap();
             enviados += frame.data.len();
             agent.write(&frame, Duration::from_millis(33)).await;
             tokio::time::sleep(Duration::from_millis(10)).await;

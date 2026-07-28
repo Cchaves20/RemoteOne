@@ -409,6 +409,38 @@ só pedir `stop_stream` quando **nenhum** espectador precisar mais de JPEG. Não
 entrou aqui porque é protocolo novo, e meia-implementação de coordenação seria
 pior que a limitação declarada.
 
+### Correção pós-Fase 3: o vídeo parecia mais travado que o JPEG
+
+Primeiro teste em aparelho real: o vídeo conectava, mas a sensação era **pior**
+que a do JPEG. Três causas, e a terceira é de projeto:
+
+1. **A duração das amostras era ficção.** Eu passava `1/fps` ao
+   `write_sample`, e é dela que saem os timestamps RTP. Mas o intervalo real é
+   `max(1000/fps, captura+codificação)` — dezenas de milissegundos. Com uma
+   linha de tempo que não corresponde à realidade, o buffer de jitter do app
+   corrige sem parar, e corrigir é exatamente a sensação de travado. O JPEG não
+   sofre disso porque **não tem modelo de tempo**: cada quadro aparece quando
+   chega, e chegada irregular só parece atualização irregular.
+2. **O relógio do codificador também era sintético** (`quadros × 1000 / fps`),
+   então o controle de taxa raciocinava sobre um tempo que não passava assim.
+   Os dois agora usam tempo medido.
+3. **10 fps foi escolhido para caber na banda do JPEG.** Os presets (5, 10, 15)
+   foram dimensionados para ~67 KB por quadro. O H.264 gasta 0,3–0,9 KB — 30 fps
+   por vídeo custa menos rede que 5 fps por JPEG. E taxa baixa é justamente o que
+   faz vídeo parecer travado: sem quadros intermediários, o movimento vira
+   saltos. O caminho de vídeo passou a ter taxa própria
+   (`REMOTEONE_VIDEO_FPS`, padrão 30), desacoplada do preset do JPEG.
+
+De passagem, o `request_keyframe` foi corrigido: eu tinha inventado uma gambiarra
+(zerar o contador de quadros) supondo que o openh264 não expunha
+`force_intra_frame`. Ele expõe. A gambiarra faria os timestamps voltarem no
+tempo — latente, porque o método ainda não era chamado.
+
+Uma decisão que fica registrada: **no caminho de vídeo não há deduplicação.** Na
+tela parada o H.264 gasta 0,3 KB por quadro, e manter o fluxo constante é o que
+sustenta a linha de tempo do buffer de jitter. Deduplicar abriria buracos e faria
+a reprodução hesitar — o oposto do que a dedup faz de bom no JPEG.
+
 ### Fase 4b — Qualidade adaptativa (novo, saiu da Fase 2)
 
 Como nenhuma configuração do codificador limita a banda sem travar a imagem, o

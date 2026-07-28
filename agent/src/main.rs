@@ -72,6 +72,7 @@ async fn main() {
         max_width: env_u32("REMOTEONE_STREAM_MAX_WIDTH", default.max_width),
         quality: env_u32("REMOTEONE_STREAM_QUALITY", default.quality as u32) as u8,
         video_bitrate: env_u32("REMOTEONE_VIDEO_BITRATE", default.video_bitrate),
+        video_fps: env_u32("REMOTEONE_VIDEO_FPS", default.video_fps),
         // Lista separada por vírgulas; vazio desliga o STUN (só rede local).
         ice_servers: match std::env::var("REMOTEONE_ICE_SERVERS") {
             Err(_) => default.ice_servers.clone(),
@@ -94,7 +95,8 @@ async fn main() {
         stream.fps, stream.max_width, stream.quality
     );
     println!(
-        "Vídeo: H.264 a {} kbps, STUN: {}",
+        "Vídeo: H.264 a {} fps, {} kbps, STUN: {}",
+        stream.video_fps,
         stream.video_bitrate / 1000,
         if stream.ice_servers.is_empty() {
             "nenhum (só rede local)".to_string()

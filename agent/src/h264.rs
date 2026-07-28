@@ -53,7 +53,7 @@ pub struct Encoder {
     yuv: YUVBuffer,
     width: u32,
     height: u32,
-    fps: u32,
+    /// Quantos quadros já passaram — só para diagnóstico.
     frames: u64,
 }
 
@@ -85,7 +85,6 @@ impl Encoder {
             yuv: YUVBuffer::new(width as usize, height as usize),
             width,
             height,
-            fps,
             frames: 0,
         })
     }
@@ -98,6 +97,11 @@ impl Encoder {
         self.height
     }
 
+    /// Quadros codificados desde a criação.
+    pub fn frames(&self) -> u64 {
+        self.frames
+    }
+
     /// Se o codificador serve para um quadro deste tamanho.
     ///
     /// Trocar de monitor ou mudar a resolução no meio da sessão muda o tamanho
@@ -108,7 +112,19 @@ impl Encoder {
     }
 
     /// Codifica um quadro RGB (3 bytes por pixel, sem alfa).
-    pub fn encode(&mut self, rgb: &[u8], width: u32, height: u32) -> Result<EncodedFrame, String> {
+    ///
+    /// `elapsed` é o tempo **real** desde o início da transmissão. Precisa ser
+    /// medido, não calculado a partir do fps pretendido: capturar e codificar
+    /// leva dezenas de milissegundos, então o ritmo efetivo é sempre menor que o
+    /// alvo. Alimentar o codificador com um relógio que não corresponde à
+    /// realidade faz o controle de taxa trabalhar sobre uma premissa falsa.
+    pub fn encode(
+        &mut self,
+        rgb: &[u8],
+        width: u32,
+        height: u32,
+        elapsed: std::time::Duration,
+    ) -> Result<EncodedFrame, String> {
         if !self.fits(width, height) {
             return Err(format!(
                 "quadro {width}x{height} não casa com o codificador {}x{}",
@@ -125,12 +141,12 @@ impl Encoder {
 
         self.yuv
             .read_rgb8(RgbSliceU8::new(rgb, (width as usize, height as usize)));
-        // O relógio da apresentação vem da contagem de quadros: o codificador
-        // usa isso para o controle de taxa.
-        let millis = self.frames * 1000 / self.fps.max(1) as u64;
         let bitstream = self
             .inner
-            .encode_at(&self.yuv, Timestamp::from_millis(millis))
+            .encode_at(
+                &self.yuv,
+                Timestamp::from_millis(elapsed.as_millis() as u64),
+            )
             .map_err(|e| format!("falha ao codificar: {e}"))?;
         let keyframe = bitstream.frame_type() == FrameType::IDR;
         let data = bitstream.to_vec();
@@ -143,15 +159,17 @@ impl Encoder {
     /// É o que resolve um app que entra no meio da transmissão: sem um IDR ele
     /// não tem como começar a decodificar e fica na tela preta.
     pub fn request_keyframe(&mut self) {
-        // A API do openh264 não expõe o force_intra_frame; zerar o relógio faz
-        // o controle de taxa tratar o próximo quadro como início de sequência.
-        self.frames = 0;
+        self.inner.force_intra_frame();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ms(v: u64) -> std::time::Duration {
+        std::time::Duration::from_millis(v)
+    }
 
     /// Uma "tela" simples com um retângulo que se move — dá conteúdo para o
     /// codificador ter o que fazer entre quadros.
@@ -170,7 +188,9 @@ mod tests {
     #[test]
     fn primeiro_quadro_e_chave_e_tem_conteudo() {
         let mut encoder = Encoder::new(320, 240, 30, 800_000).unwrap();
-        let encoded = encoder.encode(&frame(320, 240, 0), 320, 240).unwrap();
+        let encoded = encoder
+            .encode(&frame(320, 240, 0), 320, 240, ms(0))
+            .unwrap();
         assert!(encoded.keyframe, "o primeiro quadro tem que ser IDR");
         // Annex-B começa com o prefixo de início 00 00 00 01.
         assert_eq!(&encoded.data[0..4], &[0, 0, 0, 1]);
@@ -182,11 +202,13 @@ mod tests {
         // proporção se perder, o codificador está sendo recriado ou
         // reinicializado sem querer.
         let mut encoder = Encoder::new(640, 480, 30, 1_000_000).unwrap();
-        let chave = encoder.encode(&frame(640, 480, 0), 640, 480).unwrap();
+        let chave = encoder
+            .encode(&frame(640, 480, 0), 640, 480, ms(0))
+            .unwrap();
         let mut soma_depois = 0usize;
         for step in 1..10 {
             soma_depois += encoder
-                .encode(&frame(640, 480, step), 640, 480)
+                .encode(&frame(640, 480, step), 640, 480, ms(step as u64 * 33))
                 .unwrap()
                 .data
                 .len();
@@ -203,8 +225,8 @@ mod tests {
     fn tela_parada_gasta_quase_nada() {
         let mut encoder = Encoder::new(320, 240, 30, 800_000).unwrap();
         let parada = frame(320, 240, 0);
-        let chave = encoder.encode(&parada, 320, 240).unwrap();
-        let repetido = encoder.encode(&parada, 320, 240).unwrap();
+        let chave = encoder.encode(&parada, 320, 240, ms(0)).unwrap();
+        let repetido = encoder.encode(&parada, 320, 240, ms(33)).unwrap();
         assert!(!repetido.keyframe);
         assert!(
             repetido.data.len() * 10 < chave.data.len(),
@@ -224,9 +246,11 @@ mod tests {
     fn quadro_de_tamanho_errado_e_recusado() {
         let mut encoder = Encoder::new(320, 240, 30, 500_000).unwrap();
         // Dimensão diferente da configurada.
-        assert!(encoder.encode(&frame(640, 480, 0), 640, 480).is_err());
+        assert!(encoder
+            .encode(&frame(640, 480, 0), 640, 480, ms(0))
+            .is_err());
         // Dimensão certa, buffer curto.
-        assert!(encoder.encode(&[0u8; 10], 320, 240).is_err());
+        assert!(encoder.encode(&[0u8; 10], 320, 240, ms(0)).is_err());
     }
 
     #[test]
