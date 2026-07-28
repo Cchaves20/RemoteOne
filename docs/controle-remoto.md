@@ -102,7 +102,13 @@ Digitar sem acento acha a palavra acentuada (`voce` → `você`), e a maiúscula
 quem digitou é mantida (`Proj` → `Projeto`).
 
 Dá para desligar em **Configurações → Qualidade da tela → Sugestões de
-palavra**.
+palavra**. Se a digitação parecer pesada, esse interruptor é o teste: com ele
+desligado, o custo das sugestões sai do caminho e sobra só a rede.
+
+O índice de palavras é montado **uma vez**, não a cada tecla, e a busca por
+semelhança (a parte cara) só roda quando as completações não bastam. A primeira
+versão remontava o dicionário inteiro a cada letra digitada — com milhares de
+palavras, isso se sente no dedo.
 
 ### Por que a troca é uma ação só
 
@@ -119,3 +125,13 @@ O app só rastreia a palavra enquanto ela faz sentido: mover o cursor (um toque
 na tela, uma seta, Enter) zera o rastro, porque a partir dali o que o app acha
 que está sendo digitado não corresponde mais ao que existe na tela do
 computador.
+
+## Realce da tecla
+
+Enquanto o dedo está numa tecla de caractere, um balão com a letra aparece
+acima dela. É o mesmo motivo do teclado do iPhone: o dedo cobre justamente a
+tecla que acabou de ser tocada, e sem o balão não há como confirmar o que foi
+digitado sem olhar para a tela do computador.
+
+Só nas teclas de caractere. Em Ctrl, Esc ou nas setas não há dúvida sobre o que
+se apertou, e um balão ali seria só barulho.

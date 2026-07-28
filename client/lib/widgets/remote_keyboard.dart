@@ -174,24 +174,95 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
     padding: WidgetStatePropertyAll(EdgeInsets.zero),
   );
 
-  Widget _key(Widget child, VoidCallback onTap, {int flex = 2, bool active = false}) {
-    return Expanded(
-      flex: flex,
-      child: Padding(
-        padding: const EdgeInsets.all(1.5),
-        child: SizedBox(
-          height: 34,
-          child: active
-              ? FilledButton(onPressed: onTap, style: _style, child: FittedBox(child: child))
-              : OutlinedButton(onPressed: onTap, style: _style, child: FittedBox(child: child)),
+  /// Balão com a letra, mostrado acima da tecla enquanto o dedo está nela.
+  ///
+  /// Serve para o dedo não esconder a confirmação do que foi tocado — o mesmo
+  /// motivo pelo qual o teclado do iPhone faz isso. Só nas teclas de caractere:
+  /// em Ctrl ou Esc não há dúvida sobre o que se apertou.
+  OverlayEntry? _preview;
+
+  void _showPreview(BuildContext keyContext, String label) {
+    _hidePreview();
+    final box = keyContext.findRenderObject();
+    final overlay = Overlay.maybeOf(keyContext);
+    if (box is! RenderBox || !box.hasSize || overlay == null) return;
+    final topo = box.localToGlobal(Offset.zero);
+    final cores = Theme.of(keyContext).colorScheme;
+    _preview = OverlayEntry(
+      builder: (_) => Positioned(
+        left: topo.dx - 12,
+        top: topo.dy - 48,
+        width: box.size.width + 24,
+        // Sem toque: o balão nasce debaixo do dedo e não pode roubar o gesto
+        // que o criou.
+        child: IgnorePointer(
+          child: Material(
+            elevation: 6,
+            color: cores.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              height: 44,
+              child: Center(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w600,
+                    color: cores.onSurface,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
+    );
+    overlay.insert(_preview!);
+  }
+
+  void _hidePreview() {
+    _preview?.remove();
+    _preview = null;
+  }
+
+  @override
+  void dispose() {
+    _hidePreview();
+    super.dispose();
+  }
+
+  Widget _key(
+    Widget child,
+    VoidCallback onTap, {
+    int flex = 2,
+    bool active = false,
+    String? preview,
+  }) {
+    Widget botao = SizedBox(
+      height: 34,
+      child: active
+          ? FilledButton(onPressed: onTap, style: _style, child: FittedBox(child: child))
+          : OutlinedButton(onPressed: onTap, style: _style, child: FittedBox(child: child)),
+    );
+    if (preview != null) {
+      botao = Builder(
+        builder: (keyContext) => Listener(
+          onPointerDown: (_) => _showPreview(keyContext, preview),
+          onPointerUp: (_) => _hidePreview(),
+          onPointerCancel: (_) => _hidePreview(),
+          child: botao,
+        ),
+      );
+    }
+    return Expanded(
+      flex: flex,
+      child: Padding(padding: const EdgeInsets.all(1.5), child: botao),
     );
   }
 
   Widget _charKey(String c) {
     final label = _mods.contains('shift') ? c.toUpperCase() : c;
-    return _key(Text(label), () => _typeChar(c));
+    return _key(Text(label), () => _typeChar(c), preview: label);
   }
 
   Row _charRow(List<String> chars) => Row(children: [for (final c in chars) _charKey(c)]);

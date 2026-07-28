@@ -15,12 +15,17 @@ import '../l10n/strings.dart';
 /// 2. **Uma lista curta de palavras comuns** do idioma, para o primeiro dia
 ///    valer alguma coisa.
 class WordSuggester {
-  WordSuggester({Iterable<String> seed = const [], Map<String, int>? learned})
-      : _learned = {...?learned} {
+  WordSuggester({Iterable<String> seed = const [], Map<String, int>? learned}) {
     for (final palavra in seed) {
       final limpa = palavra.trim();
-      if (limpa.length >= _minLength) _seed.add(limpa);
+      // Em minúsculas porque é assim que o índice é consultado; a maiúscula de
+      // quem digita é reposta na saída.
+      if (limpa.length >= _minLength) _register(limpa.toLowerCase(), 0);
     }
+    learned?.forEach((palavra, vezes) {
+      _learned[palavra] = vezes;
+      _register(palavra, vezes + 1);
+    });
   }
 
   /// Cria o sugeridor com as palavras comuns do idioma da interface.
@@ -36,11 +41,25 @@ class WordSuggester {
   /// Quantas sugestões cabem na barra sem virar sopa de letrinhas.
   static const maxSuggestions = 3;
 
-  final Set<String> _seed = {};
+  /// Todas as candidatas e o peso de cada uma, num índice **montado uma vez**.
+  ///
+  /// Era aqui a lentidão da primeira versão: ela remontava este mapa a cada
+  /// tecla digitada. Com milhares de palavras, isso é trabalho suficiente para
+  /// se sentir no dedo.
+  final Map<String, int> _index = {};
+
+  /// Forma sem acento de cada candidata, calculada uma vez. Recalcular a cada
+  /// tecla significava construir milhares de strings por letra.
+  final Map<String, String> _folded = {};
 
   /// Palavras que a pessoa digitou, e quantas vezes. A contagem é o que faz a
   /// palavra usada ontem aparecer antes da usada uma vez no mês passado.
-  final Map<String, int> _learned;
+  final Map<String, int> _learned = {};
+
+  void _register(String palavra, int peso) {
+    _index[palavra] = peso;
+    _folded[palavra] = _fold(palavra);
+  }
 
   Map<String, int> get learned => Map.unmodifiable(_learned);
 
@@ -51,12 +70,16 @@ class WordSuggester {
   void learn(String word) {
     final limpa = word.trim().toLowerCase();
     if (limpa.length < _minLength || !_isWord(limpa)) return;
-    _learned[limpa] = (_learned[limpa] ?? 0) + 1;
+    final vezes = (_learned[limpa] ?? 0) + 1;
+    _learned[limpa] = vezes;
+    _register(limpa, (_index[limpa] ?? 0) + 1);
     // Teto para o histórico não crescer sem fim na memória do celular; sai a
     // palavra menos usada, que é a que menos falta faz.
     if (_learned.length > 2000) {
       final menos = _learned.entries.reduce((a, b) => a.value <= b.value ? a : b);
       _learned.remove(menos.key);
+      _index.remove(menos.key);
+      _folded.remove(menos.key);
     }
   }
 
@@ -67,34 +90,37 @@ class WordSuggester {
   List<String> suggest(String typed) {
     final base = typed.trim();
     if (base.length < 2 || !_isWord(base.toLowerCase())) return const [];
-    final alvo = _fold(base.toLowerCase());
+    final minusculo = base.toLowerCase();
+    final alvo = _fold(minusculo);
 
-    final candidatas = <String, int>{};
-    for (final palavra in _seed) {
-      candidatas[palavra] = 0;
-    }
-    _learned.forEach((palavra, vezes) {
-      candidatas[palavra] = (candidatas[palavra] ?? 0) + vezes + 1;
-    });
-
+    // Primeira passada: só `startsWith`, que é barato. Completar o que está
+    // sendo escrito é a sugestão mais óbvia e a que menos arrisca — a pessoa vê
+    // o começo do que digitou.
     final pontuadas = <_Scored>[];
-    candidatas.forEach((palavra, frequencia) {
-      if (palavra.toLowerCase() == base.toLowerCase()) return; // já é o que foi digitado
-      final dobrada = _fold(palavra);
-      if (dobrada.startsWith(alvo)) {
-        // Completar o que está sendo escrito é a sugestão mais óbvia e a que
-        // menos arrisca: a pessoa vê o começo do que digitou.
-        pontuadas.add(_Scored(palavra, 0, frequencia, palavra.length - base.length));
-        return;
-      }
-      // Só vale procurar erro de digitação em palavras de tamanho parecido.
-      if ((dobrada.length - alvo.length).abs() > 2) return;
-      final limite = alvo.length <= 4 ? 1 : 2;
-      final distancia = _distance(dobrada, alvo, limite);
-      if (distancia <= limite) {
-        pontuadas.add(_Scored(palavra, distancia, frequencia, 0));
+    _index.forEach((palavra, peso) {
+      if (palavra == minusculo) return; // já é o que foi digitado
+      if (_folded[palavra]!.startsWith(alvo)) {
+        pontuadas.add(_Scored(palavra, 0, peso, palavra.length - base.length));
       }
     });
+
+    // Com três completações, nenhum candidato por semelhança poderia passar à
+    // frente (todos têm distância maior que zero). Então a parte cara — a
+    // distância de edição — nem chega a rodar no caso comum.
+    if (pontuadas.length < maxSuggestions) {
+      final limite = alvo.length <= 4 ? 1 : 2;
+      _index.forEach((palavra, peso) {
+        if (palavra == minusculo) return;
+        final dobrada = _folded[palavra]!;
+        if (dobrada.startsWith(alvo)) return; // já entrou na primeira passada
+        // Só vale procurar erro de digitação em palavras de tamanho parecido.
+        if ((dobrada.length - alvo.length).abs() > limite) return;
+        final distancia = _distance(dobrada, alvo, limite);
+        if (distancia <= limite) {
+          pontuadas.add(_Scored(palavra, distancia, peso, 0));
+        }
+      });
+    }
 
     pontuadas.sort();
     return pontuadas

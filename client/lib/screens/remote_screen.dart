@@ -512,17 +512,29 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// computador. Sem ela, cai no HTTP, que atravessa `celular → VPS → agente`.
   /// A ordem importa — entrada é a função principal do app e não pode depender
   /// de o vídeo ter dado certo.
-  Future<void> _send(Map<String, dynamic> action) async {
+  /// Manda uma ação ao computador.
+  ///
+  /// `avisarFalha` existe porque nem toda ação é igual: mouse e teclas são de
+  /// alta frequência e falham em silêncio de propósito (um aviso por movimento
+  /// seria uma cascata de mensagens). Já tocar numa sugestão é um gesto único e
+  /// deliberado — se não funcionar, ficar calado faz parecer que o app ignorou
+  /// o toque.
+  Future<void> _send(
+    Map<String, dynamic> action, {
+    bool avisarFalha = false,
+  }) async {
     // Mexer no mouse leva o cursor para outro lugar: a palavra que o app achava
     // que estava sendo digitada deixa de corresponder ao que há na tela do
     // computador, e sugerir a partir dela seria sugerir sobre nada.
     final kind = action['kind'] as String?;
     if (kind != null && kind.startsWith('mouse')) _typedWord.reset();
     if (_video?.sendInput(action) == true) return;
+    final messenger = avisarFalha ? ScaffoldMessenger.of(context) : null;
     try {
       await widget.state.api.sendInput(widget.device.deviceId, action);
-    } catch (_) {
-      // Silencioso: comandos de controle são de alta frequência.
+    } catch (e) {
+      // Silencioso por padrão: comandos de controle são de alta frequência.
+      messenger?.showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -1224,11 +1236,14 @@ class _RemoteScreenState extends State<RemoteScreen>
                 onKey: (key) => _send({'kind': 'key_press', 'key': key}),
                 onCombo: (mods, key) =>
                     _send({'kind': 'key_combo', 'modifiers': mods, 'key': key}),
-                onReplace: (backspaces, text) => _send({
-                  'kind': 'key_replace',
-                  'backspaces': backspaces,
-                  'text': text,
-                }),
+                onReplace: (backspaces, text) => _send(
+                  {
+                    'kind': 'key_replace',
+                    'backspaces': backspaces,
+                    'text': text,
+                  },
+                  avisarFalha: true,
+                ),
                 typed: _typedWord,
                 suggester: widget.state.suggestionsEnabled
                     ? widget.state.wordSuggester
