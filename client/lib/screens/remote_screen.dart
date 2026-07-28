@@ -576,10 +576,13 @@ class _RemoteScreenState extends State<RemoteScreen>
     _selecting = true;
     final p = _norm(local, box);
     _send({'kind': 'mouse_move_to', 'x': p.x, 'y': p.y});
-    // clicks: 2 = um clique completo e um segundo aperto que fica segurando.
-    // Se o dedo sair sem se mexer, o `mouse_release` fecha o duplo clique e a
-    // palavra fica selecionada; se ele arrastar, a seleção cresce.
-    _send({'kind': 'mouse_press', 'button': 'left', 'clicks': 2});
+    // `clicks: 1` = só aperta e segura, **sem clicar antes**: o primeiro toque
+    // já mandou o seu clique. O computador vê clique + aperto dentro do
+    // intervalo de duplo clique, que é o duplo clique de verdade.
+    //
+    // Com `clicks: 2` sairiam três cliques no total, e três cliques no Windows
+    // selecionam o parágrafo inteiro em vez da palavra.
+    _send({'kind': 'mouse_press', 'button': 'left', 'clicks': 1});
   }
 
   /// Fim de um toque, em qualquer caminho (soltou, cancelou, saiu da tela).
@@ -606,6 +609,10 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   void _rightClickAt(Offset local, Size box) {
+    // Segurar depois do duplo toque é o começo do arrasto que estende a
+    // seleção, não um pedido de menu de contexto: o dedo fica parado antes de
+    // andar, e o toque longo dispararia bem no meio disso.
+    if (_selecting) return;
     HapticFeedback.mediumImpact();
     final p = _norm(local, box);
     _send({'kind': 'mouse_move_to', 'x': p.x, 'y': p.y});

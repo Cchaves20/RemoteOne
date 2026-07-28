@@ -154,14 +154,21 @@ Shift + Home/End até o fim da linha. Só onde há cursor de texto.
 
 ### Por que o duplo toque não é um "duplo clique" mandado duas vezes
 
-O app manda uma ação só: `mouse_press` com `clicks: 2`. O agente dá um clique
-completo e **aperta de novo sem soltar** - que é como o Windows entende "duplo
-clique e arrasta" e passa a estender a seleção palavra por palavra.
+O primeiro toque já manda o seu clique, como qualquer toque. O segundo manda
+`mouse_press` - que **aperta e segura, sem clicar antes**. O computador vê
+clique + aperto dentro do intervalo de duplo clique, e é isso que faz dele um
+duplo clique de verdade, com o botão ainda em baixo para o arrasto estender a
+seleção.
 
-Se o app mandasse clique, clique e aperta em mensagens separadas, a latência da
-rede poderia espaçá-los além do intervalo de duplo clique do Windows, e o que
-era uma seleção viraria dois cliques soltos. A sequência é feita pelo agente,
-localmente, onde o tempo é confiável.
+A ação carrega um campo `clicks` para quando for preciso emendar cliques do
+lado do agente (`clicks: 3` seleciona o parágrafo), mas o gesto do duplo toque
+usa `clicks: 1`. Usar 2 ali foi o primeiro erro desta implementação: somado ao
+clique do primeiro toque davam **três**, e três cliques no Windows selecionam o
+parágrafo inteiro - foi exatamente o que apareceu no teste.
+
+Enquanto a seleção está em curso, o toque longo **não** vira clique direito.
+Segurar depois do duplo toque é o começo do arrasto: o dedo fica parado antes
+de andar, e o menu de contexto abriria bem no meio disso.
 
 ### O botão preso
 
