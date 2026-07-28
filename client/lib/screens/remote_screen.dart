@@ -734,7 +734,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       axis: vertical ? Axis.horizontal : Axis.vertical,
       // Sempre a partir da borda em que encosta: da esquerda quando é coluna,
       // de cima quando é faixa.
-      axisAlignment: -1.0,
+      from: vertical ? Alignment.centerLeft : Alignment.topCenter,
       border: vertical
           ? const Border(right: BorderSide(color: Colors.white12))
           : const Border(bottom: BorderSide(color: Colors.white12)),
@@ -750,7 +750,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       curved: _mediaCurve,
       axis: Axis.vertical,
       // Em pé ela nasce embaixo e sobe; deitada, nasce em cima e desce.
-      axisAlignment: atBottom ? 1.0 : -1.0,
+      from: atBottom ? Alignment.bottomCenter : Alignment.topCenter,
       border: const Border(
         top: BorderSide(color: Colors.white12),
         bottom: BorderSide(color: Colors.white12),
@@ -762,11 +762,17 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// Moldura comum das faixas: abre e fecha crescendo no próprio eixo, o que
   /// faz a imagem ceder espaço em vez de ficar coberta. Fechada, **não existe**
   /// na árvore — nem ocupa espaço, nem intercepta toque.
+  ///
+  /// O `SizeTransition` faria isto, mas o parâmetro que escolhe a borda de
+  /// crescimento mudou de nome nas versões novas do Flutter: o antigo virou
+  /// aviso aqui, e o novo não existiria no Flutter do Codemagic. `ClipRect` +
+  /// `Align` é o que o próprio `SizeTransition` faz por dentro, com API que não
+  /// mudou — e assim o efeito é o mesmo nas duas pontas.
   Widget _strip({
     required AnimationController anim,
     required Animation<double> curved,
     required Axis axis,
-    required double axisAlignment,
+    required Alignment from,
     required Border border,
     required Widget child,
   }) {
@@ -775,21 +781,27 @@ class _RemoteScreenState extends State<RemoteScreen>
       child: child,
       builder: (context, inner) {
         if (anim.isDismissed) return const SizedBox.shrink();
-        return SizeTransition(
-          sizeFactor: curved,
-          axis: axis,
-          axisAlignment: axisAlignment,
-          child: FadeTransition(
-            opacity: curved,
-            child: Container(
-              // Mesma faixa escura da barra de cima: é parte da moldura do
-              // app, não um cartão flutuando.
-              decoration: BoxDecoration(
-                color: const Color(0xFF14162C),
-                border: border,
+        final fator = curved.value.clamp(0.0, 1.0);
+        return ClipRect(
+          child: Align(
+            alignment: from,
+            heightFactor: axis == Axis.vertical ? fator : null,
+            widthFactor: axis == Axis.horizontal ? fator : null,
+            child: FadeTransition(
+              opacity: curved,
+              child: Container(
+                // Mesma faixa escura da barra de cima: é parte da moldura do
+                // app, não um cartão flutuando.
+                decoration: BoxDecoration(
+                  color: const Color(0xFF14162C),
+                  border: border,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                child: inner,
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: inner,
             ),
           ),
         );
