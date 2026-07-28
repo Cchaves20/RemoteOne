@@ -1,8 +1,10 @@
 from fastapi.testclient import TestClient
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 
 from app.connections import manager
 from app.db import SessionLocal
+from app.input import InputAction
 from app.main import app
 from app.models import Device, User
 
@@ -165,3 +167,28 @@ def test_invalid_keyboard_actions_are_422():
         ).status_code == 422
     finally:
         manager.unregister("dev-in", fake)
+
+
+def test_key_replace_e_atomico_e_limitado():
+    """Apagar + digitar numa ação só.
+
+    Precisa ser atômico porque o canal de dados é não ordenado: em mensagens
+    separadas, o texto novo poderia chegar antes dos backspaces.
+    """
+    adaptador = TypeAdapter(InputAction)
+    acao = adaptador.validate_python(
+        {"kind": "key_replace", "backspaces": 4, "text": "arquivo "}
+    )
+    assert acao.backspaces == 4
+    assert acao.text == "arquivo "
+
+    # O teto não é sobre a interface: é sobre o que uma mensagem adulterada
+    # poderia mandar o computador apagar.
+    for invalido in ({"backspaces": 65}, {"backspaces": -1}, {"text": ""}):
+        try:
+            adaptador.validate_python(
+                {"kind": "key_replace", "backspaces": 1, "text": "x", **invalido}
+            )
+        except ValidationError:
+            continue
+        raise AssertionError(f"deveria recusar {invalido}")

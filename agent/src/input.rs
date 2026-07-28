@@ -93,6 +93,13 @@ pub enum InputAction {
         modifiers: Vec<Modifier>,
         key: String,
     },
+    /// Apaga `backspaces` caracteres e digita `text`, **numa ação só**.
+    ///
+    /// É o que a barra de sugestões usa para trocar a palavra digitada. Precisa
+    /// ser atômico porque o canal de dados é deliberadamente não ordenado (ver
+    /// `datachannel.rs`): em mensagens separadas, o texto poderia chegar antes
+    /// dos backspaces e o resultado sairia embaralhado.
+    KeyReplace { backspaces: u32, text: String },
 }
 
 #[cfg(test)]

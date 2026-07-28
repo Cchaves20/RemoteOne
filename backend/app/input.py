@@ -58,7 +58,31 @@ class KeyCombo(BaseModel):
     key: str = Field(min_length=1, max_length=16)
 
 
+class KeyReplace(BaseModel):
+    """Apaga `backspaces` caracteres e digita `text` — numa mensagem só.
+
+    Existe por causa do canal de dados, que é **não ordenado** de propósito
+    (ver `agent/src/datachannel.rs`): mandar os backspaces e o texto separados
+    permitiria que chegassem fora de ordem e embaralhassem a palavra. Como uma
+    ação única, ou chega inteira ou não chega.
+
+    O teto de 64 não é sobre a interface — é sobre o que uma mensagem
+    adulterada poderia mandar o computador fazer.
+    """
+
+    kind: Literal["key_replace"] = "key_replace"
+    backspaces: int = Field(ge=0, le=64)
+    text: str = Field(min_length=1, max_length=256)
+
+
 InputAction = Annotated[
-    MouseMove | MouseMoveTo | MouseClick | MouseScroll | KeyText | KeyPress | KeyCombo,
+    MouseMove
+    | MouseMoveTo
+    | MouseClick
+    | MouseScroll
+    | KeyText
+    | KeyPress
+    | KeyCombo
+    | KeyReplace,
     Field(discriminator="kind"),
 ]

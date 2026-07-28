@@ -77,3 +77,45 @@ curl -X POST http://localhost:8000/api/v1/devices/<device_id>/input \
   -H "Authorization: Bearer <access_token>" -H "Content-Type: application/json" \
   -d '{"kind":"key_text","text":"Olá do meu celular!"}'
 ```
+
+## Barra de sugestões
+
+Acima do teclado aparecem até três palavras. Ela **nunca corrige sozinha**:
+tocar numa palavra é a única coisa que muda o texto.
+
+Essa recusa é deliberada. O teclado digita direto no computador, e os usos mais
+comuns são terminal, caminho de arquivo e senha — lugares onde "quase certo" é
+simplesmente errado, e onde uma correção automática causaria mais estrago do que
+o erro de digitação que ela tentava consertar. A barra também não sugere nada
+sobre número, símbolo ou algo com `\` e `:`, justamente por isso.
+
+De onde vêm as palavras:
+
+1. **O que você já digitou** — é a fonte que sabe os seus nomes próprios, os
+   seus comandos e o seu jargão, que dicionário nenhum traz. Fica só no celular.
+2. **Uma lista curta de palavras comuns** do idioma da interface, para o
+   primeiro dia valer alguma coisa. Chinês não recebe lista: a escrita não
+   funciona por palavras separadas, e barra vazia é mais honesto que palpite
+   ruim.
+
+Digitar sem acento acha a palavra acentuada (`voce` → `você`), e a maiúscula de
+quem digitou é mantida (`Proj` → `Projeto`).
+
+Dá para desligar em **Configurações → Qualidade da tela → Sugestões de
+palavra**.
+
+### Por que a troca é uma ação só
+
+Trocar a palavra significa apagar o que foi digitado e escrever o certo. Isso
+vai numa única ação `key_replace` (com `backspaces` e `text`), e não em várias
+mensagens.
+
+O motivo é o canal de dados do WebRTC, que é **não ordenado de propósito** — o
+que é bom para o mouse, onde o movimento mais novo vale mais que o antigo. Em
+mensagens separadas, o texto novo poderia chegar antes dos backspaces e o
+resultado sairia embaralhado. Como ação única, ou chega inteira ou não chega.
+
+O app só rastreia a palavra enquanto ela faz sentido: mover o cursor (um toque
+na tela, uma seta, Enter) zera o rastro, porque a partir dali o que o app acha
+que está sendo digitado não corresponde mais ao que existe na tela do
+computador.

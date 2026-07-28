@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -11,6 +12,7 @@ import '../models/remote_file.dart';
 import '../models/stream_quality.dart';
 import '../models/system_stats.dart';
 import 'api_client.dart';
+import 'word_suggester.dart';
 
 /// Estado global do app: autenticação, dispositivos e preferências.
 class AppState extends ChangeNotifier {
@@ -30,7 +32,22 @@ class AppState extends ChangeNotifier {
   /// JPEG. Ligado por padrão — é o caminho bom —, mas desligável: se o WebRTC
   /// se comportar mal, dá para voltar ao que funciona sem reinstalar o app.
   bool webrtcVideoEnabled = true;
+
+  /// Barra de sugestões no teclado remoto. Ligada por padrão, e desligável —
+  /// ela nunca corrige sozinha, mas quem digita comando o dia todo pode achar
+  /// que ela só ocupa espaço.
+  bool suggestionsEnabled = true;
   AppLanguage language = AppLanguage.system;
+
+  /// Palavras que já foram digitadas, carregadas do disco na inicialização.
+  Map<String, int> _learnedWords = {};
+  WordSuggester? _suggester;
+
+  /// Sugeridor do idioma atual, com o histórico de quem usa.
+  WordSuggester get wordSuggester => _suggester ??= WordSuggester.forLanguage(
+        _resolvedLanguage,
+        learned: _learnedWords,
+      );
 
   bool get isAuthenticated => api.isAuthenticated;
 
@@ -50,6 +67,10 @@ class AppState extends ChangeNotifier {
 
   Future<void> setLanguage(AppLanguage lang) async {
     language = lang;
+    // As palavras comuns são do idioma; o histórico de quem usa não é, e por
+    // isso sobrevive à troca.
+    _learnedWords = {..._suggester?.learned ?? _learnedWords};
+    _suggester = null;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('language', lang.name);
@@ -67,6 +88,8 @@ class AppState extends ChangeNotifier {
     gestureTutorialSeen = prefs.getBool('gestureTutorialSeen') ?? false;
     streamQuality = StreamQuality.fromName(prefs.getString('streamQuality'));
     webrtcVideoEnabled = prefs.getBool('webrtcVideo') ?? true;
+    suggestionsEnabled = prefs.getBool('suggestions') ?? true;
+    _learnedWords = _decodeLearned(prefs.getString('learnedWords'));
     language = AppLanguage.values.firstWhere(
       (l) => l.name == prefs.getString('language'),
       orElse: () => AppLanguage.system,
@@ -92,6 +115,34 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('webrtcVideo', enabled);
+  }
+
+  Future<void> setSuggestionsEnabled(bool enabled) async {
+    suggestionsEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('suggestions', enabled);
+  }
+
+  /// Guarda o que foi aprendido digitando. Chamado ao sair do controle, e não a
+  /// cada palavra: escrever no disco a cada tecla seria caro e sem ganho.
+  Future<void> saveLearnedWords() async {
+    final aprendidas = _suggester?.learned;
+    if (aprendidas == null || aprendidas.isEmpty) return;
+    _learnedWords = {...aprendidas};
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('learnedWords', jsonEncode(aprendidas));
+  }
+
+  static Map<String, int> _decodeLearned(String? raw) {
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+    } catch (_) {
+      // Histórico corrompido não pode impedir o app de abrir: recomeça vazio.
+      return {};
+    }
   }
 
   Future<void> markGestureTutorialSeen() async {

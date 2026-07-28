@@ -137,6 +137,10 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _statsInFlight = false;
   Timer? _statsTimer;
 
+  /// O que está sendo digitado, para a barra de sugestões do teclado. Vive aqui
+  /// porque quem move o cursor é esta tela, e mover o cursor invalida o rastro.
+  final TypedWord _typedWord = TypedWord();
+
   @override
   void initState() {
     super.initState();
@@ -304,6 +308,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     _statsTimer?.cancel();
     _statsAnim.dispose();
     _mediaAnim.dispose();
+    _typedWord.dispose();
+    // Guarda o vocabulário aprendido nesta sessão. Aqui, e não a cada palavra:
+    // escrever no disco a cada tecla custaria caro e não adiantaria nada.
+    widget.state.saveLearnedWords();
     _frame.value?.dispose();
     _frame.dispose();
     WakelockPlus.disable();
@@ -505,6 +513,11 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// A ordem importa — entrada é a função principal do app e não pode depender
   /// de o vídeo ter dado certo.
   Future<void> _send(Map<String, dynamic> action) async {
+    // Mexer no mouse leva o cursor para outro lugar: a palavra que o app achava
+    // que estava sendo digitada deixa de corresponder ao que há na tela do
+    // computador, e sugerir a partir dela seria sugerir sobre nada.
+    final kind = action['kind'] as String?;
+    if (kind != null && kind.startsWith('mouse')) _typedWord.reset();
     if (_video?.sendInput(action) == true) return;
     try {
       await widget.state.api.sendInput(widget.device.deviceId, action);
@@ -1199,6 +1212,15 @@ class _RemoteScreenState extends State<RemoteScreen>
                 onKey: (key) => _send({'kind': 'key_press', 'key': key}),
                 onCombo: (mods, key) =>
                     _send({'kind': 'key_combo', 'modifiers': mods, 'key': key}),
+                onReplace: (backspaces, text) => _send({
+                  'kind': 'key_replace',
+                  'backspaces': backspaces,
+                  'text': text,
+                }),
+                typed: _typedWord,
+                suggester: widget.state.suggestionsEnabled
+                    ? widget.state.wordSuggester
+                    : null,
               ),
           ],
         ),

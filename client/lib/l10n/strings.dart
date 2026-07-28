@@ -266,6 +266,16 @@ class Strings {
       "Consomme beaucoup moins de données. En cas de problème, désactivez pour revenir à l'ancien mode.",
       'Consume mucho menos datos. Si falla, desactívalo para volver al modo anterior.');
 
+  // Sugestões no teclado
+  String get suggestions => _t('Sugestões de palavra', 'Word suggestions',
+      '词语建议', 'Suggestions de mots', 'Sugerencias de palabras');
+  String get suggestionsSub => _t(
+      'Mostra palavras acima do teclado. Nunca corrige sozinho: só troca se você tocar.',
+      'Shows words above the keyboard. Never corrects on its own: it only changes if you tap.',
+      '在键盘上方显示词语。不会自动更正：只有点击才会替换。',
+      "Affiche des mots au-dessus du clavier. Ne corrige jamais tout seul : rien ne change sans un appui.",
+      'Muestra palabras sobre el teclado. Nunca corrige solo: solo cambia si tocas.');
+
   // Arquivos
   String get files => _t('Arquivos', 'Files', '文件', 'Fichiers', 'Archivos');
   String get refresh =>

@@ -1,6 +1,35 @@
 import 'package:flutter/material.dart';
 
+import '../services/word_suggester.dart';
+
 enum _Layer { letters, symbols, accents }
+
+/// A palavra que está sendo digitada agora, do ponto de vista do app.
+///
+/// O teclado manda cada tecla direto ao computador e não tem como ler o que há
+/// na tela dele; então o app mantém o seu próprio rastro do que foi digitado
+/// desde o último espaço. Quem move o cursor (um toque na tela, uma seta) tem
+/// de chamar [reset] — a partir dali o rastro não corresponde mais a nada.
+class TypedWord extends ValueNotifier<String> {
+  TypedWord() : super('');
+
+  void addChar(String c) {
+    // Só letras continuam a palavra. Espaço, pontuação e número a encerram.
+    if (RegExp(r"^[a-zA-Zà-öø-ÿ']$").hasMatch(c)) {
+      value = value + c;
+    } else {
+      reset();
+    }
+  }
+
+  void backspace() {
+    if (value.isNotEmpty) value = value.substring(0, value.length - 1);
+  }
+
+  void reset() {
+    if (value.isNotEmpty) value = '';
+  }
+}
 
 /// Teclado em layout de computador com camadas: letras (QWERTY), símbolos/
 /// pontuação e acentos (PT-BR). Modificadores Ctrl/Alt/Shift são grudentos;
@@ -11,11 +40,26 @@ class RemoteKeyboard extends StatefulWidget {
     required this.onText,
     required this.onKey,
     required this.onCombo,
+    this.onReplace,
+    this.typed,
+    this.suggester,
   });
 
   final void Function(String text) onText;
   final void Function(String specialKey) onKey;
   final void Function(List<String> modifiers, String key) onCombo;
+
+  /// Apaga `backspaces` caracteres e digita `text` numa ação só. Sem isto a
+  /// barra de sugestões não aparece — trocar a palavra em várias mensagens
+  /// separadas embaralharia o texto no canal não ordenado.
+  final void Function(int backspaces, String text)? onReplace;
+
+  /// Rastro do que está sendo digitado. Quem for dono da tela precisa
+  /// reiniciá-lo quando o cursor muda de lugar.
+  final TypedWord? typed;
+
+  /// De onde saem as sugestões. `null` = barra desligada.
+  final WordSuggester? suggester;
 
   @override
   State<RemoteKeyboard> createState() => _RemoteKeyboardState();
@@ -81,6 +125,13 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
     } else {
       widget.onText(c);
     }
+    final rastro = widget.typed;
+    if (rastro != null) {
+      // Espaço e pontuação encerram a palavra: é o momento de guardá-la, antes
+      // de o rastro ser zerado.
+      if (!RegExp(r"^[a-zA-Zà-öø-ÿ']$").hasMatch(c)) _aprender(rastro.value);
+      rastro.addChar(c);
+    }
   }
 
   void _special(String name) {
@@ -90,6 +141,33 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
     } else {
       widget.onKey(name);
     }
+    final rastro = widget.typed;
+    if (rastro == null) return;
+    if (name == 'backspace') {
+      rastro.backspace();
+    } else {
+      // Enter, seta, Esc, Tab: o cursor saiu de onde estava, então a palavra
+      // que o app achava que estava sendo digitada acabou.
+      _aprender(rastro.value);
+      rastro.reset();
+    }
+  }
+
+  void _aprender(String palavra) {
+    if (palavra.length >= 3) widget.suggester?.learn(palavra);
+  }
+
+  /// Troca a palavra digitada pela sugestão tocada.
+  ///
+  /// Numa ação só (apagar + digitar): o canal de dados é não ordenado, e em
+  /// mensagens separadas o texto novo poderia chegar antes dos backspaces.
+  void _usarSugestao(String palavra) {
+    final rastro = widget.typed;
+    final trocar = widget.onReplace;
+    if (rastro == null || trocar == null) return;
+    trocar(rastro.value.length, '$palavra ');
+    _aprender(palavra);
+    rastro.reset();
   }
 
   static const _style = ButtonStyle(
@@ -118,6 +196,41 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
 
   Row _charRow(List<String> chars) => Row(children: [for (final c in chars) _charKey(c)]);
 
+  /// Barra de sugestões: só aparece quando há o que sugerir, e **nunca** troca
+  /// nada sozinha. Tocar numa palavra é a única coisa que muda o texto.
+  Widget _suggestionBar() {
+    final rastro = widget.typed;
+    final sugeridor = widget.suggester;
+    if (rastro == null || sugeridor == null || widget.onReplace == null) {
+      return const SizedBox.shrink();
+    }
+    return ValueListenableBuilder<String>(
+      valueListenable: rastro,
+      builder: (context, digitado, _) {
+        final sugestoes = sugeridor.suggest(digitado);
+        if (sugestoes.isEmpty) return const SizedBox.shrink();
+        return SizedBox(
+          height: 34,
+          child: Row(
+            children: [
+              for (final palavra in sugestoes)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(1.5),
+                    child: TextButton(
+                      style: _style,
+                      onPressed: () => _usarSugestao(palavra),
+                      child: FittedBox(child: Text(palavra)),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final rows = _rowsFor(_layer);
@@ -130,6 +243,7 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              _suggestionBar(),
               // Especiais (sempre visíveis).
               Row(
                 children: [

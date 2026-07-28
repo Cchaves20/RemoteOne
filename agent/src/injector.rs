@@ -168,6 +168,16 @@ mod imp {
                     .key(special_key(key), Direction::Click)
                     .map_err(|e| e.to_string()),
                 InputAction::KeyCombo { modifiers, key } => self.key_combo(modifiers, key),
+                InputAction::KeyReplace { backspaces, text } => {
+                    // Teto de segurança: uma mensagem com um número absurdo não
+                    // deve prender o agente apagando a tela do usuário.
+                    for _ in 0..(*backspaces).min(64) {
+                        self.enigo
+                            .key(Key::Backspace, Direction::Click)
+                            .map_err(|e| e.to_string())?;
+                    }
+                    self.enigo.text(text).map_err(|e| e.to_string())
+                }
             }
         }
 

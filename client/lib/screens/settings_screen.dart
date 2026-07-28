@@ -52,6 +52,15 @@ class SettingsScreen extends StatelessWidget {
                   onChanged: state.setWebrtcVideoEnabled,
                 ),
                 const Divider(height: 20),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.spellcheck),
+                  title: Text(t.suggestions),
+                  subtitle: Text(t.suggestionsSub),
+                  value: state.suggestionsEnabled,
+                  onChanged: state.setSuggestionsEnabled,
+                ),
+                const Divider(height: 20),
                 _qualityChips(context),
                 const SizedBox(height: 10),
                 Text(
