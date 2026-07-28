@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/device.dart';
 import '../models/remote_app.dart';
+import '../models/remote_file.dart';
 import '../models/system_stats.dart';
 import 'token_store.dart';
 
@@ -330,6 +331,58 @@ class ApiClient {
     if (res.statusCode != 204) {
       throw _error(res);
     }
+  }
+
+  // --- arquivos ---------------------------------------------------------------
+
+  /// Lista uma pasta do computador. Caminho vazio = a pasta do usuário.
+  Future<RemoteListing> listFiles(String deviceId, {String path = ''}) async {
+    final res = await _http
+        .get(
+          _uri('/api/v1/devices/$deviceId/files?path=${Uri.encodeQueryComponent(path)}'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(seconds: 30));
+    return RemoteListing.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Baixa um arquivo do computador.
+  ///
+  /// O tempo limite é largo porque quem manda é o tamanho do arquivo, não a
+  /// pressa de quem espera.
+  Future<Uint8List> downloadFile(String deviceId, String path) async {
+    final res = await _http
+        .get(
+          _uri('/api/v1/devices/$deviceId/files/download'
+              '?path=${Uri.encodeQueryComponent(path)}'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(minutes: 10));
+    if (res.statusCode != 200) {
+      throw _error(res);
+    }
+    return res.bodyBytes;
+  }
+
+  /// Envia um arquivo ao computador. Devolve onde ele foi salvo.
+  Future<String> uploadFile(
+    String deviceId,
+    String name,
+    Uint8List bytes,
+  ) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/devices/$deviceId/files/upload'
+              '?name=${Uri.encodeQueryComponent(name)}'),
+          headers: {
+            ..._authHeaders,
+            'Content-Type': 'application/octet-stream',
+          },
+          body: bytes,
+        )
+        .timeout(const Duration(minutes: 10));
+    final corpo = _decode(res) as Map<String, dynamic>;
+    return corpo['path'] as String? ?? '';
   }
 
   /// Envia um comando de energia (shutdown/restart/suspend) ao computador.

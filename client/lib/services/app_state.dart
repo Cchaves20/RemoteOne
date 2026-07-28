@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/strings.dart';
 import '../models/device.dart';
 import '../models/remote_app.dart';
+import '../models/remote_file.dart';
 import '../models/stream_quality.dart';
 import '../models/system_stats.dart';
 import 'api_client.dart';
@@ -238,6 +240,17 @@ class AppState extends ChangeNotifier {
 
   Future<void> mediaKey(Device device, String action) =>
       api.mediaKey(device.deviceId, action);
+
+  // --- arquivos ----------------------------------------------------------------
+
+  Future<RemoteListing> listFiles(Device device, {String path = ''}) =>
+      api.listFiles(device.deviceId, path: path);
+
+  Future<Uint8List> downloadFile(Device device, String path) =>
+      api.downloadFile(device.deviceId, path);
+
+  Future<String> uploadFile(Device device, String name, Uint8List bytes) =>
+      api.uploadFile(device.deviceId, name, bytes);
 
   // --- conta -----------------------------------------------------------------
 

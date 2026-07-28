@@ -17,6 +17,9 @@ from app.protocol import (
     Ack,
     AppList,
     Error,
+    FileChunk,
+    FileDone,
+    FileList,
     Hello,
     PairCode,
     Paired,
@@ -36,6 +39,7 @@ from app.signaling import (
     to_agent,
     to_viewer,
 )
+from app.transfers import transfers
 
 logger = logging.getLogger("remoteone")
 
@@ -72,6 +76,7 @@ FEATURES = [
     "webrtc-signaling",
     "system-stats",
     "media-keys",
+    "file-transfer",
 ]
 
 
@@ -217,6 +222,34 @@ async def agent_ws(websocket: WebSocket) -> None:
                 pending.resolve(
                     message.request_id, [a.model_dump() for a in message.apps]
                 )
+            elif isinstance(message, FileList):
+                pending.resolve(
+                    message.request_id,
+                    {
+                        "listing": message.listing.model_dump()
+                        if message.listing
+                        else None,
+                        "error": message.error,
+                    },
+                )
+            elif isinstance(message, FileChunk):
+                # Pedaço de um arquivo indo ao celular. O `await` aqui é o que
+                # segura o agente quando o celular não consome: a fila enche e
+                # este socket para de ser drenado.
+                download = transfers.get(message.transfer_id)
+                if download is not None:
+                    await download.push(message.seq, message.data)
+            elif isinstance(message, FileDone):
+                # Serve aos dois sentidos: fim de um download (fila) ou a
+                # confirmação de um envio (pedido pendente).
+                download = transfers.get(message.transfer_id)
+                if download is not None:
+                    await download.finish(message.ok, message.detail)
+                else:
+                    pending.resolve(
+                        message.transfer_id,
+                        {"ok": message.ok, "detail": message.detail},
+                    )
             elif isinstance(message, SystemStats):
                 # Métricas medidas: entrega a quem pediu (o endpoint HTTP).
                 pending.resolve(message.request_id, message.stats.model_dump())

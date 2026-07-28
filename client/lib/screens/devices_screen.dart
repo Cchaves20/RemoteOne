@@ -6,6 +6,7 @@ import '../theme.dart';
 import '../widgets/pulse.dart';
 import '../widgets/transitions.dart';
 import 'apps_screen.dart';
+import 'files_screen.dart';
 import 'remote_screen.dart';
 import 'settings_screen.dart';
 
@@ -211,6 +212,10 @@ class _DevicesScreenState extends State<DevicesScreen> {
             Navigator.of(context).push(
               fadeThroughRoute(AppsScreen(state: widget.state, device: d)),
             );
+          case 'files':
+            Navigator.of(context).push(
+              fadeThroughRoute(FilesScreen(state: widget.state, device: d)),
+            );
           case 'rename':
             _showRenameDialog(d);
           case 'shutdown':
@@ -245,6 +250,14 @@ class _DevicesScreenState extends State<DevicesScreen> {
             child: ListTile(
               leading: const Icon(Icons.apps),
               title: Text(t.apps),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'files',
+            enabled: d.online,
+            child: ListTile(
+              leading: const Icon(Icons.folder),
+              title: Text(t.files),
             ),
           ),
           PopupMenuItem(

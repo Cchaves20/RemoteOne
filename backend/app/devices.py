@@ -1,8 +1,11 @@
 """Rotas de pareamento e gerenciamento de dispositivos (Etapas 5 e 7.2)."""
 
 import asyncio
+import base64
+import logging
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app import pairing
@@ -17,12 +20,16 @@ from app.schemas import (
     AppOut,
     ClaimRequest,
     DeviceOut,
+    ListingOut,
     MediaRequest,
     PowerRequest,
     RenameDeviceRequest,
     SystemStatsOut,
 )
 from app.screen import frame_store
+from app.transfers import MAX_TRANSFER_BYTES, TransferError, transfers
+
+logger = logging.getLogger("remoteone")
 
 router = APIRouter(prefix="/api/v1", tags=["devices"])
 
@@ -38,6 +45,13 @@ _APPS_TIMEOUT_SECONDS = 15
 # do app pergunta de novo a cada poucos segundos: uma espera curta evita que
 # pedidos velhos se acumulem quando a rede engasga.
 _SYSTEM_TIMEOUT_SECONDS = 5
+# Listar uma pasta é ida e volta ao computador, como a lista de aplicativos.
+_FILES_TIMEOUT_SECONDS = 20
+# Quanto esperar por *cada* pedaço de um arquivo. Generoso: o computador pode
+# estar lendo de um disco lento, mas um silêncio longo é conexão morta.
+_CHUNK_TIMEOUT_SECONDS = 60
+# Tamanho do pedaço que sobe ao computador. O mesmo do agente.
+_UPLOAD_CHUNK = 64 * 1024
 
 
 def _device_out(device: Device) -> DeviceOut:
@@ -197,6 +211,207 @@ async def media_key(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
         )
+
+
+@router.get("/devices/{device_id}/files", response_model=ListingOut)
+async def list_files(
+    device_id: str,
+    path: str = Query("", max_length=4096),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ListingOut:
+    """Lista uma pasta do computador. Caminho vazio = a pasta do usuário.
+
+    O agente só enxerga dentro da pasta do usuário; um caminho fora dela volta
+    como 400, não como pasta vazia.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    request_id, future = pending.create()
+    message = {"type": "list_files", "request_id": request_id, "path": path}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        payload = await asyncio.wait_for(future, timeout=_FILES_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    if payload.get("error"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=payload["error"]
+        )
+    return ListingOut(**payload["listing"])
+
+
+@router.get("/devices/{device_id}/files/download")
+async def download_file(
+    device_id: str,
+    path: str = Query(..., min_length=1, max_length=4096),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Traz um arquivo do computador para o celular.
+
+    O backend **repassa** os pedaços enquanto chegam; o arquivo nunca existe
+    inteiro aqui. É o que torna possível mover 100 MB numa VM de 1 GB.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    transfer_id, download = transfers.start_download()
+    message = {"type": "read_file", "transfer_id": transfer_id, "path": path}
+    if not await manager.send_to_agent(device_id, message):
+        transfers.drop(transfer_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+    async def stream():
+        try:
+            while True:
+                chunk = await asyncio.wait_for(
+                    download.chunks.get(), timeout=_CHUNK_TIMEOUT_SECONDS
+                )
+                if chunk is None:
+                    return
+                if isinstance(chunk, TransferError):
+                    # A conexão já começou (200 enviado): não há como virar erro
+                    # HTTP. Cortar o corpo é o que sinaliza a falha ao app, que
+                    # compara o recebido com o Content-Length.
+                    logger.warning("transferência %s falhou: %s", transfer_id, chunk)
+                    return
+                yield chunk
+        except (TimeoutError, asyncio.CancelledError):
+            logger.info("transferência %s interrompida", transfer_id)
+        finally:
+            transfers.drop(transfer_id)
+            # Avisa o computador para parar de ler — sem isso ele seguiria
+            # bombeando um arquivo que ninguém mais quer.
+            await manager.send_to_agent(
+                device_id, {"type": "cancel_transfer", "transfer_id": transfer_id}
+            )
+
+    name = path.replace("\\", "/").rsplit("/", 1)[-1] or "arquivo"
+    return StreamingResponse(
+        stream(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@router.post("/devices/{device_id}/files/upload", status_code=status.HTTP_200_OK)
+async def upload_file(
+    device_id: str,
+    request: Request,
+    name: str = Query(..., min_length=1, max_length=255),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Envia um arquivo do celular para o computador.
+
+    O corpo é o arquivo cru (sem multipart): o app já sabe o nome, e envelopar
+    custaria uma cópia a mais em cada ponta. O backend lê e repassa pedaço a
+    pedaço — o `await` de cada envio ao agente é o que segura o upload quando o
+    computador não acompanha.
+    """
+    device = _owned_device_or_404(db, device_id, current_user)
+
+    declared = request.headers.get("content-length")
+    size = int(declared) if declared and declared.isdigit() else 0
+    if size > MAX_TRANSFER_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"limite de {MAX_TRANSFER_BYTES // 1024 // 1024} MB por arquivo",
+        )
+
+    # O agente responde o `file_done` carregando o transfer_id, então é ele que
+    # identifica o pedido pendente — não um request_id separado.
+    transfer_id = transfers.new_upload_id()
+    future = pending.create_with_id(transfer_id)
+
+    begin = {
+        "type": "write_file_begin",
+        "transfer_id": transfer_id,
+        "name": name,
+        "size": size,
+    }
+    if not await manager.send_to_agent(device_id, begin):
+        pending.cancel(transfer_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+    seq = 0
+    enviados = 0
+    try:
+        async for chunk in _chunked(request.stream(), _UPLOAD_CHUNK):
+            enviados += len(chunk)
+            if enviados > MAX_TRANSFER_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    detail=f"limite de {MAX_TRANSFER_BYTES // 1024 // 1024} MB por arquivo",
+                )
+            ok = await manager.send_to_agent(
+                device_id,
+                {
+                    "type": "write_file_chunk",
+                    "transfer_id": transfer_id,
+                    "seq": seq,
+                    "data": base64.b64encode(chunk).decode(),
+                },
+            )
+            if not ok:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="o computador saiu no meio do envio",
+                )
+            seq += 1
+        await manager.send_to_agent(
+            device_id, {"type": "write_file_end", "transfer_id": transfer_id}
+        )
+    except HTTPException:
+        pending.cancel(transfer_id)
+        await manager.send_to_agent(
+            device_id, {"type": "cancel_transfer", "transfer_id": transfer_id}
+        )
+        raise
+
+    try:
+        result = await asyncio.wait_for(future, timeout=_CHUNK_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(transfer_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador não confirmou o arquivo",
+        ) from exc
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=result.get("detail") or "o computador recusou o arquivo",
+        )
+    return {"path": result.get("detail", ""), "device": device.name, "bytes": enviados}
+
+
+async def _chunked(stream, size: int):
+    """Reagrupa o corpo da requisição em pedaços de tamanho fixo.
+
+    O `request.stream()` entrega o que a rede trouxer — às vezes 1 KB, às vezes
+    200 KB. Sem reagrupar, o tamanho do pedaço no fio dependeria do humor da
+    rede, e um pedaço grande demais estouraria a mensagem do WebSocket.
+    """
+    buffer = bytearray()
+    async for parte in stream:
+        buffer.extend(parte)
+        while len(buffer) >= size:
+            yield bytes(buffer[:size])
+            del buffer[:size]
+    if buffer:
+        yield bytes(buffer)
 
 
 @router.get("/devices/{device_id}/apps", response_model=list[AppOut])

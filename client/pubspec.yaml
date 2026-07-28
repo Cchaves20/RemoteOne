@@ -19,6 +19,17 @@ dependencies:
   # Spike S1 do plano de WebRTC (docs/webrtc-plano.md). Traz o framework
   # nativo do WebRTC, que é grande — se o spike reprovar, sai daqui.
   flutter_webrtc: ^1.5.0
+  # Transferência de arquivos: escolher no iPhone (file_picker), guardar num
+  # arquivo temporário (path_provider) e oferecer "Salvar em Arquivos" pela
+  # folha de compartilhamento do iOS (share_plus) — que é como o iPhone deixa
+  # o usuário escolher onde guardar sem pedir permissão nenhuma.
+  file_picker: ^11.0.0
+  path_provider: ^2.1.0
+  # Faixa larga de propósito: as versões mais novas do share_plus exigem um
+  # Flutter bem recente, e a API que usamos (SharePlus.instance.share com
+  # ShareParams) é a mesma desde a 11. Assim o pub escolhe o que couber no
+  # Flutter de cada máquina em vez de recusar a resolução.
+  share_plus: ">=11.0.0 <14.0.0"
 
 dev_dependencies:
   flutter_test:

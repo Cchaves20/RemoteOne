@@ -33,6 +33,9 @@ Agente                          Backend
 | `hello` | `device_id`, `hostname`, `os`, `agent_version`, `mac?` | Primeira mensagem ao conectar (`mac` opcional, para Wake-on-LAN) |
 | `heartbeat` | — | Periódico, mantém a sessão viva |
 | `app_list` | `request_id`, `apps[]` (`id`, `name`, `icon?`) | Resposta a um `list_apps`; `icon` é o ícone real do programa em PNG base64 (ver "pergunta e resposta" abaixo) |
+| `file_list` | `request_id`, `listing?` (`path`, `parent?`, `entries[]`), `error?` | Resposta a um `list_files`. Vem `listing` **ou** `error` — pasta sem permissão não pode chegar ao app como pasta vazia |
+| `file_chunk` | `transfer_id`, `seq`, `data` (base64) | Um pedaço de arquivo indo ao celular; `seq` detecta pedaço fora de ordem |
+| `file_done` | `transfer_id`, `ok`, `detail?`, `size?` | Fim de transferência nos dois sentidos: `detail` traz o caminho salvo ou o motivo da falha |
 | `system_stats` | `request_id`, `stats` (`cpu_percent`, `memory_used`, `memory_total`, `disk_used`, `disk_total`, `disk_name`, `uptime_seconds`) | Resposta a um `system_info`. Bytes crus e porcentagem: quem formata é o app, que sabe o idioma |
 
 ## Mensagens do backend → agente
@@ -53,6 +56,12 @@ Agente                          Backend
 | `launch_app` | `id` (caminho do atalho) | Abre um programa no computador |
 | `close_app` | `id` (PID) | Encerra um programa em execução |
 | `system_info` | `request_id` | Pede as métricas do computador; o agente responde com `system_stats` |
+| `list_files` | `request_id`, `path` (vazio = pasta do usuário) | Pede o conteúdo de uma pasta |
+| `read_file` | `transfer_id`, `path` | Pede que o agente leia um arquivo e o mande em `file_chunk` |
+| `write_file_begin` | `transfer_id`, `name`, `size` | Começa a receber um arquivo vindo do celular |
+| `write_file_chunk` | `transfer_id`, `seq`, `data` (base64) | Um pedaço do arquivo que sobe ao computador |
+| `write_file_end` | `transfer_id` | Fim do envio; o agente publica o arquivo e responde `file_done` |
+| `cancel_transfer` | `transfer_id` | Desiste de uma transferência em curso, nos dois sentidos |
 | `media` | `action` (`play_pause`/`next`/`previous`/`volume_up`/`volume_down`/`mute`) | Aciona uma tecla multimídia. São teclas **globais**: valem para quem estiver tocando som, sem depender da janela em foco |
 
 ## Pergunta e resposta (aplicativos)

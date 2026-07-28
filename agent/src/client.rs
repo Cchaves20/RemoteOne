@@ -157,6 +157,19 @@ pub async fn run(
     // medida de verdade — e aqui isso não custa nada a ninguém.
     let mut monitor = crate::system_info::Monitor::new();
 
+    // Transferência de arquivos. Os pedaços que saem daqui passam por um canal
+    // **limitado**: é ele que segura o leitor quando a rede não acompanha. Sem
+    // limite, ler um arquivo de 100 MB o carregaria inteiro na memória.
+    let (file_tx, mut file_rx) = tokio::sync::mpsc::channel::<ClientMessage>(4);
+    // Arquivos sendo recebidos do celular, e a próxima sequência esperada de
+    // cada um. Um pedaço fora de ordem vira erro, não arquivo corrompido.
+    let mut uploads: std::collections::HashMap<String, (crate::files::Incoming, u64)> =
+        std::collections::HashMap::new();
+    // Leituras em curso: a bandeira é como o `cancel_transfer` alcança a thread
+    // que está lendo o arquivo.
+    let mut reads: std::collections::HashMap<String, Arc<std::sync::atomic::AtomicBool>> =
+        std::collections::HashMap::new();
+
     // Transmissão de tela: enquanto ativa, captura e envia frames JPEG. A
     // config é mutável porque o app pode ajustar fps/qualidade por sessão.
     let mut streaming = false;
@@ -220,6 +233,15 @@ pub async fn run(
                         session_id, candidate, sdp_mid, sdp_mline_index,
                     },
                 };
+                ws.send(Message::Text(serde_json::to_string(&message)?)).await?;
+            }
+            // Pedaços de arquivo saindo (leitura em curso numa thread própria).
+            Some(message) = file_rx.recv() => {
+                // O fim da leitura é o momento de esquecer a bandeira de
+                // cancelamento: ela já não alcança ninguém.
+                if let ClientMessage::FileDone { transfer_id, .. } = &message {
+                    reads.remove(transfer_id);
+                }
                 ws.send(Message::Text(serde_json::to_string(&message)?)).await?;
             }
             // Entrada vinda do canal de dados: um salto direto do celular até
@@ -401,6 +423,132 @@ pub async fn run(
                                 )?;
                                 ws.send(Message::Text(reply)).await?;
                             }
+                            // Listar uma pasta toca o disco: sai do event loop.
+                            Some(Action::ListFiles { request_id, path }) => {
+                                let resultado = tokio::task::spawn_blocking(move || {
+                                    crate::files::list(&path)
+                                })
+                                .await
+                                .unwrap_or_else(|e| Err(format!("tarefa falhou: {e}")));
+                                // Erro vira erro, e não pasta vazia: "sem
+                                // permissão" e "não tem nada aqui" são coisas
+                                // diferentes para quem está procurando algo.
+                                let reply = match resultado {
+                                    Ok(listing) => ClientMessage::FileList {
+                                        request_id,
+                                        listing: Some(listing),
+                                        error: None,
+                                    },
+                                    Err(e) => {
+                                        eprintln!("Falha ao listar pasta: {e}");
+                                        ClientMessage::FileList {
+                                            request_id,
+                                            listing: None,
+                                            error: Some(e),
+                                        }
+                                    }
+                                };
+                                ws.send(Message::Text(serde_json::to_string(&reply)?)).await?;
+                            }
+                            // Leitura em thread própria, publicando pedaços no
+                            // canal limitado: é ele que segura o disco quando a
+                            // rede não acompanha.
+                            Some(Action::ReadFile { transfer_id, path }) => {
+                                let parar = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                                reads.insert(transfer_id.clone(), Arc::clone(&parar));
+                                let saida = file_tx.clone();
+                                tokio::task::spawn_blocking(move || {
+                                    send_file(&transfer_id, &path, &saida, &parar);
+                                });
+                            }
+                            Some(Action::WriteBegin { transfer_id, name, size }) => {
+                                let resultado = if size > crate::files::MAX_TRANSFER_BYTES {
+                                    Err(format!(
+                                        "arquivo maior que o limite de {} MB",
+                                        crate::files::MAX_TRANSFER_BYTES / 1024 / 1024
+                                    ))
+                                } else {
+                                    crate::files::Incoming::create(
+                                        &name,
+                                        crate::files::MAX_TRANSFER_BYTES,
+                                    )
+                                };
+                                match resultado {
+                                    Ok(arquivo) => {
+                                        uploads.insert(transfer_id, (arquivo, 0));
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Recusei receber {name}: {e}");
+                                        let reply = serde_json::to_string(&file_failed(
+                                            transfer_id, e,
+                                        ))?;
+                                        ws.send(Message::Text(reply)).await?;
+                                    }
+                                }
+                            }
+                            Some(Action::WriteChunk { transfer_id, seq, data }) => {
+                                if let Some((arquivo, esperado)) = uploads.get_mut(&transfer_id) {
+                                    let erro = if seq != *esperado {
+                                        // Fora de ordem: o arquivo montado aqui
+                                        // não seria o que saiu do celular.
+                                        Some(format!(
+                                            "pedaço fora de ordem (esperava {esperado}, veio {seq})"
+                                        ))
+                                    } else {
+                                        match decode_chunk(&data) {
+                                            Ok(bytes) => match arquivo.write(&bytes) {
+                                                Ok(()) => {
+                                                    *esperado += 1;
+                                                    None
+                                                }
+                                                Err(e) => Some(e),
+                                            },
+                                            Err(e) => Some(e),
+                                        }
+                                    };
+                                    if let Some(e) = erro {
+                                        eprintln!("Falha ao receber arquivo: {e}");
+                                        if let Some((arquivo, _)) = uploads.remove(&transfer_id) {
+                                            arquivo.cancel();
+                                        }
+                                        let reply = serde_json::to_string(&file_failed(
+                                            transfer_id, e,
+                                        ))?;
+                                        ws.send(Message::Text(reply)).await?;
+                                    }
+                                }
+                            }
+                            Some(Action::WriteEnd { transfer_id }) => {
+                                if let Some((arquivo, _)) = uploads.remove(&transfer_id) {
+                                    let mensagem = match arquivo.finish() {
+                                        Ok(caminho) => {
+                                            println!("Arquivo recebido em {caminho}");
+                                            ClientMessage::FileDone {
+                                                transfer_id,
+                                                ok: true,
+                                                detail: Some(caminho),
+                                                size: None,
+                                            }
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Falha ao salvar arquivo: {e}");
+                                            file_failed(transfer_id, e)
+                                        }
+                                    };
+                                    ws.send(Message::Text(serde_json::to_string(&mensagem)?))
+                                        .await?;
+                                }
+                            }
+                            Some(Action::CancelTransfer { transfer_id }) => {
+                                // Vale para os dois sentidos: a bandeira para a
+                                // leitura, e o arquivo pela metade é apagado.
+                                if let Some(parar) = reads.remove(&transfer_id) {
+                                    parar.store(true, std::sync::atomic::Ordering::Relaxed);
+                                }
+                                if let Some((arquivo, _)) = uploads.remove(&transfer_id) {
+                                    arquivo.cancel();
+                                }
+                            }
                             // Listar aplicativos pode demorar (varre o menu
                             // Iniciar / consulta processos): roda fora do event
                             // loop e responde ao backend com o mesmo request_id.
@@ -551,6 +699,94 @@ impl VideoStats {
     }
 }
 
+/// Fim de transferência com falha, na forma que o backend espera.
+fn file_failed(transfer_id: String, detail: String) -> ClientMessage {
+    ClientMessage::FileDone {
+        transfer_id,
+        ok: false,
+        detail: Some(detail),
+        size: None,
+    }
+}
+
+/// Decodifica um pedaço vindo em base64.
+fn decode_chunk(data: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|e| format!("pedaço ilegível: {e}"))
+}
+
+/// Lê um arquivo e o publica em pedaços, até acabar ou alguém cancelar.
+///
+/// Roda numa thread de bloqueio e usa `blocking_send`: quando o canal enche —
+/// porque a rede não vaza tão rápido quanto o disco lê — esta função **para**
+/// aqui. É essa espera que impede um arquivo de 100 MB de virar 100 MB de fila
+/// na memória.
+fn send_file(
+    transfer_id: &str,
+    path: &str,
+    outbox: &tokio::sync::mpsc::Sender<ClientMessage>,
+    stop: &Arc<std::sync::atomic::AtomicBool>,
+) {
+    use base64::Engine;
+    use std::io::Read;
+    use std::sync::atomic::Ordering::Relaxed;
+
+    let (mut file, size) = match crate::files::open_read(path) {
+        Ok(aberto) => aberto,
+        Err(e) => {
+            let _ = outbox.blocking_send(file_failed(transfer_id.to_string(), e));
+            return;
+        }
+    };
+    if size > crate::files::MAX_TRANSFER_BYTES {
+        let _ = outbox.blocking_send(file_failed(
+            transfer_id.to_string(),
+            format!(
+                "arquivo maior que o limite de {} MB",
+                crate::files::MAX_TRANSFER_BYTES / 1024 / 1024
+            ),
+        ));
+        return;
+    }
+
+    let mut buffer = vec![0u8; crate::files::CHUNK_BYTES];
+    let mut seq = 0u64;
+    loop {
+        if stop.load(Relaxed) {
+            return; // cancelado: nem o fim precisa ser anunciado
+        }
+        let lidos = match file.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) => {
+                let _ = outbox.blocking_send(file_failed(
+                    transfer_id.to_string(),
+                    format!("falha ao ler: {e}"),
+                ));
+                return;
+            }
+        };
+        let chunk = ClientMessage::FileChunk {
+            transfer_id: transfer_id.to_string(),
+            seq,
+            data: base64::engine::general_purpose::STANDARD.encode(&buffer[..lidos]),
+        };
+        // Canal fechado = o laço morreu (conexão caiu). Sem motivo para seguir.
+        if outbox.blocking_send(chunk).is_err() {
+            return;
+        }
+        seq += 1;
+    }
+    let _ = outbox.blocking_send(ClientMessage::FileDone {
+        transfer_id: transfer_id.to_string(),
+        ok: true,
+        detail: None,
+        size: Some(size),
+    });
+}
+
 /// Algo que o laço principal precisa fazer depois de tratar uma mensagem —
 /// tarefas que exigem `await` (recriar o ticker, responder ao servidor).
 enum Action {
@@ -558,6 +794,26 @@ enum Action {
     RestartFrameTicker,
     /// Medir CPU/memória/disco e responder ao backend.
     SystemInfo { request_id: String },
+    /// Listar uma pasta e responder ao backend.
+    ListFiles { request_id: String, path: String },
+    /// Ler um arquivo e mandá-lo em pedaços.
+    ReadFile { transfer_id: String, path: String },
+    /// Começar a receber um arquivo vindo do celular.
+    WriteBegin {
+        transfer_id: String,
+        name: String,
+        size: u64,
+    },
+    /// Um pedaço do arquivo que está chegando.
+    WriteChunk {
+        transfer_id: String,
+        seq: u64,
+        data: String,
+    },
+    /// Fim do envio: publicar o arquivo.
+    WriteEnd { transfer_id: String },
+    /// Desistir de uma transferência nos dois sentidos.
+    CancelTransfer { transfer_id: String },
     /// Listar aplicativos e responder ao backend.
     ListApps {
         request_id: String,
@@ -673,6 +929,42 @@ fn handle_server_text(
         // Medir exige `&mut` no monitor, que vive no laço: volta como ação.
         Ok(ServerMessage::SystemInfo { request_id }) => {
             return Some(Action::SystemInfo { request_id });
+        }
+        // Arquivos: tudo precisa do socket ou do estado das transferências, que
+        // vivem no laço. Aqui só viram ação.
+        Ok(ServerMessage::ListFiles { request_id, path }) => {
+            return Some(Action::ListFiles { request_id, path });
+        }
+        Ok(ServerMessage::ReadFile { transfer_id, path }) => {
+            return Some(Action::ReadFile { transfer_id, path });
+        }
+        Ok(ServerMessage::WriteFileBegin {
+            transfer_id,
+            name,
+            size,
+        }) => {
+            return Some(Action::WriteBegin {
+                transfer_id,
+                name,
+                size,
+            });
+        }
+        Ok(ServerMessage::WriteFileChunk {
+            transfer_id,
+            seq,
+            data,
+        }) => {
+            return Some(Action::WriteChunk {
+                transfer_id,
+                seq,
+                data,
+            });
+        }
+        Ok(ServerMessage::WriteFileEnd { transfer_id }) => {
+            return Some(Action::WriteEnd { transfer_id });
+        }
+        Ok(ServerMessage::CancelTransfer { transfer_id }) => {
+            return Some(Action::CancelTransfer { transfer_id });
         }
         Ok(ServerMessage::Media { action }) => {
             if let Err(e) = injector.media(action) {

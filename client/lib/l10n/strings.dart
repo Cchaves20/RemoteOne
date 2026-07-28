@@ -266,6 +266,36 @@ class Strings {
       "Consomme beaucoup moins de données. En cas de problème, désactivez pour revenir à l'ancien mode.",
       'Consume mucho menos datos. Si falla, desactívalo para volver al modo anterior.');
 
+  // Arquivos
+  String get files => _t('Arquivos', 'Files', '文件', 'Fichiers', 'Archivos');
+  String get refresh =>
+      _t('Atualizar', 'Refresh', '刷新', 'Actualiser', 'Actualizar');
+  String get filesUp =>
+      _t('Pasta acima', 'Up one folder', '上一级', 'Dossier parent', 'Carpeta superior');
+  String get filesEmpty =>
+      _t('Pasta vazia', 'Empty folder', '空文件夹', 'Dossier vide', 'Carpeta vacía');
+  String get filesBackToHome => _t('Voltar ao início', 'Back to start', '回到起点',
+      'Revenir au début', 'Volver al inicio');
+  String get fileBring =>
+      _t('Trazer para o celular', 'Bring to phone', '下载到手机',
+          'Récupérer sur le téléphone', 'Traer al teléfono');
+  String get fileSend =>
+      _t('Enviar arquivo', 'Send file', '发送文件', 'Envoyer un fichier', 'Enviar archivo');
+  String get fileTransferring =>
+      _t('Transferindo…', 'Transferring…', '传输中…', 'Transfert…', 'Transfiriendo…');
+  String fileSentTo(String path) => _t(
+      'Salvo no computador em $path',
+      'Saved on the computer at $path',
+      '已保存到电脑：$path',
+      "Enregistré sur l'ordinateur dans $path",
+      'Guardado en el equipo en $path');
+  String get fileDownloadFailed => _t('Não consegui trazer o arquivo',
+      "Couldn't bring the file", '无法下载该文件',
+      'Impossible de récupérer le fichier', 'No se pudo traer el archivo');
+  String get fileUploadFailed => _t('Não consegui enviar o arquivo',
+      "Couldn't send the file", '无法发送该文件',
+      "Impossible d'envoyer le fichier", 'No se pudo enviar el archivo');
+
   // Painel de métricas do computador
   String get systemPanel =>
       _t('Computador', 'Computer', '电脑', 'Ordinateur', 'Equipo');

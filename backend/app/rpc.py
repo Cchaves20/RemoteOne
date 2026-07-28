@@ -26,6 +26,17 @@ class PendingRequests:
         self._pending[request_id] = future
         return request_id, future
 
+    def create_with_id(self, request_id: str) -> asyncio.Future:
+        """Registra um pedido cujo id já existe.
+
+        A transferência de arquivos precisa disto: o `transfer_id` já identifica
+        a transferência nas duas pontas, e inventar um `request_id` paralelo
+        significaria carregar dois identificadores para a mesma coisa.
+        """
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        self._pending[request_id] = future
+        return future
+
     def resolve(self, request_id: str, payload) -> bool:
         """Entrega a resposta a quem espera. False se ninguém mais esperava."""
         future = self._pending.pop(request_id, None)

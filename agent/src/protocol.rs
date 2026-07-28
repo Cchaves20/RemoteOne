@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::apps::{AppInfo, AppKind};
+use crate::files::Listing;
 use crate::input::{InputAction, MediaAction};
 use crate::system_info::SystemSnapshot;
 
@@ -35,6 +36,36 @@ pub enum ClientMessage {
     SystemStats {
         request_id: String,
         stats: SystemSnapshot,
+    },
+    /// Resposta a um `list_files`: o conteúdo da pasta, **ou** o motivo de não
+    /// ter conseguido. Uma pasta sem permissão não pode chegar ao app como
+    /// pasta vazia — são coisas diferentes para quem procura um arquivo.
+    FileList {
+        request_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        listing: Option<Listing>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    /// Um pedaço de um arquivo que o app pediu para baixar. `data` é base64.
+    ///
+    /// A sequência existe para o backend detectar pedaço fora de ordem em vez de
+    /// montar um arquivo corrompido em silêncio.
+    FileChunk {
+        transfer_id: String,
+        seq: u64,
+        data: String,
+    },
+    /// O fim de uma transferência, nos dois sentidos: `ok` diz se deu certo, e
+    /// `detail` traz o caminho salvo (envio) ou o motivo da falha.
+    FileDone {
+        transfer_id: String,
+        ok: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+        /// Tamanho total, para o app baixando saber quanto esperar.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        size: Option<u64>,
     },
     /// Resposta SDP à oferta de um app (negociação de vídeo por WebRTC).
     WebrtcAnswer {
@@ -111,6 +142,38 @@ pub enum ServerMessage {
     /// resposta a esperar.
     Media {
         action: MediaAction,
+    },
+    /// Pede o conteúdo de uma pasta. Caminho vazio = a pasta do usuário.
+    ListFiles {
+        request_id: String,
+        #[serde(default)]
+        path: String,
+    },
+    /// Pede que o agente leia um arquivo e o mande em pedaços (`file_chunk`).
+    ReadFile {
+        transfer_id: String,
+        path: String,
+    },
+    /// Começa a receber um arquivo vindo do celular.
+    WriteFileBegin {
+        transfer_id: String,
+        name: String,
+        /// Tamanho anunciado, para recusar antes de gastar disco.
+        size: u64,
+    },
+    /// Um pedaço do arquivo que está sendo enviado ao computador (base64).
+    WriteFileChunk {
+        transfer_id: String,
+        seq: u64,
+        data: String,
+    },
+    /// Fim do envio: o agente publica o arquivo e responde com `file_done`.
+    WriteFileEnd {
+        transfer_id: String,
+    },
+    /// Desiste de uma transferência em curso (app fechou, rede caiu).
+    CancelTransfer {
+        transfer_id: String,
     },
     /// Abre um aplicativo (id = caminho do atalho).
     LaunchApp {
@@ -374,6 +437,99 @@ mod tests {
             json,
             r#"{"type":"webrtc_ice","session_id":"s1","candidate":""}"#
         );
+    }
+
+    #[test]
+    fn deserializes_file_commands() {
+        let listar: ServerMessage =
+            serde_json::from_str(r#"{"type":"list_files","request_id":"r1","path":"C:\\Users"}"#)
+                .unwrap();
+        assert_eq!(
+            listar,
+            ServerMessage::ListFiles {
+                request_id: "r1".into(),
+                path: "C:\\Users".into()
+            }
+        );
+        // `path` ausente = a pasta do usuário: é como o app abre a tela.
+        let raiz: ServerMessage =
+            serde_json::from_str(r#"{"type":"list_files","request_id":"r1"}"#).unwrap();
+        assert_eq!(
+            raiz,
+            ServerMessage::ListFiles {
+                request_id: "r1".into(),
+                path: String::new()
+            }
+        );
+        let inicio: ServerMessage = serde_json::from_str(
+            r#"{"type":"write_file_begin","transfer_id":"t1","name":"foto.png","size":10}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            inicio,
+            ServerMessage::WriteFileBegin {
+                transfer_id: "t1".into(),
+                name: "foto.png".into(),
+                size: 10
+            }
+        );
+    }
+
+    #[test]
+    fn file_chunk_and_done_wire_format() {
+        let chunk = serde_json::to_string(&ClientMessage::FileChunk {
+            transfer_id: "t1".into(),
+            seq: 3,
+            data: "AAECAw==".into(),
+        })
+        .unwrap();
+        assert_eq!(
+            chunk,
+            r#"{"type":"file_chunk","transfer_id":"t1","seq":3,"data":"AAECAw=="}"#
+        );
+        // Campos ausentes ficam fora do fio; o backend aceita os dois formatos.
+        let done = serde_json::to_string(&ClientMessage::FileDone {
+            transfer_id: "t1".into(),
+            ok: true,
+            detail: None,
+            size: Some(2048),
+        })
+        .unwrap();
+        assert_eq!(
+            done,
+            r#"{"type":"file_done","transfer_id":"t1","ok":true,"size":2048}"#
+        );
+    }
+
+    #[test]
+    fn file_list_carrega_erro_ou_conteudo() {
+        let erro = serde_json::to_value(&ClientMessage::FileList {
+            request_id: "r1".into(),
+            listing: None,
+            error: Some("fora da pasta do usuário".into()),
+        })
+        .unwrap();
+        assert_eq!(erro["error"], "fora da pasta do usuário");
+        assert!(erro.get("listing").is_none(), "sem listagem no fio");
+
+        let ok = serde_json::to_value(&ClientMessage::FileList {
+            request_id: "r1".into(),
+            listing: Some(crate::files::Listing {
+                path: "/home/caio".into(),
+                parent: None,
+                entries: vec![crate::files::FileEntry {
+                    name: "nota.txt".into(),
+                    path: "/home/caio/nota.txt".into(),
+                    is_dir: false,
+                    size: 12,
+                }],
+            }),
+            error: None,
+        })
+        .unwrap();
+        assert_eq!(ok["listing"]["entries"][0]["name"], "nota.txt");
+        assert_eq!(ok["listing"]["entries"][0]["is_dir"], false);
+        assert!(ok["listing"].get("parent").is_none(), "raiz não volta");
     }
 
     #[test]

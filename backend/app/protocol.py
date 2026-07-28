@@ -75,6 +75,55 @@ class SystemStats(BaseModel):
     stats: SystemSnapshot
 
 
+class FileEntry(BaseModel):
+    """Um item de uma pasta do computador."""
+
+    name: str
+    path: str
+    is_dir: bool
+    size: int = 0
+
+
+class Listing(BaseModel):
+    """O conteúdo de uma pasta, com o caminho de voltar (ausente na raiz)."""
+
+    path: str
+    parent: str | None = None
+    entries: list[FileEntry] = []
+
+
+class FileList(BaseModel):
+    """Resposta do agente a um `list_files`: o conteúdo **ou** o motivo da falha.
+
+    Uma pasta sem permissão não pode chegar ao app como pasta vazia — são
+    coisas diferentes para quem está procurando um arquivo.
+    """
+
+    type: Literal["file_list"] = "file_list"
+    request_id: str
+    listing: Listing | None = None
+    error: str | None = None
+
+
+class FileChunk(BaseModel):
+    """Um pedaço de arquivo vindo do computador. `data` é base64."""
+
+    type: Literal["file_chunk"] = "file_chunk"
+    transfer_id: str
+    seq: int = Field(ge=0)
+    data: str
+
+
+class FileDone(BaseModel):
+    """Fim de uma transferência, nos dois sentidos."""
+
+    type: Literal["file_done"] = "file_done"
+    transfer_id: str
+    ok: bool
+    detail: str | None = None
+    size: int | None = None
+
+
 class WebrtcAnswer(BaseModel):
     """Resposta SDP do agente à oferta de um app (negociação de vídeo)."""
 
@@ -97,7 +146,15 @@ class WebrtcIce(BaseModel):
 
 
 ClientMessage = Annotated[
-    Hello | Heartbeat | AppList | SystemStats | WebrtcAnswer | WebrtcIce,
+    Hello
+    | Heartbeat
+    | AppList
+    | SystemStats
+    | FileList
+    | FileChunk
+    | FileDone
+    | WebrtcAnswer
+    | WebrtcIce,
     Field(discriminator="type"),
 ]
 _client_adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)

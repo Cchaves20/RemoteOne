@@ -119,6 +119,23 @@ class SystemStatsOut(BaseModel):
     uptime_seconds: int
 
 
+class FileEntryOut(BaseModel):
+    """Um item de uma pasta do computador."""
+
+    name: str
+    path: str
+    is_dir: bool
+    size: int = 0
+
+
+class ListingOut(BaseModel):
+    """O conteúdo de uma pasta. `parent` ausente = já é a raiz permitida."""
+
+    path: str
+    parent: str | None = None
+    entries: list[FileEntryOut] = []
+
+
 class AppOut(BaseModel):
     """Um aplicativo do computador. `id` = caminho do atalho ou PID.
 
