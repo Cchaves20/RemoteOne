@@ -141,6 +141,17 @@ class VideoSession extends ChangeNotifier {
         ),
       );
 
+      // Faixa de som, também só para receber. Nasce aqui, junto com a
+      // oferta, e não quando o usuário liga o som: uma faixa nova depois
+      // exigiria renegociar a sessão inteira. Enquanto ninguém liga, ela
+      // simplesmente não carrega nada.
+      await peer.addTransceiver(
+        kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
+        init: RTCRtpTransceiverInit(
+          direction: TransceiverDirection.RecvOnly,
+        ),
+      );
+
       // O único sinal que autoriza abandonar o JPEG: um quadro efetivamente
       // desenhado. Chegar a faixa não basta.
       renderer.onFirstFrameRendered = () {
@@ -150,6 +161,15 @@ class VideoSession extends ChangeNotifier {
 
       peer.onTrack = (event) {
         if (event.streams.isEmpty) return;
+        if (event.track.kind == 'audio') {
+          // Som toca sozinho, sem renderizador. O que ele precisa é sair pelo
+          // alto-falante: sem isto o iPhone toca no alto-falante de encostar
+          // no ouvido, porque o WebRTC nasce pensando em ligação telefônica.
+          // Também não pode reiniciar o prazo do primeiro quadro abaixo - a
+          // espera é por imagem, e a faixa de som chegaria antes.
+          _prepareAudioOutput();
+          return;
+        }
         renderer.srcObject = event.streams.first;
         // A faixa chegou, mas ainda não há imagem. Reinicia o prazo: agora a
         // espera é por um quadro desenhado, não pela negociação.
@@ -201,6 +221,20 @@ class VideoSession extends ChangeNotifier {
       _send({'type': 'webrtc_offer', 'sdp': offer.sdp});
     } catch (e) {
       _fail('$e');
+    }
+  }
+
+  /// Manda o som para o alto-falante do aparelho.
+  ///
+  /// Falha em silêncio de propósito: em plataformas onde isto não existe
+  /// (computador), o som já sai pela saída padrão, e um erro aqui não pode
+  /// derrubar a sessão de vídeo.
+  Future<void> _prepareAudioOutput() async {
+    try {
+      await Helper.ensureAudioSession();
+      await Helper.setSpeakerphoneOn(true);
+    } catch (e) {
+      debugPrint('RemoteOne: saída de áudio padrão — $e');
     }
   }
 

@@ -163,6 +163,13 @@ pub async fn run(
     // uma thread - o laço não pode parar por 200 ms enquanto alguém digita.
     let foreground = Arc::new(std::sync::Mutex::new(crate::foreground::Watcher::new()));
 
+    // Som do computador. O canal existe sempre (facilita o `select!`), mas só
+    // recebe alguma coisa enquanto a captura estiver ligada. Limitado de
+    // propósito: se a rede não acompanha, o certo é perder o quadro de som mais
+    // novo, não acumular meio minuto de atraso.
+    let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<crate::audio::Packet>(32);
+    let mut audio: Option<crate::audio::Capture> = None;
+
     // Transferência de arquivos. Os pedaços que saem daqui passam por um canal
     // **limitado**: é ele que segura o leitor quando a rede não acompanha. Sem
     // limite, ler um arquivo de 100 MB o carregaria inteiro na memória.
@@ -225,6 +232,12 @@ pub async fn run(
             _ = ticker.tick() => {
                 let hb = serde_json::to_string(&ClientMessage::Heartbeat)?;
                 ws.send(Message::Text(hb)).await?;
+            }
+            // Quadros de som prontos, vindos da thread da placa. Escrever na
+            // faixa é rápido (empacota e enfileira no transporte), então não
+            // atrapalha o resto do laço.
+            Some(pacote) = audio_rx.recv() => {
+                video.write_audio(&pacote.data, pacote.duration).await;
             }
             // Sinalização vinda do webrtc-rs (resposta SDP, candidatos locais):
             // este laço é quem tem o WebSocket, então é quem despacha.
@@ -428,6 +441,23 @@ pub async fn run(
                                     &ClientMessage::SystemStats { request_id, stats },
                                 )?;
                                 ws.send(Message::Text(reply)).await?;
+                            }
+                            // Som do computador: ligar e desligar a captura.
+                            Some(Action::SetAudio { enabled }) => {
+                                if !enabled {
+                                    // O `Drop` da captura para a placa de som.
+                                    if audio.take().is_some() {
+                                        println!("Áudio: desligado");
+                                    }
+                                } else if audio.is_none() {
+                                    match crate::audio::start(audio_tx.clone()) {
+                                        Ok(captura) => {
+                                            audio = Some(captura);
+                                            println!("Áudio: ligado");
+                                        }
+                                        Err(e) => eprintln!("Áudio indisponível: {e}"),
+                                    }
+                                }
                             }
                             // Primeiro plano: pode custar um PowerShell na
                             // primeira vez que um programa aparece, então vai
@@ -635,6 +665,11 @@ pub async fn run(
                                 if video.close(&session_id).await {
                                     println!("Sessão de vídeo encerrada ({session_id})");
                                 }
+                                // Sem ninguém para ouvir, a placa de som não
+                                // tem por que continuar sendo capturada.
+                                if video.is_empty() && audio.take().is_some() {
+                                    println!("Áudio: desligado (ninguém ouvindo)");
+                                }
                             }
                             None => {}
                         }
@@ -644,11 +679,17 @@ pub async fn run(
                         // Sem o backend não há como sinalizar: solta as sessões
                         // de vídeo em vez de deixá-las penduradas.
                         video.close_all().await;
+                        // `take` e não `drop`: fora do Windows a captura é um
+                        // stub sem `Drop`, e o clippy reclama do descarte.
+                        let _ = audio.take();
                         return Ok(());
                     }
                     Some(Ok(_)) => {} // ping/pong/binário: ignorados por ora
                     Some(Err(e)) => {
                         video.close_all().await;
+                        // `take` e não `drop`: fora do Windows a captura é um
+                        // stub sem `Drop`, e o clippy reclama do descarte.
+                        let _ = audio.take();
                         return Err(Box::new(e));
                     }
                 }
@@ -821,6 +862,8 @@ enum Action {
     SystemInfo { request_id: String },
     /// Descobrir o programa em primeiro plano e responder ao backend.
     ForegroundInfo { request_id: String },
+    /// Ligar ou desligar a captura do som do computador.
+    SetAudio { enabled: bool },
     /// Listar uma pasta e responder ao backend.
     ListFiles { request_id: String, path: String },
     /// Ler um arquivo e mandá-lo em pedaços.
@@ -961,6 +1004,10 @@ fn handle_server_text(
         // pergunta e outra, e essa memória vive no laço.
         Ok(ServerMessage::ForegroundInfo { request_id }) => {
             return Some(Action::ForegroundInfo { request_id });
+        }
+        // Ligar a placa de som é `await` e estado: volta como ação.
+        Ok(ServerMessage::Audio { enabled }) => {
+            return Some(Action::SetAudio { enabled });
         }
         // Arquivos: tudo precisa do socket ou do estado das transferências, que
         // vivem no laço. Aqui só viram ação.

@@ -18,6 +18,7 @@ from app.rpc import pending
 from app.schemas import (
     AppActionRequest,
     AppOut,
+    AudioRequest,
     ClaimRequest,
     DeviceOut,
     ForegroundOut,
@@ -196,6 +197,27 @@ async def system_stats(
             detail="o computador demorou para responder",
         ) from exc
     return SystemStatsOut(**stats)
+
+
+@router.post("/devices/{device_id}/audio", status_code=status.HTTP_204_NO_CONTENT)
+async def audio_stream(
+    device_id: str,
+    body: AudioRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Liga ou desliga o som do computador no telefone.
+
+    O som viaja pela conexão WebRTC que já leva a tela, numa faixa Opus. Este
+    endpoint só diz ao computador para começar (ou parar) de capturar: se não
+    houver conexão direta de vídeo, não há por onde o som passar.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    message = {"type": "audio", "enabled": body.enabled}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
 
 
 @router.get("/devices/{device_id}/foreground", response_model=ForegroundOut)

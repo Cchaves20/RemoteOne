@@ -313,6 +313,10 @@ class AppState extends ChangeNotifier {
   Future<void> mediaKey(Device device, String action) =>
       api.mediaKey(device.deviceId, action);
 
+  /// Liga ou desliga o som do computador no telefone.
+  Future<void> setAudio(Device device, bool enabled) =>
+      api.setAudio(device.deviceId, enabled);
+
   /// Qual programa está em primeiro plano no computador (para os ícones dos
   /// perfis). `null` quando não há nenhum em foco.
   Future<ForegroundApp?> foregroundApp(Device device) =>

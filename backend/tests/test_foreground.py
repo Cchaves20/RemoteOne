@@ -179,3 +179,62 @@ def test_agente_pode_mandar_foreground_sem_ninguem_esperando():
 
 def test_health_anuncia_o_recurso():
     assert "foreground-app" in client.get("/health").json()["features"]
+
+
+# --- som do computador -------------------------------------------------------
+
+
+def test_audio_liga_e_desliga_no_agente():
+    headers, uid = _auth_headers("audio1@example.com")
+    _add_device(uid, "dev-audio-1")
+    agent = InstantAgent()
+    manager.register("dev-audio-1", agent)
+    try:
+        for ligado in (True, False):
+            resp = client.post(
+                "/api/v1/devices/dev-audio-1/audio",
+                json={"enabled": ligado},
+                headers=headers,
+            )
+            assert resp.status_code == 204, ligado
+    finally:
+        manager.unregister("dev-audio-1")
+    assert [m["enabled"] for m in agent.of_type("audio")] == [True, False]
+
+
+def test_audio_exige_o_campo():
+    headers, uid = _auth_headers("audio2@example.com")
+    _add_device(uid, "dev-audio-2")
+    resp = client.post(
+        "/api/v1/devices/dev-audio-2/audio", json={}, headers=headers
+    )
+    assert resp.status_code == 422
+
+
+def test_audio_com_agente_offline_503():
+    headers, uid = _auth_headers("audio3@example.com")
+    _add_device(uid, "dev-audio-3")
+    resp = client.post(
+        "/api/v1/devices/dev-audio-3/audio", json={"enabled": True}, headers=headers
+    )
+    assert resp.status_code == 503
+
+
+def test_audio_de_outra_conta_404():
+    """Ouvir o som do computador de alguém é escutar a casa dela."""
+    _, dono = _auth_headers("audio4@example.com")
+    _add_device(dono, "dev-audio-4")
+    intruso, _ = _auth_headers("audio5@example.com")
+    resp = client.post(
+        "/api/v1/devices/dev-audio-4/audio", json={"enabled": True}, headers=intruso
+    )
+    assert resp.status_code == 404
+
+
+def test_audio_sem_token_401():
+    resp = client.post("/api/v1/devices/dev-audio-1/audio", json={"enabled": True})
+    assert resp.status_code == 401
+
+
+def test_health_anuncia_o_audio():
+    assert "audio-stream" in client.get("/health").json()["features"]

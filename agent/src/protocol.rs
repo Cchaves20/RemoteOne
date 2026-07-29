@@ -152,6 +152,11 @@ pub enum ServerMessage {
     ForegroundInfo {
         request_id: String,
     },
+    /// Liga ou desliga o envio do som do computador. Mão única: o resultado
+    /// aparece (ou não) no telefone, e um erro aqui não tem o que responder.
+    Audio {
+        enabled: bool,
+    },
     /// Aciona uma tecla de mídia (play/pause, faixa, volume). Mão única: não há
     /// resposta a esperar.
     Media {

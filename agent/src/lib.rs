@@ -5,6 +5,7 @@
 //! (`main.rs`) é apenas uma casca fina por cima dela.
 
 pub mod apps;
+pub mod audio;
 pub mod capture;
 pub mod client;
 pub mod datachannel;

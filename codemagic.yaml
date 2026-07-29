@@ -55,7 +55,7 @@ workflows:
           # recebe vídeo e não usa nenhum dos dois, mas sem estas chaves o iOS
           # encerra o app caso alguma dessas APIs seja tocada.
           PLIST=ios/Runner/Info.plist
-          MOTIVO="Nao utilizado: o RemoteOne apenas recebe a tela do computador."
+          MOTIVO="Nao utilizado: o RemoteOne apenas recebe a tela e o som do computador."
           for KEY in NSCameraUsageDescription NSMicrophoneUsageDescription; do
             /usr/libexec/PlistBuddy -c "Add :$KEY string $MOTIVO" "$PLIST" \
               || /usr/libexec/PlistBuddy -c "Set :$KEY $MOTIVO" "$PLIST"

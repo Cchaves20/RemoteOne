@@ -342,6 +342,18 @@ class Strings {
   String get mediaMute =>
       _t('Silenciar', 'Mute', '静音', 'Couper le son', 'Silenciar');
 
+  // Som do computador no telefone
+  String get audioOn => _t('Ouvir o computador', 'Listen to the computer',
+      '收听电脑声音', "Écouter l'ordinateur", 'Escuchar el equipo');
+  String get audioOff => _t('Parar de ouvir', 'Stop listening', '停止收听',
+      "Arrêter d'écouter", 'Dejar de escuchar');
+  String get audioNeedsVideo => _t(
+      'O som precisa da conexão direta de vídeo, que ainda não está de pé.',
+      'Sound needs the direct video connection, which is not up yet.',
+      '声音需要直连视频，目前尚未建立。',
+      "Le son a besoin de la connexion vidéo directe, pas encore établie.",
+      'El sonido necesita la conexión directa de vídeo, que aún no está lista.');
+
   // Perfis de controle (barra seletora)
   String get profilesPanel => _t('Perfis', 'Profiles', '配置', 'Profils', 'Perfiles');
   String get profileSystem => _t('Sistema', 'System', '系统', 'Système', 'Sistema');

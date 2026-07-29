@@ -331,6 +331,19 @@ class ApiClient {
     return ForegroundApp.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
+  /// Liga ou desliga o som do computador no telefone. O som viaja pela mesma
+  /// conexão direta que leva a tela, numa faixa Opus.
+  Future<void> setAudio(String deviceId, bool enabled) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/audio'),
+      headers: _authHeaders,
+      body: jsonEncode({'enabled': enabled}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
   /// Aciona uma tecla de mídia: `play_pause`, `next`, `previous`, `volume_up`,
   /// `volume_down` ou `mute`.
   Future<void> mediaKey(String deviceId, String action) async {

@@ -36,6 +36,14 @@ enigo = "0.2"
 # 0.9.x traz o backend WGC (Windows.Graphics.Capture), acelerado por hardware,
 # no lugar do BitBlt do GDI. A feature não é padrão e precisa ser pedida.
 xcap = { version = "0.9", features = ["wgc"] }
+# Som do computador indo para o telefone. O `cpal` abre o dispositivo de SAÍDA
+# como entrada, que é como o WASAPI faz "loopback" (capturar o que sai pelo
+# alto-falante). O `audiopus` traz o Opus, exigido pelo WebRTC - no MSVC ele
+# linka uma biblioteca pronta que vem no próprio pacote, sem cmake nem
+# compilador C a mais. As duas ficam aqui, e não nas dependências comuns,
+# porque o `cpal` no Linux pediria as bibliotecas do ALSA para compilar.
+cpal = "0.18"
+audiopus = "0.2"
 
 [dev-dependencies]
 image = { version = "0.25", features = ["png"] }

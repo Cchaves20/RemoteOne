@@ -119,6 +119,12 @@ class SystemStatsOut(BaseModel):
     uptime_seconds: int
 
 
+class AudioRequest(BaseModel):
+    """Liga ou desliga o envio do som do computador para o telefone."""
+
+    enabled: bool
+
+
 class ForegroundAppOut(BaseModel):
     """O programa em primeiro plano no computador.
 

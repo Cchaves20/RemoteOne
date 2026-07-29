@@ -79,6 +79,7 @@ FEATURES = [
     "media-keys",
     "file-transfer",
     "foreground-app",
+    "audio-stream",
 ]
 
 

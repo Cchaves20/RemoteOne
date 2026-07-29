@@ -27,6 +27,7 @@ Documentação por etapa:
 - [`docs/webrtc-plano.md`](docs/webrtc-plano.md) — a migração do vídeo para WebRTC: plano, medições e diário das decisões
 - [`docs/atualizar-tudo.md`](docs/atualizar-tudo.md) — atualizar agente, app e VPS de um terminal só
 - [`docs/transferencia-de-arquivos.md`](docs/transferencia-de-arquivos.md) — trazer e mandar arquivos entre o celular e o computador
+- [`docs/som-do-computador.md`](docs/som-do-computador.md) — ouvir no telefone o que toca no computador
 - [`docs/monitor-e-midia.md`](docs/monitor-e-midia.md) — painéis retráteis de CPU/memória/disco e de controle de mídia
 - [`docs/instalar-no-iphone.md`](docs/instalar-no-iphone.md) — instalar o app no iPhone sem Mac (sideload)
 - [`docs/rodar-sem-terminal.md`](docs/rodar-sem-terminal.md) — agente e backend em segundo plano (sem terminal; base para desligar/Wake-on-LAN)

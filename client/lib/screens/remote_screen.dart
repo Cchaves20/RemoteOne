@@ -133,6 +133,9 @@ class _RemoteScreenState extends State<RemoteScreen>
   );
   bool _statsOpen = false;
   bool _mediaOpen = false;
+  /// Som do computador saindo no telefone. Começa desligado: quem abre o app
+  /// para mexer no computador não quer o som da casa dele no ônibus.
+  bool _audioOn = false;
   SystemStats? _stats;
   bool _statsFailed = false;
   /// Um pedido de cada vez: numa rede lenta os pedidos de 2 em 2 s se
@@ -245,6 +248,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     final video = _video;
     if (!mounted || video == null) return;
     setState(() {
+      // O som anda pela conexão direta: se ela caiu, não há mais som, e o
+      // botão aceso diria o contrário. O agente também desliga a captura
+      // sozinho quando fica sem ninguém ouvindo.
+      if (video.state == VideoState.failed) _audioOn = false;
       if (video.isLive) {
         _hasFrame = true; // já há imagem, mesmo que nenhum JPEG tenha chegado
         _error = null;
@@ -333,6 +340,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     _dockAnim.dispose();
     _statsTimer?.cancel();
     _foregroundTimer?.cancel();
+    // Sair da tela sem desligar deixaria o computador capturando som para
+    // ninguém. O agente também desliga sozinho quando a sessão cai, mas isto
+    // resolve o caso comum antes de chegar lá.
+    if (_audioOn) widget.state.setAudio(widget.device, false).ignore();
     _statsAnim.dispose();
     _mediaAnim.dispose();
     _typedWord.dispose();
@@ -1128,8 +1139,50 @@ class _RemoteScreenState extends State<RemoteScreen>
             big: true),
         _mediaButton(Icons.skip_next, t.mediaNext, 'next'),
         _mediaButton(Icons.volume_up, t.mediaVolumeUp, 'volume_up'),
+        // Separador: o que vem à direita não é uma tecla do computador, e sim
+        // para onde o som vai.
+        const SizedBox(
+          height: 28,
+          child: VerticalDivider(width: 18, color: Colors.white24),
+        ),
+        Tooltip(
+          message: _audioOn ? t.audioOff : t.audioOn,
+          child: IconButton(
+            iconSize: 26,
+            constraints: const BoxConstraints(minWidth: 46, minHeight: 46),
+            padding: EdgeInsets.zero,
+            color: _audioOn ? auroraCyan : Colors.white,
+            icon: Icon(_audioOn ? Icons.headphones : Icons.headset_off),
+            onPressed: _toggleAudio,
+          ),
+        ),
       ],
     );
+  }
+
+  /// Liga ou desliga o som do computador no telefone.
+  ///
+  /// O som anda pela conexão direta que leva a tela; sem ela, não há por onde
+  /// passar - e é melhor dizer isso do que ligar um botão que não faz som.
+  Future<void> _toggleAudio() async {
+    HapticFeedback.selectionClick();
+    final t = widget.state.t;
+    final messenger = ScaffoldMessenger.of(context);
+    final ligar = !_audioOn;
+    if (ligar && _video?.isLive != true) {
+      messenger.showSnackBar(SnackBar(
+        duration: const Duration(seconds: 3),
+        content: Text(t.audioNeedsVideo),
+      ));
+      return;
+    }
+    try {
+      await widget.state.setAudio(widget.device, ligar);
+      if (!mounted) return;
+      setState(() => _audioOn = ligar);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   Widget _mediaButton(

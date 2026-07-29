@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedSender;
 use webrtc::api::interceptor_registry::register_default_interceptors;
-use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264};
+use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264, MIME_TYPE_OPUS};
 use webrtc::api::{APIBuilder, API};
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::ice_transport::ice_server::RTCIceServer;
@@ -55,10 +55,14 @@ pub enum Signal {
 /// Nome do canal de dados de entrada. Tem que casar com o que o app cria.
 pub const INPUT_CHANNEL: &str = "input";
 
-/// Uma sessão: a conexão com um app e a faixa por onde o vídeo sai.
+/// Uma sessão: a conexão com um app e as faixas por onde a tela e o som saem.
 struct Peer {
     connection: Arc<RTCPeerConnection>,
     track: Arc<TrackLocalStaticSample>,
+    /// Faixa de som. Só existe quando o app pediu áudio na oferta - um app de
+    /// versão antiga não tem linha `m=audio` no SDP, e uma faixa sem lugar na
+    /// oferta não teria como entrar na resposta.
+    audio: Option<Arc<TrackLocalStaticSample>>,
 }
 
 /// As sessões de WebRTC deste agente.
@@ -138,6 +142,31 @@ impl Video {
             .add_track(Arc::clone(&track) as Arc<dyn TrackLocal + Send + Sync>)
             .await
             .map_err(|e| format!("não consegui adicionar a faixa de vídeo: {e}"))?;
+
+        // Faixa de som, quando o app a pediu. O Opus é obrigatório em WebRTC,
+        // então o celular toca isto sem precisar de nada a mais; `stereo=1` é
+        // o que faz música chegar em dois canais em vez de virar voz mono.
+        let audio = if sdp.contains("m=audio") {
+            let faixa = Arc::new(TrackLocalStaticSample::new(
+                RTCRtpCodecCapability {
+                    mime_type: MIME_TYPE_OPUS.to_owned(),
+                    clock_rate: 48_000,
+                    channels: 2,
+                    sdp_fmtp_line: "minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1"
+                        .to_owned(),
+                    ..Default::default()
+                },
+                "som".to_owned(),
+                "remoteone".to_owned(),
+            ));
+            connection
+                .add_track(Arc::clone(&faixa) as Arc<dyn TrackLocal + Send + Sync>)
+                .await
+                .map_err(|e| format!("não consegui adicionar a faixa de som: {e}"))?;
+            Some(faixa)
+        } else {
+            None
+        };
 
         // Os candidatos locais aparecem aos poucos, de dentro do webrtc-rs:
         // saem pelo canal para o laço principal despachar.
@@ -230,8 +259,14 @@ impl Video {
             .await
             .map_err(|e| format!("não consegui aplicar a resposta: {e}"))?;
 
-        self.peers
-            .insert(session_id.to_string(), Peer { connection, track });
+        self.peers.insert(
+            session_id.to_string(),
+            Peer {
+                connection,
+                track,
+                audio,
+            },
+        );
         Ok(())
     }
 
@@ -313,6 +348,32 @@ impl Video {
             }
             if let Err(e) = peer.track.write_sample(&sample).await {
                 eprintln!("falha ao enviar quadro ({session_id}): {e}");
+            }
+        }
+    }
+
+    /// Se alguma sessão conectada tem faixa de som - isto é, se vale capturar.
+    pub fn wants_audio(&self) -> bool {
+        self.peers.values().any(|p| {
+            p.audio.is_some()
+                && p.connection.connection_state() == RTCPeerConnectionState::Connected
+        })
+    }
+
+    /// Escreve um quadro de som em todas as faixas conectadas que o aceitem.
+    pub async fn write_audio(&self, data: &[u8], duration: Duration) {
+        let sample = webrtc::media::Sample {
+            data: data.to_vec().into(),
+            duration,
+            ..Default::default()
+        };
+        for (session_id, peer) in &self.peers {
+            if peer.connection.connection_state() != RTCPeerConnectionState::Connected {
+                continue;
+            }
+            let Some(faixa) = &peer.audio else { continue };
+            if let Err(e) = faixa.write_sample(&sample).await {
+                eprintln!("falha ao enviar som ({session_id}): {e}");
             }
         }
     }
