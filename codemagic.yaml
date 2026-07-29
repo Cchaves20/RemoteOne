@@ -60,6 +60,14 @@ workflows:
             /usr/libexec/PlistBuddy -c "Add :$KEY string $MOTIVO" "$PLIST" \
               || /usr/libexec/PlistBuddy -c "Set :$KEY $MOTIVO" "$PLIST"
           done
+          # Rede local: desde o iOS 14 o sistema BLOQUEIA falar com IPs da
+          # propria rede sem esta chave e sem o usuario autorizar. E por ela
+          # que passa o caminho direto celular <-> PC quando os dois estao no
+          # mesmo Wi-Fi - sem ela o WebRTC nao fecha em casa, que e justamente
+          # onde deveria ser mais facil.
+          REDE="Conectar direto ao seu computador quando os dois estao na mesma rede."
+          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string $REDE" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Set :NSLocalNetworkUsageDescription $REDE" "$PLIST"
           echo "--- Podfile ---"; head -3 ios/Podfile
       - name: Permissão de Face ID no Info.plist
         script: |

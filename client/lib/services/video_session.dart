@@ -126,6 +126,22 @@ class VideoSession extends ChangeNotifier {
 
   bool get isLive => state == VideoState.live;
 
+  /// Em que pé está o ICE (a busca por um caminho até o computador), e
+  /// quantos candidatos cada lado ofereceu.
+  ///
+  /// É o que separa as duas falhas que parecem iguais na tela: "não achei
+  /// caminho" (candidatos existem, nenhum par fecha - rede hostil, precisa de
+  /// TURN) e "não tenho por onde tentar" (nenhum candidato local, tipicamente
+  /// o iOS bloqueando a rede local).
+  String _iceState = 'novo';
+  int _localCandidates = 0;
+  int _remoteCandidates = 0;
+
+  /// Resumo do ICE para as mensagens de erro.
+  String get iceSummary =>
+      'ICE $_iceState, $_localCandidates candidato(s) local(is), '
+      '$_remoteCandidates do computador';
+
   /// Se a faixa de som do computador chegou de verdade.
   ///
   /// Diferente de "o usuário ligou o som": o app pede pelo servidor, e a faixa
@@ -139,7 +155,10 @@ class VideoSession extends ChangeNotifier {
     if (state != VideoState.idle) return;
     _set(VideoState.negotiating);
     _timeout = Timer(_negotiationTimeout, () {
-      _fail('a negociação não fechou em ${_negotiationTimeout.inSeconds}s');
+      _fail(
+        'a negociação não fechou em ${_negotiationTimeout.inSeconds}s — '
+        '$iceSummary',
+      );
     });
 
     try {
@@ -224,14 +243,24 @@ class VideoSession extends ChangeNotifier {
         // espera é por um quadro desenhado, não pela negociação.
         _timeout?.cancel();
         _timeout = Timer(_firstFrameTimeout, () {
+          // Quase sempre isto **não** é falta de quadro-chave: a faixa aparece
+          // quando a resposta é aplicada, muito antes de haver caminho até o
+          // computador. Sem o estado do ICE, essa distinção não dá para fazer
+          // olhando a tela - e foi o que atrasou o diagnóstico uma vez.
           _fail(
             'a faixa de vídeo chegou mas nenhum quadro foi desenhado em '
-            '${_firstFrameTimeout.inSeconds}s (provável falta de quadro-chave)',
+            '${_firstFrameTimeout.inSeconds}s — $iceSummary',
           );
         });
       };
 
+      peer.onIceConnectionState = (estado) {
+        // O nome do enum já é o suficiente: o que importa aqui é onde parou.
+        _iceState = estado.name.replaceFirst('RTCIceConnectionState', '');
+      };
+
       peer.onIceCandidate = (candidate) {
+        if ((candidate.candidate ?? '').isNotEmpty) _localCandidates++;
         _send({
           'type': 'webrtc_ice',
           // Candidato vazio é o "acabaram os meus" e precisa ser enviado:
@@ -245,7 +274,7 @@ class VideoSession extends ChangeNotifier {
       peer.onConnectionState = (peerState) {
         switch (peerState) {
           case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
-            _fail('a conexão de vídeo falhou');
+            _fail('a conexão de vídeo falhou — $iceSummary');
           case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
             // Fechamento pedido por nós não é falha.
             if (state == VideoState.negotiating) {
@@ -385,6 +414,7 @@ class VideoSession extends ChangeNotifier {
       RTCPeerConnection peer, RTCIceCandidate candidate) async {
     try {
       await peer.addCandidate(candidate);
+      if ((candidate.candidate ?? '').isNotEmpty) _remoteCandidates++;
     } catch (e) {
       // Um candidato recusado não derruba a sessão — o ICE tenta os outros —
       // mas engolir isso em silêncio esconderia justamente o tipo de problema

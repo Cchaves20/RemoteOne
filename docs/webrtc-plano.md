@@ -585,6 +585,26 @@ Não estava no plano original — apareceu ao medir o controle de taxa na Fase 2
 Só vale fazer depois da Fase 3, quando houver rede real para medir em vez de
 palpite.
 
+### Duas coisas que faltavam antes de culpar a rede
+
+Antes de concluir que uma conexão precisa de TURN, duas causas mais banais:
+
+**Permissão de rede local no iOS.** Desde o iOS 14, falar com um IP da própria
+rede exige `NSLocalNetworkUsageDescription` no Info.plist **e** a autorização
+do usuário. Sem isso os candidatos de host não levam a lugar nenhum e o P2P
+não fecha justamente no caso mais fácil - celular e computador no mesmo Wi-Fi.
+A chave passou a ser adicionada no `codemagic.yaml`, junto com as de câmera e
+microfone.
+
+**A faixa chegar não é a conexão fechar.** O `onTrack` dispara quando a
+resposta é aplicada, muito antes de haver caminho até o computador. O app
+dizia "a faixa de vídeo chegou mas nenhum quadro foi desenhado (provável falta
+de quadro-chave)", e a suposição do quadro-chave mandou o diagnóstico para o
+lado errado: o que faltava era rota. As mensagens de falha agora carregam o
+estado do ICE e a contagem de candidatos dos dois lados, que é o que separa
+"não achei caminho" (candidatos existem, nenhum par fecha - aí sim é TURN) de
+"não tenho por onde tentar" (nenhum candidato local).
+
 ### Fase 5 — TURN, se o S3 disser que precisa
 
 `coturn` no VPS. Consome pouca RAM (cabe no 1 GB), mas relaya vídeo — a franquia
