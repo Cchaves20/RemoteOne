@@ -111,6 +111,14 @@ class VideoSession extends ChangeNotifier {
 
   bool get isLive => state == VideoState.live;
 
+  /// Se a faixa de som do computador chegou de verdade.
+  ///
+  /// Diferente de "o usuário ligou o som": o app pede pelo servidor, e a faixa
+  /// vem pela conexão direta. Quando um dos dois lados está desatualizado, o
+  /// pedido dá certo e a faixa nunca chega — e sem este sinal isso apareceria
+  /// como um botão aceso e silêncio.
+  bool audioLive = false;
+
   /// Negocia a sessão: cria a conexão, manda a oferta e espera.
   Future<void> start() async {
     if (state != VideoState.idle) return;
@@ -162,6 +170,8 @@ class VideoSession extends ChangeNotifier {
       peer.onTrack = (event) {
         if (event.streams.isEmpty) return;
         if (event.track.kind == 'audio') {
+          audioLive = true;
+          if (!_disposed) notifyListeners();
           // Som toca sozinho, sem renderizador. O que ele precisa é sair pelo
           // alto-falante: sem isto o iPhone toca no alto-falante de encostar
           // no ouvido, porque o WebRTC nasce pensando em ligação telefônica.
@@ -216,6 +226,10 @@ class VideoSession extends ChangeNotifier {
         }
       };
 
+      // Antes da oferta: a sessão de áudio do sistema precisa estar no modo
+      // certo quando a primeira amostra chegar, não depois.
+      await _prepareAudioOutput();
+
       final offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
       _send({'type': 'webrtc_offer', 'sdp': offer.sdp});
@@ -224,16 +238,23 @@ class VideoSession extends ChangeNotifier {
     }
   }
 
-  /// Manda o som para o alto-falante do aparelho.
+  /// Prepara o aparelho para **só ouvir**.
   ///
-  /// Falha em silêncio de propósito: em plataformas onde isto não existe
-  /// (computador), o som já sai pela saída padrão, e um erro aqui não pode
-  /// derrubar a sessão de vídeo.
+  /// Sem isto o iPhone fica calado, e o motivo é o padrão do WebRTC: ele
+  /// assume ligação telefônica e põe a sessão de áudio em `playAndRecord` com
+  /// modo de voz. Isso liga o microfone (permissão que este app nunca pede),
+  /// joga a saída no alto-falante de encostar no ouvido, usa o volume de
+  /// chamada — que o botão lateral controla à parte — e trata música como voz.
+  ///
+  /// `remoteOnly` diz o que é verdade aqui: o som só chega, nunca sai. A
+  /// sessão vira `playback`, que sai pelo alto-falante de música, com o volume
+  /// de mídia e sem processamento nenhum.
   Future<void> _prepareAudioOutput() async {
     try {
-      await Helper.ensureAudioSession();
-      await Helper.setSpeakerphoneOn(true);
+      await Helper.setAppleAudioIOMode(AppleAudioIOMode.remoteOnly);
     } catch (e) {
+      // Em plataformas sem sessão de áudio da Apple isto não existe, e o som
+      // já sai pela saída padrão: não é motivo para derrubar o vídeo.
       debugPrint('RemoteOne: saída de áudio padrão — $e');
     }
   }

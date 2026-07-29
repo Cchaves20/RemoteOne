@@ -163,8 +163,15 @@ impl Video {
                 .add_track(Arc::clone(&faixa) as Arc<dyn TrackLocal + Send + Sync>)
                 .await
                 .map_err(|e| format!("não consegui adicionar a faixa de som: {e}"))?;
+            println!("WebRTC ({session_id}): sessão com faixa de som");
             Some(faixa)
         } else {
+            // App antigo (sem transceptor de áudio na oferta). Vale dizer: é a
+            // explicação de "liguei o som e não ouvi nada".
+            println!(
+                "WebRTC ({session_id}): oferta sem faixa de som - o app pode \
+                 estar desatualizado"
+            );
             None
         };
 

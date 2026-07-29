@@ -136,6 +136,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// Som do computador saindo no telefone. Começa desligado: quem abre o app
   /// para mexer no computador não quer o som da casa dele no ônibus.
   bool _audioOn = false;
+  /// Confere, alguns segundos depois de ligar, se a faixa de som chegou.
+  Timer? _audioCheck;
   SystemStats? _stats;
   bool _statsFailed = false;
   /// Um pedido de cada vez: numa rede lenta os pedidos de 2 em 2 s se
@@ -340,6 +342,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _dockAnim.dispose();
     _statsTimer?.cancel();
     _foregroundTimer?.cancel();
+    _audioCheck?.cancel();
     // Sair da tela sem desligar deixaria o computador capturando som para
     // ninguém. O agente também desliga sozinho quando a sessão cai, mas isto
     // resolve o caso comum antes de chegar lá.
@@ -1182,7 +1185,21 @@ class _RemoteScreenState extends State<RemoteScreen>
       setState(() => _audioOn = ligar);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+      return;
     }
+    if (!ligar) return;
+    // O pedido vai pelo servidor; a faixa de som vem pela conexão direta. Se
+    // um dos lados estiver desatualizado, o pedido dá certo e a faixa nunca
+    // chega — e sem este aviso o usuário fica com um botão aceso e silêncio.
+    _audioCheck?.cancel();
+    _audioCheck = Timer(const Duration(seconds: 6), () {
+      if (!mounted || !_audioOn) return;
+      if (_video?.audioLive == true) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 8),
+        content: Text(widget.state.t.audioNoTrack),
+      ));
+    });
   }
 
   Widget _mediaButton(

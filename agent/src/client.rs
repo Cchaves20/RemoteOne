@@ -169,6 +169,7 @@ pub async fn run(
     // novo, não acumular meio minuto de atraso.
     let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<crate::audio::Packet>(32);
     let mut audio: Option<crate::audio::Capture> = None;
+    let mut audio_stats = AudioStats::default();
 
     // Transferência de arquivos. Os pedaços que saem daqui passam por um canal
     // **limitado**: é ele que segura o leitor quando a rede não acompanha. Sem
@@ -237,7 +238,13 @@ pub async fn run(
             // faixa é rápido (empacota e enfileira no transporte), então não
             // atrapalha o resto do laço.
             Some(pacote) = audio_rx.recv() => {
+                audio_stats.count(pacote.data.len());
                 video.write_audio(&pacote.data, pacote.duration).await;
+                // Um número no console é a diferença entre "não ouvi nada" e
+                // saber de qual lado o som parou.
+                if let Some(linha) = audio_stats.report_if_due(video.wants_audio()) {
+                    println!("{linha}");
+                }
             }
             // Sinalização vinda do webrtc-rs (resposta SDP, candidatos locais):
             // este laço é quem tem o WebSocket, então é quem despacha.
@@ -853,6 +860,56 @@ fn send_file(
     });
 }
 
+/// Contagem do som que sai, para o console dizer se ele está saindo.
+///
+/// Serve a uma pergunta específica e recorrente: "liguei e não ouvi nada" -
+/// aqui se vê se o computador chegou a capturar e a mandar, o que separa um
+/// problema de captura de um problema do telefone.
+#[derive(Debug)]
+struct AudioStats {
+    packets: u64,
+    bytes: u64,
+    since: std::time::Instant,
+}
+
+impl Default for AudioStats {
+    fn default() -> Self {
+        Self {
+            packets: 0,
+            bytes: 0,
+            since: std::time::Instant::now(),
+        }
+    }
+}
+
+impl AudioStats {
+    const INTERVAL: Duration = Duration::from_secs(10);
+
+    fn count(&mut self, bytes: usize) {
+        self.packets += 1;
+        self.bytes += bytes as u64;
+    }
+
+    /// Devolve a linha de log quando passaram 10 s, e zera a contagem.
+    fn report_if_due(&mut self, ouvindo: bool) -> Option<String> {
+        let elapsed = self.since.elapsed();
+        if elapsed < Self::INTERVAL {
+            return None;
+        }
+        let segundos = elapsed.as_secs_f64().max(0.001);
+        let kbps = (self.bytes as f64 * 8.0 / 1000.0) / segundos;
+        let linha = format!(
+            "Áudio: {} quadros em {segundos:.0}s ({kbps:.0} kbps), faixa {}",
+            self.packets,
+            if ouvindo { "conectada" } else { "SEM ninguém ouvindo" }
+        );
+        self.packets = 0;
+        self.bytes = 0;
+        self.since = std::time::Instant::now();
+        Some(linha)
+    }
+}
+
 /// Algo que o laço principal precisa fazer depois de tratar uma mensagem —
 /// tarefas que exigem `await` (recriar o ticker, responder ao servidor).
 enum Action {
@@ -1090,6 +1147,31 @@ fn handle_server_text(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn contagem_de_audio_so_reporta_no_intervalo() {
+        use super::AudioStats;
+        let mut stats = AudioStats::default();
+        stats.count(240);
+        // Recém-criada: ainda não deu o intervalo, então não há o que dizer.
+        assert!(stats.report_if_due(true).is_none());
+        // Forçando o relógio para trás, a linha sai e a contagem zera.
+        stats.since = std::time::Instant::now() - AudioStats::INTERVAL;
+        let linha = stats.report_if_due(true).expect("devia reportar");
+        assert!(linha.contains("1 quadros"), "{linha}");
+        assert!(linha.contains("conectada"), "{linha}");
+        assert_eq!(stats.packets, 0);
+    }
+
+    #[test]
+    fn contagem_de_audio_avisa_quando_ninguem_ouve() {
+        use super::AudioStats;
+        let mut stats = AudioStats::default();
+        stats.count(240);
+        stats.since = std::time::Instant::now() - AudioStats::INTERVAL;
+        let linha = stats.report_if_due(false).expect("devia reportar");
+        assert!(linha.contains("SEM ninguém ouvindo"), "{linha}");
+    }
+
     use super::*;
 
     #[test]

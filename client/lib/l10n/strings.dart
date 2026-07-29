@@ -354,6 +354,13 @@ class Strings {
       "Le son a besoin de la connexion vidéo directe, pas encore établie.",
       'El sonido necesita la conexión directa de vídeo, que aún no está lista.');
 
+  String get audioNoTrack => _t(
+      'O computador não mandou som. Confira se o agente e o app estão na mesma versão.',
+      "The computer didn't send any sound. Check that the agent and the app are on the same version.",
+      '电脑没有发送声音。请确认代理和 App 版本一致。',
+      "L'ordinateur n'a envoyé aucun son. Vérifiez que l'agent et l'app sont à jour.",
+      'El equipo no envió sonido. Comprueba que el agente y la app estén en la misma versión.');
+
   // Perfis de controle (barra seletora)
   String get profilesPanel => _t('Perfis', 'Profiles', '配置', 'Profils', 'Perfiles');
   String get profileSystem => _t('Sistema', 'System', '系统', 'Système', 'Sistema');
