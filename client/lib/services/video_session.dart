@@ -134,13 +134,28 @@ class VideoSession extends ChangeNotifier {
   /// TURN) e "não tenho por onde tentar" (nenhum candidato local, tipicamente
   /// o iOS bloqueando a rede local).
   String _iceState = 'novo';
-  int _localCandidates = 0;
-  int _remoteCandidates = 0;
+  final Map<String, int> _localCandidates = {};
+  final Map<String, int> _remoteCandidates = {};
+
+  /// Conta um candidato pelo **tipo**, que é o que diz de onde ele veio:
+  /// `host` é um endereço da própria rede, `srflx` é o que o STUN descobriu
+  /// (o IP público), `relay` é um TURN. A soma não basta: 27 candidatos que
+  /// não fecham não dizem nada, mas "os dois lados têm host e mesmo assim não
+  /// fecha" aponta para bloqueio (firewall ou permissão), enquanto "só srflx
+  /// dos dois lados" aponta para redes diferentes, que é onde TURN entra.
+  static void _count(Map<String, int> onde, String? candidato) {
+    if (candidato == null || candidato.isEmpty) return;
+    final tipo = RegExp(r'typ (\w+)').firstMatch(candidato)?.group(1) ?? '?';
+    onde[tipo] = (onde[tipo] ?? 0) + 1;
+  }
+
+  static String _describe(Map<String, int> onde) => onde.isEmpty
+      ? 'nenhum'
+      : onde.entries.map((e) => '${e.value} ${e.key}').join(' + ');
 
   /// Resumo do ICE para as mensagens de erro.
-  String get iceSummary =>
-      'ICE $_iceState, $_localCandidates candidato(s) local(is), '
-      '$_remoteCandidates do computador';
+  String get iceSummary => 'ICE $_iceState; celular: ${_describe(_localCandidates)}; '
+      'computador: ${_describe(_remoteCandidates)}';
 
   /// Se a faixa de som do computador chegou de verdade.
   ///
@@ -260,7 +275,7 @@ class VideoSession extends ChangeNotifier {
       };
 
       peer.onIceCandidate = (candidate) {
-        if ((candidate.candidate ?? '').isNotEmpty) _localCandidates++;
+        _count(_localCandidates, candidate.candidate);
         _send({
           'type': 'webrtc_ice',
           // Candidato vazio é o "acabaram os meus" e precisa ser enviado:
@@ -414,7 +429,7 @@ class VideoSession extends ChangeNotifier {
       RTCPeerConnection peer, RTCIceCandidate candidate) async {
     try {
       await peer.addCandidate(candidate);
-      if ((candidate.candidate ?? '').isNotEmpty) _remoteCandidates++;
+      _count(_remoteCandidates, candidate.candidate);
     } catch (e) {
       // Um candidato recusado não derruba a sessão — o ICE tenta os outros —
       // mas engolir isso em silêncio esconderia justamente o tipo de problema
