@@ -218,7 +218,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     _video?.dispose();
     _videoFailureShown = false;
     final video = widget.state.webrtcVideoEnabled
-        ? (VideoSession(channel: channel)..addListener(_onVideoChanged))
+        ? (VideoSession(channel: channel, withAudio: _audioOn)
+          ..addListener(_onVideoChanged))
         : null;
     _video = video;
 
@@ -1183,6 +1184,10 @@ class _RemoteScreenState extends State<RemoteScreen>
       await widget.state.setAudio(widget.device, ligar);
       if (!mounted) return;
       setState(() => _audioOn = ligar);
+      // A faixa de som não entra numa sessão já negociada: ligar o som refaz
+      // a sessão de vídeo. É por isso que a imagem pisca aqui - e é o preço
+      // de a oferta comum não carregar nada de áudio.
+      if (ligar && _video?.withAudio != true) _connect();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
       return;
@@ -1192,7 +1197,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     // um dos lados estiver desatualizado, o pedido dá certo e a faixa nunca
     // chega — e sem este aviso o usuário fica com um botão aceso e silêncio.
     _audioCheck?.cancel();
-    _audioCheck = Timer(const Duration(seconds: 6), () {
+    // 10 s porque ligar o som pode ter acabado de refazer a sessão de vídeo,
+    // e uma negociação nova leva alguns segundos.
+    _audioCheck = Timer(const Duration(seconds: 10), () {
       if (!mounted || !_audioOn) return;
       if (_video?.audioLive == true) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

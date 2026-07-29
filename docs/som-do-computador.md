@@ -31,6 +31,28 @@ por JPEG (o caminho reserva, que passa pelo servidor), não existe faixa de
 5. **No telefone**, o alto-falante de música. Sem esse ajuste o iPhone toca no
    alto-falante de encostar no ouvido, porque WebRTC nasce pensando em ligação.
 
+## A faixa de som só existe quando alguém pediu
+
+A oferta comum do app **não** tem faixa de áudio. Ligar o som refaz a sessão de
+vídeo, e é a sessão nova que a carrega. A imagem pisca por um instante, e esse
+é o preço.
+
+A alternativa - pedir som em toda sessão e deixar a faixa vazia - foi tentada e
+custou caro: no iPhone, a faixa a mais na negociação derrubou o **vídeo**, que
+voltou a cair no JPEG. O caso é o que separa o principal do extra: ver o
+computador é a função do app, ouvi-lo é um acréscimo, e um acréscimo não pode
+ter poder de quebrar o principal.
+
+Daí três proteções, além de o áudio ser opcional:
+
+- No agente, a faixa de som entra com `match` e não com `?`: se falhar, a
+  sessão segue sem som em vez de morrer inteira.
+- No app, o bloco do áudio tem prazo (2 s para o modo da sessão, 3 s para o
+  transceptor). Um ajuste de aparelho que não responde não segura a oferta.
+- Um teste negocia de verdade, no Linux, uma oferta **com** som e outra
+  **sem**, e confere que a resposta traz as duas faixas e que o app a aceita.
+  Esse teste não existia quando o vídeo quebrou.
+
 ## Três decisões que o código carrega
 
 **A faixa nasce com a oferta, não quando se liga o som.** Criar uma faixa nova

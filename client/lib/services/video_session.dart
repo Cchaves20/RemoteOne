@@ -40,10 +40,25 @@ enum VideoState {
 /// no WebSocket, e [dispose] ao sair. Ouça via [ChangeNotifier] para saber
 /// quando trocar o que está na tela.
 class VideoSession extends ChangeNotifier {
-  VideoSession({required this.channel, this.iceServers = _defaultIceServers});
+  VideoSession({
+    required this.channel,
+    this.withAudio = false,
+    this.iceServers = _defaultIceServers,
+  });
 
   /// O mesmo WebSocket que traz os frames JPEG.
   final WebSocketChannel channel;
+
+  /// Se a oferta pede uma faixa de som além da tela.
+  ///
+  /// Desligado por padrão, e é uma decisão sobre risco: quem abre o app quer
+  /// **ver** o computador. Uma faixa a mais na negociação é uma coisa a mais
+  /// que pode falhar do lado do aparelho — e falhou: pedir som em toda sessão
+  /// derrubou o vídeo inteiro para o JPEG. Sem som pedido, a oferta é igual à
+  /// que sempre funcionou; com som, a sessão é renegociada na hora em que a
+  /// pessoa liga.
+  final bool withAudio;
+
   final List<Map<String, dynamic>> iceServers;
 
   static const _defaultIceServers = <Map<String, dynamic>>[
@@ -149,16 +164,37 @@ class VideoSession extends ChangeNotifier {
         ),
       );
 
-      // Faixa de som, também só para receber. Nasce aqui, junto com a
-      // oferta, e não quando o usuário liga o som: uma faixa nova depois
-      // exigiria renegociar a sessão inteira. Enquanto ninguém liga, ela
-      // simplesmente não carrega nada.
-      await peer.addTransceiver(
-        kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
-        init: RTCRtpTransceiverInit(
-          direction: TransceiverDirection.RecvOnly,
-        ),
-      );
+      // Faixa de som — só quando alguém pediu. Uma faixa não pode ser
+      // acrescentada a uma sessão já negociada, então ligar o som refaz a
+      // sessão (é o que a tela de controle manda fazer).
+      //
+      // Em bloco próprio porque **o som não pode derrubar a tela**. Ver o
+      // computador é a função do app; ouvi-lo é um extra. Se esta parte
+      // falhar — ou demorar —, a sessão segue só com vídeo, em vez de a
+      // imagem cair no JPEG por causa do áudio.
+      if (withAudio) {
+        try {
+          // O modo da sessão vem **antes** da faixa: o módulo de áudio do
+          // sistema nasce quando a faixa aparece, e nasce no modo que
+          // encontrar. Se encontrar o padrão do WebRTC (ligação telefônica),
+          // ele pede o microfone — que este app não usa e pode nem ter
+          // permissão para usar.
+          //
+          // Com prazo, porque isto fala com o sistema operacional: um ajuste
+          // de aparelho que não responde não pode segurar a oferta.
+          await _prepareAudioOutput().timeout(const Duration(seconds: 2));
+          await peer
+              .addTransceiver(
+                kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
+                init: RTCRtpTransceiverInit(
+                  direction: TransceiverDirection.RecvOnly,
+                ),
+              )
+              .timeout(const Duration(seconds: 3));
+        } catch (e) {
+          debugPrint('RemoteOne: sessão sem faixa de som — $e');
+        }
+      }
 
       // O único sinal que autoriza abandonar o JPEG: um quadro efetivamente
       // desenhado. Chegar a faixa não basta.
@@ -177,7 +213,10 @@ class VideoSession extends ChangeNotifier {
           // no ouvido, porque o WebRTC nasce pensando em ligação telefônica.
           // Também não pode reiniciar o prazo do primeiro quadro abaixo - a
           // espera é por imagem, e a faixa de som chegaria antes.
-          _prepareAudioOutput();
+          // Sem `await`: preparar a saída de som é ajuste de aparelho, e o
+          // que este retorno protege é o prazo do primeiro quadro de vídeo,
+          // logo abaixo. Nada aqui pode ficar no caminho da imagem.
+          unawaited(_prepareAudioOutput());
           return;
         }
         renderer.srcObject = event.streams.first;
@@ -225,10 +264,6 @@ class VideoSession extends ChangeNotifier {
           if (!_disposed) notifyListeners();
         }
       };
-
-      // Antes da oferta: a sessão de áudio do sistema precisa estar no modo
-      // certo quando a primeira amostra chegar, não depois.
-      await _prepareAudioOutput();
 
       final offer = await peer.createOffer();
       await peer.setLocalDescription(offer);

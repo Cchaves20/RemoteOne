@@ -159,12 +159,24 @@ impl Video {
                 "som".to_owned(),
                 "remoteone".to_owned(),
             ));
-            connection
+            // Sem `?`: **o som não pode derrubar a tela**. Ver o computador é
+            // a função do app; ouvi-lo é um extra. Um erro aqui abortava a
+            // negociação inteira, e o resultado no aparelho era o vídeo
+            // sumindo e a tela voltando para o JPEG - um problema muito maior
+            // do que ficar sem som.
+            match connection
                 .add_track(Arc::clone(&faixa) as Arc<dyn TrackLocal + Send + Sync>)
                 .await
-                .map_err(|e| format!("não consegui adicionar a faixa de som: {e}"))?;
-            println!("WebRTC ({session_id}): sessão com faixa de som");
-            Some(faixa)
+            {
+                Ok(_) => {
+                    println!("WebRTC ({session_id}): sessão com faixa de som");
+                    Some(faixa)
+                }
+                Err(e) => {
+                    eprintln!("WebRTC ({session_id}): sessão sem som ({e})");
+                    None
+                }
+            }
         } else {
             // App antigo (sem transceptor de áudio na oferta). Vale dizer: é a
             // explicação de "liguei o som e não ouvi nada".
@@ -420,6 +432,18 @@ mod tests {
         peer
     }
 
+    /// O mesmo "app", agora pedindo **som** além da tela - que é o que o
+    /// Flutter passou a oferecer. Existe separado porque foi exatamente esta
+    /// diferença que quebrou o vídeo uma vez: a faixa de som entrou na oferta,
+    /// algo falhou do lado do agente e a negociação inteira morreu junto.
+    async fn app_peer_com_som() -> Arc<RTCPeerConnection> {
+        let peer = app_peer().await;
+        peer.add_transceiver_from_kind(RTPCodecType::Audio, None)
+            .await
+            .unwrap();
+        peer
+    }
+
     fn video() -> (Video, mpsc::UnboundedReceiver<Signal>) {
         let (tx, rx) = mpsc::unbounded_channel();
         let (input_tx, _input_rx) = mpsc::unbounded_channel();
@@ -455,6 +479,63 @@ mod tests {
         }
         assert_eq!(agent.len(), 1);
         agent.close_all().await;
+    }
+
+    /// Oferta com som: a resposta precisa trazer as duas faixas **e** ser
+    /// aceita pelo app. Aplicar a resposta do outro lado é a prova real - uma
+    /// resposta malformada passa por `starts_with("v=0")` e falha aqui.
+    #[tokio::test]
+    async fn oferta_com_som_responde_com_tela_e_som() {
+        let (mut agent, mut signals) = video();
+        let app = app_peer_com_som().await;
+        let offer = app.create_offer(None).await.unwrap();
+        app.set_local_description(offer.clone()).await.unwrap();
+        assert!(offer.sdp.contains("m=audio"), "a oferta devia pedir som");
+
+        agent.offer("s1", &offer.sdp).await.unwrap();
+
+        let Some(Signal::Answer { sdp, .. }) = signals.recv().await else {
+            panic!("esperava a resposta");
+        };
+        let minusculo = sdp.to_lowercase();
+        assert!(minusculo.contains("m=video"), "a resposta perdeu a tela");
+        assert!(minusculo.contains("h264"), "a resposta perdeu o H.264");
+        assert!(minusculo.contains("m=audio"), "a resposta perdeu o som");
+        assert!(minusculo.contains("opus"), "a resposta não anuncia Opus");
+
+        // O app aplica a resposta. É aqui que uma resposta inconsistente
+        // (faixa a mais, faixa fora de ordem, codec que não casa) aparece.
+        let resposta = RTCSessionDescription::answer(sdp).unwrap();
+        app.set_remote_description(resposta)
+            .await
+            .expect("o app precisa aceitar a resposta");
+
+        agent.close_all().await;
+        app.close().await.unwrap();
+    }
+
+    /// App sem som (versão antiga): a sessão continua valendo, só que sem
+    /// faixa de áudio. Ninguém pode ficar sem tela por não ter pedido som.
+    #[tokio::test]
+    async fn oferta_sem_som_continua_valendo() {
+        let (mut agent, mut signals) = video();
+        let app = app_peer().await;
+        let offer = app.create_offer(None).await.unwrap();
+        app.set_local_description(offer.clone()).await.unwrap();
+        assert!(!offer.sdp.contains("m=audio"));
+
+        agent.offer("s1", &offer.sdp).await.unwrap();
+
+        let Some(Signal::Answer { sdp, .. }) = signals.recv().await else {
+            panic!("esperava a resposta");
+        };
+        assert!(sdp.to_lowercase().contains("m=video"));
+        let resposta = RTCSessionDescription::answer(sdp).unwrap();
+        app.set_remote_description(resposta).await.unwrap();
+        assert!(!agent.wants_audio(), "não há faixa de som para escrever");
+
+        agent.close_all().await;
+        app.close().await.unwrap();
     }
 
     #[tokio::test]
