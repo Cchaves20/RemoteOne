@@ -32,6 +32,25 @@ que uma rede hostil degrade a experiência em vez de quebrá-la.
 O resto deste documento é sobre as otimizações do caminho JPEG, que continuam
 valendo: várias delas (a captura reduzida, o filtro de caixa) alimentam os dois.
 
+### Limitação conhecida: dois espectadores em caminhos diferentes
+
+"O agente para de mandar JPEG enquanto existe sessão de vídeo conectada" vale
+para o computador inteiro, não por espectador. Com **dois aparelhos** olhando o
+mesmo computador, um por WebRTC e outro por JPEG (porque o vídeo falhou ali, ou
+porque a pessoa desligou o WebRTC nas configurações), o segundo fica com a
+imagem congelada: o agente já parou de emitir JPEG.
+
+Não está resolvido de propósito. Para resolver, o agente precisaria saber
+quantos espectadores estão em cada caminho - hoje ele sabe quantas sessões de
+vídeo tem, mas "alguém pediu a tela" é uma bandeira só. A correção certa passa
+pelo backend, que é quem conhece os espectadores, informando a contagem; e o
+caso (duas pessoas, uma delas sem WebRTC) é raro o bastante para não valer o
+protocolo a mais antes de aparecer de verdade.
+
+O sintoma, para reconhecer: a tela para, o contador de fps vai a zero e o app
+continua dizendo "ao vivo". Sair e voltar na tela de controle resolve, porque a
+sessão nova negocia WebRTC de novo.
+
 ## O que foi otimizado
 
 ### 1. Redimensionamento: `thumbnail` no lugar de `resize(Triangle)`

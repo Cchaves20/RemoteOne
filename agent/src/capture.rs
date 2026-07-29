@@ -77,18 +77,6 @@ fn rgba_to_rgb_scaled(
     })
 }
 
-/// Converte, reduz e codifica em JPEG.
-fn rgba_to_jpeg(
-    rgba: Vec<u8>,
-    width: u32,
-    height: u32,
-    max_width: u32,
-    quality: u8,
-) -> Result<Vec<u8>, String> {
-    let image = rgba_to_rgb_scaled(rgba, width, height, max_width)?;
-    encode_jpeg(image.as_raw(), image.width(), image.height(), quality)
-}
-
 /// Fonte de captura, resolvida **uma vez** e reutilizada a cada quadro.
 ///
 /// Existe por causa de um erro medido: a versão anterior chamava
@@ -272,12 +260,6 @@ fn capture_rgba() -> Result<(Vec<u8>, u32, u32), String> {
     Screen::new()?.grab_rgba()
 }
 
-/// Captura a tela e devolve o JPEG pronto.
-pub fn capture_frame(max_width: u32, quality: u8) -> Result<Vec<u8>, String> {
-    let (rgba, width, height) = capture_rgba()?;
-    rgba_to_jpeg(rgba, width, height, max_width, quality)
-}
-
 /// Um quadro capturado e já reduzido, pronto para codificar.
 pub struct CapturedFrame {
     pub rgb: Vec<u8>,
@@ -455,31 +437,13 @@ pub fn capture_rgb(max_width: u32) -> Result<(Vec<u8>, u32, u32), String> {
     Ok((image.into_raw(), w, h))
 }
 
-/// Captura a tela e só codifica o JPEG se o conteúdo mudou desde `last_hash`.
-///
-/// Numa tela parada (lendo um documento, vídeo pausado, computador ocioso) isso
-/// poupa a codificação — a etapa mais cara depois do redimensionamento — e todo
-/// o tráfego do frame, já que o app continua exibindo a imagem idêntica que já
-/// tem. O hash é calculado sobre a imagem **já reduzida**, então o custo é
-/// proporcional ao que de fato seria enviado.
-pub fn capture_frame_dedup(max_width: u32, quality: u8, last_hash: u64) -> Result<Frame, String> {
-    let (rgba, width, height) = capture_rgba()?;
-    let image = rgba_to_rgb_scaled(rgba, width, height, max_width)?;
-    let (width, height) = (image.width(), image.height());
-    let frame = CapturedFrame {
-        rgb: image.into_raw(),
-        width,
-        height,
-    };
-    jpeg_if_changed(&frame, quality, last_hash)
-}
-
 /// Codifica um quadro **já capturado e reduzido** em JPEG, ou devolve só o hash
 /// se ele é idêntico ao anterior.
 ///
-/// É a metade do [`capture_frame_dedup`] que não captura, para o caminho JPEG
-/// poder consumir os quadros do [`FramePump`] em vez de abrir a sua própria
-/// captura a cada quadro.
+/// Os dois caminhos de tela — o vídeo por WebRTC e o JPEG de reserva — comem
+/// os quadros do mesmo [`FramePump`]. Por isso esta função **não captura**:
+/// capturar aqui abriria uma segunda captura da mesma tela, dobrando o custo
+/// para produzir a mesma imagem.
 pub fn jpeg_if_changed(
     frame: &CapturedFrame,
     quality: u8,
@@ -512,30 +476,19 @@ mod tests {
     }
 
     #[test]
-    fn capture_frame_returns_jpeg() {
-        // No stub (Linux) captura o frame sintético; garante o pipeline.
-        let jpeg = capture_frame(1280, 60).unwrap();
-        assert!(is_jpeg(&jpeg));
+    fn a_captura_de_uma_vez_ainda_produz_imagem() {
+        // Caminho usado pelo exemplo de medição (`examples/capture_frames`).
+        // No stub (Linux) captura o quadro sintético.
+        let (rgb, largura, altura) = capture_rgb(1280).unwrap();
+        assert!(largura > 0 && altura > 0);
+        assert_eq!(rgb.len() as u32, largura * altura * 3);
     }
 
     #[test]
-    fn dedup_sends_the_first_frame() {
-        let frame = capture_frame_dedup(1280, 60, NO_FRAME).unwrap();
+    fn dedup_manda_o_primeiro_quadro() {
+        let frame = jpeg_if_changed(&quadro(30), 60, NO_FRAME).unwrap();
         assert!(is_jpeg(frame.jpeg.as_deref().unwrap()));
         assert_ne!(frame.hash, NO_FRAME);
-    }
-
-    #[test]
-    fn dedup_skips_an_unchanged_screen() {
-        // O stub anima com o relógio, então não dá para forçar dois frames
-        // iguais: valida a regra nos dois desfechos possíveis.
-        let first = capture_frame_dedup(1280, 60, NO_FRAME).unwrap();
-        let again = capture_frame_dedup(1280, 60, first.hash).unwrap();
-        if again.hash == first.hash {
-            assert!(again.jpeg.is_none(), "tela igual não deve gastar encode");
-        } else {
-            assert!(again.jpeg.is_some(), "tela diferente precisa enviar frame");
-        }
     }
 
     #[test]
@@ -646,11 +599,12 @@ mod tests {
 
     #[test]
     fn downscale_reduces_dimensions() {
-        // Uma imagem 100x50 reduzida para max_width 40 vira 40x20.
+        // Uma imagem 100x50 reduzida para max_width 40 vira 40x20. A redução é
+        // o passo mais caro depois da codificação: se ela parar de acontecer,
+        // o custo por quadro dispara sem nada quebrar visivelmente.
         let rgba = vec![10u8; (100 * 50 * 4) as usize];
-        let jpeg = rgba_to_jpeg(rgba, 100, 50, 40, 60).unwrap();
-        let decoded = image::load_from_memory(&jpeg).unwrap();
-        assert_eq!(decoded.width(), 40);
-        assert_eq!(decoded.height(), 20);
+        let image = rgba_to_rgb_scaled(rgba, 100, 50, 40).unwrap();
+        assert_eq!(image.width(), 40);
+        assert_eq!(image.height(), 20);
     }
 }
