@@ -1246,9 +1246,17 @@ class _RemoteScreenState extends State<RemoteScreen>
     final messenger = ScaffoldMessenger.of(context);
     final ligar = !_audioOn;
     if (ligar && _video?.isLive != true) {
+      // Três motivos diferentes, três saídas diferentes: desligado nas
+      // configurações se resolve num toque, negociando é só esperar, e falha
+      // é outra conversa. Uma frase só para os três não ajudava ninguém.
+      final texto = _video == null
+          ? t.audioNeedsVideoEnabled
+          : (_video!.state == VideoState.negotiating
+              ? t.audioWaitVideo
+              : t.audioNeedsVideo);
       messenger.showSnackBar(SnackBar(
-        duration: const Duration(seconds: 3),
-        content: Text(t.audioNeedsVideo),
+        duration: const Duration(seconds: 5),
+        content: Text(texto),
       ));
       return;
     }
@@ -1582,6 +1590,51 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
+  /// Em que pé está a imagem, na barra de cima.
+  ///
+  /// Antes aqui só havia "N fps", e um número de quadros não distingue as três
+  /// razões de o vídeo direto não estar de pé: desligado nas configurações,
+  /// ainda negociando, ou falhou. Ficar sem essa distinção custou caro — "só
+  /// fps" foi exatamente o relato que não dizia onde o caminho parou.
+  Widget _videoStatus() {
+    final t = widget.state.t;
+    final video = _video;
+    final String texto;
+    Color cor = Colors.white38;
+    VoidCallback? aoTocar;
+
+    if (video == null) {
+      // Nem tentou: o vídeo direto está desligado nas configurações.
+      texto = t.videoDisabled;
+      cor = Colors.orangeAccent;
+    } else if (video.isLive) {
+      texto = video.inputReady ? t.videoDirectMode : t.videoMode;
+    } else if (video.state == VideoState.failed) {
+      texto = t.videoFailedShort;
+      cor = Colors.orangeAccent;
+      // O motivo já apareceu uma vez, num aviso que passou. Aqui ele volta
+      // quando a pessoa quiser, que é quando ela está tentando entender.
+      aoTocar = () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            duration: const Duration(seconds: 8),
+            content: Text('${t.videoUnavailable}\n${video.error ?? ''}'.trim()),
+          ));
+    } else if (video.state == VideoState.negotiating) {
+      texto = t.videoConnecting;
+    } else {
+      // 0 fps com a imagem no ar significa tela parada: o agente deixa de
+      // enviar frames idênticos para poupar rede e bateria.
+      texto = _fps == 0 && _hasFrame ? t.screenStill : '$_fps fps';
+    }
+
+    return GestureDetector(
+      onTap: aoTocar,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Text(texto, style: TextStyle(color: cor, fontSize: 12)),
+      ),
+    );
+  }
+
   Widget _topBar({required bool showToggle}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -1631,23 +1684,7 @@ class _RemoteScreenState extends State<RemoteScreen>
               onPressed: _toggleZoomMode,
             ),
           ] else ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                // No vídeo por WebRTC não chegam frames JPEG, então o contador
-                // fica em 0 por definição — mostrar "0 fps" pareceria defeito.
-                _video?.isLive == true
-                    ? (_video?.inputReady == true
-                        ? widget.state.t.videoDirectMode
-                        : widget.state.t.videoMode)
-                    // 0 fps com a imagem no ar significa tela parada: o agente
-                    // deixa de enviar frames idênticos para poupar rede/bateria.
-                    : (_fps == 0 && _hasFrame
-                        ? widget.state.t.screenStill
-                        : '$_fps fps'),
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
-              ),
-            ),
+            _videoStatus(),
             // Os dois painéis retráteis moram aqui, na moldura do app: fora
             // da imagem do computador, que é o que a pessoa veio olhar.
             _barToggle(

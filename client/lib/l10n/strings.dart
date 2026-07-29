@@ -354,6 +354,24 @@ class Strings {
       "Le son a besoin de la connexion vidéo directe, pas encore établie.",
       'El sonido necesita la conexión directa de vídeo, que aún no está lista.');
 
+  String get videoDisabled => _t('vídeo direto desligado', 'direct video off',
+      '直连视频已关闭', 'vidéo directe désactivée', 'vídeo directo desactivado');
+  String get videoConnecting => _t('conectando vídeo…', 'connecting video…',
+      '正在连接视频…', 'connexion vidéo…', 'conectando vídeo…');
+  String get videoFailedShort => _t('vídeo direto falhou', 'direct video failed',
+      '直连视频失败', 'échec de la vidéo directe', 'falló el vídeo directo');
+  String get audioNeedsVideoEnabled => _t(
+      'Ligue "Vídeo por WebRTC" nas configurações: o som viaja pela conexão direta.',
+      'Turn on "WebRTC video" in settings: sound travels over the direct connection.',
+      '请在设置中开启"WebRTC 视频"：声音通过直连传输。',
+      'Activez « Vidéo WebRTC » dans les réglages : le son passe par la connexion directe.',
+      'Activa "Vídeo por WebRTC" en ajustes: el sonido viaja por la conexión directa.');
+  String get audioWaitVideo => _t(
+      'A conexão direta de vídeo ainda está sendo montada. Tente em alguns segundos.',
+      'The direct video connection is still being set up. Try again in a few seconds.',
+      '直连视频仍在建立中，请稍后再试。',
+      "La connexion vidéo directe est en cours d'établissement. Réessayez dans quelques secondes.",
+      'La conexión directa de vídeo aún se está estableciendo. Inténtalo en unos segundos.');
   String get audioGainHint => _t(
       'Deixe o volume do computador no mínimo (sem silenciar) e recupere o volume aqui.',
       "Set the computer's volume to minimum (not muted) and bring the volume back here.",
