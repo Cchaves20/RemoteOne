@@ -10,6 +10,11 @@ use crate::files::Listing;
 use crate::input::{InputAction, MediaAction};
 use crate::system_info::SystemSnapshot;
 
+/// Ganho padrão do áudio: o som como o computador o entregou.
+fn ganho_neutro() -> f32 {
+    1.0
+}
+
 /// Mensagens que o agente envia ao backend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -156,6 +161,10 @@ pub enum ServerMessage {
     /// aparece (ou não) no telefone, e um erro aqui não tem o que responder.
     Audio {
         enabled: bool,
+        /// Multiplicador do volume antes de codificar. 1.0 = como veio do
+        /// computador. Ausente em agentes/servidores antigos, daí o padrão.
+        #[serde(default = "ganho_neutro")]
+        gain: f32,
     },
     /// Aciona uma tecla de mídia (play/pause, faixa, volume). Mão única: não há
     /// resposta a esperar.

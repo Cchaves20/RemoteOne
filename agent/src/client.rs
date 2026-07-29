@@ -170,6 +170,10 @@ pub async fn run(
     let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<crate::audio::Packet>(32);
     let mut audio: Option<crate::audio::Capture> = None;
     let mut audio_stats = AudioStats::default();
+    // Ganho do som, compartilhado com a thread da placa. Fica fora da captura
+    // de propósito: mexer no controle do telefone tem efeito na hora, sem
+    // reabrir a placa de som.
+    let audio_gain = Arc::new(crate::audio::Gain::new(1.0));
 
     // Transferência de arquivos. Os pedaços que saem daqui passam por um canal
     // **limitado**: é ele que segura o leitor quando a rede não acompanha. Sem
@@ -450,14 +454,21 @@ pub async fn run(
                                 ws.send(Message::Text(reply)).await?;
                             }
                             // Som do computador: ligar e desligar a captura.
-                            Some(Action::SetAudio { enabled }) => {
+                            Some(Action::SetAudio { enabled, gain }) => {
+                                // O ganho vale mesmo com a captura já ligada:
+                                // é assim que o controle do telefone mexe no
+                                // volume sem cortar o som.
+                                audio_gain.set(gain);
                                 if !enabled {
                                     // O `Drop` da captura para a placa de som.
                                     if audio.take().is_some() {
                                         println!("Áudio: desligado");
                                     }
                                 } else if audio.is_none() {
-                                    match crate::audio::start(audio_tx.clone()) {
+                                    match crate::audio::start(
+                                        audio_tx.clone(),
+                                        Arc::clone(&audio_gain),
+                                    ) {
                                         Ok(captura) => {
                                             audio = Some(captura);
                                             println!("Áudio: ligado");
@@ -919,8 +930,8 @@ enum Action {
     SystemInfo { request_id: String },
     /// Descobrir o programa em primeiro plano e responder ao backend.
     ForegroundInfo { request_id: String },
-    /// Ligar ou desligar a captura do som do computador.
-    SetAudio { enabled: bool },
+    /// Ligar ou desligar a captura do som do computador, com o ganho.
+    SetAudio { enabled: bool, gain: f32 },
     /// Listar uma pasta e responder ao backend.
     ListFiles { request_id: String, path: String },
     /// Ler um arquivo e mandá-lo em pedaços.
@@ -1063,8 +1074,8 @@ fn handle_server_text(
             return Some(Action::ForegroundInfo { request_id });
         }
         // Ligar a placa de som é `await` e estado: volta como ação.
-        Ok(ServerMessage::Audio { enabled }) => {
-            return Some(Action::SetAudio { enabled });
+        Ok(ServerMessage::Audio { enabled, gain }) => {
+            return Some(Action::SetAudio { enabled, gain });
         }
         // Arquivos: tudo precisa do socket ou do estado das transferências, que
         // vivem no laço. Aqui só viram ação.

@@ -29,6 +29,76 @@ pub const FRAME_SAMPLES: usize = 960;
 /// Amostras intercaladas em um quadro (os dois canais).
 pub const FRAME_INTERLEAVED: usize = FRAME_SAMPLES * CHANNELS;
 
+/// Ganho aplicado ao som antes de codificar, compartilhado com a thread da
+/// placa de som.
+///
+/// Existe para uma ideia simples: deixar o computador quase mudo (volume no
+/// mínimo, **sem** silenciar) e recuperar o volume no telefone. O Windows
+/// aplica o volume mestre na mistura que o loopback entrega, então o que se
+/// captura de um computador baixinho é um sinal baixinho; multiplicar por 20
+/// devolve o que se esperava ouvir.
+///
+/// **Antes** de codificar, e isso não é detalhe: o Opus distribui o ruído de
+/// codificação em proporção ao sinal que recebe. Mandar um sinal fraquinho e
+/// amplificar no telefone amplificaria o ruído junto, e o resultado seria um
+/// chiado. Amplificando aqui, o codificador vê um sinal de nível normal.
+///
+/// `f32` guardado como bits num atômico: a thread da placa não pode esperar
+/// por cadeado nenhum.
+#[derive(Debug)]
+pub struct Gain(std::sync::atomic::AtomicU32);
+
+impl Gain {
+    /// Teto de 32x (+30 dB). Acima disso o que se amplifica já é mais ruído do
+    /// que som, e uma mensagem adulterada não pode estourar o alto-falante.
+    pub const MAX: f32 = 32.0;
+
+    pub fn new(value: f32) -> Self {
+        let gain = Self(std::sync::atomic::AtomicU32::new(0));
+        gain.set(value);
+        gain
+    }
+
+    pub fn set(&self, value: f32) {
+        let limitado = if value.is_finite() {
+            value.clamp(0.0, Self::MAX)
+        } else {
+            1.0
+        };
+        self.0
+            .store(limitado.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn get(&self) -> f32 {
+        f32::from_bits(self.0.load(std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+/// Multiplica as amostras pelo ganho, cortando o que passar do limite.
+///
+/// Devolve `true` se algo foi cortado. O corte é seco, e é a escolha certa
+/// aqui: um limitador suave disfarçaria o excesso, e o que se quer é que a
+/// pessoa perceba que o ganho está alto demais para o volume do computador.
+pub fn apply_gain(samples: &mut [f32], gain: f32) -> bool {
+    if gain == 1.0 {
+        return false;
+    }
+    let mut clipped = false;
+    for s in samples.iter_mut() {
+        let amplificado = *s * gain;
+        if amplificado > 1.0 {
+            *s = 1.0;
+            clipped = true;
+        } else if amplificado < -1.0 {
+            *s = -1.0;
+            clipped = true;
+        } else {
+            *s = amplificado;
+        }
+    }
+    clipped
+}
+
 /// Um quadro já codificado, pronto para a faixa de áudio.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Packet {
@@ -167,12 +237,15 @@ mod imp {
     /// A thread própria não é enfeite: o fluxo do WASAPI não é `Send`, então
     /// precisa nascer e morrer na mesma thread. Ela fica parada esperando o
     /// sinal de desligar - quem trabalha é a chamada de retorno da placa.
-    pub fn start(tx: tokio::sync::mpsc::Sender<Packet>) -> Result<Capture, String> {
+    pub fn start(
+        tx: tokio::sync::mpsc::Sender<Packet>,
+        gain: Arc<super::Gain>,
+    ) -> Result<Capture, String> {
         let stop = Arc::new(AtomicBool::new(false));
         let sinal = Arc::clone(&stop);
         let (pronto_tx, pronto_rx) = std::sync::mpsc::channel::<Result<(), String>>();
 
-        let thread = std::thread::spawn(move || match build_stream(tx) {
+        let thread = std::thread::spawn(move || match build_stream(tx, gain) {
             Err(e) => {
                 let _ = pronto_tx.send(Err(e));
             }
@@ -195,7 +268,10 @@ mod imp {
         }
     }
 
-    fn build_stream(tx: tokio::sync::mpsc::Sender<Packet>) -> Result<cpal::Stream, String> {
+    fn build_stream(
+        tx: tokio::sync::mpsc::Sender<Packet>,
+        gain: Arc<super::Gain>,
+    ) -> Result<cpal::Stream, String> {
         let host = cpal::default_host();
         // O truque do loopback: **abrir o dispositivo de saída como entrada**.
         // O cpal liga o AUDCLNT_STREAMFLAGS_LOOPBACK sozinho nesse caso, e o
@@ -229,6 +305,9 @@ mod imp {
             .map_err(|e| format!("taxa do Opus: {e}"))?;
 
         let mut quadros: Vec<f32> = Vec::with_capacity(FRAME_INTERLEAVED * 4);
+        // Um aviso por captura: um por bloco encheria o console 50 vezes por
+        // segundo, que é ruído, não informação.
+        let mut avisou_corte = false;
         // Teto folgado para um quadro de 20 ms a 96 kbps (~240 bytes).
         let mut saida = vec![0u8; 4000];
 
@@ -237,6 +316,15 @@ mod imp {
                 suportado.config(),
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
                     shaper.push(data, &mut quadros);
+                    // O ganho é lido a cada bloco: mexer no controle do
+                    // telefone tem efeito imediato, sem reabrir a captura.
+                    if super::apply_gain(&mut quadros, gain.get()) && !avisou_corte {
+                        avisou_corte = true;
+                        eprintln!(
+                            "Áudio: o ganho está alto demais para o volume do \
+                             computador e o som está sendo cortado."
+                        );
+                    }
                     for quadro in quadros.chunks_exact(FRAME_INTERLEAVED) {
                         match encoder.encode_float(quadro, &mut saida) {
                             Ok(n) => {
@@ -271,7 +359,10 @@ mod imp {
     /// Sem captura fora do Windows (é a única plataforma com agente real).
     pub struct Capture;
 
-    pub fn start(_tx: tokio::sync::mpsc::Sender<Packet>) -> Result<Capture, String> {
+    pub fn start(
+        _tx: tokio::sync::mpsc::Sender<Packet>,
+        _gain: std::sync::Arc<super::Gain>,
+    ) -> Result<Capture, String> {
         Err("captura de som só no Windows".to_string())
     }
 }
@@ -392,6 +483,53 @@ mod tests {
         let mut saida = Vec::new();
         shaper.push(&[], &mut saida);
         assert!(saida.is_empty());
+    }
+
+    #[test]
+    fn ganho_neutro_nao_toca_no_som() {
+        let mut som = vec![0.5, -0.25, 0.125];
+        assert!(!apply_gain(&mut som, 1.0));
+        assert_eq!(som, vec![0.5, -0.25, 0.125]);
+    }
+
+    #[test]
+    fn ganho_amplifica_o_computador_baixinho() {
+        // O caso de uso: computador no volume mínimo, telefone no volume certo.
+        let mut som = vec![0.02, -0.02];
+        assert!(!apply_gain(&mut som, 20.0));
+        assert!((som[0] - 0.4).abs() < 1e-6, "{som:?}");
+        assert!((som[1] + 0.4).abs() < 1e-6, "{som:?}");
+    }
+
+    #[test]
+    fn ganho_alto_demais_corta_e_avisa() {
+        // Sem o corte, o valor passaria de 1.0 e o Opus receberia lixo.
+        let mut som = vec![0.5, -0.5, 0.1];
+        assert!(apply_gain(&mut som, 4.0), "devia avisar o corte");
+        assert_eq!(som[0], 1.0);
+        assert_eq!(som[1], -1.0);
+        assert!((som[2] - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ganho_zero_silencia() {
+        let mut som = vec![0.9, -0.9];
+        assert!(!apply_gain(&mut som, 0.0));
+        assert_eq!(som, vec![0.0, -0.0]);
+    }
+
+    #[test]
+    fn ganho_recusa_valor_impossivel() {
+        // Mensagem adulterada não pode virar estouro no ouvido de ninguém.
+        let g = Gain::new(1.0);
+        g.set(1000.0);
+        assert_eq!(g.get(), Gain::MAX);
+        g.set(-5.0);
+        assert_eq!(g.get(), 0.0);
+        g.set(f32::NAN);
+        assert_eq!(g.get(), 1.0);
+        g.set(3.5);
+        assert_eq!(g.get(), 3.5);
     }
 
     #[test]

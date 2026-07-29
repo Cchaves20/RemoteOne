@@ -213,7 +213,7 @@ async def audio_stream(
     houver conexão direta de vídeo, não há por onde o som passar.
     """
     _owned_device_or_404(db, device_id, current_user)
-    message = {"type": "audio", "enabled": body.enabled}
+    message = {"type": "audio", "enabled": body.enabled, "gain": body.gain}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"

@@ -333,11 +333,11 @@ class ApiClient {
 
   /// Liga ou desliga o som do computador no telefone. O som viaja pela mesma
   /// conexão direta que leva a tela, numa faixa Opus.
-  Future<void> setAudio(String deviceId, bool enabled) async {
+  Future<void> setAudio(String deviceId, bool enabled, {double gain = 1}) async {
     final res = await _http.post(
       _uri('/api/v1/devices/$deviceId/audio'),
       headers: _authHeaders,
-      body: jsonEncode({'enabled': enabled}),
+      body: jsonEncode({'enabled': enabled, 'gain': gain}),
     );
     if (res.statusCode != 204) {
       throw _error(res);

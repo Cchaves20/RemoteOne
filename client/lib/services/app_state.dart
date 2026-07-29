@@ -39,6 +39,13 @@ class AppState extends ChangeNotifier {
   /// que ela só ocupa espaço.
   bool suggestionsEnabled = true;
 
+  /// Quanto o som do computador é amplificado antes de ser codificado.
+  ///
+  /// Serve a um jeito específico de usar: computador no volume mínimo (sem
+  /// silenciar, senão não sobra o que capturar) e o volume de verdade
+  /// recuperado aqui. 1 = como o computador entregou.
+  double audioGain = 1;
+
   /// Perfil de atalhos aberto por último na barra seletora (`null` = nenhum).
   /// Guardado porque quem usa o app para assistir filme abre no mesmo perfil
   /// todo dia, e reescolher a cada sessão seria um passo sem motivo.
@@ -97,6 +104,7 @@ class AppState extends ChangeNotifier {
     webrtcVideoEnabled = prefs.getBool('webrtcVideo') ?? true;
     suggestionsEnabled = prefs.getBool('suggestions') ?? true;
     profileId = prefs.getString('profileId');
+    audioGain = (prefs.getDouble('audioGain') ?? 1).clamp(1.0, 32.0);
     _learnedWords = _decodeLearned(prefs.getString('learnedWords'));
     language = AppLanguage.values.firstWhere(
       (l) => l.name == prefs.getString('language'),
@@ -313,9 +321,21 @@ class AppState extends ChangeNotifier {
   Future<void> mediaKey(Device device, String action) =>
       api.mediaKey(device.deviceId, action);
 
-  /// Liga ou desliga o som do computador no telefone.
+  /// Liga ou desliga o som do computador no telefone, com o ganho atual.
   Future<void> setAudio(Device device, bool enabled) =>
-      api.setAudio(device.deviceId, enabled);
+      api.setAudio(device.deviceId, enabled, gain: audioGain);
+
+  /// Só o ganho, sem mexer no liga/desliga (o agente aplica na hora).
+  Future<void> sendAudioGain(Device device) =>
+      api.setAudio(device.deviceId, true, gain: audioGain);
+
+  /// Guarda o ganho escolhido. Sem `notifyListeners`: quem manda no controle é
+  /// a tela de controle, e arrastar o cursor reconstruiria o app inteiro.
+  Future<void> setAudioGain(double gain) async {
+    audioGain = gain.clamp(1.0, 32.0);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('audioGain', audioGain);
+  }
 
   /// Qual programa está em primeiro plano no computador (para os ícones dos
   /// perfis). `null` quando não há nenhum em foco.

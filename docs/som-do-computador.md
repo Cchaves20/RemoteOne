@@ -67,6 +67,31 @@ som do computador inteiro, não só o do telefone.
 manda desligar ao sair da tela. Um computador capturando som para ninguém e um
 desperdício que não aparece na tela de ninguém.
 
+## Computador quase mudo, som no telefone
+
+O jeito de ouvir só no telefone sem instalar nada: deixe o volume do Windows no
+**mínimo** - sem silenciar - e recupere o volume no controle deslizante do
+painel de mídia (1x a 32x).
+
+Funciona porque o Windows aplica o volume mestre na mistura que o loopback
+entrega: um computador baixinho produz um sinal baixinho, e multiplicar devolve
+o que se esperava ouvir. **Silenciar não serve**: aí não sobra sinal nenhum
+para amplificar.
+
+A amplificação acontece **no computador, antes de codificar**, e essa escolha é
+o ponto todo. O Opus distribui o ruído de codificação em proporção ao sinal que
+recebe; mandar um sinal fraco e amplificar no telefone amplificaria o ruído
+junto, e o resultado seria chiado. Amplificando antes, o codificador vê um
+sinal de nível normal e o que chega é o som limpo.
+
+Se o ganho ficar alto demais para o volume do computador, o som é cortado no
+limite (e o agente avisa uma vez no console). O corte é seco de propósito: um
+limitador suave disfarçaria o excesso, e o que se quer é perceber que passou.
+
+Quem quiser o computador **totalmente** mudo continua precisando de uma saída
+virtual (VB-CABLE e afins) definida como padrão - aí os alto-falantes não
+recebem nada e o agente captura o cabo, sem ganho nenhum.
+
 ## Limites conhecidos
 
 - Só Windows (e a única plataforma com agente real).

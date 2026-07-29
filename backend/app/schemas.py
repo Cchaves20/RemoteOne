@@ -120,9 +120,16 @@ class SystemStatsOut(BaseModel):
 
 
 class AudioRequest(BaseModel):
-    """Liga ou desliga o envio do som do computador para o telefone."""
+    """Liga ou desliga o envio do som do computador, e com qual ganho.
+
+    O ganho existe para um jeito específico de usar: deixar o computador quase
+    mudo (volume no mínimo, sem silenciar) e recuperar o volume no telefone. O
+    teto de 32x é o mesmo do agente - acima disso o que se amplifica já é mais
+    ruído do que som.
+    """
 
     enabled: bool
+    gain: float = Field(1.0, ge=0.0, le=32.0)
 
 
 class ForegroundAppOut(BaseModel):

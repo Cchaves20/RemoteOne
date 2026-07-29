@@ -354,6 +354,12 @@ class Strings {
       "Le son a besoin de la connexion vidéo directe, pas encore établie.",
       'El sonido necesita la conexión directa de vídeo, que aún no está lista.');
 
+  String get audioGainHint => _t(
+      'Deixe o volume do computador no mínimo (sem silenciar) e recupere o volume aqui.',
+      "Set the computer's volume to minimum (not muted) and bring the volume back here.",
+      '把电脑音量调到最低（不要静音），在这里把音量补回来。',
+      "Mettez le volume de l'ordinateur au minimum (sans couper) et récupérez le volume ici.",
+      'Deja el volumen del equipo al mínimo (sin silenciar) y recupera el volumen aquí.');
   String get audioNoTrack => _t(
       'O computador não mandou som. Confira se o agente e o app estão na mesma versão.',
       "The computer didn't send any sound. Check that the agent and the app are on the same version.",

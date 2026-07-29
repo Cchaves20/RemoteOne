@@ -1131,6 +1131,78 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// Botões de mídia. As teclas são globais no computador: valem para quem
   /// estiver tocando som, sem precisar deixar o player em foco.
   Widget _mediaCard() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _mediaButtons(),
+        // A linha do volume só existe com o som ligado: sem som, um controle
+        // de volume é um botão que não faz nada.
+        if (_audioOn) _gainRow(),
+      ],
+    );
+  }
+
+  /// Volume do som que vem do computador.
+  ///
+  /// Existe para um jeito específico de usar: deixar o computador quase mudo
+  /// (volume no mínimo, **sem** silenciar - silenciado não sobra o que
+  /// capturar) e recuperar o volume aqui. Quem amplifica é o computador, antes
+  /// de codificar: amplificar no telefone amplificaria junto o ruído do
+  /// codificador, e o que se ouviria seria chiado.
+  Widget _gainRow() {
+    final t = widget.state.t;
+    final ganho = widget.state.audioGain;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          const Icon(Icons.volume_up, size: 18, color: Colors.white54),
+          Expanded(
+            child: Slider(
+              value: ganho.clamp(1.0, 32.0),
+              min: 1,
+              max: 32,
+              // 31 passos de 1x: o suficiente para acertar o volume sem virar
+              // uma busca por um valor exato.
+              divisions: 31,
+              label: '${ganho.round()}x',
+              onChanged: (v) => setState(() => widget.state.audioGain = v),
+              // O envio é no fim do arrasto, não a cada pixel: seriam dezenas
+              // de chamadas por segundo para um valor que só a última importa.
+              onChangeEnd: _applyGain,
+            ),
+          ),
+          SizedBox(
+            width: 34,
+            child: Text(
+              '${ganho.round()}x',
+              textAlign: TextAlign.end,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
+          Tooltip(
+            message: t.audioGainHint,
+            child: const Padding(
+              padding: EdgeInsets.only(left: 6),
+              child: Icon(Icons.info_outline, size: 16, color: Colors.white38),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _applyGain(double gain) async {
+    await widget.state.setAudioGain(gain);
+    if (!_audioOn) return;
+    try {
+      await widget.state.sendAudioGain(widget.device);
+    } catch (_) {
+      // Sem rede: o valor fica guardado e vale no próximo "ligar".
+    }
+  }
+
+  Widget _mediaButtons() {
     final t = widget.state.t;
     return Row(
       // A faixa ocupa a largura toda; os botões ficam centrados nela.

@@ -200,6 +200,8 @@ def test_audio_liga_e_desliga_no_agente():
     finally:
         manager.unregister("dev-audio-1")
     assert [m["enabled"] for m in agent.of_type("audio")] == [True, False]
+    # Sem ganho pedido, o som vai como o computador o entregou.
+    assert agent.of_type("audio")[0]["gain"] == 1.0
 
 
 def test_audio_exige_o_campo():
@@ -209,6 +211,38 @@ def test_audio_exige_o_campo():
         "/api/v1/devices/dev-audio-2/audio", json={}, headers=headers
     )
     assert resp.status_code == 422
+
+
+def test_audio_leva_o_ganho_ao_agente():
+    """O ganho é o que permite deixar o computador quase mudo e ouvir no
+    telefone: ele precisa chegar do outro lado."""
+    headers, uid = _auth_headers("audio7@example.com")
+    _add_device(uid, "dev-audio-7")
+    agent = InstantAgent()
+    manager.register("dev-audio-7", agent)
+    try:
+        resp = client.post(
+            "/api/v1/devices/dev-audio-7/audio",
+            json={"enabled": True, "gain": 12.5},
+            headers=headers,
+        )
+    finally:
+        manager.unregister("dev-audio-7")
+    assert resp.status_code == 204
+    assert agent.of_type("audio")[0]["gain"] == 12.5
+
+
+def test_audio_recusa_ganho_absurdo():
+    """Um ganho de 500x estouraria o ouvido de quem está com o fone."""
+    headers, uid = _auth_headers("audio8@example.com")
+    _add_device(uid, "dev-audio-8")
+    for ganho in (-1, 500):
+        resp = client.post(
+            "/api/v1/devices/dev-audio-8/audio",
+            json={"enabled": True, "gain": ganho},
+            headers=headers,
+        )
+        assert resp.status_code == 422, ganho
 
 
 def test_audio_com_agente_offline_503():
