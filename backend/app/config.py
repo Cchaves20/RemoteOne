@@ -21,6 +21,16 @@ class Settings(BaseSettings):
     # Validade do código de pareamento exibido pelo agente.
     pairing_ttl_seconds: int = 600
 
+    # ICE: STUN sempre, TURN quando configurado (Fase 5 do plano de WebRTC).
+    # Sem turn_host/turn_secret o backend entrega só o STUN, como antes.
+    stun_urls: list[str] = ["stun:stun.l.google.com:19302"]
+    turn_host: str = ""
+    turn_port: int = 3478
+    turn_secret: str = ""
+    # 12 h: cobre uma sessão longa com folga, e uma credencial vazada morre no
+    # mesmo dia. A renegociação pega uma nova.
+    turn_ttl_seconds: int = 12 * 3600
+
     # fps alvo informado ao agente ao transmitir a tela (o agente também aceita
     # REMOTEONE_STREAM_FPS/QUALITY/MAX_WIDTH para ajuste fino).
     stream_fps: int = 60

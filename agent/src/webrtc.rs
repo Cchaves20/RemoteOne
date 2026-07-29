@@ -68,7 +68,7 @@ struct Peer {
 /// As sessões de WebRTC deste agente.
 pub struct Video {
     api: API,
-    ice_servers: Vec<String>,
+    ice_servers: Vec<crate::protocol::IceServer>,
     peers: HashMap<String, Peer>,
     outbox: UnboundedSender<Signal>,
     /// Entrada recebida pelo canal de dados. Sai por aqui porque o injetor de
@@ -83,7 +83,7 @@ impl Video {
     pub fn new(
         outbox: UnboundedSender<Signal>,
         input: UnboundedSender<InputEnvelope>,
-        ice_servers: Vec<String>,
+        stun_urls: Vec<String>,
     ) -> Result<Self, String> {
         let mut media = MediaEngine::default();
         media
@@ -97,19 +97,44 @@ impl Video {
             .build();
         Ok(Self {
             api,
-            ice_servers,
+            ice_servers: vec![crate::protocol::IceServer {
+                urls: stun_urls,
+                ..Default::default()
+            }],
             peers: HashMap::new(),
             outbox,
             input,
         })
     }
 
+    /// Troca os servidores ICE (o backend os manda no `welcome`).
+    ///
+    /// Só vale para sessões novas, e é o suficiente: uma sessão em curso já
+    /// achou (ou não) o caminho dela.
+    pub fn set_ice_servers(&mut self, servers: Vec<crate::protocol::IceServer>) {
+        if servers.is_empty() {
+            return;
+        }
+        let relay = servers.iter().any(|s| s.username.is_some());
+        println!(
+            "ICE: {} servidor(es) do backend{}",
+            servers.len(),
+            if relay { " (com TURN)" } else { " (só STUN)" }
+        );
+        self.ice_servers = servers;
+    }
+
     fn configuration(&self) -> RTCConfiguration {
         RTCConfiguration {
-            ice_servers: vec![RTCIceServer {
-                urls: self.ice_servers.clone(),
-                ..Default::default()
-            }],
+            ice_servers: self
+                .ice_servers
+                .iter()
+                .map(|s| RTCIceServer {
+                    urls: s.urls.clone(),
+                    username: s.username.clone().unwrap_or_default(),
+                    credential: s.credential.clone().unwrap_or_default(),
+                })
+                .collect(),
             ..Default::default()
         }
     }

@@ -43,8 +43,8 @@ class VideoSession extends ChangeNotifier {
   VideoSession({
     required this.channel,
     this.withAudio = false,
-    this.iceServers = _defaultIceServers,
-  });
+    List<Map<String, dynamic>>? iceServers,
+  }) : iceServers = iceServers ?? _defaultIceServers;
 
   /// O mesmo WebSocket que traz os frames JPEG.
   final WebSocketChannel channel;
@@ -59,6 +59,9 @@ class VideoSession extends ChangeNotifier {
   /// pessoa liga.
   final bool withAudio;
 
+  /// STUN e, quando o servidor tem, TURN com credencial temporária. O TURN é
+  /// o que faz o vídeo direto fechar quando os dois lados estão atrás de NAT
+  /// que não deixa nada entrar (celular no 5G, computador atrás do roteador).
   final List<Map<String, dynamic>> iceServers;
 
   static const _defaultIceServers = <Map<String, dynamic>>[

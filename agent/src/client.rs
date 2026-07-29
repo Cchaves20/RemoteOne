@@ -453,6 +453,9 @@ pub async fn run(
                                 )?;
                                 ws.send(Message::Text(reply)).await?;
                             }
+                            Some(Action::SetIceServers { servers }) => {
+                                video.set_ice_servers(servers);
+                            }
                             // Som do computador: ligar e desligar a captura.
                             Some(Action::SetAudio { enabled, gain }) => {
                                 // O ganho vale mesmo com a captura já ligada:
@@ -932,6 +935,10 @@ enum Action {
     ForegroundInfo { request_id: String },
     /// Ligar ou desligar a captura do som do computador, com o ganho.
     SetAudio { enabled: bool, gain: f32 },
+    /// Usar os servidores ICE que o backend mandou (STUN e TURN).
+    SetIceServers {
+        servers: Vec<crate::protocol::IceServer>,
+    },
     /// Listar uma pasta e responder ao backend.
     ListFiles { request_id: String, path: String },
     /// Ler um arquivo e mandá-lo em pedaços.
@@ -980,8 +987,14 @@ fn handle_server_text(
     last_frame: &mut u64,
 ) -> Option<Action> {
     match serde_json::from_str::<ServerMessage>(text) {
-        Ok(ServerMessage::Welcome { server_version }) => {
+        Ok(ServerMessage::Welcome {
+            server_version,
+            ice_servers,
+        }) => {
             println!("Registrado no backend (servidor v{server_version})");
+            if !ice_servers.is_empty() {
+                return Some(Action::SetIceServers { servers: ice_servers });
+            }
         }
         Ok(ServerMessage::Ack) => { /* heartbeat confirmado */ }
         Ok(ServerMessage::Error { message }) => {

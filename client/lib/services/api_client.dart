@@ -331,6 +331,18 @@ class ApiClient {
     return ForegroundApp.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
+  /// Servidores ICE para negociar o vídeo direto (STUN e, quando o servidor
+  /// tem, TURN com credencial temporária).
+  Future<List<Map<String, dynamic>>> iceServers() async {
+    final res = await _http
+        .get(_uri('/api/v1/ice-servers'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 8));
+    final body = _decode(res) as Map<String, dynamic>;
+    return (body['ice_servers'] as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
   /// Liga ou desliga o som do computador no telefone. O som viaja pela mesma
   /// conexão direta que leva a tela, numa faixa Opus.
   Future<void> setAudio(String deviceId, bool enabled, {double gain = 1}) async {

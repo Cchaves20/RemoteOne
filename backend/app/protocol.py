@@ -188,10 +188,16 @@ _client_adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 
 
 class Welcome(BaseModel):
-    """Resposta ao hello, confirmando o registro."""
+    """Resposta ao hello, confirmando o registro.
+
+    Leva junto os servidores ICE: o agente precisa dos mesmos que o app, e as
+    credenciais do TURN são temporárias - fixá-las na configuração do agente
+    obrigaria a reinstalar a cada rodízio.
+    """
 
     type: Literal["welcome"] = "welcome"
     server_version: str
+    ice_servers: list[dict] = []
 
 
 class Ack(BaseModel):

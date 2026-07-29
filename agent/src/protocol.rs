@@ -10,6 +10,16 @@ use crate::files::Listing;
 use crate::input::{InputAction, MediaAction};
 use crate::system_info::SystemSnapshot;
 
+/// Um servidor ICE como o WebRTC o espera.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct IceServer {
+    pub urls: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential: Option<String>,
+}
+
 /// Ganho padrão do áudio: o som como o computador o entregou.
 fn ganho_neutro() -> f32 {
     1.0
@@ -103,6 +113,12 @@ pub enum ClientMessage {
 pub enum ServerMessage {
     Welcome {
         server_version: String,
+        /// Servidores ICE (STUN e, quando houver, TURN com credencial
+        /// temporária). Vem do backend porque a credencial expira - fixá-la
+        /// na configuração do agente obrigaria a reinstalar a cada rodízio.
+        /// Ausente em backends antigos, daí o `default`.
+        #[serde(default)]
+        ice_servers: Vec<IceServer>,
     },
     Ack,
     Error {
@@ -276,10 +292,32 @@ mod tests {
         assert_eq!(
             msg,
             ServerMessage::Welcome {
-                server_version: "0.1.0".into()
+                server_version: "0.1.0".into(),
+                // Backend antigo não manda a lista; o agente segue com o STUN
+                // dele mesmo em vez de recusar a mensagem.
+                ice_servers: Vec::new(),
             }
         );
     }
+
+    #[test]
+    fn welcome_com_servidores_ice_traz_a_credencial() {
+        // É por aqui que o TURN chega ao agente: sem `username`/`credential` o
+        // servidor de relay recusa, e a falha aparece só como "não conectou".
+        let json = r#"{"type":"welcome","server_version":"0.1.0","ice_servers":[
+            {"urls":["stun:a:19302"]},
+            {"urls":["turn:b:3478?transport=udp"],"username":"1:u","credential":"x"}
+        ]}"#;
+        let ServerMessage::Welcome { ice_servers, .. } = serde_json::from_str(json).unwrap()
+        else {
+            panic!("esperava welcome");
+        };
+        assert_eq!(ice_servers.len(), 2);
+        assert!(ice_servers[0].username.is_none());
+        assert_eq!(ice_servers[1].username.as_deref(), Some("1:u"));
+        assert_eq!(ice_servers[1].credential.as_deref(), Some("x"));
+    }
+
 
     #[test]
     fn deserializes_ack_and_error() {

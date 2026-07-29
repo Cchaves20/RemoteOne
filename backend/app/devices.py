@@ -12,6 +12,7 @@ from app import pairing
 from app.auth import get_current_user
 from app.connections import manager
 from app.db import get_db
+from app.ice import ice_servers
 from app.input import InputAction
 from app.models import Device, User
 from app.rpc import pending
@@ -197,6 +198,19 @@ async def system_stats(
             detail="o computador demorou para responder",
         ) from exc
     return SystemStatsOut(**stats)
+
+
+@router.get("/ice-servers")
+async def ice_servers_for_app(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Servidores ICE para o app negociar o vídeo direto.
+
+    Vem do servidor, e não fixo no app, por dois motivos: as credenciais do
+    TURN são temporárias (não dá para embutir), e trocar de servidor deixa de
+    exigir um app novo.
+    """
+    return {"ice_servers": ice_servers(f"user-{current_user.id}")}
 
 
 @router.post("/devices/{device_id}/audio", status_code=status.HTTP_204_NO_CONTENT)

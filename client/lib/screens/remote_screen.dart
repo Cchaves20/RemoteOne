@@ -138,6 +138,10 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _audioOn = false;
   /// Confere, alguns segundos depois de ligar, se a faixa de som chegou.
   Timer? _audioCheck;
+
+  /// Servidores ICE do backend (STUN e, quando há, TURN). Buscados uma vez
+  /// por tela: a credencial vale horas, e a reconexão reaproveita.
+  List<Map<String, dynamic>>? _iceServers;
   SystemStats? _stats;
   bool _statsFailed = false;
   /// Um pedido de cada vez: numa rede lenta os pedidos de 2 em 2 s se
@@ -188,6 +192,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _loadDockApps();
     // Quem está na frente do computador, para os ícones dos perfis.
     _startForegroundPolling();
+    _loadIceServers();
     // Reabre no perfil de atalhos da última vez (pode não existir mais).
     _profile = ControlProfile.byId(widget.state.profileId);
     // Na primeira vez que se controla um PC, mostra o tutorial de gestos (#20).
@@ -200,6 +205,19 @@ class _RemoteScreenState extends State<RemoteScreen>
         );
       });
     }
+  }
+
+  /// Busca os servidores ICE e, se vierem depois de a sessão já ter começado,
+  /// reconecta para usá-los.
+  ///
+  /// A busca é rápida, mas a tela não pode esperar por ela: o JPEG já está no
+  /// ar nesse meio tempo, e é melhor mostrar a tela e melhorar depois do que
+  /// segurar tudo por uma chamada HTTP.
+  Future<void> _loadIceServers() async {
+    final servers = await widget.state.iceServers();
+    if (!mounted || servers == null) return;
+    _iceServers = servers;
+    if (_video?.isLive != true) _connect();
   }
 
   void _connect() {
@@ -218,8 +236,14 @@ class _RemoteScreenState extends State<RemoteScreen>
     _video?.dispose();
     _videoFailureShown = false;
     final video = widget.state.webrtcVideoEnabled
-        ? (VideoSession(channel: channel, withAudio: _audioOn)
-          ..addListener(_onVideoChanged))
+        ? (VideoSession(
+            channel: channel,
+            withAudio: _audioOn,
+            // Os servidores vêm do backend (é de lá que sai a credencial
+            // temporária do TURN). Quando não dá, a sessão usa o STUN público
+            // que ela já trazia.
+            iceServers: _iceServers,
+          )..addListener(_onVideoChanged))
         : null;
     _video = video;
 

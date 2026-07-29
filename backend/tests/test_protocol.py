@@ -43,9 +43,12 @@ def test_parse_missing_field_raises():
 
 def test_server_messages_wire_format():
     # O formato de fio precisa casar com o agente Rust.
+    # `ice_servers` vazio por padrão: um servidor sem TURN configurado manda a
+    # lista vazia, e o agente cai no STUN dele mesmo.
     assert Welcome(server_version="0.1.0").model_dump() == {
         "type": "welcome",
         "server_version": "0.1.0",
+        "ice_servers": [],
     }
     assert Ack().model_dump() == {"type": "ack"}
     assert Error(message="x").model_dump() == {"type": "error", "message": "x"}

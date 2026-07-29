@@ -13,6 +13,7 @@ from app.config import settings
 from app.connections import Viewer, manager, viewers
 from app.db import SessionLocal, init_db
 from app.devices import router as devices_router
+from app.ice import ice_servers
 from app.protocol import (
     Ack,
     AppList,
@@ -80,6 +81,7 @@ FEATURES = [
     "file-transfer",
     "foreground-app",
     "audio-stream",
+    "ice-servers",
 ]
 
 
@@ -191,7 +193,12 @@ async def agent_ws(websocket: WebSocket) -> None:
         manager.register(device_id, websocket, public_ip)
         _update_device_presence(device_id, mac_addr, public_ip)
         logger.info("agente conectado: %s (%s)", device_id, message.hostname)
-        await websocket.send_json(Welcome(server_version=settings.version).model_dump())
+        await websocket.send_json(
+            Welcome(
+                server_version=settings.version,
+                ice_servers=ice_servers(f"agent-{device_id}"),
+            ).model_dump()
+        )
 
         intro = _pairing_intro(message)
         paired_notified = intro["type"] == "paired"
@@ -287,7 +294,10 @@ async def agent_ws(websocket: WebSocket) -> None:
                 manager.register(device_id, websocket, public_ip)
                 _update_device_presence(device_id, mac_addr, public_ip)
                 await websocket.send_json(
-                    Welcome(server_version=settings.version).model_dump()
+                    Welcome(
+                        server_version=settings.version,
+                        ice_servers=ice_servers(f"agent-{device_id}"),
+                    ).model_dump()
                 )
             else:  # Heartbeat
                 registry.heartbeat(device_id)

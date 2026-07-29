@@ -31,9 +31,43 @@ services:
       # SQLite num volume persistente (4 barras = caminho absoluto /data/...).
       REMOTEONE_DATABASE_URL: sqlite:////data/remoteone.db
       REMOTEONE_JWT_SECRET: ${REMOTEONE_JWT_SECRET}
+      # TURN: o backend entrega o endereço e gera as credenciais temporárias.
+      # Vazio = só STUN (é o comportamento de antes).
+      REMOTEONE_TURN_HOST: ${DOMAIN}
+      REMOTEONE_TURN_SECRET: ${REMOTEONE_TURN_SECRET}
     volumes:
       - apidata:/data
     # Sem `ports:` — só o Caddy alcança a API (rede interna).
+
+  # Servidor de relay (TURN). Sem ele, celular no 5G + computador atrás do
+  # roteador de casa **não** fecham conexão direta: os dois lados estão atrás
+  # de NAT que não deixa nada entrar, e nenhum par de candidatos funciona. O
+  # relay é a última opção do ICE, então não custa nada quando o P2P dá certo.
+  #
+  # `network_mode: host` não é preguiça: o TURN abre uma porta por sessão na
+  # faixa de relay, e mapear faixa por faixa no Docker é frágil e lento. Em
+  # host, o coturn vê a rede como ela é.
+  coturn:
+    image: coturn/coturn:4.6
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      REMOTEONE_TURN_SECRET: ${REMOTEONE_TURN_SECRET}
+      DOMAIN: ${DOMAIN}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
+    # Passa por um shell de propósito: é ele que resolve o IP público quando
+    # TURN_EXTERNAL_IP não está preenchido. Sem shell, `$(detect-external-ip)`
+    # chegaria ao coturn como texto literal e o servidor anunciaria um
+    # endereço inválido - falha que aparece só como "não conectou".
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      exec turnserver --no-cli --no-tlsv1 --no-tlsv1_1
+      --listening-port=3478 --fingerprint --lt-cred-mech --use-auth-secret
+      --static-auth-secret="$$REMOTEONE_TURN_SECRET"
+      --realm="$$DOMAIN"
+      --min-port=49160 --max-port=49200 --no-multicast-peers
+      --external-ip="$${TURN_EXTERNAL_IP:-$$(detect-external-ip)}"
+      --log-file=stdout
 
 volumes:
   caddy_data:

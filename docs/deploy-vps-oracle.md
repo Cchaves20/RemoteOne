@@ -70,6 +70,28 @@ sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
 sudo netfilter-persistent save
 ```
 
+### Portas do TURN (vídeo direto no 4G/5G)
+
+O TURN precisa de mais três coisas abertas, **nos mesmos dois lugares**. Sem
+elas o vídeo direto não fecha quando o celular está na rede da operadora - que
+é o caso mais comum fora de casa.
+
+Na **Security List**, mais três regras com Source `0.0.0.0/0`:
+
+| Protocolo | Porta | Para quê |
+| --- | --- | --- |
+| UDP | 3478 | onde o celular e o PC pedem o relay |
+| TCP | 3478 | o mesmo, para redes que bloqueiam UDP |
+| UDP | 49160-49200 | por onde o vídeo relayado passa |
+
+E no firewall do Ubuntu:
+```bash
+sudo iptables -I INPUT 6 -m state --state NEW -p udp --dport 3478 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 3478 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p udp --dport 49160:49200 -j ACCEPT
+sudo netfilter-persistent save
+```
+
 ## 5. Domínio grátis no DuckDNS
 
 1. Acesse <https://www.duckdns.org>, entre (Google/GitHub) e crie um subdomínio,
@@ -107,6 +129,13 @@ nano .env
 No `.env`, preencha:
 - `DOMAIN=caio-remoteone.duckdns.org` (o seu subdomínio),
 - `REMOTEONE_JWT_SECRET=` um segredo longo (gere com `openssl rand -base64 48`),
+- `REMOTEONE_TURN_SECRET=` outro segredo longo (mesmo comando). É o que o
+  backend usa para gerar as credenciais temporárias e o coturn para conferir -
+  se os dois discordarem, o TURN recusa todo mundo e a falha aparece só como
+  "não conectou",
+- `TURN_EXTERNAL_IP=` o IP público reservado (passo 3). A VM só enxerga o IP
+  privado, e o TURN precisa **anunciar** o público - anunciar o privado faz o
+  relay virar um endereço que ninguém alcança,
 - `POSTGRES_PASSWORD=` uma senha forte.
 
 Salve (Ctrl+O, Enter, Ctrl+X).
@@ -146,6 +175,19 @@ um banco novo) e refaça o pareamento de cada computador. A partir daí você
 controla qualquer um deles de qualquer lugar.
 
 ---
+
+## Conferir se o TURN está de pé
+
+```bash
+docker compose -f docker-compose.lite.yml logs coturn | tail -20
+```
+Procure `Relay ... initialized` e o IP público em `external-ip`. Se aparecer
+só o IP privado (10.x), o coturn vai anunciar um endereço que ninguém alcança.
+
+Do celular, na tela de controle: quando a barra de cima disser **vídeo** ou
+**direto** em vez de "N fps", fechou. Se disser "vídeo direto falhou", toque
+para ver o resumo do ICE - `relay` na lista de candidatos significa que o TURN
+respondeu.
 
 ## Manutenção
 

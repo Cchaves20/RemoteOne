@@ -321,6 +321,18 @@ class AppState extends ChangeNotifier {
   Future<void> mediaKey(Device device, String action) =>
       api.mediaKey(device.deviceId, action);
 
+  /// Servidores ICE do backend. Falha em silêncio para a lista padrão: sem
+  /// eles o vídeo direto ainda tenta pelo STUN público, e um erro aqui não
+  /// pode impedir de ver a tela.
+  Future<List<Map<String, dynamic>>?> iceServers() async {
+    try {
+      final servers = await api.iceServers();
+      return servers.isEmpty ? null : servers;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Liga ou desliga o som do computador no telefone, com o ganho atual.
   Future<void> setAudio(Device device, bool enabled) =>
       api.setAudio(device.deviceId, enabled, gain: audioGain);
