@@ -62,6 +62,30 @@ Dell G5 5590** — sem possuir dispositivo Android nem Mac.
   HarmonyOS NEXT — existe port da comunidade (OpenHarmony SIG). Tratar como
   plataforma de segunda fase para não travar o MVP.
 
+### Código só de Windows, escrito num Linux
+
+O agente tem partes que só existem no Windows (injeção de entrada, captura de
+tela, captura de som, janela em foco). Elas não compilam na máquina onde o
+código é escrito, e o primeiro sinal de erro costuma vir do `cargo build` do
+usuário - tarde demais.
+
+O que fecha parte dessa lacuna: `cargo check --target x86_64-pc-windows-msvc`.
+Ele **tipa** o código do Windows sem precisar de Windows. No agente inteiro ele
+não passa (o `openh264` compila C++ e precisa do `lib.exe`), mas passa num
+projeto à parte com os módulos em questão e as dependências deles.
+
+Duas regras, aprendidas errando:
+
+1. **Copiar os arquivos de verdade**, não escrever substitutos. Uma vez montei
+   o módulo `apps` à mão no projeto de teste, com os itens no lugar errado -
+   a checagem passou enquanto o agente real não compilava, justamente por
+   causa da estrutura que o substituto não tinha.
+2. **Conferir a conferência.** Plantar um erro de propósito e ver se ele
+   aparece. Uma checagem que não checa nada também termina em verde.
+
+O que isso *não* cobre: comportamento. Se o loopback capta o som certo, se o
+ícone extraído é o do programa certo - isso só a máquina do usuário responde.
+
 ## Princípios de arquitetura que sustentam a estratégia
 
 1. **Camada de abstração de plataforma no agente**
