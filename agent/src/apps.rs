@@ -360,6 +360,13 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
     }
 }
 
+/// Reexporta o que o resto do agente usa de dentro do `imp` do Windows: o
+/// extrator de ícone e o atalho para o PowerShell. Sem isto os dois ficam
+/// visíveis só dentro deste módulo - `pub(crate)` dentro de um `mod` privado
+/// não atravessa o `mod`.
+#[cfg(windows)]
+pub(crate) use imp::{run_powershell, ICON_HELPER};
+
 #[cfg(not(windows))]
 mod imp {
     use super::AppInfo;
