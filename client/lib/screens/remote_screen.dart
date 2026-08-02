@@ -278,7 +278,11 @@ class _RemoteScreenState extends State<RemoteScreen>
       // O som anda pela conexão direta: se ela caiu, não há mais som, e o
       // botão aceso diria o contrário. O agente também desliga a captura
       // sozinho quando fica sem ninguém ouvindo.
-      if (video.state == VideoState.failed) _audioOn = false;
+      //
+      // "Falhou" sozinho não basta: a sessão também é marcada assim quando a
+      // conexão está de pé e só falta imagem - e nesse caso o som continua
+      // tocando. O que desliga o botão é a conexão ter ido embora.
+      if (video.state == VideoState.failed && !video.peerAlive) _audioOn = false;
       if (video.isLive) {
         _hasFrame = true; // já há imagem, mesmo que nenhum JPEG tenha chegado
         _error = null;

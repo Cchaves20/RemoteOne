@@ -32,6 +32,31 @@ que uma rede hostil degrade a experiência em vez de quebrá-la.
 O resto deste documento é sobre as otimizações do caminho JPEG, que continuam
 valendo: várias delas (a captura reduzida, o filtro de caixa) alimentam os dois.
 
+### Tela preta com a conexão perfeita: quem pede o quadro-chave
+
+O decodificador do telefone precisa de um quadro-chave para começar. O agente
+manda um quando a sessão nasce - mas se **esse** pacote se perder, e numa rede
+móvel passando por relay isso é questão de tempo, o telefone fica recebendo
+quadros que se referem a uma imagem que ele nunca teve. Resultado: tela preta
+com a conexão em `Connected` e tudo mais funcionando, inclusive o som.
+
+O WebRTC tem a saída pronta: o telefone pede um quadro novo por RTCP (PLI ou
+FIR). O que faltava era **alguém ouvindo do outro lado** - o agente nunca lia
+o RTCP da faixa, então o pedido morria no caminho e a tela ficava preta para
+sempre. Agora cada sessão tem uma tarefa lendo esse retorno, e um PLI vira
+`request_keyframe()` no codificador.
+
+Dois detalhes de tempo que vinham junto:
+
+- O prazo do primeiro quadro contava **da chegada da faixa**, que acontece
+  quando a resposta SDP é aplicada - antes de existir caminho até o
+  computador. Numa rede lenta ele estourava enquanto o ICE ainda fechava. Passou
+  a contar de `Connected`, que é quando a mídia pode fluir.
+- E, ao estourar, ele **fechava a conexão**. Uma sessão que ia funcionar um
+  segundo depois era morta pelo próprio prazo - e junto ia o som, que já
+  estava tocando por ela. Agora falta de imagem só marca o estado e mantém o
+  JPEG; se o quadro aparecer depois, a sessão volta a "ao vivo" sozinha.
+
 ### Limitação conhecida: dois espectadores em caminhos diferentes
 
 "O agente para de mandar JPEG enquanto existe sessão de vídeo conectada" vale

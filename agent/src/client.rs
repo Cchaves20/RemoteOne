@@ -205,7 +205,11 @@ pub async fn run(
     let (signal_tx, mut signal_rx) = tokio::sync::mpsc::unbounded_channel();
     // Entrada pelo canal de dados (Fase 6): chega P2P, sem passar pelo servidor.
     let (input_tx, mut input_rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut video = crate::webrtc::Video::new(signal_tx, input_tx, stream.ice_servers.clone())
+    // Pedidos de quadro-chave do app (RTCP). Chegam de dentro das tarefas do
+    // webrtc-rs e quem tem o codificador é este laço, então passam por canal.
+    let (keyframe_tx, mut keyframe_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let mut video =
+        crate::webrtc::Video::new(signal_tx, input_tx, keyframe_tx, stream.ice_servers.clone())
         .map_err(|e| format!("não consegui iniciar o vídeo por WebRTC: {e}"))?;
     // Descarta comandos de movimento que chegaram fora de ordem (o canal é
     // deliberadamente não ordenado; ver `datachannel.rs`).
@@ -258,6 +262,18 @@ pub async fn run(
                 // saber de qual lado o som parou.
                 if let Some(linha) = audio_stats.report_if_due(video.wants_audio()) {
                     println!("{linha}");
+                }
+            }
+            // O app não consegue decodificar e está pedindo um quadro-chave.
+            // Vem logo depois do som porque é curto e urgente: cada volta de
+            // atraso aqui é mais um pedaço de tela preta no telefone.
+            Some(()) = keyframe_rx.recv() => {
+                if let Some(enc) = encoder
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_mut()
+                {
+                    enc.request_keyframe();
                 }
             }
             _ = ticker.tick() => {

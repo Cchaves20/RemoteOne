@@ -78,13 +78,20 @@ class VideoSession extends ChangeNotifier {
   /// certo. Passar disso é sinal de que não vai.
   static const _negotiationTimeout = Duration(seconds: 20);
 
-  /// Quanto se espera por um quadro **desenhado** depois de a faixa chegar.
+  /// Quanto se espera por um quadro **desenhado** depois de a **conexão** ficar
+  /// de pé.
   ///
-  /// Existe por causa de uma falha real: a faixa chegava, a conexão ficava
-  /// `Connected`, e a tela ficava **preta** — porque sem um quadro-chave o
-  /// decodificador não tinha por onde começar. "Recebeu a faixa" não é o mesmo
-  /// que "está mostrando imagem", e só o segundo justifica abandonar o JPEG.
-  static const _firstFrameTimeout = Duration(seconds: 6);
+  /// Existe por causa de uma falha real: a conexão fecha, a faixa chega e a
+  /// tela fica **preta** — sem um quadro-chave o decodificador não tem por onde
+  /// começar. "Recebeu a faixa" não é o mesmo que "está mostrando imagem", e só
+  /// o segundo justifica abandonar o JPEG.
+  ///
+  /// O prazo conta a partir da conexão, e não da chegada da faixa, porque a
+  /// faixa aparece quando a resposta é aplicada — **antes** de existir caminho
+  /// até o computador. Contando do momento errado, o prazo estourava enquanto o
+  /// ICE ainda estava fechando, e matava uma sessão que ia funcionar: era o
+  /// "vídeo direto falhou" com o ICE em `Connected` na mensagem.
+  static const _firstFrameTimeout = Duration(seconds: 8);
 
   VideoState state = VideoState.idle;
   String? error;
@@ -159,6 +166,10 @@ class VideoSession extends ChangeNotifier {
   /// Resumo do ICE para as mensagens de erro.
   String get iceSummary => 'ICE $_iceState; celular: ${_describe(_localCandidates)}; '
       'computador: ${_describe(_remoteCandidates)}';
+
+  /// Se a conexão ainda existe. Falhar por falta de imagem **não** a derruba,
+  /// e o som continua indo por ela.
+  bool get peerAlive => _peer != null;
 
   /// Se a faixa de som do computador chegou de verdade.
   ///
@@ -237,6 +248,10 @@ class VideoSession extends ChangeNotifier {
       // desenhado. Chegar a faixa não basta.
       renderer.onFirstFrameRendered = () {
         _timeout?.cancel();
+        // Vale inclusive vindo de `failed`: a sessão pode ter sido marcada
+        // assim por falta de imagem e se recuperado depois, com o quadro-chave
+        // que o telefone pediu. Chegou imagem, está ao vivo.
+        error = null;
         if (state != VideoState.live) _set(VideoState.live);
       };
 
@@ -256,20 +271,9 @@ class VideoSession extends ChangeNotifier {
           unawaited(_prepareAudioOutput());
           return;
         }
+        // A faixa chegou; o prazo de desenhar começa quando a **conexão**
+        // fechar (em `onConnectionState`), não aqui.
         renderer.srcObject = event.streams.first;
-        // A faixa chegou, mas ainda não há imagem. Reinicia o prazo: agora a
-        // espera é por um quadro desenhado, não pela negociação.
-        _timeout?.cancel();
-        _timeout = Timer(_firstFrameTimeout, () {
-          // Quase sempre isto **não** é falta de quadro-chave: a faixa aparece
-          // quando a resposta é aplicada, muito antes de haver caminho até o
-          // computador. Sem o estado do ICE, essa distinção não dá para fazer
-          // olhando a tela - e foi o que atrasou o diagnóstico uma vez.
-          _fail(
-            'a faixa de vídeo chegou mas nenhum quadro foi desenhado em '
-            '${_firstFrameTimeout.inSeconds}s — $iceSummary',
-          );
-        });
       };
 
       peer.onIceConnectionState = (estado) {
@@ -291,6 +295,11 @@ class VideoSession extends ChangeNotifier {
 
       peer.onConnectionState = (peerState) {
         switch (peerState) {
+          case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
+            // Daqui em diante a mídia pode fluir de verdade. É o momento certo
+            // para cobrar um quadro desenhado.
+            _timeout?.cancel();
+            _timeout = Timer(_firstFrameTimeout, _semImagem);
           case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
             _fail('a conexão de vídeo falhou — $iceSummary');
           case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
@@ -448,6 +457,21 @@ class VideoSession extends ChangeNotifier {
     } catch (_) {
       // Socket já caiu; o estado de falha vem pelo caminho da conexão.
     }
+  }
+
+  /// A conexão fechou e mesmo assim nenhum quadro apareceu.
+  ///
+  /// **Não derruba a conexão.** Ela está de pé, o som (se ligado) está indo por
+  /// ela, e o decodificador pode se recuperar sozinho — o telefone pede um
+  /// quadro-chave por RTCP, e o computador agora atende esse pedido. O que se
+  /// faz aqui é continuar mostrando o JPEG e dizer o motivo; se a imagem
+  /// aparecer depois, `onFirstFrameRendered` promove a sessão a "ao vivo".
+  void _semImagem() {
+    if (_disposed || state == VideoState.live) return;
+    error = 'a conexão fechou mas nenhum quadro foi desenhado em '
+        '${_firstFrameTimeout.inSeconds}s — $iceSummary';
+    debugPrint('RemoteOne: sem imagem pelo WebRTC — $error');
+    _set(VideoState.failed);
   }
 
   void _fail(String reason) {

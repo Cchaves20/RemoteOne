@@ -21,6 +21,8 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedSender;
 use webrtc::api::interceptor_registry::register_default_interceptors;
+use webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest;
+use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264, MIME_TYPE_OPUS};
 use webrtc::api::{APIBuilder, API};
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
@@ -75,6 +77,9 @@ pub struct Video {
     /// teclado/mouse vive no laço principal, e o webrtc-rs chama de volta de
     /// dentro das tarefas dele — mesmo desenho da sinalização.
     input: UnboundedSender<InputEnvelope>,
+    /// Pedidos de quadro-chave vindos do telefone (RTCP PLI/FIR). Mesmo
+    /// desenho: quem tem o codificador é o laço principal.
+    keyframe: UnboundedSender<()>,
 }
 
 impl Video {
@@ -83,6 +88,7 @@ impl Video {
     pub fn new(
         outbox: UnboundedSender<Signal>,
         input: UnboundedSender<InputEnvelope>,
+        keyframe: UnboundedSender<()>,
         stun_urls: Vec<String>,
     ) -> Result<Self, String> {
         let mut media = MediaEngine::default();
@@ -104,6 +110,7 @@ impl Video {
             peers: HashMap::new(),
             outbox,
             input,
+            keyframe,
         })
     }
 
@@ -163,10 +170,38 @@ impl Video {
             "tela".to_owned(),
             "remoteone".to_owned(),
         ));
-        connection
+        let sender = connection
             .add_track(Arc::clone(&track) as Arc<dyn TrackLocal + Send + Sync>)
             .await
             .map_err(|e| format!("não consegui adicionar a faixa de vídeo: {e}"))?;
+
+        // Ouvir o que o telefone responde sobre o vídeo.
+        //
+        // Quando o decodificador dele se perde - o primeiro quadro-chave se
+        // perdeu no caminho, um pacote sumiu, a rede engasgou -, ele pede um
+        // quadro novo por RTCP (PLI/FIR). Sem alguém lendo isso, o pedido
+        // morre aqui e a tela fica **preta para sempre**, mesmo com a conexão
+        // perfeita: o computador segue mandando quadros que se referem a uma
+        // imagem que o telefone nunca teve. Numa rede móvel, perder o
+        // quadro-chave é questão de tempo.
+        let keyframe = self.keyframe.clone();
+        let sessao = session_id.to_string();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 1500];
+            while let Ok((pacotes, _)) = sender.read(&mut buf).await {
+                let pediu = pacotes.iter().any(|p| {
+                    let algum = p.as_any();
+                    algum.downcast_ref::<PictureLossIndication>().is_some()
+                        || algum.downcast_ref::<FullIntraRequest>().is_some()
+                });
+                if pediu {
+                    println!("WebRTC ({sessao}): o app pediu um quadro-chave");
+                    if keyframe.send(()).is_err() {
+                        break; // laço principal encerrou
+                    }
+                }
+            }
+        });
 
         // Faixa de som, quando o app a pediu. O Opus é obrigatório em WebRTC,
         // então o celular toca isto sem precisar de nada a mais; `stereo=1` é
@@ -475,7 +510,11 @@ mod tests {
         // O receptor de entrada é descartado de propósito: estes testes cuidam
         // da negociação e do vídeo. O envio pelo canal é coberto no `datachannel`.
         std::mem::forget(_input_rx);
-        (Video::new(tx, input_tx, vec![]).unwrap(), rx)
+        // O canal de quadro-chave é descartado: estes testes cuidam da
+        // negociação. O pedido em si é do laço principal.
+        let (keyframe_tx, _keyframe_rx) = mpsc::unbounded_channel();
+        std::mem::forget(_keyframe_rx);
+        (Video::new(tx, input_tx, keyframe_tx, vec![]).unwrap(), rx)
     }
 
     #[tokio::test]
