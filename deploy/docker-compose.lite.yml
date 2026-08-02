@@ -51,23 +51,31 @@ services:
     image: coturn/coturn:4.6
     restart: unless-stopped
     network_mode: host
-    environment:
-      REMOTEONE_TURN_SECRET: ${REMOTEONE_TURN_SECRET}
-      DOMAIN: ${DOMAIN}
-      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
-    # Passa por um shell de propósito: é ele que resolve o IP público quando
-    # TURN_EXTERNAL_IP não está preenchido. Sem shell, `$(detect-external-ip)`
-    # chegaria ao coturn como texto literal e o servidor anunciaria um
-    # endereço inválido - falha que aparece só como "não conectou".
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      exec turnserver --no-cli --no-tlsv1 --no-tlsv1_1
-      --listening-port=3478 --fingerprint --lt-cred-mech --use-auth-secret
-      --static-auth-secret="$$REMOTEONE_TURN_SECRET"
-      --realm="$$DOMAIN"
-      --min-port=49160 --max-port=49200 --no-multicast-peers
-      --external-ip="$${TURN_EXTERNAL_IP:-$$(detect-external-ip)}"
-      --log-file=stdout
+    # Sem shell e sem entrypoint próprio: quem substitui as variáveis é o
+    # compose, aqui, antes de o contêiner existir. A versão anterior passava
+    # por `sh -c` para descobrir o IP público sozinha, e quando algo ali
+    # falhava o contêiner saía calado - sem log nenhum para dizer o quê.
+    command:
+      - --no-cli
+      - --listening-port=3478
+      - --fingerprint
+      - --lt-cred-mech
+      # Sem banco de usuários: o coturn confere um HMAC do próprio nome de
+      # usuário, que carrega a hora de expiração. É o mesmo segredo que o
+      # backend usa para gerar (app/ice.py).
+      - --use-auth-secret
+      - --static-auth-secret=${REMOTEONE_TURN_SECRET}
+      - --realm=${DOMAIN}
+      # Faixa curta de propósito: são 40 portas, o suficiente para dezenas de
+      # sessões, e é o que se precisa liberar no firewall da nuvem.
+      - --min-port=49160
+      - --max-port=49200
+      - --no-multicast-peers
+      # Na Oracle (e em quase toda nuvem) a VM só enxerga o IP privado; sem
+      # isto o coturn anuncia o endereço errado e ninguém o alcança.
+      - --external-ip=${TURN_EXTERNAL_IP}
+      - --log-file=stdout
+      - --simple-log
 
 volumes:
   caddy_data:

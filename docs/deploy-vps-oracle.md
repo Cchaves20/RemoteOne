@@ -187,6 +187,15 @@ controla qualquer um deles de qualquer lugar.
 ```bash
 sudo docker compose -f docker-compose.lite.yml logs coturn | tail -20
 ```
+
+Se o `ps` mostrar `Restarting`, o erro está na primeira linha do log. E se o
+log vier **vazio**, o contêiner morreu antes de escrever: rode o servidor à mão
+para ver a reclamação dele na tela.
+
+```bash
+sudo docker compose -f docker-compose.lite.yml run --rm --entrypoint turnserver \
+  coturn --listening-port=3478 --external-ip=147.15.45.45 --log-file=stdout --simple-log
+```
 Procure `Relay ... initialized` e o IP público em `external-ip`. Se aparecer
 só o IP privado (10.x), o coturn vai anunciar um endereço que ninguém alcança.
 
