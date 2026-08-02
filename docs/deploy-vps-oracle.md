@@ -178,8 +178,14 @@ controla qualquer um deles de qualquer lugar.
 
 ## Conferir se o TURN está de pé
 
+> **`permission denied ... docker.sock`?** O usuário `ubuntu` só entra no grupo
+> `docker` depois de sair e entrar de novo no SSH - e nem sempre isso pegou. O
+> caminho curto é `sudo` na frente de todo `docker compose` (é o que o
+> `scripts/atualizar.ps1` faz). Para resolver de vez:
+> `sudo usermod -aG docker $USER` e reconecte o SSH.
+
 ```bash
-docker compose -f docker-compose.lite.yml logs coturn | tail -20
+sudo docker compose -f docker-compose.lite.yml logs coturn | tail -20
 ```
 Procure `Relay ... initialized` e o IP público em `external-ip`. Se aparecer
 só o IP privado (10.x), o coturn vai anunciar um endereço que ninguém alcança.
