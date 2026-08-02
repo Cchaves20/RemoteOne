@@ -83,7 +83,11 @@ services:
       - --relay-ip=${TURN_LISTEN_IP}
       - --listening-port=3478
       - --fingerprint
-      - --lt-cred-mech
+      # Sem TLS: quem carrega certificado aqui é o Caddy, na porta 443. Sem
+      # estas duas, o coturn procura um certificado que não existe e enche o
+      # log de avisos que parecem erro.
+      - --no-tls
+      - --no-dtls
       # Sem banco de usuários: o coturn confere um HMAC do próprio nome de
       # usuário, que carrega a hora de expiração. É o mesmo segredo que o
       # backend usa para gerar (app/ice.py).
