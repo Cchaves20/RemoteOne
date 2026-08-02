@@ -133,6 +133,8 @@ No `.env`, preencha:
   backend usa para gerar as credenciais temporárias e o coturn para conferir -
   se os dois discordarem, o TURN recusa todo mundo e a falha aparece só como
   "não conectou",
+- `TURN_LISTEN_IP=` o IP **privado** da VM (`ip -4 addr show | grep inet`, algo
+  como `10.0.0.182`) - é a placa por onde os pacotes chegam,
 - `TURN_EXTERNAL_IP=` o IP público reservado (passo 3). A VM só enxerga o IP
   privado, e o TURN precisa **anunciar** o público - anunciar o privado faz o
   relay virar um endereço que ninguém alcança,

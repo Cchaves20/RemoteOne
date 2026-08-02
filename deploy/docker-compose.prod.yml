@@ -73,6 +73,14 @@ services:
     # falhava o contêiner saía calado - sem log nenhum para dizer o quê.
     command:
       - --no-cli
+      # Escutar e relayar **só** na placa de verdade. Sem isto o coturn se
+      # espalha por tudo o que existe na máquina - incluindo as pontes
+      # internas do Docker (172.17.x) e o loopback -, e pode alocar o relay
+      # num endereço onde os pacotes que chegam de fora nunca aparecem. A
+      # falha seria a pior possível: o TURN responde, o candidato chega ao
+      # celular, e a conexão não fecha.
+      - --listening-ip=${TURN_LISTEN_IP}
+      - --relay-ip=${TURN_LISTEN_IP}
       - --listening-port=3478
       - --fingerprint
       - --lt-cred-mech
