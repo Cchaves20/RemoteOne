@@ -125,6 +125,9 @@ class Listing(BaseModel):
     path: str
     parent: str | None = None
     entries: list[FileEntry] = []
+    #: Atalhos para as pastas conhecidas (Área de Trabalho, Downloads...). Só
+    #: vêm preenchidos na raiz, que é onde eles servem para alguma coisa.
+    shortcuts: list[FileEntry] = []
 
 
 class Clipboard(BaseModel):

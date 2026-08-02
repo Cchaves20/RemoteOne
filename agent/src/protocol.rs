@@ -617,6 +617,9 @@ mod tests {
                     is_dir: false,
                     size: 12,
                 }],
+                // Vazio aqui de propósito: o teste fixa o formato no fio, e
+                // atalhos ausentes não devem aparecer no JSON.
+                shortcuts: Vec::new(),
             }),
             error: None,
         })

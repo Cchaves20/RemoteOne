@@ -45,6 +45,13 @@ pub struct Listing {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
     pub entries: Vec<FileEntry>,
+    /// Atalhos para as pastas conhecidas (Área de Trabalho, Downloads...).
+    ///
+    /// Só vêm preenchidos **na raiz**: é onde eles servem para alguma coisa.
+    /// Mandá-los em toda listagem seria repetir a mesma lista a cada passo da
+    /// navegação, sem ninguém olhando.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shortcuts: Vec<FileEntry>,
 }
 
 /// A pasta do usuário: a raiz de tudo o que este módulo enxerga.
@@ -124,9 +131,153 @@ pub fn list(path: &str) -> Result<Listing, String> {
     };
     Ok(Listing {
         path: dir.to_string_lossy().to_string(),
-        parent,
+        parent: parent.clone(),
         entries,
+        // Na raiz, e só nela: é onde os atalhos servem para alguma coisa.
+        shortcuts: if parent.is_none() {
+            shortcuts()
+        } else {
+            Vec::new()
+        },
     })
+}
+
+/// As pastas conhecidas do usuário: Área de Trabalho, Downloads, Documentos,
+/// Imagens, Músicas e Vídeos.
+///
+/// **Não** dá para montar esses caminhos concatenando `USERPROFILE` com o nome
+/// em inglês, e há dois motivos independentes: o nome muda com o idioma do
+/// Windows ("Área de Trabalho"), e o OneDrive **redireciona** essas pastas
+/// quando está ligado - a Área de Trabalho real passa a ser
+/// `...\OneDrive\Área de Trabalho`. Quem sabe a resposta certa é o próprio
+/// sistema, e é a ele que se pergunta.
+///
+/// O resultado é lembrado: essas pastas não mudam de lugar enquanto o
+/// computador está ligado, e perguntar custa um processo do PowerShell.
+pub fn shortcuts() -> Vec<FileEntry> {
+    static CACHE: std::sync::OnceLock<Vec<FileEntry>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(imp_shortcuts).clone()
+}
+
+/// Transforma caminhos em atalhos, descartando o que não existe ou não está
+/// dentro da pasta do usuário. Função pura - testada em qualquer sistema.
+///
+/// O filtro pelo `resolve` não é decorativo: é o mesmo limite da navegação e do
+/// download, e um atalho para fora dele seria um botão que leva a um erro.
+fn shortcuts_from<I: IntoIterator<Item = (String, String)>>(paths: I) -> Vec<FileEntry> {
+    let mut vistos = std::collections::HashSet::new();
+    let mut atalhos = Vec::new();
+    for (name, path) in paths {
+        if path.trim().is_empty() {
+            continue;
+        }
+        let Ok(real) = resolve(&path) else { continue };
+        if !real.is_dir() {
+            continue;
+        }
+        let texto = real.to_string_lossy().to_string();
+        // A mesma pasta pode aparecer duas vezes (Documentos e "Meus
+        // Documentos" apontando para o mesmo lugar).
+        if !vistos.insert(texto.clone()) {
+            continue;
+        }
+        atalhos.push(FileEntry {
+            name,
+            path: texto,
+            is_dir: true,
+            size: 0,
+        });
+    }
+    atalhos
+}
+
+/// Pergunta ao Windows onde ficam as pastas conhecidas.
+///
+/// `[Environment]::GetFolderPath` devolve o caminho **real**, já com o
+/// redirecionamento do OneDrive e no idioma do sistema. Uma chamada só traz
+/// todas: abrir um PowerShell por pasta seria seis vezes o custo pela mesma
+/// informação.
+#[cfg(windows)]
+fn imp_shortcuts() -> Vec<FileEntry> {
+    const SCRIPT: &str = r#"
+$saida = @()
+foreach ($par in @(
+    @('Área de Trabalho','Desktop'),
+    @('Downloads',''),
+    @('Documentos','MyDocuments'),
+    @('Imagens','MyPictures'),
+    @('Músicas','MyMusic'),
+    @('Vídeos','MyVideos')
+)) {
+  $caminho = ''
+  if ($par[1] -eq '') {
+    # Downloads não está no enum do .NET; o registro é quem sabe (e ele
+    # também acompanha o redirecionamento).
+    try {
+      $caminho = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders')."{374DE290-123F-4565-9164-39C4925E467B}"
+    } catch { }
+    if (-not $caminho) { $caminho = Join-Path $env:USERPROFILE 'Downloads' }
+  } else {
+    try { $caminho = [Environment]::GetFolderPath($par[1]) } catch { }
+  }
+  $saida += [PSCustomObject]@{ name = $par[0]; path = $caminho }
+}
+ConvertTo-Json -InputObject @($saida) -Compress
+"#;
+    let output = match crate::apps::run_powershell(SCRIPT) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("Atalhos de pasta indisponíveis: {e}");
+            return Vec::new();
+        }
+    };
+    let texto = String::from_utf8_lossy(&output.stdout);
+    let pares = parse_shortcuts(&texto);
+    if pares.is_empty() {
+        eprintln!("Atalhos de pasta: o PowerShell não devolveu nada.");
+    }
+    shortcuts_from(pares)
+}
+
+/// Fora do Windows, monta a partir da pasta do usuário. Serve ao
+/// desenvolvimento e mantém o caminho inteiro exercitável.
+#[cfg(not(windows))]
+fn imp_shortcuts() -> Vec<FileEntry> {
+    let Ok(root) = home() else { return Vec::new() };
+    let nomes = [
+        ("Área de Trabalho", "Desktop"),
+        ("Downloads", "Downloads"),
+        ("Documentos", "Documents"),
+        ("Imagens", "Pictures"),
+        ("Músicas", "Music"),
+        ("Vídeos", "Videos"),
+    ];
+    shortcuts_from(nomes.into_iter().map(|(rotulo, pasta)| {
+        (
+            rotulo.to_string(),
+            root.join(pasta).to_string_lossy().to_string(),
+        )
+    }))
+}
+
+/// Lê o JSON do PowerShell com os pares nome/caminho. Função pura.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn parse_shortcuts(text: &str) -> Vec<(String, String)> {
+    let Ok(valor) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
+        return Vec::new();
+    };
+    let itens = match valor {
+        serde_json::Value::Array(itens) => itens,
+        outro => vec![outro],
+    };
+    itens
+        .into_iter()
+        .filter_map(|item| {
+            let name = item.get("name")?.as_str()?.to_string();
+            let path = item.get("path")?.as_str().unwrap_or_default().to_string();
+            Some((name, path))
+        })
+        .collect()
 }
 
 /// Abre um arquivo para leitura, devolvendo também o tamanho.
@@ -252,6 +403,78 @@ impl Incoming {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn atalhos_ignoram_o_que_nao_existe() {
+        use super::shortcuts_from;
+        // Nem todo computador tem as seis pastas (quem nunca abriu o gravador
+        // de som não tem "Músicas"). Oferecer um atalho que leva a erro é pior
+        // do que não oferecer.
+        let atalhos = shortcuts_from([
+            ("Existe".to_string(), std::env::var("HOME").unwrap_or_default()),
+            ("Não existe".to_string(), "/caminho/que/nao/existe".to_string()),
+            ("Vazio".to_string(), String::new()),
+        ]);
+        assert_eq!(atalhos.len(), 1);
+        assert_eq!(atalhos[0].name, "Existe");
+        assert!(atalhos[0].is_dir);
+    }
+
+    #[test]
+    fn atalhos_nao_repetem_a_mesma_pasta() {
+        use super::shortcuts_from;
+        let casa = std::env::var("HOME").unwrap_or_default();
+        let atalhos = shortcuts_from([
+            ("Documentos".to_string(), casa.clone()),
+            ("Meus Documentos".to_string(), casa),
+        ]);
+        assert_eq!(atalhos.len(), 1, "a mesma pasta não deve aparecer duas vezes");
+    }
+
+    #[test]
+    fn atalho_fora_da_pasta_do_usuario_e_recusado() {
+        use super::shortcuts_from;
+        // Mesmo limite da navegação e do download.
+        let atalhos = shortcuts_from([("Raiz".to_string(), "/".to_string())]);
+        assert!(atalhos.is_empty());
+    }
+
+    #[test]
+    fn le_os_atalhos_que_o_powershell_devolve() {
+        use super::parse_shortcuts;
+        let json = r#"[{"name":"Área de Trabalho","path":"C:\\Users\\eu\\OneDrive\\Área de Trabalho"},
+                       {"name":"Downloads","path":"C:\\Users\\eu\\Downloads"}]"#;
+        let pares = parse_shortcuts(json);
+        assert_eq!(pares.len(), 2);
+        assert_eq!(pares[0].0, "Área de Trabalho");
+        // O caminho real passa pelo OneDrive: é justamente o que montar na mão
+        // erraria.
+        assert!(pares[0].1.contains("OneDrive"));
+    }
+
+    #[test]
+    fn powershell_mudo_nao_quebra_a_listagem() {
+        use super::parse_shortcuts;
+        assert!(parse_shortcuts("").is_empty());
+        assert!(parse_shortcuts("não é json").is_empty());
+    }
+
+    #[test]
+    fn a_raiz_traz_atalhos_e_as_subpastas_nao() {
+        use super::list;
+        // Os atalhos servem na raiz; repeti-los a cada passo da navegação seria
+        // mandar a mesma lista sem ninguém olhando.
+        let raiz = list("").expect("a pasta do usuário deve listar");
+        assert!(raiz.parent.is_none());
+        // (No ambiente de teste pode não haver nenhuma das pastas conhecidas;
+        // o que se afirma é a regra, não a quantidade.)
+        let sub = raiz.entries.iter().find(|e| e.is_dir);
+        if let Some(pasta) = sub {
+            let dentro = list(&pasta.path).expect("subpasta deve listar");
+            assert!(dentro.parent.is_some());
+            assert!(dentro.shortcuts.is_empty(), "atalhos só na raiz");
+        }
+    }
+
     use super::*;
 
     #[test]

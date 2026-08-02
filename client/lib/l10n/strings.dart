@@ -436,6 +436,9 @@ class Strings {
       'Too large (max 100 MB)', '太大（上限 100 MB）',
       'Trop volumineux (max 100 Mo)', 'Demasiado grande (máx. 100 MB)');
 
+  String get filesShortcuts => _t('Pastas do computador', 'Computer folders',
+      '电脑文件夹', "Dossiers de l'ordinateur", 'Carpetas del equipo');
+
   // Perfis de controle (barra seletora)
   String get profilesPanel => _t('Perfis', 'Profiles', '配置', 'Profils', 'Perfiles');
   String get profileSystem => _t('Sistema', 'System', '系统', 'Système', 'Sistema');

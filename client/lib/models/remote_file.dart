@@ -31,6 +31,7 @@ class RemoteListing {
     required this.path,
     required this.parent,
     required this.entries,
+    this.shortcuts = const [],
   });
 
   final String path;
@@ -41,6 +42,10 @@ class RemoteListing {
   final String? parent;
   final List<RemoteFile> entries;
 
+  /// Atalhos para as pastas conhecidas do computador (Área de Trabalho,
+  /// Downloads...). Só vêm na raiz — é onde eles servem para alguma coisa.
+  final List<RemoteFile> shortcuts;
+
   factory RemoteListing.fromJson(Map<String, dynamic> json) {
     final entries = (json['entries'] as List<dynamic>? ?? [])
         .map((e) => RemoteFile.fromJson(e as Map<String, dynamic>))
@@ -49,6 +54,9 @@ class RemoteListing {
       path: json['path'] as String? ?? '',
       parent: json['parent'] as String?,
       entries: entries,
+      shortcuts: (json['shortcuts'] as List<dynamic>? ?? [])
+          .map((e) => RemoteFile.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 

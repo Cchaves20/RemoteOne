@@ -16,6 +16,36 @@ Fica no menu de cada computador na lista, em **Arquivos**.
 
 Limite de **100 MB** por arquivo, nos dois sentidos.
 
+## As pastas conhecidas
+
+Na raiz, antes da lista de pastas, aparece uma faixa com **Área de Trabalho,
+Downloads, Documentos, Imagens, Músicas e Vídeos**. É o mesmo conjunto que o
+Explorer fixa no topo, e existe pelo mesmo motivo: quem abre a tela de arquivos
+quase sempre quer uma dessas seis, e chegar nelas por navegação custa toques
+para nada.
+
+Os caminhos são **perguntados ao Windows**, não montados por concatenação.
+Duas razões, e as duas aparecem em máquina real:
+
+- **O OneDrive redireciona.** Com o backup ligado, a Área de Trabalho vira
+  `C:\Users\você\OneDrive\Área de Trabalho`, e `USERPROFILE\Desktop` passa a
+  apontar para uma pasta vazia — ou para nenhuma.
+- **Os nomes são traduzidos.** "Área de Trabalho" em português, "Desktop" em
+  inglês, "Escritorio" em espanhol. Um caminho fixo em inglês só funcionaria
+  numa parte das instalações.
+
+O agente resolve isso com uma única chamada ao PowerShell no arranque:
+`[Environment]::GetFolderPath` para cinco delas e a chave de registro
+`Shell Folders` (GUID `{374DE290-...}`) para Downloads, que é a única sem
+constante própria. O resultado fica em cache — as pastas conhecidas não mudam
+de lugar enquanto o agente roda.
+
+Pasta que não existe não vira atalho. Mostrar um botão que abre em erro é pior
+do que não mostrar o botão.
+
+Um agente antigo, que ainda não manda a lista, continua funcionando: o campo é
+opcional e a faixa simplesmente não aparece.
+
 ## A fronteira: a pasta do usuário
 
 O agente só enxerga dentro da pasta do usuário (`C:\Users\você`). Não é o dono
@@ -97,14 +127,18 @@ custaria uma cópia a mais em cada ponta.
 
 ## Verificação manual
 
-1. Menu do computador → **Arquivos**. A pasta do usuário aparece.
-2. Entre numa subpasta e volte por "Pasta acima". Na raiz, o "voltar" não
-   aparece — é o limite, e oferecer um botão que sempre dá erro seria um beco
-   sem saída.
-3. Toque num arquivo pequeno: a folha de compartilhamento abre com ele.
-4. Botão **Enviar arquivo**: escolha algo no iPhone e confira que apareceu em
+1. Menu do computador → **Arquivos**. A pasta do usuário aparece, com a faixa
+   das pastas conhecidas em cima.
+2. Toque em **Downloads** na faixa: tem de abrir a pasta certa. Se o OneDrive
+   estiver ligado nessa máquina, confira que **Área de Trabalho** abre a pasta
+   do OneDrive, e não uma vazia.
+3. Entre numa subpasta: a faixa some (ela só existe na raiz). Volte por "Pasta
+   acima". Na raiz, o "voltar" não aparece — é o limite, e oferecer um botão
+   que sempre dá erro seria um beco sem saída.
+4. Toque num arquivo pequeno: a folha de compartilhamento abre com ele.
+5. Botão **Enviar arquivo**: escolha algo no iPhone e confira que apareceu em
    `Downloads\RemoteOne` no computador.
-5. Mande o mesmo arquivo de novo: tem de virar `nome (2).ext`, sem apagar o
+6. Mande o mesmo arquivo de novo: tem de virar `nome (2).ext`, sem apagar o
    primeiro.
 
 Para conferir se o backend no VPS já tem isto, `features` no `/health` precisa

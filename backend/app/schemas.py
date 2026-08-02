@@ -189,6 +189,9 @@ class ListingOut(BaseModel):
     path: str
     parent: str | None = None
     entries: list[FileEntryOut] = []
+    #: Atalhos para as pastas conhecidas do usuário (Área de Trabalho,
+    #: Downloads...), preenchidos só na raiz.
+    shortcuts: list[FileEntryOut] = []
 
 
 class AppOut(BaseModel):

@@ -398,3 +398,44 @@ def test_envio_de_outra_conta_404():
 
 def test_health_anuncia_transferencia_de_arquivos():
     assert "file-transfer" in client.get("/health").json()["features"]
+
+
+def test_listagem_da_raiz_carrega_os_atalhos():
+    """As pastas conhecidas (Área de Trabalho, Downloads...) vêm junto com a
+    listagem da raiz - uma chamada só, em vez de duas ao abrir a tela."""
+    from app.protocol import parse_client_message
+
+    message = parse_client_message(
+        {
+            "type": "file_list",
+            "request_id": "r1",
+            "listing": {
+                "path": "C:/Users/eu",
+                "entries": [],
+                "shortcuts": [
+                    {
+                        "name": "Área de Trabalho",
+                        "path": "C:/Users/eu/OneDrive/Área de Trabalho",
+                        "is_dir": True,
+                        "size": 0,
+                    }
+                ],
+            },
+        }
+    )
+    assert message.listing.shortcuts[0].name == "Área de Trabalho"
+    # O caminho real passa pelo OneDrive: montar na mão erraria.
+    assert "OneDrive" in message.listing.shortcuts[0].path
+
+
+def test_agente_antigo_sem_atalhos_continua_valendo():
+    from app.protocol import parse_client_message
+
+    message = parse_client_message(
+        {
+            "type": "file_list",
+            "request_id": "r1",
+            "listing": {"path": "C:/Users/eu", "entries": []},
+        }
+    )
+    assert message.listing.shortcuts == []
