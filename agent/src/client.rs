@@ -505,8 +505,13 @@ pub async fn run(
                             }
                             Some(Action::ClipboardGet { request_id }) => {
                                 let texto = clipboard.read().unwrap_or_default();
+                                let arquivos = clipboard.files();
                                 let reply = serde_json::to_string(
-                                    &ClientMessage::Clipboard { request_id, text: texto },
+                                    &ClientMessage::Clipboard {
+                                        request_id,
+                                        text: texto,
+                                        files: arquivos,
+                                    },
                                 )?;
                                 ws.send(Message::Text(reply)).await?;
                             }

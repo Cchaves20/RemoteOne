@@ -132,12 +132,6 @@ class AudioRequest(BaseModel):
     gain: float = Field(1.0, ge=0.0, le=32.0)
 
 
-class ClipboardOut(BaseModel):
-    """O que está na área de transferência do computador."""
-
-    text: str = ""
-
-
 class ClipboardIn(BaseModel):
     """Texto a colocar na área de transferência do computador."""
 
@@ -173,6 +167,20 @@ class FileEntryOut(BaseModel):
     path: str
     is_dir: bool
     size: int = 0
+
+
+
+class ClipboardOut(BaseModel):
+    """O que está na área de transferência do computador.
+
+    `files` são os **caminhos** que o Windows guarda quando se copia um arquivo
+    no Explorer - copiar um vídeo não põe o vídeo na área de transferência, põe
+    a referência a ele. Baixar é com a transferência de arquivos, que já sabe
+    fazer isso por caminho.
+    """
+
+    text: str = ""
+    files: list[FileEntryOut] = []
 
 
 class ListingOut(BaseModel):

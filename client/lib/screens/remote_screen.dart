@@ -1,17 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../l10n/strings.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/remote_app.dart';
+import '../models/remote_file.dart';
 import '../models/system_stats.dart';
 import '../services/app_state.dart';
 import '../services/video_session.dart';
@@ -146,6 +151,9 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   /// Último texto conhecido da área de transferência do computador.
   String? _pcClipboard;
+
+  /// Arquivos copiados no computador, da última consulta.
+  List<RemoteFile> _pcFiles = const [];
   SystemStats? _stats;
   bool _statsFailed = false;
   /// Um pedido de cada vez: numa rede lenta os pedidos de 2 em 2 s se
@@ -1664,8 +1672,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     // informação, em vez de abrir vazia e piscar.
     String? lido;
     try {
-      lido = await widget.state.clipboard(widget.device);
-      _pcClipboard = lido;
+      final atual = await widget.state.clipboard(widget.device);
+      lido = atual.text;
+      _pcClipboard = atual.text;
+      _pcFiles = atual.files;
     } catch (_) {
       // Sem rede ou agente antigo: mostra o último conhecido (ou nada).
     }
@@ -1770,6 +1780,26 @@ class _RemoteScreenState extends State<RemoteScreen>
                   ),
                 ],
               ),
+              // Arquivos copiados: o Windows guarda o **caminho**, não os
+              // bytes. Copiar um vídeo no Explorer e trazê-lo para cá é isto -
+              // e quem busca por caminho é a transferência de arquivos.
+              if (_pcFiles.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(t.clipboardFiles(_pcFiles.length),
+                    style:
+                        const TextStyle(color: Colors.white54, fontSize: 12)),
+                const SizedBox(height: 6),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 190),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        for (final f in _pcFiles) _clipboardFileTile(f, t),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const Divider(height: 28, color: Colors.white12),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -1794,6 +1824,98 @@ class _RemoteScreenState extends State<RemoteScreen>
         ),
       ),
     );
+  }
+
+  /// Um arquivo copiado no computador, pronto para trazer.
+  ///
+  /// Pasta não dá para baixar (o download é de arquivo), e passar do teto de
+  /// transferência também não — nos dois casos o botão fica apagado com o
+  /// motivo à vista, em vez de falhar depois do toque.
+  Widget _clipboardFileTile(RemoteFile file, Strings t) {
+    final grande = file.size > _maxTransferBytes;
+    final bloqueado = file.isDir || grande;
+    final String detalhe;
+    if (file.isDir) {
+      detalhe = t.clipboardIsFolder;
+    } else if (grande) {
+      detalhe = t.clipboardTooBig;
+    } else {
+      detalhe = _formatBytes(file.size);
+    }
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: Icon(
+        file.isDir ? Icons.folder : Icons.insert_drive_file_outlined,
+        color: bloqueado ? Colors.white24 : Colors.white70,
+        size: 20,
+      ),
+      title: Text(
+        file.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: bloqueado ? Colors.white38 : Colors.white,
+          fontSize: 14,
+        ),
+      ),
+      subtitle: Text(detalhe,
+          style: TextStyle(
+            color: grande ? Colors.orangeAccent : Colors.white38,
+            fontSize: 11,
+          )),
+      trailing: IconButton(
+        icon: const Icon(Icons.download, size: 20),
+        color: auroraCyan,
+        onPressed: bloqueado ? null : () => _bringFile(file),
+      ),
+    );
+  }
+
+  /// Teto da transferência de arquivos, o mesmo do agente e do backend.
+  static const int _maxTransferBytes = 100 * 1024 * 1024;
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    const unidades = ['KB', 'MB', 'GB'];
+    var valor = bytes / 1024;
+    var i = 0;
+    while (valor >= 1024 && i < unidades.length - 1) {
+      valor /= 1024;
+      i++;
+    }
+    return '${valor.toStringAsFixed(valor >= 10 ? 0 : 1)} ${unidades[i]}';
+  }
+
+  /// Traz um arquivo copiado no computador e oferece à folha de compartilhar
+  /// do iOS — é assim que se escolhe onde guardar sem pedir permissão nenhuma.
+  Future<void> _bringFile(RemoteFile file) async {
+    final t = widget.state.t;
+    final origem = _shareOrigin();
+    Navigator.of(context).pop();
+    _avisar(t.clipboardBringing(file.name));
+    try {
+      final bytes = await widget.state.downloadFile(widget.device, file.path);
+      final dir = await getTemporaryDirectory();
+      final local = File('${dir.path}/${file.name}');
+      await local.writeAsBytes(bytes);
+      if (!mounted) return;
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(local.path)],
+        title: file.name,
+        sharePositionOrigin: origem,
+      ));
+    } catch (e) {
+      _avisar('${t.fileDownloadFailed}: $e');
+    }
+  }
+
+  /// De onde a folha de compartilhar do iPad deve sair. No iPhone é ignorado,
+  /// mas no iPad sem isto o sistema não sabe onde ancorar e recusa.
+  Rect _shareOrigin() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return const Rect.fromLTWH(0, 0, 1, 1);
+    return box.localToGlobal(Offset.zero) & box.size;
   }
 
   void _avisar(String texto) {

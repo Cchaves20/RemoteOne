@@ -67,6 +67,7 @@ impl Tracker {
 #[cfg(windows)]
 mod imp {
     use super::{limited, Tracker};
+    use crate::files::FileEntry;
 
     /// Acompanha a área de transferência do Windows.
     pub struct Clipboard {
@@ -112,6 +113,53 @@ mod imp {
             Ok(())
         }
 
+        /// Os arquivos que estão copiados no computador.
+        ///
+        /// Copiar um vídeo no Explorer **não** põe o vídeo na área de
+        /// transferência - põe o caminho dele. É por isso que "área de
+        /// transferência de vídeo" não existe em lugar nenhum: o que existe é
+        /// uma lista de caminhos, e quem sabe buscar arquivo por caminho aqui
+        /// é a transferência de arquivos, que já existe.
+        ///
+        /// Só volta o que está dentro da pasta do usuário: é o mesmo limite do
+        /// download, e mostrar o que não dá para buscar seria oferecer um
+        /// botão que falha.
+        pub fn files(&mut self) -> Vec<FileEntry> {
+            // `Vec<String>` e não `Vec<PathBuf>`: a biblioteca tem uma
+            // implementação para cada, e o caminho como texto é o que segue
+            // para o `resolve` de qualquer forma.
+            let caminhos: Vec<String> =
+                match clipboard_win::get(clipboard_win::formats::FileList) {
+                    Ok(lista) => lista,
+                    Err(_) => return Vec::new(),
+                };
+            let mut fora = 0usize;
+            let mut entradas = Vec::new();
+            for texto in caminhos {
+                let Ok(real) = crate::files::resolve(&texto) else {
+                    fora += 1;
+                    continue;
+                };
+                let meta = std::fs::metadata(&real).ok();
+                entradas.push(FileEntry {
+                    name: real
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| texto.clone()),
+                    path: real.to_string_lossy().to_string(),
+                    is_dir: meta.as_ref().is_some_and(|m| m.is_dir()),
+                    size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
+                });
+            }
+            if fora > 0 {
+                println!(
+                    "Área de transferência: {fora} arquivo(s) copiado(s) fora da \
+                     pasta do usuário, ignorado(s)"
+                );
+            }
+            entradas
+        }
+
         /// Novidade desde a última chamada, se houver.
         ///
         /// Barato o suficiente para chamar de segundo em segundo: só lê o
@@ -131,6 +179,7 @@ mod imp {
 #[cfg(not(windows))]
 mod imp {
     use super::Tracker;
+    use crate::files::FileEntry;
 
     /// Stub: sem área de transferência fora do Windows.
     #[derive(Default)]
@@ -155,6 +204,10 @@ mod imp {
 
         pub fn changed(&mut self) -> Option<String> {
             None
+        }
+
+        pub fn files(&mut self) -> Vec<FileEntry> {
+            Vec::new()
         }
     }
 }
@@ -214,6 +267,7 @@ mod tests {
             assert!(c.read().is_none());
             assert!(c.changed().is_none());
             assert!(c.write("x").is_ok());
+            assert!(c.files().is_empty());
         }
         #[cfg(windows)]
         let _ = c.changed();

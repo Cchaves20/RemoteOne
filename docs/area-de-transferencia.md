@@ -34,6 +34,34 @@ recebe nada depois. Guardar o que alguém copiou para entregar mais tarde seria
 guardar justamente o tipo de coisa que não se deve guardar - por isso o aviso
 vai para os espectadores do momento e acaba ali.
 
+## Arquivos copiados (inclusive vídeo)
+
+Copiar um vídeo no Explorer **não** põe o vídeo na área de transferência: põe o
+**caminho** dele. Isso vale para qualquer arquivo, e é por isso que "área de
+transferência de vídeo" não existe em lugar nenhum - o que existe é uma lista
+de caminhos.
+
+Visto por esse lado, o recurso já estava metade pronto: quem sabe buscar
+arquivo por caminho é a transferência de arquivos, com pedaços e contrapressão
+prontos. Então a folha mostra os arquivos copiados no computador, com o
+tamanho, e o botão traz cada um pela folha de compartilhar do iOS - o mesmo
+caminho da tela de arquivos.
+
+O que **não** vem por aqui é imagem copiada de um editor ou do navegador (aí
+são pixels, não caminho). Isso exigiria um plugin nativo no iOS para escrever
+imagem na área de transferência do aparelho, e ficou de fora.
+
+Dois casos em que o botão nasce apagado, com o motivo à vista em vez de falhar
+depois do toque:
+
+- **Pasta.** O download é de arquivo; para pasta, a tela de arquivos.
+- **Acima de 100 MB**, o teto da transferência.
+
+E um terceiro, que o agente resolve calado: arquivo copiado de **fora da pasta
+do usuário** não aparece na lista. É o mesmo limite do download - mostrar o que
+não dá para buscar seria oferecer um botão que falha. O agente registra no
+console quantos foram ignorados.
+
 ## Detalhes que o código carrega
 
 **Teto de 64 KB.** Copiar um log inteiro é comum, e isso não pode virar uma

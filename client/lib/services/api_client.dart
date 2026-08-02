@@ -331,13 +331,13 @@ class ApiClient {
     return ForegroundApp.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
-  /// O que está na área de transferência do computador.
-  Future<String> clipboard(String deviceId) async {
+  /// O que está na área de transferência do computador: o texto e os
+  /// **arquivos copiados** (que no Windows são caminhos, não bytes).
+  Future<RemoteClipboard> clipboard(String deviceId) async {
     final res = await _http
         .get(_uri('/api/v1/devices/$deviceId/clipboard'), headers: _authHeaders)
         .timeout(const Duration(seconds: 10));
-    final body = _decode(res) as Map<String, dynamic>;
-    return (body['text'] as String?) ?? '';
+    return RemoteClipboard.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
   /// Coloca um texto na área de transferência do computador.

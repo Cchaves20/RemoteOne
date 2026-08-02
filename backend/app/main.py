@@ -264,7 +264,13 @@ async def agent_ws(websocket: WebSocket) -> None:
                         {"ok": message.ok, "detail": message.detail},
                     )
             elif isinstance(message, Clipboard):
-                pending.resolve(message.request_id, {"text": message.text})
+                pending.resolve(
+                    message.request_id,
+                    {
+                        "text": message.text,
+                        "files": [f.model_dump() for f in message.files],
+                    },
+                )
             elif isinstance(message, ClipboardChanged):
                 # Aviso sem pedido: vai para quem estiver com a tela aberta.
                 # Se ninguém estiver, some - e é o certo: guardar o que alguém

@@ -44,14 +44,17 @@ def _add_device(user_id: int, device_id: str) -> None:
 
 
 class InstantAgent:
-    def __init__(self, text: str | None = None):
+    def __init__(self, text: str | None = None, files: list[dict] | None = None):
         self.text = text
+        self.files = files or []
         self.sent: list[dict] = []
 
     async def send_json(self, message: dict) -> None:
         self.sent.append(message)
         if message.get("type") == "clipboard_get" and self.text is not None:
-            pending.resolve(message["request_id"], {"text": self.text})
+            pending.resolve(
+                message["request_id"], {"text": self.text, "files": self.files}
+            )
 
     def of_type(self, kind: str) -> list[dict]:
         return [m for m in self.sent if m.get("type") == kind]
@@ -97,7 +100,7 @@ def test_traz_o_texto_do_computador():
     finally:
         manager.unregister("dev-clip-1")
     assert resp.status_code == 200
-    assert resp.json() == {"text": "do computador"}
+    assert resp.json() == {"text": "do computador", "files": []}
 
 
 def test_manda_o_texto_ao_computador():
@@ -194,3 +197,43 @@ def test_agente_pode_avisar_sem_ninguem_esperando():
 
 def test_health_anuncia_o_recurso():
     assert "clipboard" in client.get("/health").json()["features"]
+
+
+# --- arquivos copiados -------------------------------------------------------
+
+ARQUIVO = {
+    "name": "video.mp4",
+    "path": "C:/Users/eu/Videos/video.mp4",
+    "is_dir": False,
+    "size": 12_345_678,
+}
+
+
+def test_traz_os_arquivos_copiados():
+    """Copiar um vídeo no Explorer põe o **caminho** na área de transferência,
+    não os bytes - é assim que "copiar vídeo" chega ao telefone."""
+    headers, uid = _auth_headers("clip7@example.com")
+    _add_device(uid, "dev-clip-7")
+    manager.register("dev-clip-7", InstantAgent("", [ARQUIVO]))
+    try:
+        resp = client.get("/api/v1/devices/dev-clip-7/clipboard", headers=headers)
+    finally:
+        manager.unregister("dev-clip-7")
+    assert resp.status_code == 200
+    assert resp.json()["files"] == [ARQUIVO]
+
+
+def test_parse_resposta_com_arquivos():
+    message = parse_client_message(
+        {"type": "clipboard", "request_id": "r1", "text": "", "files": [ARQUIVO]}
+    )
+    assert message.files[0].name == "video.mp4"
+    assert message.files[0].size == 12_345_678
+
+
+def test_resposta_de_agente_antigo_nao_quebra():
+    """Agente sem a lista continua funcionando: o campo tem padrão."""
+    message = parse_client_message(
+        {"type": "clipboard", "request_id": "r1", "text": "só texto"}
+    )
+    assert message.files == []

@@ -59,3 +59,25 @@ class RemoteListing {
     return partes.isEmpty ? limpo : partes.last;
   }
 }
+
+
+/// O que está na área de transferência do computador.
+///
+/// `files` são os arquivos **copiados** por lá. Copiar um vídeo no Explorer não
+/// põe o vídeo na área de transferência: põe o caminho dele. Por isso baixar é
+/// com a transferência de arquivos, que já sabe buscar por caminho.
+class RemoteClipboard {
+  const RemoteClipboard({this.text = '', this.files = const []});
+
+  final String text;
+  final List<RemoteFile> files;
+
+  factory RemoteClipboard.fromJson(Map<String, dynamic> json) {
+    return RemoteClipboard(
+      text: (json['text'] as String?) ?? '',
+      files: ((json['files'] as List?) ?? [])
+          .map((e) => RemoteFile.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}

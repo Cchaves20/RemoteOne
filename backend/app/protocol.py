@@ -98,14 +98,6 @@ class Foreground(BaseModel):
     app: ForegroundApp | None = None
 
 
-class Clipboard(BaseModel):
-    """Resposta do agente a um `clipboard_get`."""
-
-    type: Literal["clipboard"] = "clipboard"
-    request_id: str
-    text: str = ""
-
-
 class ClipboardChanged(BaseModel):
     """Aviso de que alguém copiou algo novo no computador.
 
@@ -133,6 +125,19 @@ class Listing(BaseModel):
     path: str
     parent: str | None = None
     entries: list[FileEntry] = []
+
+
+class Clipboard(BaseModel):
+    """Resposta do agente a um `clipboard_get`."""
+
+    type: Literal["clipboard"] = "clipboard"
+    request_id: str
+    text: str = ""
+    #: Arquivos copiados no computador. Copiar um vídeo no Explorer põe o
+    #: **caminho** dele aqui, não os bytes - e quem busca por caminho é a
+    #: transferência de arquivos, que já existe.
+    files: list[FileEntry] = []
+
 
 
 class FileList(BaseModel):

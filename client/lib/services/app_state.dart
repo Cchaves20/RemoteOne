@@ -329,8 +329,9 @@ class AppState extends ChangeNotifier {
   Future<void> mediaKey(Device device, String action) =>
       api.mediaKey(device.deviceId, action);
 
-  /// Área de transferência do computador.
-  Future<String> clipboard(Device device) => api.clipboard(device.deviceId);
+  /// Área de transferência do computador (texto e arquivos copiados).
+  Future<RemoteClipboard> clipboard(Device device) =>
+      api.clipboard(device.deviceId);
 
   Future<void> setClipboard(Device device, String text) =>
       api.setClipboard(device.deviceId, text);

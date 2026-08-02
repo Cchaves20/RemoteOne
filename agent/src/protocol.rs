@@ -66,6 +66,11 @@ pub enum ClientMessage {
         request_id: String,
         #[serde(default)]
         text: String,
+        /// Arquivos copiados no computador. Copiar um vídeo no Explorer põe o
+        /// **caminho** dele aqui, não os bytes - e quem sabe buscar por
+        /// caminho é a transferência de arquivos, que já existe.
+        #[serde(default)]
+        files: Vec<crate::files::FileEntry>,
     },
     /// Aviso de que alguém copiou algo novo no computador. Sai sem pedido, e
     /// só enquanto a sincronia automática estiver ligada.

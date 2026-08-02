@@ -419,6 +419,23 @@ class Strings {
       "Ce que vous copiez sur l'ordinateur apparaît ici aussitôt. Mots de passe compris.",
       'Lo que copies en el equipo aparece aquí al instante. Eso incluye contraseñas.');
 
+  String clipboardFiles(int n) => _t(
+      n == 1 ? '1 arquivo copiado' : '$n arquivos copiados',
+      n == 1 ? '1 copied file' : '$n copied files',
+      '已复制 $n 个文件',
+      n == 1 ? '1 fichier copié' : '$n fichiers copiés',
+      n == 1 ? '1 archivo copiado' : '$n archivos copiados');
+  String clipboardBringing(String name) => _t(
+      'Trazendo $name…', 'Bringing $name…', '正在获取 $name…',
+      'Récupération de $name…', 'Trayendo $name…');
+  String get clipboardIsFolder => _t('Pasta — baixe pelos arquivos',
+      'Folder — use the file browser', '文件夹 — 请用文件浏览器',
+      'Dossier — utilisez le navigateur de fichiers',
+      'Carpeta — usa el explorador de archivos');
+  String get clipboardTooBig => _t('Grande demais (máx. 100 MB)',
+      'Too large (max 100 MB)', '太大（上限 100 MB）',
+      'Trop volumineux (max 100 Mo)', 'Demasiado grande (máx. 100 MB)');
+
   // Perfis de controle (barra seletora)
   String get profilesPanel => _t('Perfis', 'Profiles', '配置', 'Profils', 'Perfiles');
   String get profileSystem => _t('Sistema', 'System', '系统', 'Système', 'Sistema');
