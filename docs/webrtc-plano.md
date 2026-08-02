@@ -138,10 +138,21 @@ por vez, o caminho JPEG **tem que continuar funcionando no mesmo binário**. Um
 |---|---|---|---|
 | S1 | O `flutter_webrtc` sideloada? | Diagnóstico embutido no app, build no Codemagic, sideload e rodar | **passou** ↓ |
 | S2 | Quanto custa codificar H.264 no agente? | `openh264` sobre quadros capturados; medir ms/quadro e Mbps contra o JPEG de hoje | **feito** ↓ |
-| S3 | O P2P fecha na rede real? | iPhone no 4G ↔ PC em casa; medir quantas vezes conecta sem TURN | pendente (parcial ↓) |
+| S3 | O P2P fecha na rede real? | iPhone no 4G ↔ PC em casa; medir quantas vezes conecta sem TURN | **respondido: não** ↓ |
 
-S1 era bloqueante e está resolvido: **o plano segue como está.** S3 pode correr
-em paralelo com a implementação.
+S1 era bloqueante e está resolvido: **o plano segue como está.**
+
+**S3, respondido na prática (agosto/2026):** iPhone no 5G ↔ PC em casa **não
+fecha** - nunca, não "às vezes". Os dois lados estão atrás de NAT que não
+deixa nada entrar, os candidatos existem dos dois lados e nenhum par conecta; o
+ICE fica em `Checking` até o prazo estourar e a tela cai no JPEG. Com o TURN de
+pé (Fase 5), fecha. No mesmo Wi-Fi o P2P direto continua funcionando e o relay
+nem entra - ele é a última opção do ICE.
+
+O que atrasou essa resposta não foi a medição, foi a instrumentação: o app
+dizia só "N fps", e "N fps" não distingue *desligado nas configurações* de
+*negociando* de *não achei caminho*. Depois que a mensagem passou a carregar o
+estado do ICE e os candidatos por tipo, a causa apareceu em um teste.
 
 #### Resultado do S1
 
@@ -605,11 +616,29 @@ estado do ICE e a contagem de candidatos dos dois lados, que é o que separa
 "não achei caminho" (candidatos existem, nenhum par fecha - aí sim é TURN) de
 "não tenho por onde tentar" (nenhum candidato local).
 
-### Fase 5 — TURN, se o S3 disser que precisa
+### Fase 5 — TURN — **feita**
 
-`coturn` no VPS. Consome pouca RAM (cabe no 1 GB), mas relaya vídeo — a franquia
-de saída da Oracle é generosa e o vídeo agora está comprimido, então deve
-caber. Autenticação por credencial temporária, nunca aberto.
+`coturn` no VPS, junto do backend (`deploy/docker-compose.*.yml`). Credenciais
+temporárias no esquema `use-auth-secret`: o servidor não guarda usuário nenhum,
+confere um HMAC do próprio nome de usuário, que carrega a hora de expiração.
+Quem gera é o backend (`app/ice.py`), e a lista chega aos dois lados por onde
+cada um já fala com ele — `GET /ice-servers` para o app, `welcome` para o
+agente. Credencial que expira não pode morar na configuração de quem a usa.
+
+Três coisas que custaram tentativa e valem para o próximo servidor:
+
+- **`network_mode: host`.** O relay abre uma porta por sessão numa faixa;
+  mapear faixa no Docker é frágil.
+- **Fixar `--listening-ip`/`--relay-ip` na placa de verdade.** Sem isso o
+  coturn escuta também nas pontes internas do Docker e pode alocar o relay
+  onde os pacotes de fora nunca chegam — falha que parece sucesso até o último
+  passo.
+- **`--external-ip` com o IP público.** Na Oracle a VM só enxerga o privado.
+
+Consumo: com relay, o vídeo passa pelo VPS nos dois sentidos (~0,7 GB/hora a
+1,5 Mbps). A franquia Always Free da Oracle absorve, mas é o argumento mais
+forte a favor da Fase 4b — qualidade adaptativa deixa de ser só conforto e
+vira conta de dados.
 
 ### Fase 6 — Entrada pelo canal de dados — **feita**
 
