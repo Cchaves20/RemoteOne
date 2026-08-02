@@ -44,6 +44,10 @@ xcap = { version = "0.9", features = ["wgc"] }
 # porque o `cpal` no Linux pediria as bibliotecas do ALSA para compilar.
 cpal = "0.18"
 audiopus = "0.2"
+# Área de transferência. Leve e sem C: o que interessa aqui é o `seq_num`, o
+# contador que o Windows muda a cada cópia - é ele que permite perceber uma
+# cópia nova sem ficar lendo o conteúdo o segundo inteiro.
+clipboard-win = "5"
 
 [dev-dependencies]
 image = { version = "0.25", features = ["png"] }

@@ -61,6 +61,17 @@ pub enum ClientMessage {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         app: Option<crate::foreground::ForegroundApp>,
     },
+    /// Resposta a um `clipboard_get`: o que está na área de transferência.
+    Clipboard {
+        request_id: String,
+        #[serde(default)]
+        text: String,
+    },
+    /// Aviso de que alguém copiou algo novo no computador. Sai sem pedido, e
+    /// só enquanto a sincronia automática estiver ligada.
+    ClipboardChanged {
+        text: String,
+    },
     /// Resposta a um `list_files`: o conteúdo da pasta, **ou** o motivo de não
     /// ter conseguido. Uma pasta sem permissão não pode chegar ao app como
     /// pasta vazia — são coisas diferentes para quem procura um arquivo.
@@ -172,6 +183,18 @@ pub enum ServerMessage {
     /// `foreground_app` carregando o mesmo `request_id`.
     ForegroundInfo {
         request_id: String,
+    },
+    /// Pede o que está na área de transferência do computador.
+    ClipboardGet {
+        request_id: String,
+    },
+    /// Escreve na área de transferência do computador.
+    ClipboardSet {
+        text: String,
+    },
+    /// Liga ou desliga o aviso automático de cópia nova no computador.
+    ClipboardSync {
+        enabled: bool,
     },
     /// Liga ou desliga o envio do som do computador. Mão única: o resultado
     /// aparece (ou não) no telefone, e um erro aqui não tem o que responder.

@@ -39,6 +39,13 @@ class AppState extends ChangeNotifier {
   /// que ela só ocupa espaço.
   bool suggestionsEnabled = true;
 
+  /// Se o computador avisa o telefone quando alguém copia algo por lá.
+  ///
+  /// Desligado por padrão, e a escolha é sobre privacidade: o que passa pela
+  /// área de transferência de alguém costuma incluir senha, e mandá-la sozinha
+  /// para outro aparelho tem que ser deliberado.
+  bool clipboardSync = false;
+
   /// Quanto o som do computador é amplificado antes de ser codificado.
   ///
   /// Serve a um jeito específico de usar: computador no volume mínimo (sem
@@ -105,6 +112,7 @@ class AppState extends ChangeNotifier {
     suggestionsEnabled = prefs.getBool('suggestions') ?? true;
     profileId = prefs.getString('profileId');
     audioGain = (prefs.getDouble('audioGain') ?? 1).clamp(1.0, 32.0);
+    clipboardSync = prefs.getBool('clipboardSync') ?? false;
     _learnedWords = _decodeLearned(prefs.getString('learnedWords'));
     language = AppLanguage.values.firstWhere(
       (l) => l.name == prefs.getString('language'),
@@ -320,6 +328,23 @@ class AppState extends ChangeNotifier {
 
   Future<void> mediaKey(Device device, String action) =>
       api.mediaKey(device.deviceId, action);
+
+  /// Área de transferência do computador.
+  Future<String> clipboard(Device device) => api.clipboard(device.deviceId);
+
+  Future<void> setClipboard(Device device, String text) =>
+      api.setClipboard(device.deviceId, text);
+
+  /// Liga/desliga o aviso automático de cópia nova no computador, e guarda a
+  /// escolha. Desligado por padrão: o que passa pela área de transferência de
+  /// alguém costuma incluir senha, e mandar isso sozinho para outro aparelho
+  /// tem que ser uma decisão consciente.
+  Future<void> setClipboardSync(Device device, bool enabled) async {
+    await api.setClipboardSync(device.deviceId, enabled);
+    clipboardSync = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('clipboardSync', enabled);
+  }
 
   /// Servidores ICE do backend. Falha em silêncio para a lista padrão: sem
   /// eles o vídeo direto ainda tenta pelo STUN público, e um erro aqui não

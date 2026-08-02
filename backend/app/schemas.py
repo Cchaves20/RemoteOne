@@ -132,6 +132,24 @@ class AudioRequest(BaseModel):
     gain: float = Field(1.0, ge=0.0, le=32.0)
 
 
+class ClipboardOut(BaseModel):
+    """O que está na área de transferência do computador."""
+
+    text: str = ""
+
+
+class ClipboardIn(BaseModel):
+    """Texto a colocar na área de transferência do computador."""
+
+    text: str = Field(max_length=64 * 1024)
+
+
+class ClipboardSyncRequest(BaseModel):
+    """Liga/desliga o aviso automático de cópia nova no computador."""
+
+    enabled: bool
+
+
 class ForegroundAppOut(BaseModel):
     """O programa em primeiro plano no computador.
 

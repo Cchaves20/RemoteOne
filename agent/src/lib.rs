@@ -8,6 +8,7 @@ pub mod apps;
 pub mod audio;
 pub mod capture;
 pub mod client;
+pub mod clipboard;
 pub mod datachannel;
 pub mod files;
 pub mod foreground;

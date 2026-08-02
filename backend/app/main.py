@@ -17,6 +17,8 @@ from app.ice import ice_servers
 from app.protocol import (
     Ack,
     AppList,
+    Clipboard,
+    ClipboardChanged,
     Error,
     FileChunk,
     FileDone,
@@ -82,6 +84,7 @@ FEATURES = [
     "foreground-app",
     "audio-stream",
     "ice-servers",
+    "clipboard",
 ]
 
 
@@ -260,6 +263,17 @@ async def agent_ws(websocket: WebSocket) -> None:
                         message.transfer_id,
                         {"ok": message.ok, "detail": message.detail},
                     )
+            elif isinstance(message, Clipboard):
+                pending.resolve(message.request_id, {"text": message.text})
+            elif isinstance(message, ClipboardChanged):
+                # Aviso sem pedido: vai para quem estiver com a tela aberta.
+                # Se ninguém estiver, some - e é o certo: guardar o que alguém
+                # copiou no computador para entregar depois seria guardar
+                # justamente o tipo de coisa que não se deve guardar.
+                enviados = viewers.notify(
+                    device_id, {"type": "clipboard", "text": message.text}
+                )
+                logger.debug("área de transferência → %s viewer(s)", enviados)
             elif isinstance(message, Foreground):
                 # Primeiro plano: o `None` é resposta legítima (nenhuma janela
                 # em foco), então vai como está para quem perguntou.

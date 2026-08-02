@@ -385,6 +385,40 @@ class Strings {
       "L'ordinateur n'a envoyé aucun son. Vérifiez que l'agent et l'app sont à jour.",
       'El equipo no envió sonido. Comprueba que el agente y la app estén en la misma versión.');
 
+  // Área de transferência compartilhada
+  String get clipboardTitle => _t('Área de transferência', 'Clipboard',
+      '剪贴板', 'Presse-papiers', 'Portapapeles');
+  String get clipboardOnComputer =>
+      _t('No computador', 'On the computer', '电脑上', "Sur l'ordinateur",
+          'En el equipo');
+  String get clipboardEmpty =>
+      _t('(vazia)', '(empty)', '（空）', '(vide)', '(vacío)');
+  String get clipboardPull => _t('Trazer', 'Bring', '取回', 'Récupérer', 'Traer');
+  String get clipboardPush => _t('Enviar', 'Send', '发送', 'Envoyer', 'Enviar');
+  String get clipboardPulled => _t('Copiado no telefone.', 'Copied on the phone.',
+      '已复制到手机。', 'Copié sur le téléphone.', 'Copiado en el teléfono.');
+  String get clipboardPushed => _t('Copiado no computador.',
+      'Copied on the computer.', '已复制到电脑。', "Copié sur l'ordinateur.",
+      'Copiado en el equipo.');
+  String get clipboardPhoneEmpty => _t(
+      'Não há nada copiado no telefone.',
+      'Nothing is copied on the phone.',
+      '手机上没有已复制的内容。',
+      "Rien n'est copié sur le téléphone.",
+      'No hay nada copiado en el teléfono.');
+  String get clipboardReceived => _t('Copiado do computador.',
+      'Copied from the computer.', '已从电脑复制。', "Copié depuis l'ordinateur.",
+      'Copiado desde el equipo.');
+  String get clipboardSync => _t('Sincronizar automaticamente',
+      'Sync automatically', '自动同步', 'Synchroniser automatiquement',
+      'Sincronizar automáticamente');
+  String get clipboardSyncSub => _t(
+      'O que você copiar no computador aparece aqui na hora. Isso inclui senhas.',
+      'Whatever you copy on the computer shows up here right away. That includes passwords.',
+      '你在电脑上复制的内容会立即出现在这里，包括密码。',
+      "Ce que vous copiez sur l'ordinateur apparaît ici aussitôt. Mots de passe compris.",
+      'Lo que copies en el equipo aparece aquí al instante. Eso incluye contraseñas.');
+
   // Perfis de controle (barra seletora)
   String get profilesPanel => _t('Perfis', 'Profiles', '配置', 'Profils', 'Perfiles');
   String get profileSystem => _t('Sistema', 'System', '系统', 'Système', 'Sistema');

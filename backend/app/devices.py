@@ -21,6 +21,9 @@ from app.schemas import (
     AppOut,
     AudioRequest,
     ClaimRequest,
+    ClipboardIn,
+    ClipboardOut,
+    ClipboardSyncRequest,
     DeviceOut,
     ForegroundOut,
     ListingOut,
@@ -198,6 +201,73 @@ async def system_stats(
             detail="o computador demorou para responder",
         ) from exc
     return SystemStatsOut(**stats)
+
+
+@router.get("/devices/{device_id}/clipboard", response_model=ClipboardOut)
+async def clipboard_get(
+    device_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ClipboardOut:
+    """O que está na área de transferência do computador."""
+    _owned_device_or_404(db, device_id, current_user)
+
+    request_id, future = pending.create()
+    message = {"type": "clipboard_get", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return ClipboardOut(**reply)
+
+
+@router.post(
+    "/devices/{device_id}/clipboard", status_code=status.HTTP_204_NO_CONTENT
+)
+async def clipboard_set(
+    device_id: str,
+    body: ClipboardIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Coloca um texto na área de transferência do computador."""
+    _owned_device_or_404(db, device_id, current_user)
+    message = {"type": "clipboard_set", "text": body.text}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post(
+    "/devices/{device_id}/clipboard/sync", status_code=status.HTTP_204_NO_CONTENT
+)
+async def clipboard_sync(
+    device_id: str,
+    body: ClipboardSyncRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Liga ou desliga o aviso automático de cópia nova no computador.
+
+    Desligado, o agente nem olha o que se copia por lá. É o padrão: o que passa
+    pela área de transferência de alguém costuma incluir senha.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    message = {"type": "clipboard_sync", "enabled": body.enabled}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
 
 
 @router.get("/ice-servers")

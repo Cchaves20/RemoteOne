@@ -147,6 +147,19 @@ class ViewerRegistry:
         for viewer in self._viewers.get(device_id, ()):
             viewer.offer(frame)
 
+    def notify(self, device_id: str, message: dict) -> int:
+        """Manda uma mensagem de texto a todos os viewers de um dispositivo.
+
+        Vai pela fila de sinalização, e não pela de frames, porque **não pode
+        ser descartada**: um aviso de área de transferência perdido some sem
+        deixar rastro, ao contrário de um frame, que é substituído pelo
+        próximo. Devolve para quantos foi.
+        """
+        alvos = self._viewers.get(device_id, ())
+        for viewer in alvos:
+            viewer.signal(message)
+        return len(alvos)
+
 
 # Instâncias únicas compartilhadas entre os endpoints.
 manager = ConnectionManager()

@@ -331,6 +331,39 @@ class ApiClient {
     return ForegroundApp.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
+  /// O que está na área de transferência do computador.
+  Future<String> clipboard(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/clipboard'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    final body = _decode(res) as Map<String, dynamic>;
+    return (body['text'] as String?) ?? '';
+  }
+
+  /// Coloca um texto na área de transferência do computador.
+  Future<void> setClipboard(String deviceId, String text) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/clipboard'),
+      headers: _authHeaders,
+      body: jsonEncode({'text': text}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Liga ou desliga o aviso automático de cópia nova no computador.
+  Future<void> setClipboardSync(String deviceId, bool enabled) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/clipboard/sync'),
+      headers: _authHeaders,
+      body: jsonEncode({'enabled': enabled}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
   /// Servidores ICE para negociar o vídeo direto (STUN e, quando o servidor
   /// tem, TURN com credencial temporária).
   Future<List<Map<String, dynamic>>> iceServers() async {

@@ -98,6 +98,26 @@ class Foreground(BaseModel):
     app: ForegroundApp | None = None
 
 
+class Clipboard(BaseModel):
+    """Resposta do agente a um `clipboard_get`."""
+
+    type: Literal["clipboard"] = "clipboard"
+    request_id: str
+    text: str = ""
+
+
+class ClipboardChanged(BaseModel):
+    """Aviso de que alguém copiou algo novo no computador.
+
+    Chega sem pedido, e só enquanto a sincronia automática está ligada. O teto
+    de tamanho é o mesmo do agente: copiar um log inteiro é comum, e isso não
+    pode virar uma mensagem de megabytes.
+    """
+
+    type: Literal["clipboard_changed"] = "clipboard_changed"
+    text: str = Field(max_length=64 * 1024)
+
+
 class FileEntry(BaseModel):
     """Um item de uma pasta do computador."""
 
@@ -174,6 +194,8 @@ ClientMessage = Annotated[
     | AppList
     | SystemStats
     | Foreground
+    | Clipboard
+    | ClipboardChanged
     | FileList
     | FileChunk
     | FileDone

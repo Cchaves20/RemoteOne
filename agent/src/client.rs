@@ -175,6 +175,15 @@ pub async fn run(
     // reabrir a placa de som.
     let audio_gain = Arc::new(crate::audio::Gain::new(1.0));
 
+    // Área de transferência. O acompanhante guarda o que já foi visto; o
+    // relógio só corre enquanto a sincronia automática estiver ligada - sem
+    // ninguém pedindo, o agente não tem por que olhar o que se copia no
+    // computador.
+    let mut clipboard = crate::clipboard::Clipboard::new();
+    let mut clipboard_sync = false;
+    let mut clipboard_ticker = interval(Duration::from_secs(1));
+    clipboard_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
     // Transferência de arquivos. Os pedaços que saem daqui passam por um canal
     // **limitado**: é ele que segura o leitor quando a rede não acompanha. Sem
     // limite, ler um arquivo de 100 MB o carregaria inteiro na memória.
@@ -274,6 +283,17 @@ pub async fn run(
                     .as_mut()
                 {
                     enc.request_keyframe();
+                }
+            }
+            // Cópia nova no computador, quando a sincronia está ligada. A
+            // verificação é barata: só lê o conteúdo se o contador do Windows
+            // mudou.
+            _ = clipboard_ticker.tick(), if clipboard_sync => {
+                if let Some(texto) = clipboard.changed() {
+                    let aviso = serde_json::to_string(
+                        &ClientMessage::ClipboardChanged { text: texto },
+                    )?;
+                    ws.send(Message::Text(aviso)).await?;
                 }
             }
             _ = ticker.tick() => {
@@ -482,6 +502,30 @@ pub async fn run(
                                     &ClientMessage::SystemStats { request_id, stats },
                                 )?;
                                 ws.send(Message::Text(reply)).await?;
+                            }
+                            Some(Action::ClipboardGet { request_id }) => {
+                                let texto = clipboard.read().unwrap_or_default();
+                                let reply = serde_json::to_string(
+                                    &ClientMessage::Clipboard { request_id, text: texto },
+                                )?;
+                                ws.send(Message::Text(reply)).await?;
+                            }
+                            Some(Action::ClipboardSet { text }) => {
+                                if let Err(e) = clipboard.write(&text) {
+                                    eprintln!("{e}");
+                                }
+                            }
+                            Some(Action::ClipboardSync { enabled }) => {
+                                clipboard_sync = enabled;
+                                println!(
+                                    "Área de transferência: sincronia automática {}",
+                                    if enabled { "ligada" } else { "desligada" }
+                                );
+                                // Ligar não deve despejar o que já estava
+                                // copiado antes: marca o atual como visto.
+                                if enabled {
+                                    let _ = clipboard.changed();
+                                }
                             }
                             Some(Action::SetIceServers { servers }) => {
                                 video.set_ice_servers(servers);
@@ -974,6 +1018,12 @@ enum Action {
     ForegroundInfo { request_id: String },
     /// Ligar ou desligar a captura do som do computador, com o ganho.
     SetAudio { enabled: bool, gain: f32 },
+    /// Ler a área de transferência e responder ao backend.
+    ClipboardGet { request_id: String },
+    /// Escrever na área de transferência do computador.
+    ClipboardSet { text: String },
+    /// Ligar/desligar o aviso automático de cópia nova.
+    ClipboardSync { enabled: bool },
     /// Usar os servidores ICE que o backend mandou (STUN e TURN).
     SetIceServers {
         servers: Vec<crate::protocol::IceServer>,
@@ -1126,6 +1176,15 @@ fn handle_server_text(
             return Some(Action::ForegroundInfo { request_id });
         }
         // Ligar a placa de som é `await` e estado: volta como ação.
+        Ok(ServerMessage::ClipboardGet { request_id }) => {
+            return Some(Action::ClipboardGet { request_id });
+        }
+        Ok(ServerMessage::ClipboardSet { text }) => {
+            return Some(Action::ClipboardSet { text });
+        }
+        Ok(ServerMessage::ClipboardSync { enabled }) => {
+            return Some(Action::ClipboardSync { enabled });
+        }
         Ok(ServerMessage::Audio { enabled, gain }) => {
             return Some(Action::SetAudio { enabled, gain });
         }

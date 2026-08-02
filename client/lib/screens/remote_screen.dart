@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -142,6 +143,9 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// Servidores ICE do backend (STUN e, quando há, TURN). Buscados uma vez
   /// por tela: a credencial vale horas, e a reconexão reaproveita.
   List<Map<String, dynamic>>? _iceServers;
+
+  /// Último texto conhecido da área de transferência do computador.
+  String? _pcClipboard;
   SystemStats? _stats;
   bool _statsFailed = false;
   /// Um pedido de cada vez: numa rede lenta os pedidos de 2 em 2 s se
@@ -207,6 +211,33 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  /// Mensagens de texto do servidor que não são sinalização de vídeo.
+  ///
+  /// Hoje só uma: alguém copiou algo no computador. Ela chega **sem pedido**,
+  /// e por isso vem por aqui em vez de por uma consulta periódica - perguntar
+  /// de segundo em segundo o que está copiado seria caro e indiscreto.
+  void _handleTextMessage(String raw) {
+    Map<String, dynamic> message;
+    try {
+      message = jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return;
+    }
+    if (message['type'] != 'clipboard') return;
+    final texto = (message['text'] as String?) ?? '';
+    if (texto.isEmpty) return;
+    _pcClipboard = texto;
+    // Escreve direto na área de transferência do telefone: é isso que faz a
+    // sincronia valer a pena - copiar no computador e colar no celular sem
+    // passo nenhum no meio.
+    Clipboard.setData(ClipboardData(text: texto));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 2),
+      content: Text(widget.state.t.clipboardReceived),
+    ));
+  }
+
   /// Busca os servidores ICE e, se vierem depois de a sessão já ter começado,
   /// reconecta para usá-los.
   ///
@@ -252,7 +283,9 @@ class _RemoteScreenState extends State<RemoteScreen>
         if (!mounted) return;
         // Texto = sinalização de WebRTC.
         if (event is String) {
-          video?.handleSignal(event);
+          // A sinalização de WebRTC tem prioridade; o que ela não reconhecer
+          // pode ser um aviso de área de transferência.
+          if (video?.handleSignal(event) != true) _handleTextMessage(event);
           return;
         }
         if (event is! List<int>) return;
@@ -1618,6 +1651,159 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
+  /// Folha da área de transferência.
+  ///
+  /// Duas direções que **não** são simétricas, e a assimetria não é escolha
+  /// minha: o computador avisa sozinho quando alguém copia (o Windows tem um
+  /// contador para isso), mas ler a área de transferência do iPhone mostra um
+  /// aviso na tela toda vez - então essa direção é sempre a pedido, num toque.
+  Future<void> _openClipboard() async {
+    HapticFeedback.selectionClick();
+    final t = widget.state.t;
+    // Busca o que está no computador antes de abrir: a folha já nasce com a
+    // informação, em vez de abrir vazia e piscar.
+    String? lido;
+    try {
+      lido = await widget.state.clipboard(widget.device);
+      _pcClipboard = lido;
+    } catch (_) {
+      // Sem rede ou agente antigo: mostra o último conhecido (ou nada).
+    }
+    // `final` para o Dart poder promover o tipo dentro dos fechamentos abaixo
+    // (com uma variável que ainda pode mudar, ele exige `!` em toda leitura).
+    final doPc = lido ?? _pcClipboard;
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF14162C),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            left: 18,
+            right: 18,
+            top: 18,
+            // Sobe junto com o teclado do sistema, se ele aparecer.
+            bottom: 18 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                t.clipboardTitle,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(t.clipboardOnComputer,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxHeight: 120),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white10,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    (doPc == null || doPc.isEmpty) ? t.clipboardEmpty : doPc,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.download, size: 18),
+                      label: Text(t.clipboardPull),
+                      onPressed: (doPc == null || doPc.isEmpty)
+                          ? null
+                          : () async {
+                              await Clipboard.setData(
+                                ClipboardData(text: doPc),
+                              );
+                              if (!sheetContext.mounted) return;
+                              Navigator.of(sheetContext).pop();
+                              _avisar(t.clipboardPulled);
+                            },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.upload, size: 18),
+                      label: Text(t.clipboardPush),
+                      onPressed: () async {
+                        // Lê a área de transferência do telefone só agora, no
+                        // toque: é o que o iOS espera de um app bem-comportado.
+                        final dados =
+                            await Clipboard.getData(Clipboard.kTextPlain);
+                        final texto = dados?.text ?? '';
+                        if (!sheetContext.mounted) return;
+                        Navigator.of(sheetContext).pop();
+                        if (texto.isEmpty) {
+                          _avisar(t.clipboardPhoneEmpty);
+                          return;
+                        }
+                        try {
+                          await widget.state
+                              .setClipboard(widget.device, texto);
+                          _pcClipboard = texto;
+                          _avisar(t.clipboardPushed);
+                        } catch (e) {
+                          _avisar(e.toString());
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 28, color: Colors.white12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: widget.state.clipboardSync,
+                title: Text(t.clipboardSync,
+                    style: const TextStyle(color: Colors.white, fontSize: 15)),
+                subtitle: Text(
+                  t.clipboardSyncSub,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                onChanged: (v) async {
+                  try {
+                    await widget.state.setClipboardSync(widget.device, v);
+                    setSheet(() {});
+                  } catch (e) {
+                    _avisar(e.toString());
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _avisar(String texto) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 3),
+      content: Text(texto),
+    ));
+  }
+
   /// Em que pé está a imagem, na barra de cima.
   ///
   /// Antes aqui só havia "N fps", e um número de quadros não distingue as três
@@ -1734,6 +1920,14 @@ class _RemoteScreenState extends State<RemoteScreen>
               open: _profilesOpen,
               tooltip: widget.state.t.profilesPanel,
               onPressed: _toggleProfiles,
+            ),
+            // Área de transferência: abre uma folha, não uma faixa - é uma
+            // visita curta, não algo para ficar na tela.
+            _barToggle(
+              icon: Icons.content_paste,
+              open: widget.state.clipboardSync,
+              tooltip: widget.state.t.clipboardTitle,
+              onPressed: _openClipboard,
             ),
             IconButton(
               tooltip: widget.state.t.zoomEnter,
