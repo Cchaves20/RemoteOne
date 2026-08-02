@@ -92,6 +92,36 @@ Quem quiser o computador **totalmente** mudo continua precisando de uma saída
 virtual (VB-CABLE e afins) definida como padrão - aí os alto-falantes não
 recebem nada e o agente captura o cabo, sem ganho nenhum.
 
+## Por que o som picotava
+
+Três causas, e as três estavam no computador - não na rede:
+
+**1. O som disputava o laço principal com o vídeo.** O `select!` do agente
+sorteia qual ramificação atender quando várias estão prontas. O som precisa de
+uma volta a cada 20 ms; a codificação de vídeo 1080p leva dezenas de ms e
+ocupa o laço enquanto roda. No sorteio, o som perdia metade das vezes, o canal
+enchia e os quadros eram descartados. Agora o `select!` é `biased` com o som
+**primeiro**, e cada despertar esvazia tudo o que estiver esperando em vez de
+um pacote só.
+
+**2. A correção de erro estava anunciada mas desligada.** O SDP dizia
+`useinbandfec=1` e o codificador nunca a ativava - pior que não anunciar,
+porque o telefone conta com uma recuperação que não existe. Com a FEC ligada
+(e 10% de perda esperada), cada quadro leva uma versão comprimida do anterior
+e um pacote perdido é reconstruído. Numa rede móvel passando por relay, perder
+pacote é rotina.
+
+**3. A codificação rodava com complexidade 10 na thread da placa de som**, que
+tem prazo de milissegundos. Estourar esse prazo faz o Windows descartar o
+bloco inteiro. A 96 kbps estéreo, complexidade 5 é inaudivelmente diferente e
+custa de duas a três vezes menos CPU - numa máquina que está codificando vídeo
+ao mesmo tempo, isso é o que sobra de folga.
+
+E, para a próxima vez, o número que separa as causas: o resumo do áudio no
+console do agente agora conta os quadros **DESCARTADOS**. Diferente de zero
+significa que o gargalo é o computador; zero com som picotando significa que a
+perda é da rede.
+
 ## Limites conhecidos
 
 - Só Windows (e a única plataforma com agente real).

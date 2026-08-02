@@ -99,6 +99,19 @@ pub fn apply_gain(samples: &mut [f32], gain: f32) -> bool {
     clipped
 }
 
+/// Quadros de som que a rede não deu conta de levar.
+///
+/// A thread da placa nunca espera: quando o canal está cheio, o quadro é
+/// descartado. Sem contar isso, "o som está picotando" não tem como virar
+/// diagnóstico - o descarte aqui e a perda no caminho até o telefone produzem
+/// exatamente o mesmo sintoma, e a correção de cada um é diferente.
+pub static DROPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Quantos quadros foram descartados desde a última pergunta (e zera).
+pub fn take_dropped() -> u64 {
+    DROPPED.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Um quadro já codificado, pronto para a faixa de áudio.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Packet {
@@ -303,6 +316,32 @@ mod imp {
         encoder
             .set_bitrate(Bitrate::BitsPerSecond(BITRATE))
             .map_err(|e| format!("taxa do Opus: {e}"))?;
+        // Correção de erro embutida. O SDP já anunciava `useinbandfec=1` e o
+        // codificador nunca a ligava - anunciar sem produzir é pior do que não
+        // anunciar: o telefone conta com uma recuperação que não existe.
+        //
+        // Com ela, cada quadro leva uma versão comprimida do anterior, e um
+        // pacote perdido é reconstruído em vez de virar buraco. Custa uns
+        // poucos kbps e é exatamente o que falta numa rede móvel passando por
+        // relay, onde perder pacote é rotina.
+        encoder
+            .set_inband_fec(true)
+            .map_err(|e| format!("FEC do Opus: {e}"))?;
+        // A perda que o codificador deve *supor*. Zero desliga a FEC na
+        // prática; 10% é o meio-termo usado em telefonia móvel - protege sem
+        // gastar metade da banda com redundância.
+        encoder
+            .set_packet_loss_perc(10)
+            .map_err(|e| format!("perda esperada do Opus: {e}"))?;
+        // Complexidade 5 em vez do padrão 10. A codificação roda na thread da
+        // placa de som, que tem prazo de milissegundos: estourá-lo faz o
+        // Windows descartar o bloco, e o que se ouve é picote. A 96 kbps
+        // estéreo a diferença de qualidade entre 5 e 10 é inaudível; a de
+        // custo de CPU é de duas a três vezes - e esta máquina está
+        // codificando vídeo 1080p ao mesmo tempo.
+        encoder
+            .set_complexity(5)
+            .map_err(|e| format!("complexidade do Opus: {e}"))?;
 
         let mut quadros: Vec<f32> = Vec::with_capacity(FRAME_INTERLEAVED * 4);
         // Um aviso por captura: um por bloco encheria o console 50 vezes por
@@ -332,10 +371,16 @@ mod imp {
                                 // placa de som. Bloquear aqui engasga o áudio
                                 // do computador inteiro - melhor perder um
                                 // quadro quando a rede não acompanha.
-                                let _ = tx.try_send(Packet {
-                                    data: saida[..n].to_vec(),
-                                    duration: FRAME,
-                                });
+                                if tx
+                                    .try_send(Packet {
+                                        data: saida[..n].to_vec(),
+                                        duration: FRAME,
+                                    })
+                                    .is_err()
+                                {
+                                    super::DROPPED
+                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                }
                             }
                             Err(e) => eprintln!("Falha ao codificar áudio: {e}"),
                         }

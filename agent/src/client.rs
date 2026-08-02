@@ -234,21 +234,35 @@ pub async fn run(
 
     loop {
         tokio::select! {
-            _ = ticker.tick() => {
-                let hb = serde_json::to_string(&ClientMessage::Heartbeat)?;
-                ws.send(Message::Text(hb)).await?;
-            }
-            // Quadros de som prontos, vindos da thread da placa. Escrever na
-            // faixa é rápido (empacota e enfileira no transporte), então não
-            // atrapalha o resto do laço.
+            // `biased`: as ramificações são tentadas nesta ordem, e não em
+            // ordem aleatória. O som vem primeiro porque é o único trabalho
+            // aqui com prazo humano - 20 ms por quadro, sem margem. Sorteando,
+            // ele dividia as iterações com a codificação do vídeo (dezenas de
+            // ms por quadro nesta máquina), perdia a corrida e o canal enchia:
+            // era o som picotado.
+            biased;
+
+            // Quadros de som prontos, vindos da thread da placa.
             Some(pacote) = audio_rx.recv() => {
-                audio_stats.count(pacote.data.len());
-                video.write_audio(&pacote.data, pacote.duration).await;
+                // Esvazia tudo o que estiver esperando, não só um. Uma volta
+                // do laço por quadro de 20 ms seria lenta demais quando o
+                // vídeo está codificando; em lote, um despertar dá conta do
+                // que se acumulou.
+                let mut pacote = Some(pacote);
+                while let Some(p) = pacote {
+                    audio_stats.count(p.data.len());
+                    video.write_audio(&p.data, p.duration).await;
+                    pacote = audio_rx.try_recv().ok();
+                }
                 // Um número no console é a diferença entre "não ouvi nada" e
                 // saber de qual lado o som parou.
                 if let Some(linha) = audio_stats.report_if_due(video.wants_audio()) {
                     println!("{linha}");
                 }
+            }
+            _ = ticker.tick() => {
+                let hb = serde_json::to_string(&ClientMessage::Heartbeat)?;
+                ws.send(Message::Text(hb)).await?;
             }
             // Sinalização vinda do webrtc-rs (resposta SDP, candidatos locais):
             // este laço é quem tem o WebSocket, então é quem despacha.
@@ -912,8 +926,17 @@ impl AudioStats {
         }
         let segundos = elapsed.as_secs_f64().max(0.001);
         let kbps = (self.bytes as f64 * 8.0 / 1000.0) / segundos;
+        // Descartados: quadros que a placa produziu e o laço não recolheu a
+        // tempo. Qualquer número diferente de zero aqui é picote garantido, e
+        // a causa é deste lado - não da rede.
+        let perdidos = crate::audio::take_dropped();
+        let aviso = if perdidos > 0 {
+            format!(", {perdidos} DESCARTADOS")
+        } else {
+            String::new()
+        };
         let linha = format!(
-            "Áudio: {} quadros em {segundos:.0}s ({kbps:.0} kbps), faixa {}",
+            "Áudio: {} quadros em {segundos:.0}s ({kbps:.0} kbps{aviso}), faixa {}",
             self.packets,
             if ouvindo { "conectada" } else { "SEM ninguém ouvindo" }
         );
