@@ -57,10 +57,34 @@ depois do toque:
 - **Pasta.** O download é de arquivo; para pasta, a tela de arquivos.
 - **Acima de 100 MB**, o teto da transferência.
 
-E um terceiro, que o agente resolve calado: arquivo copiado de **fora da pasta
-do usuário** não aparece na lista. É o mesmo limite do download - mostrar o que
-não dá para buscar seria oferecer um botão que falha. O agente registra no
-console quantos foram ignorados.
+E um terceiro: arquivo copiado de **fora da pasta do usuário** não entra na
+lista. É o mesmo limite do download - mostrar o que não dá para buscar seria
+oferecer um botão que falha. Mas sumir em silêncio é pior: quem copiou três
+arquivos de `D:\` veria exatamente a mesma tela de quem não copiou nada. Por
+isso o agente conta os recusados, o número atravessa até o app, e a folha diz
+"3 arquivos copiados estão fora da pasta do usuário".
+
+### Abrir antes de ler
+
+A primeira versão disto voltava lista vazia sempre, com um arquivo copiado bem
+à vista. A causa: a biblioteca tem duas funções parecidas, e só uma delas abre
+a área de transferência.
+
+```rust
+clipboard_win::get(FileList)           // pressupõe que já está aberta
+clipboard_win::get_clipboard(FileList) // abre (com tentativas), lê e fecha
+```
+
+Ler sem abrir falha em **toda** chamada, e o erro estava sendo engolido por um
+`Err(_) => return Vec::new()`. Duas lições ficaram no código: o erro agora é
+impresso no console em vez de virar lista vazia, e a ausência de arquivo
+copiado é checada antes (`is_format_avail`), para que "ninguém copiou" e "a
+leitura falhou" parem de compartilhar o mesmo resultado.
+
+Vale notar o que **não** teria pego isso. A verificação cruzada de tipos para
+Windows compila as duas chamadas sem reclamar: as assinaturas são iguais, o que
+difere é a pré-condição, e pré-condição não é tipo. Erro de contrato em API de
+sistema operacional só aparece rodando na máquina certa.
 
 ## Detalhes que o código carrega
 

@@ -269,6 +269,7 @@ async def agent_ws(websocket: WebSocket) -> None:
                     {
                         "text": message.text,
                         "files": [f.model_dump() for f in message.files],
+                        "ignored": message.ignored,
                     },
                 )
             elif isinstance(message, ClipboardChanged):

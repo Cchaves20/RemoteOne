@@ -425,6 +425,20 @@ class Strings {
       '已复制 $n 个文件',
       n == 1 ? '1 fichier copié' : '$n fichiers copiés',
       n == 1 ? '1 archivo copiado' : '$n archivos copiados');
+  String clipboardOutside(int n) => _t(
+      n == 1
+          ? '1 arquivo copiado está fora da pasta do usuário e não pode ser trazido'
+          : '$n arquivos copiados estão fora da pasta do usuário e não podem ser trazidos',
+      n == 1
+          ? '1 copied file is outside the user folder and cannot be fetched'
+          : '$n copied files are outside the user folder and cannot be fetched',
+      '有 $n 个复制的文件不在用户文件夹内，无法获取',
+      n == 1
+          ? "1 fichier copié est hors du dossier utilisateur et ne peut pas être récupéré"
+          : "$n fichiers copiés sont hors du dossier utilisateur et ne peuvent pas être récupérés",
+      n == 1
+          ? '1 archivo copiado está fuera de la carpeta del usuario y no se puede traer'
+          : '$n archivos copiados están fuera de la carpeta del usuario y no se pueden traer');
   String clipboardBringing(String name) => _t(
       'Trazendo $name…', 'Bringing $name…', '正在获取 $name…',
       'Récupération de $name…', 'Trayendo $name…');

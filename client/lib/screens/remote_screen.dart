@@ -154,6 +154,11 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   /// Arquivos copiados no computador, da última consulta.
   List<RemoteFile> _pcFiles = const [];
+
+  /// Quantos arquivos copiados ficaram fora do alcance do computador. Uma
+  /// lista vazia sem este número não distingue "não copiei nada" de "copiei
+  /// de um disco que o agente não abre" — e a segunda merece uma explicação.
+  int _pcIgnored = 0;
   SystemStats? _stats;
   bool _statsFailed = false;
   /// Um pedido de cada vez: numa rede lenta os pedidos de 2 em 2 s se
@@ -1676,6 +1681,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       lido = atual.text;
       _pcClipboard = atual.text;
       _pcFiles = atual.files;
+      _pcIgnored = atual.ignored;
     } catch (_) {
       // Sem rede ou agente antigo: mostra o último conhecido (ou nada).
     }
@@ -1798,6 +1804,27 @@ class _RemoteScreenState extends State<RemoteScreen>
                       ],
                     ),
                   ),
+                ),
+              ],
+              // Recusados: sem esta linha, quem copiou de `D:\` ou de uma
+              // pasta de rede vê a mesma tela de quem não copiou nada, e não
+              // tem como saber que o limite é a pasta do usuário.
+              if (_pcIgnored > 0) ...[
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline,
+                        size: 15, color: Colors.white38),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        t.clipboardOutside(_pcIgnored),
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12),
+                      ),
+                    ),
+                  ],
                 ),
               ],
               const Divider(height: 28, color: Colors.white12),

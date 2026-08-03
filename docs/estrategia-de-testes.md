@@ -86,6 +86,15 @@ Duas regras, aprendidas errando:
 O que isso *não* cobre: comportamento. Se o loopback capta o som certo, se o
 ícone extraído é o do programa certo - isso só a máquina do usuário responde.
 
+E, mais escorregadio, **pré-condição não é tipo**. Os arquivos copiados voltavam
+sempre vazios porque o código chamava `clipboard_win::get` em vez de
+`get_clipboard`: a primeira exige que a área de transferência já esteja aberta,
+a segunda abre. Mesma assinatura, mesmo tipo de retorno, verificação verde,
+recurso morto. Contra esse tipo de erro só há um antídoto barato: **não engolir
+o erro**. Um `Err(_) => return vazio` transforma uma falha em um resultado
+plausível, e um resultado plausível não vira relato de bug - vira "não está
+funcionando", semanas depois.
+
 ## Princípios de arquitetura que sustentam a estratégia
 
 1. **Camada de abstração de plataforma no agente**

@@ -75,10 +75,19 @@ class RemoteListing {
 /// põe o vídeo na área de transferência: põe o caminho dele. Por isso baixar é
 /// com a transferência de arquivos, que já sabe buscar por caminho.
 class RemoteClipboard {
-  const RemoteClipboard({this.text = '', this.files = const []});
+  const RemoteClipboard({
+    this.text = '',
+    this.files = const [],
+    this.ignored = 0,
+  });
 
   final String text;
   final List<RemoteFile> files;
+
+  /// Quantos arquivos copiados o computador recusou por estarem fora da pasta
+  /// do usuário. Sem este número, copiar de `D:\` e não copiar nada dão a
+  /// mesma tela vazia — e são coisas bem diferentes para quem está olhando.
+  final int ignored;
 
   factory RemoteClipboard.fromJson(Map<String, dynamic> json) {
     return RemoteClipboard(
@@ -86,6 +95,7 @@ class RemoteClipboard {
       files: ((json['files'] as List?) ?? [])
           .map((e) => RemoteFile.fromJson(e as Map<String, dynamic>))
           .toList(),
+      ignored: (json['ignored'] as num?)?.toInt() ?? 0,
     );
   }
 }

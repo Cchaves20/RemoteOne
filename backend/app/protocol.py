@@ -140,6 +140,9 @@ class Clipboard(BaseModel):
     #: **caminho** dele aqui, não os bytes - e quem busca por caminho é a
     #: transferência de arquivos, que já existe.
     files: list[FileEntry] = []
+    #: Quantos caminhos foram recusados por estarem fora da pasta do usuário.
+    #: Agente antigo não manda o campo, e zero é a leitura certa para ele.
+    ignored: int = 0
 
 
 

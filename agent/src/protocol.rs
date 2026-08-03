@@ -71,6 +71,11 @@ pub enum ClientMessage {
         /// caminho é a transferência de arquivos, que já existe.
         #[serde(default)]
         files: Vec<crate::files::FileEntry>,
+        /// Quantos caminhos copiados foram recusados por estarem fora da pasta
+        /// do usuário. Sem este número, "copiei três arquivos de `D:\`" e
+        /// "não copiei nada" chegam ao telefone iguais.
+        #[serde(default)]
+        ignored: usize,
     },
     /// Aviso de que alguém copiou algo novo no computador. Sai sem pedido, e
     /// só enquanto a sincronia automática estiver ligada.

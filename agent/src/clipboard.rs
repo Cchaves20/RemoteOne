@@ -64,9 +64,21 @@ impl Tracker {
     }
 }
 
+/// O que estava copiado como arquivo — e quantos ficaram de fora.
+///
+/// A contagem existe porque o zero tem dois significados muito diferentes:
+/// "ninguém copiou nada" e "copiaram três arquivos de `D:\`, que estão fora do
+/// que o agente pode buscar". Sem ela, os dois casos chegam ao telefone como
+/// uma lista vazia, e a pessoa fica olhando para uma tela que não explica nada.
+#[derive(Debug, Default)]
+pub struct CopiedFiles {
+    pub entries: Vec<crate::files::FileEntry>,
+    pub ignored: usize,
+}
+
 #[cfg(windows)]
 mod imp {
-    use super::{limited, Tracker};
+    use super::{limited, CopiedFiles, Tracker};
     use crate::files::FileEntry;
 
     /// Acompanha a área de transferência do Windows.
@@ -124,14 +136,31 @@ mod imp {
         /// Só volta o que está dentro da pasta do usuário: é o mesmo limite do
         /// download, e mostrar o que não dá para buscar seria oferecer um
         /// botão que falha.
-        pub fn files(&mut self) -> Vec<FileEntry> {
+        pub fn files(&mut self) -> CopiedFiles {
+            // Não ter arquivo copiado é o caso comum (quem copiou um texto cai
+            // aqui também). Perguntar antes separa isso de um erro de verdade -
+            // e esta pergunta, ao contrário da leitura, não exige abrir nada.
+            if !clipboard_win::raw::is_format_avail(clipboard_win::formats::CF_HDROP) {
+                return CopiedFiles::default();
+            }
+            // `get_clipboard` e **não** `get`: o `get` cru pressupõe que a área
+            // de transferência já foi aberta por esta thread. Ler sem abrir
+            // falha sempre, e como o erro era engolido a lista voltava vazia em
+            // toda situação - inclusive com um arquivo copiado à vista.
+            //
             // `Vec<String>` e não `Vec<PathBuf>`: a biblioteca tem uma
             // implementação para cada, e o caminho como texto é o que segue
             // para o `resolve` de qualquer forma.
             let caminhos: Vec<String> =
-                match clipboard_win::get(clipboard_win::formats::FileList) {
+                match clipboard_win::get_clipboard(clipboard_win::formats::FileList) {
                     Ok(lista) => lista,
-                    Err(_) => return Vec::new(),
+                    Err(e) => {
+                        println!(
+                            "Área de transferência: não consegui ler os arquivos \
+                             copiados: {e}"
+                        );
+                        return CopiedFiles::default();
+                    }
                 };
             let mut fora = 0usize;
             let mut entradas = Vec::new();
@@ -157,7 +186,10 @@ mod imp {
                      pasta do usuário, ignorado(s)"
                 );
             }
-            entradas
+            CopiedFiles {
+                entries: entradas,
+                ignored: fora,
+            }
         }
 
         /// Novidade desde a última chamada, se houver.
@@ -178,8 +210,7 @@ mod imp {
 
 #[cfg(not(windows))]
 mod imp {
-    use super::Tracker;
-    use crate::files::FileEntry;
+    use super::{CopiedFiles, Tracker};
 
     /// Stub: sem área de transferência fora do Windows.
     #[derive(Default)]
@@ -206,8 +237,8 @@ mod imp {
             None
         }
 
-        pub fn files(&mut self) -> Vec<FileEntry> {
-            Vec::new()
+        pub fn files(&mut self) -> CopiedFiles {
+            CopiedFiles::default()
         }
     }
 }
@@ -267,7 +298,8 @@ mod tests {
             assert!(c.read().is_none());
             assert!(c.changed().is_none());
             assert!(c.write("x").is_ok());
-            assert!(c.files().is_empty());
+            assert!(c.files().entries.is_empty());
+            assert_eq!(c.files().ignored, 0);
         }
         #[cfg(windows)]
         let _ = c.changed();

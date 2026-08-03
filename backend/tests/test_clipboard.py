@@ -44,16 +44,23 @@ def _add_device(user_id: int, device_id: str) -> None:
 
 
 class InstantAgent:
-    def __init__(self, text: str | None = None, files: list[dict] | None = None):
+    def __init__(
+        self,
+        text: str | None = None,
+        files: list[dict] | None = None,
+        ignored: int = 0,
+    ):
         self.text = text
         self.files = files or []
+        self.ignored = ignored
         self.sent: list[dict] = []
 
     async def send_json(self, message: dict) -> None:
         self.sent.append(message)
         if message.get("type") == "clipboard_get" and self.text is not None:
             pending.resolve(
-                message["request_id"], {"text": self.text, "files": self.files}
+                message["request_id"],
+                {"text": self.text, "files": self.files, "ignored": self.ignored},
             )
 
     def of_type(self, kind: str) -> list[dict]:
@@ -100,7 +107,7 @@ def test_traz_o_texto_do_computador():
     finally:
         manager.unregister("dev-clip-1")
     assert resp.status_code == 200
-    assert resp.json() == {"text": "do computador", "files": []}
+    assert resp.json() == {"text": "do computador", "files": [], "ignored": 0}
 
 
 def test_manda_o_texto_ao_computador():
@@ -237,3 +244,27 @@ def test_resposta_de_agente_antigo_nao_quebra():
         {"type": "clipboard", "request_id": "r1", "text": "só texto"}
     )
     assert message.files == []
+
+
+def test_conta_os_arquivos_recusados():
+    """Copiar de `D:\\` e copiar nada chegam iguais aqui - uma lista vazia -
+    e são coisas diferentes para quem está olhando a tela. A contagem é o que
+    permite ao app dizer qual dos dois aconteceu."""
+    headers, uid = _auth_headers("clip8@example.com")
+    _add_device(uid, "dev-clip-8")
+    manager.register("dev-clip-8", InstantAgent("", [], ignored=3))
+    try:
+        resp = client.get("/api/v1/devices/dev-clip-8/clipboard", headers=headers)
+    finally:
+        manager.unregister("dev-clip-8")
+    assert resp.status_code == 200
+    assert resp.json() == {"text": "", "files": [], "ignored": 3}
+
+
+def test_agente_antigo_nao_conta_recusados():
+    """Sem o campo, zero é a leitura certa: o agente antigo não recusou nada
+    que ele soubesse contar."""
+    message = parse_client_message(
+        {"type": "clipboard", "request_id": "r1", "text": "x"}
+    )
+    assert message.ignored == 0

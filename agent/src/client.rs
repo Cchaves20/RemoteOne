@@ -510,7 +510,8 @@ pub async fn run(
                                     &ClientMessage::Clipboard {
                                         request_id,
                                         text: texto,
-                                        files: arquivos,
+                                        files: arquivos.entries,
+                                        ignored: arquivos.ignored,
                                     },
                                 )?;
                                 ws.send(Message::Text(reply)).await?;

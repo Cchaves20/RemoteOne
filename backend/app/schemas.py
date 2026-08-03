@@ -181,6 +181,10 @@ class ClipboardOut(BaseModel):
 
     text: str = ""
     files: list[FileEntryOut] = []
+    #: Quantos caminhos copiados o agente recusou por estarem fora da pasta do
+    #: usuário. Separa "não copiei nada" de "copiei de um disco que o agente
+    #: não alcança" - que chegam iguais aqui se ninguém contar.
+    ignored: int = 0
 
 
 class ListingOut(BaseModel):
