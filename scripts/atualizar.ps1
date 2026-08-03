@@ -51,7 +51,12 @@ param(
     # Servidor e chave do SSH. O padrão pega a chave mais recente em Downloads;
     # passe -ChaveSsh se a sua estiver noutro lugar.
     [string]$Servidor = "ubuntu@147.15.45.45",
-    [string]$ChaveSsh = ""
+    [string]$ChaveSsh = "",
+
+    # Uso interno: pula o `git pull`. O script se reinicia sozinho quando o
+    # pull traz uma versão nova dele mesmo, e a segunda passada não deve
+    # puxar de novo - nem poder virar laço.
+    [switch]$NoPull
 )
 
 $ErrorActionPreference = "Stop"
@@ -124,10 +129,34 @@ function Quem-Segura($caminho) {
 # --- código ------------------------------------------------------------------
 
 Titulo "Código"
-Passo "git pull ($Branch)"
-if (-not (Executar "git" @("pull", "origin", $Branch) $raiz)) {
-    Write-Host "  Não consegui atualizar o código. Resolva o git e rode de novo." -ForegroundColor Red
-    exit 1
+
+# O PowerShell lê o arquivo inteiro na memória antes de executar a primeira
+# linha. Como o `git pull` abaixo pode trazer uma versão nova **deste script**,
+# a execução em curso continuaria sendo a antiga - e qualquer correção feita
+# aqui só valeria na próxima vez, sem nada dizendo isso.
+#
+# Aconteceu de verdade: uma correção no relatório do `flutter analyze` foi
+# baixada e a mesma execução imprimiu a mensagem errada, como se a correção não
+# tivesse funcionado.
+$eu = $PSCommandPath
+$antes = (Get-FileHash $eu -Algorithm SHA256).Hash
+
+if ($NoPull) {
+    Passo "código já atualizado nesta rodada"
+} else {
+    Passo "git pull ($Branch)"
+    if (-not (Executar "git" @("pull", "origin", $Branch) $raiz)) {
+        Write-Host "  Não consegui atualizar o código. Resolva o git e rode de novo." -ForegroundColor Red
+        exit 1
+    }
+}
+
+if (-not $NoPull -and (Get-FileHash $eu -Algorithm SHA256).Hash -ne $antes) {
+    Write-Host "  O próprio script mudou. Recomeçando com a versão nova." -ForegroundColor Yellow
+    # `-NoPull` para a segunda passada não repetir o `git pull` (que agora não
+    # traria nada) e, sobretudo, para não haver como isto virar laço.
+    & $eu @PSBoundParameters -NoPull
+    exit $LASTEXITCODE
 }
 
 # --- agente ------------------------------------------------------------------
