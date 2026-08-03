@@ -28,14 +28,36 @@ Se preferir à mão, ou se o script atrapalhar:
 cd client
 flutter create --org com.remoteone --project-name remoteone_client --platforms=web .
 flutter build web --release
-scp -r -i SUA_CHAVE.key build/web ubuntu@147.15.45.45:~/RemoteOne/deploy/app-novo
-ssh -i SUA_CHAVE.key ubuntu@147.15.45.45 \
-  "rm -rf ~/RemoteOne/deploy/app && mv ~/RemoteOne/deploy/app-novo ~/RemoteOne/deploy/app"
+
+CHAVE=SUA_CHAVE.key
+VPS=ubuntu@147.15.45.45
+ssh -i $CHAVE $VPS "rm -rf RemoteOne/deploy/app-novo"
+scp -r -i $CHAVE build/web "$VPS:RemoteOne/deploy/app-novo"
+ssh -i $CHAVE $VPS 'cd RemoteOne/deploy \
+  && sudo mkdir -p app && sudo chown -R $(id -u):$(id -g) app \
+  && find app -mindepth 1 -delete && cp -a app-novo/. app/ && rm -rf app-novo'
 ```
 
 O envio vai para um **nome novo** e só então troca. Copiar por cima deixaria o
 app quebrado durante a transferência: arquivos novos convivendo com antigos e
 um `main.dart.js` que não casa com o `index.html`.
+
+### Troca o conteúdo, não a pasta
+
+`deploy/app` está **montada** no contêiner do Caddy, e bind mount prende o
+contêiner ao *inode*. Um `rm -rf app && mv app-novo app` cria um inode novo: o
+disco do VPS ficaria com o app atualizado e o Caddy continuaria servindo o
+antigo — ou uma pasta vazia — para sempre, sem erro nenhum.
+
+É a mesma armadilha que já custou uma tarde com o Caddyfile montado como
+arquivo solto. Por isso os passos apagam o **conteúdo** e copiam por dentro:
+a pasta que o Docker enxerga é sempre a mesma.
+
+O `chown` está ali porque quem cria a pasta na primeira subida é o Docker, como
+root; sem ele o `find` responde "permission denied". E o `rm -rf app-novo` do
+começo não é zelo: se a pasta já existir de um envio interrompido, o `scp -r`
+não a substitui — ele deposita a cópia **dentro** dela, virando `app-novo/web`,
+e a publicação termina "com sucesso" servindo 404 em tudo.
 
 ## Por que o mesmo domínio
 
@@ -113,6 +135,10 @@ computador compartilhado, saia da conta ao terminar, ou use uma janela anônima:
 ao fechá-la, nada fica.
 
 ## Verificação manual
+
+O script já confere sozinho que a raiz do domínio responde o HTML do Flutter —
+se ele terminar reclamando disso, o problema é o roteamento do Caddy, não o
+build. O resto precisa de olho humano:
 
 1. `.\scripts\publicar-web.cmd` termina com "Publicado".
 2. Abra `https://caio-remoteone.duckdns.org` — a tela de login aparece **sem**

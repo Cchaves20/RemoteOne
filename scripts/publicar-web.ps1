@@ -90,18 +90,69 @@ if (-not (Test-Path (Join-Path $saida "index.html"))) {
 Write-Host ""
 Write-Host "=== Enviando ao VPS ===" -ForegroundColor Cyan
 
-# Envia para um nome novo e so entao troca. Copiar por cima deixaria o app
-# quebrado durante o envio - meia dezena de arquivos novos convivendo com os
-# antigos e um `main.dart.js` que nao casa com o `index.html`.
-& scp -r -i $ChaveSsh $saida "${Servidor}:~/RemoteOne/deploy/app-novo"
+$ssh = @("-i", $ChaveSsh, "-o", "StrictHostKeyChecking=accept-new")
+
+# Limpa um envio interrompido antes de comecar. Se `app-novo` ja existir, o
+# `scp -r` nao substitui: ele deposita a pasta DENTRO dela, virando
+# `app-novo/web`. O deploy terminaria "com sucesso" servindo 404 em tudo.
+& ssh @ssh $Servidor "rm -rf RemoteOne/deploy/app-novo"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  Nao consegui limpar o envio anterior no servidor." -ForegroundColor Red
+    exit 1
+}
+
+# Envia para um nome novo. Copiar por cima da pasta no ar deixaria o app
+# quebrado durante o envio - arquivos novos convivendo com os antigos e um
+# `main.dart.js` que nao casa com o `index.html`. Sem `~` no destino: o scp
+# moderno fala SFTP, e o til nao e expandido; o caminho relativo ja sai do
+# diretorio do usuario nos dois modos.
+& scp -r -i $ChaveSsh -o StrictHostKeyChecking=accept-new $saida "${Servidor}:RemoteOne/deploy/app-novo"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  Falha ao enviar. O app no ar continua o de antes." -ForegroundColor Red
     exit 1
 }
 
-& ssh -i $ChaveSsh $Servidor "rm -rf ~/RemoteOne/deploy/app && mv ~/RemoteOne/deploy/app-novo ~/RemoteOne/deploy/app"
+# A troca substitui o CONTEUDO da pasta, e nao a pasta.
+#
+# `deploy/app` esta montada no contedor do Caddy (`./app:/srv/app:ro`), e um
+# bind mount prende o contedor ao **inode**. Um `rm -rf app && mv app-novo app`
+# cria um inode novo: o disco do VPS teria o app atualizado e o Caddy seguiria
+# servindo o antigo - ou uma pasta vazia - para sempre, sem erro nenhum. E a
+# mesma armadilha que ja custou uma tarde com o Caddyfile montado como arquivo
+# solto (ver docker-compose.lite.yml).
+#
+# O `chown` existe porque quem cria a pasta na primeira subida e o Docker, como
+# root; sem ele o `find` abaixo bate em "permission denied".
+#
+# Ha uma janela de fracao de segundo entre apagar e copiar em que o site
+# responde 404. E um envio manual de uma pessoa so; nao vale a complexidade de
+# um esquema de duas pastas com link simbolico para fecha-la.
+$troca = @(
+    'cd RemoteOne/deploy',
+    'sudo mkdir -p app',
+    'sudo chown -R $(id -u):$(id -g) app',
+    'find app -mindepth 1 -delete',
+    'cp -a app-novo/. app/',
+    'rm -rf app-novo'
+) -join ' && '
+
+& ssh @ssh $Servidor $troca
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "  Enviei, mas nao consegui trocar a pasta no servidor." -ForegroundColor Red
+    Write-Host "  Enviei, mas nao consegui trocar os arquivos no servidor." -ForegroundColor Red
+    exit 1
+}
+
+# Conferencia: quem responde na raiz tem que ser o app, e nao a API nem um 404.
+#
+# Procura por "flutter" no HTML, e nao por um arquivo especifico: o nome do
+# carregador mudou entre versoes do Flutter (`flutter.js`, depois
+# `flutter_bootstrap.js`), e a conferencia nao pode quebrar por causa disso.
+# Buscar um asset pela URL tambem nao serve: com o `try_files` do Caddy, um
+# `main.dart.js` ausente responde o index.html com 200.
+& ssh @ssh $Servidor "curl -sf https://$Dominio/ | grep -qi flutter"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  Publiquei, mas a pagina no ar nao parece o app Flutter." -ForegroundColor Red
+    Write-Host "  Confira o roteamento do Caddy (deploy/caddy/Caddyfile)." -ForegroundColor DarkGray
     exit 1
 }
 
