@@ -153,9 +153,31 @@ if ($NoPull) {
 
 if (-not $NoPull -and (Get-FileHash $eu -Algorithm SHA256).Hash -ne $antes) {
     Write-Host "  O próprio script mudou. Recomeçando com a versão nova." -ForegroundColor Yellow
-    # `-NoPull` para a segunda passada não repetir o `git pull` (que agora não
-    # traria nada) e, sobretudo, para não haver como isto virar laço.
-    & $eu @PSBoundParameters -NoPull
+
+    # **Processo novo**, e não `& $eu` no mesmo processo. Duas razões:
+    #
+    # - Só um processo novo garante que o arquivo seja lido do disco de novo.
+    #   Reinvocar aqui dentro reaproveita a árvore já carregada em memória, que
+    #   é justamente o que se quer trocar.
+    # - Os argumentos vão como **texto**, montados um a um, e não por splat de
+    #   `$PSBoundParameters`. O splat parece equivalente e não é: a ligação de
+    #   parâmetros por `-File` é posicional e por texto, e a primeira versão
+    #   disto morreu com "não é possível converter System.String em
+    #   SwitchParameter" - um erro que não diz nada a quem só queria atualizar.
+    $passar = @()
+    foreach ($kv in $PSBoundParameters.GetEnumerator()) {
+        if ($kv.Value -is [switch]) {
+            if ($kv.Value.IsPresent) { $passar += "-$($kv.Key)" }
+        } else {
+            $passar += "-$($kv.Key)"
+            $passar += [string]$kv.Value
+        }
+    }
+    # `-NoPull` para a segunda passada não repetir o pull (que agora não traria
+    # nada) e, sobretudo, para não haver como isto virar laço.
+    $passar += "-NoPull"
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $eu @passar
     exit $LASTEXITCODE
 }
 
