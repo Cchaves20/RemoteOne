@@ -41,6 +41,50 @@ pub fn launch(id: &str) -> Result<(), String> {
     imp::launch(id)
 }
 
+/// Procura um atalho pelo nome numa árvore de pastas.
+///
+/// Existe por causa dos perfis atribuídos a **mais de um computador**: o
+/// programa é escolhido numa máquina e o caminho guardado é o de lá. Em outra
+/// máquina esse caminho pode simplesmente não existir — o Spotify de um está
+/// em `AppData\Roaming` do usuário dele, o do outro em `Program Files`. Sem
+/// esta busca, o perfil funcionaria só no computador onde nasceu.
+///
+/// A comparação é pelo nome do arquivo sem extensão, sem diferenciar
+/// maiúsculas. Pura de propósito — recebe as raízes em vez de descobri-las —,
+/// que é o que permite testá-la fora do Windows.
+pub fn find_shortcut(roots: &[std::path::PathBuf], name: &str) -> Option<std::path::PathBuf> {
+    let alvo = name.to_lowercase();
+    let mut fila: Vec<std::path::PathBuf> = roots.to_vec();
+    // Largura e não profundidade: o menu Iniciar põe os programas mais comuns
+    // na raiz e os agrupados em subpastas, então o mais provável aparece antes.
+    // O teto existe para uma pasta com laço de atalhos não virar busca infinita.
+    let mut visitadas = 0usize;
+    while let Some(dir) = fila.pop() {
+        visitadas += 1;
+        if visitadas > 2_000 {
+            break;
+        }
+        let Ok(entradas) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entrada in entradas.flatten() {
+            let caminho = entrada.path();
+            if caminho.is_dir() {
+                fila.push(caminho);
+                continue;
+            }
+            let nome = caminho
+                .file_stem()
+                .map(|n| n.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+            if nome == alvo {
+                return Some(caminho);
+            }
+        }
+    }
+    None
+}
+
 pub fn close(id: &str) -> Result<(), String> {
     imp::close(id)
 }
@@ -341,13 +385,57 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
     }
 
     pub fn launch(id: &str) -> Result<(), String> {
+        let alvo = resolve_target(id);
         // `start` resolve atalhos (.lnk) e executáveis. O "" é o título da
         // janela, exigido quando o caminho vem entre aspas.
         Command::new("cmd")
-            .args(["/C", "start", "", id])
+            .args(["/C", "start", "", &alvo])
             .spawn()
             .map(|_| ())
             .map_err(|e| format!("não foi possível abrir: {e}"))
+    }
+
+    /// As pastas do menu Iniciar, do usuário e do sistema.
+    fn start_menus() -> Vec<std::path::PathBuf> {
+        ["APPDATA", "ProgramData"]
+            .iter()
+            .filter_map(|v| std::env::var(v).ok())
+            .map(|base| {
+                std::path::PathBuf::from(base)
+                    .join("Microsoft")
+                    .join("Windows")
+                    .join("Start Menu")
+                    .join("Programs")
+            })
+            .filter(|p| p.is_dir())
+            .collect()
+    }
+
+    /// O que abrir de fato.
+    ///
+    /// Caminho que existe vai como está. Caminho que **não** existe é o caso do
+    /// perfil que veio de outro computador: procura-se um atalho de mesmo nome
+    /// no menu Iniciar. Se nem isso, entrega-se o texto original ao `start`,
+    /// que ainda resolve nomes do PATH ("notepad", "calc").
+    fn resolve_target(id: &str) -> String {
+        let caminho = std::path::Path::new(id);
+        if caminho.exists() {
+            return id.to_string();
+        }
+        let nome = caminho
+            .file_stem()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| id.to_string());
+        match super::find_shortcut(&start_menus(), &nome) {
+            Some(achado) => {
+                println!(
+                    "Perfil: \"{nome}\" não existe neste computador; abrindo {}",
+                    achado.display()
+                );
+                achado.to_string_lossy().to_string()
+            }
+            None => id.to_string(),
+        }
     }
 
     pub fn close(id: &str) -> Result<(), String> {
@@ -495,5 +583,67 @@ mod tests {
             serde_json::to_string(&AppKind::Running).unwrap(),
             "\"running\""
         );
+    }
+
+    /// Monta uma árvore de atalhos num diretório temporário.
+    fn arvore(raiz: &std::path::Path, caminhos: &[&str]) {
+        for c in caminhos {
+            let p = raiz.join(c);
+            if let Some(pai) = p.parent() {
+                std::fs::create_dir_all(pai).unwrap();
+            }
+            std::fs::write(&p, b"x").unwrap();
+        }
+    }
+
+    fn temp(nome: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("remoteone-apps-{nome}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn acha_o_atalho_pelo_nome_em_subpasta() {
+        // O caso real: o perfil foi montado num computador e o caminho de lá
+        // não existe aqui. O que sobrevive à troca de máquina é o nome.
+        let dir = temp("subpasta");
+        arvore(&dir, &["Spotify/Spotify.lnk", "Acessórios/Bloco de Notas.lnk"]);
+        let achado = find_shortcut(std::slice::from_ref(&dir), "Spotify").unwrap();
+        assert!(achado.ends_with("Spotify.lnk"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_busca_ignora_maiusculas_e_a_extensao() {
+        let dir = temp("caixa");
+        arvore(&dir, &["PowerPoint.lnk"]);
+        assert!(find_shortcut(std::slice::from_ref(&dir), "powerpoint").is_some());
+        assert!(find_shortcut(std::slice::from_ref(&dir), "POWERPOINT").is_some());
+        // Com extensão junto: o chamador passa o `file_stem`, mas se passar o
+        // nome inteiro não deve casar por acidente com outra coisa.
+        assert!(find_shortcut(std::slice::from_ref(&dir), "powerpoint.lnk").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nao_inventa_atalho_quando_nao_existe() {
+        // Devolver algo parecido seria pior que devolver nada: abriria o
+        // programa errado, e ninguém entenderia por quê.
+        let dir = temp("ausente");
+        arvore(&dir, &["Spotify.lnk"]);
+        assert!(find_shortcut(std::slice::from_ref(&dir), "Spotifyy").is_none());
+        assert!(find_shortcut(std::slice::from_ref(&dir), "").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn raiz_inexistente_nao_derruba_a_busca() {
+        let dir = temp("raizes");
+        arvore(&dir, &["Chrome.lnk"]);
+        let inexistente = dir.join("nao-existe");
+        let achado = find_shortcut(&[inexistente, dir.clone()], "Chrome");
+        assert!(achado.is_some(), "uma raiz ruim não pode cegar as outras");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

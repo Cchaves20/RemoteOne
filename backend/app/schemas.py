@@ -238,6 +238,57 @@ class AppActionRequest(BaseModel):
     id: str = Field(min_length=1, max_length=1024)
 
 
+class ProfileAppIn(BaseModel):
+    """Um programa que um perfil abre.
+
+    Guarda o **nome** além do caminho porque o mesmo perfil pode valer para mais
+    de um computador, e o caminho de um não existe no outro — o Spotify de uma
+    máquina mora em `AppData`, o da outra em `Program Files`. O que sobrevive à
+    troca de máquina é o nome, e é por ele que o agente procura quando o
+    caminho falha.
+    """
+
+    name: str = Field(min_length=1, max_length=120)
+    path: str = Field(min_length=1, max_length=1024)
+
+
+class ProfileIn(BaseModel):
+    """Um perfil criado pelo usuário."""
+
+    name: str = Field(min_length=1, max_length=60)
+    #: Chave de um ícone do app ("movie", "work"). Só a chave: o desenho é do
+    #: app, que sabe o tema e a densidade da tela.
+    icon: str = Field(default="tune", max_length=32)
+    #: Doze programas é mais do que cabe na barra sem virar rolagem.
+    apps: list[ProfileAppIn] = Field(default_factory=list, max_length=12)
+    #: Computadores a que o perfil se aplica. Vazio = todos.
+    devices: list[str] = Field(default_factory=list, max_length=32)
+
+
+class ProfileOut(ProfileIn):
+    """O mesmo, com o identificador que o servidor gerou."""
+
+    id: str
+
+
+class ProfilesOut(BaseModel):
+    """Os perfis da conta e a ordem da barra.
+
+    `order` traz a fila inteira, com os identificadores dos perfis de fábrica
+    junto: a barra é uma só, e dizer onde um perfil criado entra exige saber
+    onde estão os outros. Vazia = ninguém reordenou ainda.
+    """
+
+    profiles: list[ProfileOut] = []
+    order: list[str] = []
+
+
+class ProfileOrderIn(BaseModel):
+    """A nova ordem da barra, de fábrica e criados na mesma lista."""
+
+    ids: list[str] = Field(default_factory=list, max_length=64)
+
+
 class DeviceOut(BaseModel):
     device_id: str
     name: str

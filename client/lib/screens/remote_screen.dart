@@ -13,7 +13,6 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../l10n/strings.dart';
-import '../theme.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/remote_app.dart';
@@ -219,8 +218,15 @@ class _RemoteScreenState extends State<RemoteScreen>
     _startForegroundPolling();
     _loadIceServers();
     _loadMonitors();
-    // Reabre no perfil de atalhos da última vez (pode não existir mais).
-    _profile = ControlProfile.byId(widget.state.profileId);
+    // Perfis criados pelo usuário, do servidor. Se falhar, a barra fica com os
+    // cinco de fábrica — que já é útil.
+    widget.state.loadProfiles().then((_) {
+      if (mounted) setState(() {});
+    });
+    // Reabre no perfil de atalhos da última vez (pode não existir mais — uma
+    // versão nova pode ter tirado um de fábrica, e o usuário pode ter apagado
+    // um dos seus).
+    _profile = ControlProfile.byId(widget.state.profileId, _perfis());
     // Na primeira vez que se controla um PC, mostra o tutorial de gestos (#20).
     if (!widget.state.gestureTutorialSeen) {
       widget.state.markGestureTutorialSeen();
@@ -271,6 +277,28 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (!mounted || servers == null) return;
     _iceServers = servers;
     if (_video?.isLive != true) _connect();
+  }
+
+  /// Os perfis que valem para este computador, na ordem escolhida.
+  List<ControlProfile> _perfis() => ControlProfile.arrange(
+        widget.state.customProfiles,
+        widget.state.profileOrder,
+        widget.device.deviceId,
+      );
+
+  /// Abre um programa de um perfil no computador que está sendo controlado.
+  ///
+  /// O caminho guardado pode ser o de outro computador — é o caso de um perfil
+  /// atribuído a mais de uma máquina. Quem resolve isso é o agente, que procura
+  /// pelo nome quando o caminho não existe; daqui só sai o pedido.
+  Future<void> _abrirPrograma(ProfileAction a) async {
+    final caminho = a.appPath;
+    if (caminho == null || caminho.isEmpty) return;
+    try {
+      await widget.state.launchApp(widget.device, caminho);
+    } catch (e) {
+      _avisar(e.toString());
+    }
   }
 
   /// Descobre as telas do computador, uma vez.
@@ -1693,6 +1721,7 @@ class _RemoteScreenState extends State<RemoteScreen>
               ProfileBar(
                 vertical: !isPortrait,
                 area: area,
+                profiles: _perfis(),
                 selected: _profile,
                 appIcons: _profileIcons,
                 strings: widget.state.t,
@@ -1701,6 +1730,13 @@ class _RemoteScreenState extends State<RemoteScreen>
                 // se falhar, ficar calado faria parecer que o app ignorou.
                 onAction: (a) {
                   HapticFeedback.selectionClick();
+                  // Duas naturezas na mesma barra: os perfis de fábrica mandam
+                  // teclas, os do usuário abrem programas. Só o segundo caso
+                  // precisa saber em qual computador está.
+                  if (a.isLaunch) {
+                    _abrirPrograma(a);
+                    return;
+                  }
                   _send(a.input, avisarFalha: true);
                 },
               ),

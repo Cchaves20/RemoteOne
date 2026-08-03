@@ -14,6 +14,7 @@ from app.connections import Viewer, manager, viewers
 from app.db import SessionLocal, init_db
 from app.devices import router as devices_router
 from app.ice import ice_servers
+from app.profiles import router as profiles_router
 from app.protocol import (
     Ack,
     AppList,
@@ -59,6 +60,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(devices_router)
+app.include_router(profiles_router)
 
 # Registro de agentes conectados (em memória; ver app/agents.py).
 registry = AgentRegistry()
@@ -87,6 +89,7 @@ FEATURES = [
     "ice-servers",
     "clipboard",
     "monitors",
+    "control-profiles",
 ]
 
 

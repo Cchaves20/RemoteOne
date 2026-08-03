@@ -283,4 +283,167 @@ void main() {
       }
     });
   });
+
+  group('perfis criados pelo usuário', () {
+    Map<String, dynamic> json({
+      String id = 'u-1',
+      String nome = 'Estudo',
+      String icone = 'school',
+      List<Map<String, String>> apps = const [],
+      List<String> devices = const [],
+    }) =>
+        {
+          'id': id,
+          'name': nome,
+          'icon': icone,
+          'apps': apps,
+          'devices': devices,
+        };
+
+    test('cada programa vira uma ação de abrir', () {
+      final p = ControlProfile.fromJson(json(apps: [
+        {'name': 'Spotify', 'path': r'C:\Spotify.lnk'},
+        {'name': 'Chrome', 'path': r'C:\Chrome.lnk'},
+      ]));
+      expect(p.custom, isTrue);
+      expect(p.actions.length, 2);
+      expect(p.actions.first.isLaunch, isTrue);
+      expect(p.actions.first.appName, 'Spotify');
+      expect(p.actions.first.appPath, r'C:\Spotify.lnk');
+      // O nome do programa não passa pelo sistema de idiomas.
+      expect(p.actions.first.label(t), 'Spotify');
+    });
+
+    test('ação de teclado e ação de abrir não se confundem', () {
+      // É este campo que decide se a tela manda teclas ou pede para abrir um
+      // programa. Se os dois parecessem iguais, um perfil do usuário mandaria
+      // um `input` sem tecla nenhuma para o computador.
+      final abrir = ProfileAction.launch(appName: 'Spotify', appPath: 'x.lnk');
+      final tecla = ProfileAction.special(
+        icon: Icons.play_arrow,
+        shortcut: 'Espaço',
+        label: (t) => t.mediaPlayPause,
+        key: 'space',
+      );
+      expect(abrir.isLaunch, isTrue);
+      expect(tecla.isLaunch, isFalse);
+      expect(tecla.appPath, isNull);
+    });
+
+    test('perfil sem programa nenhum continua válido', () {
+      // Alguém que criou e ainda não escolheu nada. Aparecer vazio é melhor do
+      // que sumir sem explicação.
+      final p = ControlProfile.fromJson(json());
+      expect(p.actions, isEmpty);
+      expect(p.rawName, 'Estudo');
+    });
+
+    test('ícone desconhecido cai no genérico em vez de sumir', () {
+      // Uma versão mais nova do app pode ter guardado uma chave que esta não
+      // conhece.
+      expect(profileIcon('nao_existe'), profileIcon('tune'));
+      expect(profileIcon(null), Icons.tune);
+      // E toda chave da paleta volta a ser ela mesma.
+      for (final e in profileIcons.entries) {
+        expect(profileIconKey(e.value), e.key);
+      }
+    });
+
+    test('ida e volta pelo JSON preserva o que importa', () {
+      final p = ControlProfile.fromJson(json(
+        apps: [
+          {'name': 'Spotify', 'path': r'C:\Spotify.lnk'}
+        ],
+        devices: ['dev-a', 'dev-b'],
+      ));
+      final volta = p.toJson();
+      expect(volta['name'], 'Estudo');
+      expect(volta['icon'], 'school');
+      expect(volta['devices'], ['dev-a', 'dev-b']);
+      expect(volta['apps'], [
+        {'name': 'Spotify', 'path': r'C:\Spotify.lnk'}
+      ]);
+      // O `id` fica de fora: quem o define é o servidor, e ele nunca muda.
+      expect(volta.containsKey('id'), isFalse);
+    });
+
+    test('perfil sem computador vale para todos', () {
+      final p = ControlProfile.fromJson(json());
+      expect(p.appliesTo('qualquer-um'), isTrue);
+    });
+
+    test('perfil com computador só aparece nele', () {
+      final p = ControlProfile.fromJson(json(devices: ['dev-a']));
+      expect(p.appliesTo('dev-a'), isTrue);
+      expect(p.appliesTo('dev-b'), isFalse);
+    });
+  });
+
+  group('ordem da barra', () {
+    ControlProfile custom(String id, {List<String> devices = const []}) =>
+        ControlProfile.fromJson({
+          'id': id,
+          'name': id,
+          'icon': 'tune',
+          'apps': const [],
+          'devices': devices,
+        });
+
+    test('a fila segue a ordem guardada', () {
+      final fila = ControlProfile.arrange(
+        [custom('u-1')],
+        ['u-1', 'sistema'],
+        'dev-a',
+      );
+      expect(fila.first.id, 'u-1');
+      expect(fila[1].id, 'sistema');
+    });
+
+    test('o que a ordem não menciona vai para o fim, não some', () {
+      // É o que faz um perfil criado noutro aparelho - ou trazido por uma
+      // versão nova do app - aparecer, em vez de desaparecer por não estar
+      // numa lista que foi salva antes de ele existir.
+      final fila = ControlProfile.arrange([custom('u-novo')], ['video'], 'dev-a');
+      expect(fila.first.id, 'video');
+      expect(fila.map((p) => p.id), contains('u-novo'));
+      expect(fila.length, ControlProfile.builtIn.length + 1);
+    });
+
+    test('ordem vazia mantém os de fábrica na ordem natural', () {
+      final fila = ControlProfile.arrange(const [], const [], 'dev-a');
+      expect(fila.map((p) => p.id).toList(),
+          ControlProfile.builtIn.map((p) => p.id).toList());
+    });
+
+    test('a barra de um computador não mostra perfil de outro', () {
+      final fila = ControlProfile.arrange(
+        [custom('u-so-do-a', devices: ['dev-a'])],
+        const [],
+        'dev-b',
+      );
+      expect(fila.map((p) => p.id), isNot(contains('u-so-do-a')));
+    });
+
+    test('sem computador informado, nada é filtrado', () {
+      // É o que o editor usa: lá se arruma a coleção inteira, e esconder um
+      // perfil por causa da máquina atual faria a pessoa achar que ele sumiu.
+      final fila = ControlProfile.arrange(
+        [custom('u-so-do-a', devices: ['dev-a'])],
+        const [],
+      );
+      expect(fila.map((p) => p.id), contains('u-so-do-a'));
+    });
+
+    test('byId acha entre os perfis dados, não só entre os de fábrica', () {
+      final meu = custom('u-1');
+      expect(ControlProfile.byId('u-1'), isNull);
+      expect(ControlProfile.byId('u-1', [meu])?.id, 'u-1');
+      expect(ControlProfile.byId(null), isNull);
+    });
+
+    test('um id que não existe mais não derruba nada', () {
+      // Perfil apagado pelo usuário, ou tirado por uma versão nova do app.
+      expect(ControlProfile.byId('u-apagado', const []), isNull);
+    });
+  });
 }

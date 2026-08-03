@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/strings.dart';
+import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
 import '../models/remote_app.dart';
@@ -332,6 +333,63 @@ class AppState extends ChangeNotifier {
   /// Área de transferência do computador (texto e arquivos copiados).
   Future<RemoteClipboard> clipboard(Device device) =>
       api.clipboard(device.deviceId);
+
+  /// Perfis criados pelo usuário e a ordem da barra.
+  ///
+  /// Guardados aqui e não relidos a cada tela: a lista muda quando o usuário
+  /// mexe nela, e um pedido por abertura de tela seria gasto sem contrapartida.
+  List<ControlProfile> customProfiles = const [];
+  List<String> profileOrder = const [];
+
+  /// Recarrega os perfis do servidor. Falha em silêncio: sem eles a barra
+  /// continua com os cinco de fábrica, que é melhor do que uma tela de erro.
+  Future<void> loadProfiles() async {
+    try {
+      final r = await api.profiles();
+      customProfiles = r.profiles;
+      profileOrder = r.order;
+      notifyListeners();
+    } catch (_) {
+      // Backend antigo ou rede fora: a barra fica só com os de fábrica.
+    }
+  }
+
+  Future<ControlProfile> createProfile(ControlProfile p) async {
+    final criado = await api.createProfile(p);
+    customProfiles = [...customProfiles, criado];
+    notifyListeners();
+    return criado;
+  }
+
+  Future<void> updateProfile(ControlProfile p) async {
+    final salvo = await api.updateProfile(p);
+    customProfiles = [
+      for (final c in customProfiles) c.id == salvo.id ? salvo : c,
+    ];
+    notifyListeners();
+  }
+
+  Future<void> deleteProfile(String id) async {
+    await api.deleteProfile(id);
+    customProfiles = customProfiles.where((c) => c.id != id).toList();
+    profileOrder = profileOrder.where((i) => i != id).toList();
+    notifyListeners();
+  }
+
+  Future<void> setProfileOrder(List<String> ids) async {
+    final anterior = profileOrder;
+    profileOrder = ids;
+    notifyListeners();
+    try {
+      await api.setProfileOrder(ids);
+    } catch (e) {
+      // Mostrar uma ordem que o servidor não guardou seria mentir: ela
+      // voltaria sozinha na próxima abertura, sem nada explicando.
+      profileOrder = anterior;
+      notifyListeners();
+      rethrow;
+    }
+  }
 
   Future<RemoteMonitors> monitors(Device device) =>
       api.monitors(device.deviceId);

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
 import '../models/remote_app.dart';
@@ -338,6 +339,61 @@ class ApiClient {
         .get(_uri('/api/v1/devices/$deviceId/clipboard'), headers: _authHeaders)
         .timeout(const Duration(seconds: 10));
     return RemoteClipboard.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Os perfis que o usuário criou e a ordem escolhida para a barra.
+  ///
+  /// Ficam no servidor, e não no aparelho: a mesma conta é usada em mais de um
+  /// aparelho, e o app instalado por sideload é reinstalado com frequência.
+  Future<({List<ControlProfile> profiles, List<String> order})> profiles() async {
+    final res = await _http
+        .get(_uri('/api/v1/profiles'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    final json = _decode(res) as Map<String, dynamic>;
+    return (
+      profiles: ((json['profiles'] as List?) ?? [])
+          .map((e) => ControlProfile.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      order: ((json['order'] as List?) ?? []).map((e) => e as String).toList(),
+    );
+  }
+
+  Future<ControlProfile> createProfile(ControlProfile profile) async {
+    final res = await _http.post(
+      _uri('/api/v1/profiles'),
+      headers: _authHeaders,
+      body: jsonEncode(profile.toJson()),
+    );
+    return ControlProfile.fromJson(
+        _decode(res, expected: 201) as Map<String, dynamic>);
+  }
+
+  Future<ControlProfile> updateProfile(ControlProfile profile) async {
+    final res = await _http.put(
+      _uri('/api/v1/profiles/${profile.id}'),
+      headers: _authHeaders,
+      body: jsonEncode(profile.toJson()),
+    );
+    return ControlProfile.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteProfile(String id) async {
+    final res = await _http.delete(
+      _uri('/api/v1/profiles/$id'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode != 204) throw _error(res);
+  }
+
+  /// Guarda a ordem da barra. A lista vai inteira, de fábrica e criados
+  /// juntos: a barra é uma só.
+  Future<void> setProfileOrder(List<String> ids) async {
+    final res = await _http.put(
+      _uri('/api/v1/profiles/order'),
+      headers: _authHeaders,
+      body: jsonEncode({'ids': ids}),
+    );
+    if (res.statusCode != 204) throw _error(res);
   }
 
   /// As telas do computador, e qual delas está sendo capturada.

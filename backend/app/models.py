@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -61,3 +61,53 @@ class PairingRequest(Base):
     os: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ControlProfile(Base):
+    """Um perfil de controle montado pelo usuário.
+
+    Os cinco perfis que vêm com o app continuam no app: eles são código
+    (atalhos de teclado), não dado. O que mora aqui são os que o usuário criou,
+    e o que eles guardam é uma lista de programas para abrir.
+
+    Fica no servidor, e não no telefone, por duas razões concretas: a conta é
+    usada em mais de um aparelho (iPhone e iPad veem a mesma lista), e o app
+    instalado por sideload é reinstalado com frequência — perfil guardado só no
+    aparelho seria perdido junto.
+    """
+
+    __tablename__ = "control_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    #: Identificador que o app usa. Gerado no servidor, estável para sempre.
+    profile_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    #: Chave de um ícone do app ("movie", "work"). Só chave: o desenho é do app,
+    #: que sabe o tema e a densidade da tela.
+    icon: Mapped[str] = mapped_column(String(32), default="tune")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    #: Programas a abrir, em JSON: `[{"name": ..., "path": ...}]`.
+    #:
+    #: JSON e não tabela filha porque isto é uma lista curta que só se lê
+    #: inteira, nunca consultada por campo. Uma tabela custaria um join e uma
+    #: migração para não ganhar nada.
+    apps: Mapped[str] = mapped_column(Text, default="[]")
+    #: Computadores a que o perfil se aplica, em JSON. Lista vazia = todos.
+    devices: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class ProfileLayout(Base):
+    """A ordem dos perfis na barra, escolhida pelo usuário.
+
+    Guarda a lista inteira de identificadores — os de fábrica junto com os
+    criados —, porque a ordem é uma só. Guardar apenas a posição dos criados
+    não diria onde eles entram no meio dos outros.
+    """
+
+    __tablename__ = "profile_layouts"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    #: JSON com a lista de ids, na ordem.
+    order: Mapped[str] = mapped_column(Text, default="[]")

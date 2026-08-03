@@ -6,6 +6,7 @@ import '../services/app_state.dart';
 import '../widgets/brand.dart';
 import '../widgets/transitions.dart';
 import 'gesture_tutorial_screen.dart';
+import 'profiles_screen.dart';
 import 'two_factor_screen.dart';
 import 'wake_on_lan_screen.dart';
 
@@ -88,6 +89,12 @@ class SettingsScreen extends StatelessWidget {
                       ? _startTwoFactor(context)
                       : _disableTwoFactor(context),
                 ),
+              ])),
+              staggered(_card(context, t.profilesTitle, Icons.tune, [
+                _action(context, Icons.dashboard_customize, t.profilesTitle,
+                    () => Navigator.of(context)
+                        .push(fadeThroughRoute(ProfilesScreen(state: state))),
+                    subtitle: t.profilesHint),
               ])),
               staggered(_card(context, t.account, Icons.person_outline, [
                 _action(context, Icons.alternate_email, t.changeEmail,

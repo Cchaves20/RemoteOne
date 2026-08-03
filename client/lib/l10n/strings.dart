@@ -425,6 +425,79 @@ class Strings {
       '已复制 $n 个文件',
       n == 1 ? '1 fichier copié' : '$n fichiers copiés',
       n == 1 ? '1 archivo copiado' : '$n archivos copiados');
+  // Perfis de controle
+  String get profilesTitle =>
+      _t('Perfis', 'Profiles', '配置文件', 'Profils', 'Perfiles');
+  String get profilesHint => _t(
+      'Arraste para mudar a ordem na barra. Toque num perfil seu para editar.',
+      'Drag to reorder the bar. Tap one of your profiles to edit it.',
+      '拖动可调整栏中顺序。点击你的配置文件进行编辑。',
+      "Faites glisser pour réordonner la barre. Touchez un de vos profils pour l'éditer.",
+      'Arrastra para cambiar el orden de la barra. Toca uno de tus perfiles para editarlo.');
+  String get profileNew =>
+      _t('Novo perfil', 'New profile', '新建配置', 'Nouveau profil', 'Nuevo perfil');
+  String get profileEdit => _t('Editar perfil', 'Edit profile', '编辑配置',
+      'Modifier le profil', 'Editar perfil');
+  String get profileDelete => _t('Excluir perfil', 'Delete profile', '删除配置',
+      'Supprimer le profil', 'Eliminar perfil');
+  String profileDeleteConfirm(String nome) => _t(
+      'Excluir "$nome"? Isso vale para todos os seus aparelhos.',
+      'Delete "$nome"? This applies to all your devices.',
+      '删除"$nome"？这会影响你所有的设备。',
+      'Supprimer « $nome » ? Cela vaut pour tous vos appareils.',
+      '¿Eliminar «$nome»? Esto afecta a todos tus dispositivos.');
+  String get profileBuiltIn => _t('Vem com o app', 'Built in', '应用内置',
+      "Fourni avec l'app", 'Incluido en la app');
+  String profileAppCount(int n) => _t(
+      n == 1 ? '1 programa' : '$n programas',
+      n == 1 ? '1 program' : '$n programs',
+      '$n 个程序',
+      n == 1 ? '1 programme' : '$n programmes',
+      n == 1 ? '1 programa' : '$n programas');
+  String profileOnComputers(int n) => _t(
+      n == 1 ? '1 computador' : '$n computadores',
+      n == 1 ? '1 computer' : '$n computers',
+      '$n 台电脑',
+      n == 1 ? '1 ordinateur' : '$n ordinateurs',
+      n == 1 ? '1 equipo' : '$n equipos');
+  String get profileName => _t('Nome', 'Name', '名称', 'Nom', 'Nombre');
+  String get profileNameHint => _t('Ex.: Estudo, Jogos, Reunião',
+      'e.g. Study, Games, Meeting', '例如：学习、游戏、会议',
+      'Ex. : Étude, Jeux, Réunion', 'Ej.: Estudio, Juegos, Reunión');
+  String get profileNameRequired => _t('Dê um nome ao perfil.',
+      'Give the profile a name.', '请为配置文件命名。',
+      'Donnez un nom au profil.', 'Ponle un nombre al perfil.');
+  String get profileIcon => _t('Ícone', 'Icon', '图标', 'Icône', 'Icono');
+  String get profilePrograms =>
+      _t('Programas', 'Programs', '程序', 'Programmes', 'Programas');
+  String get profileAddProgram => _t('Adicionar', 'Add', '添加', 'Ajouter', 'Añadir');
+  String get profileNoPrograms => _t(
+      'Nenhum programa ainda. Cada um vira um botão na barra.',
+      'No programs yet. Each one becomes a button on the bar.',
+      '还没有程序。每个程序都会成为栏上的一个按钮。',
+      'Aucun programme pour le moment. Chacun devient un bouton dans la barre.',
+      'Aún no hay programas. Cada uno se convierte en un botón de la barra.');
+  String get profilePickFrom => _t(
+      'Escolher programas de qual computador?',
+      'Pick programs from which computer?',
+      '从哪台电脑选择程序？',
+      'Choisir des programmes de quel ordinateur ?',
+      '¿Elegir programas de qué equipo?');
+  String get profileNoComputers => _t(
+      'Pareie um computador primeiro.',
+      'Pair a computer first.',
+      '请先配对一台电脑。',
+      "Associez d'abord un ordinateur.",
+      'Vincula un equipo primero.');
+  String get profileComputers =>
+      _t('Computadores', 'Computers', '电脑', 'Ordinateurs', 'Equipos');
+  String get profileComputersHint => _t(
+      'Deixe tudo desmarcado para o perfil valer em todos.',
+      'Leave everything unchecked for the profile to apply everywhere.',
+      '全部不勾选表示该配置适用于所有电脑。',
+      'Ne cochez rien pour que le profil vaille partout.',
+      'Deja todo sin marcar para que el perfil valga en todos.');
+
   String get monitorsTitle => _t('Tela do computador', 'Computer display',
       '电脑显示器', "Écran de l'ordinateur", 'Pantalla del equipo');
   String get monitorsSub => _t(
