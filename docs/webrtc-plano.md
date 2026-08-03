@@ -4,13 +4,12 @@ Plano e diário de bordo da migração. As decisões estão registradas com o mo
 e cada fase concluída traz o que foi medido — inclusive onde a medição contrariou
 a expectativa.
 
-**Onde está:** spikes S1 e S2 respondidos; Fases 1 a 4 e a Fase 6 feitas —
-sinalização, agente transmitindo, app recebendo, fallback automático e entrada
-pelo canal de dados. Vídeo e controle vão P2P, sem passar pelo servidor.
+**Onde está:** spikes S1, S2 e S3 respondidos; todas as fases feitas —
+sinalização, agente transmitindo, app recebendo, fallback automático, qualidade
+adaptativa, TURN e entrada pelo canal de dados. No Wi-Fi o vídeo e o controle
+vão P2P, sem passar pelo servidor; no 5G o relay entra quando o P2P não fecha.
 
-Falta: **validar em rede celular** (spike S3 — o P2P fecha no Wi-Fi de casa, e o
-4G com CGNAT é a pergunta aberta), a qualidade adaptativa (Fase 4b), o TURN se o
-S3 pedir (Fase 5), e a pendência de o caminho JPEG resolver o monitor por quadro.
+Falta: a pendência de o caminho JPEG resolver o monitor por quadro.
 
 O ponto de partida é o pipeline atual, medido em
 [`video-e-latencia.md`](video-e-latencia.md): JPEG frame a frame, sempre
@@ -32,7 +31,7 @@ diferente:
    sem saber se a rede aguenta. O WebRTC mede a capacidade e tem para onde
    reportar isso — mas a Fase 2 mostrou que *usar* essa medida para segurar a
    taxa não sai de graça: nenhuma configuração do codificador limita a banda sem
-   travar a imagem. Quem vai fechar essa alça é a Fase 4b.
+   travar a imagem. Quem fechou essa alça foi a Fase 4b, por fora do codec.
 
 ## O que o WebRTC *não* resolve
 
@@ -586,15 +585,65 @@ de 6 s a partir da chegada da faixa. Passado isso, volta ao JPEG e diz o motivo.
 A lição vale registrar: **"conectado" e "mostrando imagem" são condições
 diferentes**, e só a segunda justifica desligar o caminho que funciona.
 
-### Fase 4b — Qualidade adaptativa (novo, saiu da Fase 2)
+### Fase 4b — Qualidade adaptativa — **feita**
 
 Como nenhuma configuração do codificador limita a banda sem travar a imagem, o
-limite de verdade tem que vir de fora: **baixar resolução e fps quando a rede
-aperta**, e subir de volta quando sobra. É o que degrada suave.
+limite de verdade veio de fora: **menos pixels e menos quadros quando a rede
+aperta**, de volta ao normal quando ela sobra. Não estava no plano original —
+apareceu ao medir o controle de taxa na Fase 2, e virou conta de dados quando o
+TURN entrou.
 
-Não estava no plano original — apareceu ao medir o controle de taxa na Fase 2.
-Só vale fazer depois da Fase 3, quando houver rede real para medir em vez de
-palpite.
+A política vive em [`agent/src/adaptive.rs`](../agent/src/adaptive.rs), separada
+do laço e **sem relógio próprio**: ela recebe uma perda e uma duração e devolve
+o degrau novo, se houver. É o que permite testar a política inteira em
+milissegundos — o oposto de descobrir a oscilação num 5G, olhando para uma tela
+que pisca.
+
+**O sinal** é a perda de pacotes dos relatórios de recepção RTCP, que o telefone
+já mandava de segundo em segundo. Não é o melhor medidor de banda que existe; é
+o único que as duas pontas já trocavam sem nada novo no protocolo, e é o que de
+fato estraga a imagem — pacote perdido vira pedido de quadro-chave, que é uma
+rajada de bytes justamente quando não há banda para ela.
+
+| Degrau | Largura | fps | Alvo |
+|---|---|---|---|
+| 0 | o que estiver configurado | | |
+| 1 | 1280 | 20 | 1,0 Mbps |
+| 2 | 960 | 20 | 700 kbps |
+| 3 | 800 | 15 | 450 kbps |
+| 4 | 640 | 12 | 250 kbps |
+
+O degrau 0 é **ausência de limite**, não um limite: cada degrau é um teto que se
+aplica por cima da configuração, então quem pôs 60 fps continua com 60 e o
+ajuste automático só desce. Escrever `1280/30` no topo teria transformado o
+padrão em máximo — a escada passaria a impor qualidade em vez de reduzi-la.
+
+Quatro regras, e cada uma existe por um motivo:
+
+- **Desce rápido (>10% de perda), sobe devagar (<2% por 10s).** Descer errado
+  custa nitidez por alguns segundos; subir errado custa uma imagem congelada.
+  Erros de preços diferentes não merecem o mesmo gatilho.
+- **Zona morta entre 2% e 10%.** Sem ela, uma rede oscilando em 5% subiria e
+  desceria para sempre — e cada troca custa uma recaptura e um quadro-chave. O
+  remédio viraria a doença.
+- **Espera de 3s depois de mudar.** Os relatórios que chegam logo após uma
+  mudança ainda descrevem o mundo anterior; reagir a eles é reagir ao eco.
+- **Cautela crescente:** cada queda dobra a calmaria exigida para voltar a
+  subir (10s → 20 → 40 → 80). Uma rede que já derrubou a qualidade três vezes
+  não merece o mesmo benefício da dúvida da primeira.
+
+Duas armadilhas que o código evita e valem registro:
+
+- **Sem relatório não é rede limpa.** Zero pacotes perdidos e zero relatórios
+  chegam ao mesmo `0.0`. Tratá-los como iguais faria a qualidade *subir*
+  justamente quando o caminho sumiu, então o laço conta os relatórios e pula a
+  avaliação quando não houve nenhum.
+- **`fits` só olha a resolução.** Descer de 30 para 20 fps sem mudar a largura
+  passaria despercebido pelo codificador já em pé, e o degrau não teria efeito
+  algum. O laço guarda com que parâmetros o codificador foi criado e o recria
+  quando qualquer um deles muda.
+
+Cada sessão nova começa no topo: a rede de ontem não diz nada sobre a de hoje.
 
 ### Duas coisas que faltavam antes de culpar a rede
 
@@ -637,8 +686,8 @@ Três coisas que custaram tentativa e valem para o próximo servidor:
 
 Consumo: com relay, o vídeo passa pelo VPS nos dois sentidos (~0,7 GB/hora a
 1,5 Mbps). A franquia Always Free da Oracle absorve, mas é o argumento mais
-forte a favor da Fase 4b — qualidade adaptativa deixa de ser só conforto e
-vira conta de dados.
+forte a favor da Fase 4b, feita logo em seguida — qualidade adaptativa deixou
+de ser só conforto e virou conta de dados.
 
 ### Fase 6 — Entrada pelo canal de dados — **feita**
 

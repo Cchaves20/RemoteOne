@@ -23,6 +23,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest;
 use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
+use webrtc::rtcp::receiver_report::ReceiverReport;
 use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264, MIME_TYPE_OPUS};
 use webrtc::api::{APIBuilder, API};
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
@@ -80,6 +81,10 @@ pub struct Video {
     /// Pedidos de quadro-chave vindos do telefone (RTCP PLI/FIR). Mesmo
     /// desenho: quem tem o codificador é o laço principal.
     keyframe: UnboundedSender<()>,
+    /// Fração de pacotes perdida, como o telefone a relata (RTCP RR). Alimenta
+    /// a qualidade adaptativa; sai pelo mesmo caminho porque quem decide a
+    /// resolução também é o laço principal.
+    loss: UnboundedSender<f32>,
 }
 
 impl Video {
@@ -89,6 +94,7 @@ impl Video {
         outbox: UnboundedSender<Signal>,
         input: UnboundedSender<InputEnvelope>,
         keyframe: UnboundedSender<()>,
+        loss: UnboundedSender<f32>,
         stun_urls: Vec<String>,
     ) -> Result<Self, String> {
         let mut media = MediaEngine::default();
@@ -111,6 +117,7 @@ impl Video {
             outbox,
             input,
             keyframe,
+            loss,
         })
     }
 
@@ -184,20 +191,45 @@ impl Video {
         // perfeita: o computador segue mandando quadros que se referem a uma
         // imagem que o telefone nunca teve. Numa rede móvel, perder o
         // quadro-chave é questão de tempo.
+        // O mesmo fluxo traz os **relatórios de recepção**, que dizem quanto do
+        // que saiu daqui chegou lá. É o sinal da qualidade adaptativa: não
+        // porque seja o melhor medidor de banda que existe, mas porque é o
+        // único que as duas pontas já trocam sem nada novo no protocolo.
         let keyframe = self.keyframe.clone();
+        let loss = self.loss.clone();
         let sessao = session_id.to_string();
         tokio::spawn(async move {
             let mut buf = vec![0u8; 1500];
             while let Ok((pacotes, _)) = sender.read(&mut buf).await {
-                let pediu = pacotes.iter().any(|p| {
-                    let algum = p.as_any();
-                    algum.downcast_ref::<PictureLossIndication>().is_some()
+                let mut pediu = false;
+                let mut pior: Option<f32> = None;
+                for pacote in &pacotes {
+                    let algum = pacote.as_any();
+                    if algum.downcast_ref::<PictureLossIndication>().is_some()
                         || algum.downcast_ref::<FullIntraRequest>().is_some()
-                });
+                    {
+                        pediu = true;
+                    }
+                    if let Some(rr) = algum.downcast_ref::<ReceiverReport>() {
+                        // `fraction_lost` é a perda desde o relatório anterior,
+                        // em 1/256 avos. Um relatório pode trazer mais de um
+                        // bloco; o pior manda, porque é ele que estraga a
+                        // imagem de alguém.
+                        for bloco in &rr.reports {
+                            let f = bloco.fraction_lost as f32 / 256.0;
+                            pior = Some(pior.map_or(f, |atual: f32| atual.max(f)));
+                        }
+                    }
+                }
                 if pediu {
                     println!("WebRTC ({sessao}): o app pediu um quadro-chave");
                     if keyframe.send(()).is_err() {
                         break; // laço principal encerrou
+                    }
+                }
+                if let Some(f) = pior {
+                    if loss.send(f).is_err() {
+                        break;
                     }
                 }
             }
@@ -514,7 +546,14 @@ mod tests {
         // negociação. O pedido em si é do laço principal.
         let (keyframe_tx, _keyframe_rx) = mpsc::unbounded_channel();
         std::mem::forget(_keyframe_rx);
-        (Video::new(tx, input_tx, keyframe_tx, vec![]).unwrap(), rx)
+        // Idem para a perda: a política que a consome é testada, pura, no
+        // `adaptive`.
+        let (loss_tx, _loss_rx) = mpsc::unbounded_channel();
+        std::mem::forget(_loss_rx);
+        (
+            Video::new(tx, input_tx, keyframe_tx, loss_tx, vec![]).unwrap(),
+            rx,
+        )
     }
 
     #[tokio::test]

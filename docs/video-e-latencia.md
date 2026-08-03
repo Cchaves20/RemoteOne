@@ -162,9 +162,10 @@ juntos motivaram a migração:
   cortando uma perna inteira do trajeto — e com ela boa parte da latência.
 - **Não há controle de congestionamento.** O agente envia no ritmo do relógio,
   sem saber se a rede está aguentando. O WebRTC *mede* a capacidade e tem para
-  onde reportar isso — mas usar a medida para segurar a taxa ainda não está
-  feito (Fase 4b): nenhuma configuração do codificador limita a banda sem travar
-  a imagem, então falta baixar resolução/fps sob pressão.
+  onde reportar isso — e a Fase 4b fechou a alça, mas **por fora do codec**:
+  nenhuma configuração do codificador limita a banda sem travar a imagem, então
+  quem segura a taxa é a resolução e o fps, que caem quando a perda relatada
+  passa de 10% e voltam depois de dez segundos de rede limpa.
 - **A deduplicação é tudo ou nada.** Um pixel diferente reenvia o frame
   completo. Um codec resolve isso por blocos.
 

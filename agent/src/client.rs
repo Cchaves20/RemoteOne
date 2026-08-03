@@ -70,6 +70,21 @@ impl StreamConfig {
         Self::interval_for(self.video_fps)
     }
 
+    /// Os parâmetros de vídeo em vigor: o degrau da qualidade adaptativa,
+    /// limitado pelos tetos configurados.
+    ///
+    /// A ordem importa e é sempre esta: o ajuste automático **só abaixa**. Quem
+    /// pôs `REMOTEONE_VIDEO_MAX_WIDTH=800` porque a máquina é fraca não quer
+    /// que uma rede boa devolva 1280 — o teto é do dono da máquina, o degrau é
+    /// da rede, e a rede não manda no dono da máquina.
+    fn video_params(&self, nivel: crate::adaptive::Level) -> crate::adaptive::Level {
+        crate::adaptive::Level {
+            width: self.video_width().min(nivel.width),
+            fps: self.video_fps.clamp(1, 60).min(nivel.fps),
+            bitrate: self.video_bitrate.min(nivel.bitrate),
+        }
+    }
+
     fn interval_for(fps: u32) -> Duration {
         Duration::from_millis(1000 / fps.clamp(1, 60) as u64)
     }
@@ -81,6 +96,12 @@ impl StreamConfig {
 /// isto o laço acordaria 60 vezes por segundo com o computador ocioso.
 const IDLE_INTERVAL: Duration = Duration::from_millis(500);
 
+/// De quanto em quanto tempo a qualidade adaptativa reavalia.
+///
+/// Dois segundos porque os relatórios de recepção chegam a cada ~1s: menos que
+/// isso decidiria com uma amostra só, e uma amostra só é ruído.
+const ADAPT_INTERVAL: Duration = Duration::from_secs(2);
+
 /// O que a captura precisa entregar agora — `(largura, fps)` — ou `None` se
 /// ninguém está pedindo a tela.
 ///
@@ -88,9 +109,15 @@ const IDLE_INTERVAL: Duration = Duration::from_millis(500);
 /// ela nasce, troca de tamanho e morre porque esta função mudou de resposta. Era
 /// por depender de eventos que a captura vazava quando o vídeo e o JPEG paravam
 /// juntos — não havia transição para observar.
-fn desired_capture(streaming: bool, video: bool, cfg: &StreamConfig) -> Option<(u32, u32)> {
+fn desired_capture(
+    streaming: bool,
+    video: bool,
+    cfg: &StreamConfig,
+    nivel: crate::adaptive::Level,
+) -> Option<(u32, u32)> {
     if video {
-        Some((cfg.video_width(), cfg.video_fps.clamp(1, 60)))
+        let p = cfg.video_params(nivel);
+        Some((p.width, p.fps))
     } else if streaming {
         Some((cfg.max_width, cfg.fps.clamp(1, 60)))
     } else {
@@ -138,7 +165,6 @@ pub async fn run(
     heartbeat: Duration,
     stream: StreamConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let video_bitrate = stream.video_bitrate;
     let (mut ws, _response) = connect_async(url).await?;
     println!("Conectado ao backend em {url}");
 
@@ -217,9 +243,16 @@ pub async fn run(
     // Pedidos de quadro-chave do app (RTCP). Chegam de dentro das tarefas do
     // webrtc-rs e quem tem o codificador é este laço, então passam por canal.
     let (keyframe_tx, mut keyframe_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-    let mut video =
-        crate::webrtc::Video::new(signal_tx, input_tx, keyframe_tx, stream.ice_servers.clone())
-        .map_err(|e| format!("não consegui iniciar o vídeo por WebRTC: {e}"))?;
+    // Perda de pacotes relatada pelo telefone (RTCP RR), pelo mesmo motivo.
+    let (loss_tx, mut loss_rx) = tokio::sync::mpsc::unbounded_channel::<f32>();
+    let mut video = crate::webrtc::Video::new(
+        signal_tx,
+        input_tx,
+        keyframe_tx,
+        loss_tx,
+        stream.ice_servers.clone(),
+    )
+    .map_err(|e| format!("não consegui iniciar o vídeo por WebRTC: {e}"))?;
     // Descarta comandos de movimento que chegaram fora de ordem (o canal é
     // deliberadamente não ordenado; ver `datachannel.rs`).
     let mut input_order = crate::datachannel::InputOrder::new();
@@ -244,6 +277,21 @@ pub async fn run(
     // Contadores do resumo periódico: sem número, "está travado" não tem
     // como virar diagnóstico.
     let mut stats = VideoStats::default();
+
+    // Qualidade adaptativa (Fase 4b). A escada decide o degrau; este laço só
+    // lhe conta o que a rede andou fazendo e obedece ao que ela responder.
+    let mut ladder = crate::adaptive::Ladder::new();
+    // Pior perda vista desde a última avaliação, e quantos relatórios a
+    // sustentam. A contagem importa: sem relatório nenhum, "zero perdido" não
+    // é notícia boa, é ausência de notícia - e tratar as duas coisas como
+    // iguais faria a qualidade subir justamente quando o caminho sumiu.
+    let mut worst_loss = 0f32;
+    let mut loss_reports = 0u32;
+    let mut adapt_ticker = interval(ADAPT_INTERVAL);
+    adapt_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    // Parâmetros com que o codificador em uso foi criado. Mudar de degrau muda
+    // fps e taxa, e nenhum dos dois se ajusta num codificador já em pé.
+    let mut encoder_level: Option<crate::adaptive::Level> = None;
 
     loop {
         tokio::select! {
@@ -337,9 +385,37 @@ pub async fn run(
             // WebRTC conectada, o vídeo vai por lá (banda ~100x menor, medida
             // no S2); senão, segue o JPEG, que continua sendo o fallback. Os dois
             // consomem a **mesma** captura contínua.
+            // Perda relatada pelo telefone. Só se acumula aqui; quem decide é
+            // o tique de reavaliação, com a janela inteira em mãos.
+            Some(perda) = loss_rx.recv() => {
+                if perda.is_finite() {
+                    worst_loss = worst_loss.max(perda);
+                    loss_reports += 1;
+                }
+            }
+            // Reavaliação da qualidade.
+            _ = adapt_ticker.tick() => {
+                if video.wants_video() && loss_reports > 0 {
+                    let antes = ladder.step();
+                    if let Some(nivel) = ladder.observe(worst_loss, ADAPT_INTERVAL) {
+                        let p = active.video_params(nivel);
+                        println!(
+                            "Qualidade: degrau {antes} → {} ({}px, {} fps, {:.1} Mbps \
+                             alvo) — perda relatada {:.1}%",
+                            ladder.step(),
+                            p.width,
+                            p.fps,
+                            p.bitrate as f64 / 1_000_000.0,
+                            worst_loss * 100.0,
+                        );
+                    }
+                }
+                worst_loss = 0.0;
+                loss_reports = 0;
+            }
             _ = frame_ticker.tick() => {
                 let quer_video = video.wants_video();
-                let desejada = desired_capture(streaming, quer_video, &active);
+                let desejada = desired_capture(streaming, quer_video, &active, ladder.current());
 
                 // O vídeo roda mais rápido que o JPEG e a ociosidade mais lenta
                 // que os dois. Sem acertar o ritmo, o vídeo herdaria os 10 fps
@@ -367,6 +443,12 @@ pub async fn run(
                     if quer_video {
                         video_clock = None;
                         last_video_frame = None;
+                        // Sessão nova começa no topo: a rede de ontem não diz
+                        // nada sobre a de agora, e começar punido entregaria
+                        // menos do que esta rede aguenta.
+                        ladder.reset();
+                        worst_loss = 0.0;
+                        loss_reports = 0;
                         let largura = active.video_width();
                         if largura < active.max_width {
                             println!(
@@ -408,16 +490,23 @@ pub async fn run(
                 if quer_video {
                     let started = video_clock.get_or_insert_with(std::time::Instant::now);
                     let elapsed = started.elapsed();
-                    let fps = active.video_fps.clamp(1, 60);
+                    let params = active.video_params(ladder.current());
+                    // Nem fps nem taxa se ajustam num codificador já em pé, e
+                    // o `fits` só olha a resolução: descer de 30 para 20 fps
+                    // sem mudar a largura passaria despercebido e o degrau não
+                    // teria efeito algum.
+                    let recriar = encoder_level != Some(params);
                     let shared = Arc::clone(&encoder);
                     let encode_started = std::time::Instant::now();
                     let encoded = tokio::task::spawn_blocking(move || {
                         let (w, h) = (captured.width, captured.height);
                         let mut slot = shared.lock().unwrap_or_else(|e| e.into_inner());
-                        // Resolução nova (trocou de monitor, mudou a tela):
-                        // recria o codificador em vez de remendar o atual.
-                        if !slot.as_ref().is_some_and(|enc| enc.fits(w, h)) {
-                            *slot = Some(crate::h264::Encoder::new(w, h, fps, video_bitrate)?);
+                        // Resolução nova (trocou de monitor, mudou a tela) ou
+                        // degrau novo: recria em vez de remendar o atual.
+                        if recriar || !slot.as_ref().is_some_and(|enc| enc.fits(w, h)) {
+                            *slot = Some(crate::h264::Encoder::new(
+                                w, h, params.fps, params.bitrate,
+                            )?);
                         }
                         slot.as_mut()
                             .expect("acabou de ser criado")
@@ -426,6 +515,10 @@ pub async fn run(
                     .await;
                     match encoded {
                         Ok(Ok(frame)) => {
+                            // Só depois de codificar de verdade: se a criação
+                            // falhou, o degrau anotado tem de continuar sendo
+                            // o antigo, para a próxima volta tentar de novo.
+                            encoder_level = Some(params);
                             // Duração real do quadro anterior, não a pretendida:
                             // é dela que saem os timestamps RTP, e um relógio
                             // que não corresponde à realidade faz o buffer de
@@ -486,6 +579,7 @@ pub async fn run(
                             Some(Action::RestartFrameTicker) => {
                                 let ritmo = rhythm(desired_capture(
                                     streaming, video.wants_video(), &active,
+                                    ladder.current(),
                                 ));
                                 if ritmo != ticker_interval {
                                     ticker_interval = ritmo;
@@ -1323,6 +1417,12 @@ mod tests {
         );
     }
 
+    /// O degrau de topo: é onde toda sessão começa, e é o estado em que estes
+    /// testes checam os tetos configurados.
+    fn topo() -> crate::adaptive::Level {
+        crate::adaptive::LADDER[0]
+    }
+
     fn config() -> StreamConfig {
         StreamConfig {
             fps: 10,
@@ -1335,15 +1435,15 @@ mod tests {
 
     #[test]
     fn ninguem_pedindo_a_tela_nao_pede_captura() {
-        assert_eq!(desired_capture(false, false, &config()), None);
+        assert_eq!(desired_capture(false, false, &config(), topo()), None);
         assert_eq!(rhythm(None), IDLE_INTERVAL);
     }
 
     #[test]
     fn jpeg_usa_a_largura_e_o_fps_do_preset() {
-        assert_eq!(desired_capture(true, false, &config()), Some((1600, 10)));
+        assert_eq!(desired_capture(true, false, &config(), topo()), Some((1600, 10)));
         assert_eq!(
-            rhythm(desired_capture(true, false, &config())),
+            rhythm(desired_capture(true, false, &config(), topo())),
             Duration::from_millis(100)
         );
     }
@@ -1351,9 +1451,9 @@ mod tests {
     #[test]
     fn video_tem_teto_proprio_e_manda_no_ritmo() {
         // 1280 e não 1600: codificar custa por pixel (ver `video_max_width`).
-        assert_eq!(desired_capture(true, true, &config()), Some((1280, 30)));
+        assert_eq!(desired_capture(true, true, &config(), topo()), Some((1280, 30)));
         assert_eq!(
-            rhythm(desired_capture(true, true, &config())),
+            rhythm(desired_capture(true, true, &config(), topo())),
             Duration::from_millis(33)
         );
     }
@@ -1361,7 +1461,37 @@ mod tests {
     #[test]
     fn video_dispensa_a_transmissao_jpeg() {
         // O app pode ter vídeo sem nunca pedir `start_stream`.
-        assert_eq!(desired_capture(false, true, &config()), Some((1280, 30)));
+        assert_eq!(desired_capture(false, true, &config(), topo()), Some((1280, 30)));
+    }
+
+    #[test]
+    fn o_degrau_de_topo_devolve_o_que_esta_configurado() {
+        // O topo é ausência de limite, não um limite: quem configurou 60 fps
+        // continua com 60. Se a escada virasse teto, ela passaria a *impor*
+        // qualidade em vez de só reduzi-la quando a rede pede.
+        let cfg = StreamConfig {
+            video_max_width: 1600,
+            max_width: 1600,
+            video_fps: 60,
+            video_bitrate: 4_000_000,
+            ..config()
+        };
+        let p = cfg.video_params(topo());
+        assert_eq!((p.width, p.fps, p.bitrate), (1600, 60, 4_000_000));
+    }
+
+    #[test]
+    fn descer_um_degrau_respeita_os_tetos_configurados() {
+        // Máquina fraca com teto de 800px: o degrau pede 1280 e não ganha -
+        // o ajuste automático só abaixa.
+        let cfg = StreamConfig {
+            video_max_width: 800,
+            video_fps: 24,
+            ..config()
+        };
+        let p = cfg.video_params(crate::adaptive::LADDER[1]);
+        assert_eq!(p.width, 800, "a rede não manda no teto do dono da máquina");
+        assert_eq!(p.fps, 20, "aqui o degrau é mais restritivo, e vale");
     }
 
     #[test]
@@ -1371,8 +1501,8 @@ mod tests {
             video_fps: 9999,
             ..config()
         };
-        assert_eq!(desired_capture(true, false, &cfg), Some((1600, 1)));
-        assert_eq!(desired_capture(true, true, &cfg), Some((1280, 60)));
-        assert!(rhythm(desired_capture(true, true, &cfg)) > Duration::ZERO);
+        assert_eq!(desired_capture(true, false, &cfg, topo()), Some((1600, 1)));
+        assert_eq!(desired_capture(true, true, &cfg, topo()), Some((1280, 60)));
+        assert!(rhythm(desired_capture(true, true, &cfg, topo())) > Duration::ZERO);
     }
 }
