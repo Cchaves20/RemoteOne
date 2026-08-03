@@ -32,15 +32,37 @@ powershell -ExecutionPolicy Bypass -File .\scripts\atualizar.ps1
 
 Isso faz, em ordem:
 
-1. `git pull` do branch de trabalho;
+1. `git pull` do branch de trabalho. Se o pull trouxer uma versão nova **deste
+   script**, ele avisa e recomeça em processo novo — o PowerShell lê o arquivo
+   inteiro antes de executar a primeira linha, então a correção baixada só
+   valeria na próxima vez;
 2. **agente** — para o processo que estiver rodando (é ele que segura o `.exe`
-   e causa o `Acesso negado (os error 5)`) e recompila em release;
-3. **app** — `flutter pub get` e `flutter analyze`;
+   e causa o `Acesso negado (os error 5)`), recompila em release e, **se o
+   agente estava instalado, reinstala com o binário novo** (ver abaixo);
+3. **app** — `flutter pub get` e `flutter analyze --fatal-infos`;
 4. **VPS** — por SSH: busca o branch, força o código e sobe o `docker compose`;
 5. **conferência** — pergunta ao `/health` o que o servidor tem e compara com o
    que este código espera. Com paciência: o `docker compose up` volta quando o
    contêiner **inicia**, não quando a aplicação está pronta, então a checagem
    tenta algumas vezes antes de desistir.
+
+## O agente instalado volta sozinho
+
+Parar o agente para compilar é obrigatório: rodando, ele segura o próprio
+`.exe`. Mas parar e não levantar deixava o computador **fora do ar até o
+próximo login** — e ninguém associa "sumiu do app" a "rodei o atualizar".
+
+Por isso, terminada a compilação, o script reinstala com o binário novo quando
+detecta que já havia instalação (`%LOCALAPPDATA%\Programs\RemoteOne`). O
+`install` vai sem URL de propósito: atualizar não é hora de reescrever
+configuração, e o backend gravado continua valendo.
+
+Se o agente **não** estava instalado, ele diz isso e não faz nada — quem roda
+sem instalar costuma querer o agente à vista, com `-Rodar`.
+
+`-Ocultar` e `-Rodar` desligam essa parte: nos dois casos você pediu outra
+coisa, e subir um segundo agente oculto disputaria o mesmo `device_id` com o
+primeiro.
 
 ## Variações
 

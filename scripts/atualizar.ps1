@@ -132,6 +132,39 @@ function QuemSegura($caminho) {
     }
 }
 
+# Reinstala o agente com o binário recém-compilado, se ele estava instalado.
+#
+# Sem isto, atualizar **derruba** o agente e não o levanta: o `PararAgente` o
+# encerra para liberar o .exe, e o instalado só voltaria no próximo login. O
+# sintoma seria o computador sumir do app depois de cada atualização, sem nada
+# explicando - e mexer no `atualizar` é justamente o que ninguém associa a isso.
+#
+# `install` sem URL preserva o backend já configurado: atualizar não é hora de
+# reescrever configuração.
+#
+# Não faz nada com `-Ocultar` (que já instala, logo abaixo) nem com `-Rodar`
+# (que quer o agente à vista neste terminal): nos dois casos o usuário pediu
+# outra coisa, e subir um segundo agente oculto disputaria o mesmo device_id.
+function ReinstalarSeInstalado($pasta) {
+    if ($Ocultar -or $Rodar) { return }
+
+    $jaInstalado = Join-Path $env:LOCALAPPDATA "Programs\RemoteOne\remoteone-agent.exe"
+    if (-not (Test-Path $jaInstalado)) {
+        Passo "agente não está instalado: nada a reiniciar"
+        return
+    }
+
+    Passo "reinstalando com o binário novo"
+    $recem = Join-Path $pasta "target\release\remoteone-agent.exe"
+    if (Executar $recem @("install") $pasta) {
+        Write-Host "  Agente reinstalado e rodando." -ForegroundColor Green
+    } else {
+        $script:falhas += "agente (reinstalar)"
+        Write-Host "  Compilou, mas não reinstalou. Rode a mão:" -ForegroundColor Red
+        Write-Host "    $recem install" -ForegroundColor Red
+    }
+}
+
 # --- código ------------------------------------------------------------------
 
 Titulo "Código"
@@ -199,6 +232,7 @@ if ($Agente) {
     Passo "cargo build --release"
     if (Executar "cargo" @("build", "--release") $pastaAgente) {
         Write-Host "  Agente compilado." -ForegroundColor Green
+        ReinstalarSeInstalado $pastaAgente
     } else {
         # "Acesso negado" quase nunca é erro de código: é alguém segurando o
         # arquivo. Costuma ser o antivírus terminando de examinar o .exe recém
@@ -211,6 +245,7 @@ if ($Agente) {
         Passo "cargo build --release (segunda tentativa)"
         if (Executar "cargo" @("build", "--release") $pastaAgente) {
             Write-Host "  Agente compilado." -ForegroundColor Green
+            ReinstalarSeInstalado $pastaAgente
         } else {
             $falhas += "agente"
             Write-Host "  Falha ao compilar o agente." -ForegroundColor Red
