@@ -269,7 +269,10 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     final onde = computadores.length == 1
         ? computadores.first
         : await _escolherComputador(computadores, t);
-    if (onde == null || !mounted) return;
+    if (onde == null) return;
+    // Guarda em instrução própria: o analisador não reconhece o `mounted`
+    // escondido dentro de um `||` e acusa uso de contexto depois de `await`.
+    if (!mounted) return;
 
     final escolhidos = await Navigator.of(context).push<List<RemoteApp>>(
       MaterialPageRoute(
@@ -433,7 +436,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
 
 /// Lista de programas de um computador, com seleção múltipla.
 class _AppPickerScreen extends StatefulWidget {
-  const _AppPickerScreen({required this.state, required this.device});
+  const _AppPickerScreen({super.key, required this.state, required this.device});
+
 
   final AppState state;
   final Device device;

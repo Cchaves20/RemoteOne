@@ -83,6 +83,44 @@ function Executar($programa, $argumentos, $onde) {
     }
 }
 
+# Encerra qualquer agente em execução, olhando o nome **e** o caminho.
+#
+# Pelo nome pega o caso comum; pelo caminho pega o agente que já foi instalado
+# em outra pasta e que também disputa o arquivo quando o antivírus resolve
+# examinar os dois. Sem `-Force` num, sem `-ErrorAction` no outro, isto
+# derrubaria o script inteiro quando não houvesse nada rodando - que é o caso
+# normal.
+function Pare-Agente {
+    $vivos = Get-Process remoteone-agent -ErrorAction SilentlyContinue
+    if ($vivos) {
+        Passo "parando $($vivos.Count) agente(s) em execução"
+        $vivos | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 800
+    }
+}
+
+# Diz quem tem o arquivo aberto, quando dá para descobrir sem ferramenta extra.
+#
+# Existe porque "Acesso negado" sozinho não é diagnóstico: manda a pessoa
+# adivinhar entre antivírus, Explorer, uma cópia do agente rodando e um build
+# anterior travado.
+function Quem-Segura($caminho) {
+    if (-not (Test-Path $caminho)) {
+        Write-Host "  (o executável nem existe ainda: $caminho)" -ForegroundColor DarkGray
+        return
+    }
+    $donos = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -and $_.Path -ieq $caminho
+    }
+    if ($donos) {
+        foreach ($d in $donos) {
+            Write-Host "  Rodando: $($d.ProcessName) (PID $($d.Id))" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  Nenhum processo com esse executável - provavelmente o antivírus." -ForegroundColor DarkGray
+    }
+}
+
 # --- código ------------------------------------------------------------------
 
 Titulo "Código"
@@ -98,19 +136,30 @@ if ($Agente) {
     Titulo "Agente (Rust)"
     # O agente rodando segura o próprio .exe, e o build falha com
     # "Acesso negado (os error 5)". Parar antes evita isso.
-    $vivos = Get-Process remoteone-agent -ErrorAction SilentlyContinue
-    if ($vivos) {
-        Passo "parando $($vivos.Count) instância(s) em execução"
-        $vivos | Stop-Process -Force
-        Start-Sleep -Milliseconds 500
-    }
+    Pare-Agente
 
+    $agente = Join-Path $raiz "agent"
     Passo "cargo build --release"
-    if (Executar "cargo" @("build", "--release") (Join-Path $raiz "agent")) {
+    if (Executar "cargo" @("build", "--release") $agente) {
         Write-Host "  Agente compilado." -ForegroundColor Green
     } else {
-        $falhas += "agente"
-        Write-Host "  Falha ao compilar o agente." -ForegroundColor Red
+        # "Acesso negado" quase nunca é erro de código: é alguém segurando o
+        # arquivo. Costuma ser o antivírus terminando de examinar o .exe recém
+        # gravado, e nesse caso esperar resolve. Uma segunda tentativa custa
+        # segundos e evita mandar o usuário caçar um problema que não existe.
+        Write-Host "  Falhou. Vendo quem está segurando o executável..." -ForegroundColor Yellow
+        Quem-Segura (Join-Path $agente "target\release\remoteone-agent.exe")
+        Pare-Agente
+        Start-Sleep -Seconds 3
+        Passo "cargo build --release (segunda tentativa)"
+        if (Executar "cargo" @("build", "--release") $agente) {
+            Write-Host "  Agente compilado." -ForegroundColor Green
+        } else {
+            $falhas += "agente"
+            Write-Host "  Falha ao compilar o agente." -ForegroundColor Red
+            Write-Host "  Se disse 'Acesso negado', o .exe está preso por outro programa." -ForegroundColor Red
+            Write-Host "  Feche o Explorer nessa pasta, ou reinicie e rode de novo." -ForegroundColor Red
+        }
     }
 }
 
@@ -123,13 +172,18 @@ if ($App) {
     if (-not (Executar "flutter" @("pub", "get") $cliente)) {
         $falhas += "app (pub get)"
     } else {
-        Passo "flutter analyze"
-        if (Executar "flutter" @("analyze") $cliente) {
+        # `--fatal-infos`: sem isto o `flutter analyze` **sai com sucesso**
+        # quando só há apontamentos de nível "info", e este script dizia "App
+        # sem apontamentos" com três problemas impressos logo acima. Um
+        # verificador que não distingue "passou" de "passou mas reclamou" é
+        # pior do que não ter verificador: ele ensina a ignorar a saída.
+        Passo "flutter analyze --fatal-infos"
+        if (Executar "flutter" @("analyze", "--fatal-infos") $cliente) {
             Write-Host "  App sem apontamentos." -ForegroundColor Green
         } else {
-            # O Codemagic falha em qualquer apontamento, inclusive os "info".
             $falhas += "app (analyze)"
-            Write-Host "  O analyze apontou algo - corrija antes de gastar build do Codemagic." -ForegroundColor Red
+            Write-Host "  O analyze apontou algo - a lista está logo acima." -ForegroundColor Red
+            Write-Host "  Corrija antes de gastar build do Codemagic." -ForegroundColor Red
         }
     }
 }
