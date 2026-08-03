@@ -306,7 +306,16 @@ if ($Vps) {
             "git checkout $Branch",
             "git reset --hard origin/$Branch",
             "cd deploy",
-            "sudo docker compose -f docker-compose.lite.yml up -d --build"
+            "sudo docker compose -f docker-compose.lite.yml up -d --build",
+            # O Caddyfile entra por volume: mudá-lo no disco não muda nada no
+            # Caddy que já está rodando, e o `up -d` não recria o contêiner
+            # porque, do ponto de vista dele, o serviço não mudou. O resultado
+            # foi um proxy quebrado no ar com a correção parada no disco.
+            #
+            # `caddy reload` troca a configuração **sem derrubar** conexão
+            # nenhuma - e, se a configuração nova estiver errada, ele recusa e
+            # mantém a antiga de pé. Ou seja, também serve de validação.
+            "sudo docker compose -f docker-compose.lite.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile"
         )
         $remoto = $passos -join " && "
         & ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $remoto

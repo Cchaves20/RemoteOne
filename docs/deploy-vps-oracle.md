@@ -225,3 +225,26 @@ respondeu.
 - Troque `REMOTEONE_JWT_SECRET` e `POSTGRES_PASSWORD` por valores fortes e
   **nunca** versione o `.env`.
 - Mantenha o SSH só com chave (a Oracle já faz isso por padrão).
+
+## Mudou o Caddyfile? Recarregue o Caddy
+
+O `Caddyfile` entra no contêiner por **volume**. Mudá-lo no disco não muda nada
+no Caddy que já está rodando, e o `docker compose up -d` **não** recria o
+contêiner — do ponto de vista dele o serviço não mudou.
+
+Isso já causou um susto: uma correção de roteamento ficou parada no disco
+enquanto o proxy quebrado seguia no ar, e a conferência do `atualizar` acusou
+"servidor desatualizado" — quando o servidor estava certo e o proxy é que não o
+alcançava.
+
+O `atualizar` agora recarrega sozinho. À mão:
+
+```bash
+cd ~/RemoteOne/deploy
+sudo docker compose -f docker-compose.lite.yml exec -T caddy \
+  caddy reload --config /etc/caddy/Caddyfile
+```
+
+`reload` troca a configuração **sem derrubar conexão nenhuma**. E se a
+configuração nova estiver errada, o Caddy recusa e mantém a antiga de pé — ou
+seja, também serve de validação.
