@@ -324,37 +324,22 @@ if ($Vps) {
         )
         $remoto = $passos -join " && "
         & ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $remoto
-        if ($LASTEXITCODE -ne 0) {
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  Backend atualizado." -ForegroundColor Green
+        } else {
             $falhas += "vps"
             Write-Host "  Falha ao atualizar o VPS." -ForegroundColor Red
-        } else {
-            # Prova que o proxy leva /health à API, e não ao app web. Sem isto o
-            # deploy termina "com sucesso" tendo posto um roteamento quebrado no
-            # ar - foi exatamente o que aconteceu, e o erro só apareceu depois,
-            # na conferência, apontando para o lado errado.
-            #
-            # Roda **aqui**, e não dentro do ssh. A VM da Oracle não alcança o
-            # próprio IP público: o NAT da nuvem não faz hairpin, então um
-            # `curl` de lá para o domínio falha mesmo com tudo funcionando. A
-            # primeira versão desta verificação era assim e passou a acusar
-            # falha num deploy perfeito.
-            $corpo = ""
-            try {
-                $corpo = (Invoke-WebRequest -Uri "https://$Dominio/health" -TimeoutSec 20 -UseBasicParsing).Content
-            } catch {
-                $corpo = ""
-            }
-            if ($corpo -like "*webrtc-signaling*") {
-                Write-Host "  Backend atualizado." -ForegroundColor Green
-            } else {
-                $falhas += "vps (roteamento)"
-                $trecho = $corpo
-                if ($trecho.Length -gt 200) { $trecho = $trecho.Substring(0, 200) }
-                Write-Host "  O backend subiu, mas /health não respondeu a API." -ForegroundColor Red
-                Write-Host "  Recebido: $trecho" -ForegroundColor DarkGray
-                Write-Host "  Se veio HTML, o Caddy está levando /health ao app web." -ForegroundColor DarkGray
-            }
         }
+        # Aqui **não** vai uma conferência do /health. Já existe uma, logo
+        # abaixo, e duas fazem o mesmo GET com respostas diferentes: quem sobe
+        # o contêiner acabou de recriá-lo, então o primeiro pedido pega a API
+        # ainda levantando e o Caddy devolve 502. A conferência espera; uma
+        # checagem escrita aqui, sem espera, reprovaria um deploy perfeito.
+        #
+        # Duas versões disto já falharam - a primeira dentro do `ssh`, onde a
+        # VM não alcança o próprio IP público porque o NAT da nuvem não faz
+        # hairpin; a segunda aqui, sem paciência. Verificação é uma só, e é a
+        # que sabe esperar.
     }
 }
 
