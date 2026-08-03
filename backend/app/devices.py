@@ -28,6 +28,8 @@ from app.schemas import (
     ForegroundOut,
     ListingOut,
     MediaRequest,
+    MonitorIn,
+    MonitorsOut,
     PowerRequest,
     RenameDeviceRequest,
     SystemStatsOut,
@@ -586,6 +588,54 @@ async def list_apps(
             detail="o computador demorou para responder",
         ) from exc
     return [AppOut(**app) for app in apps]
+
+
+@router.get("/devices/{device_id}/monitors", response_model=MonitorsOut)
+async def list_monitors(
+    device_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MonitorsOut:
+    """As telas do computador, e qual delas está sendo capturada."""
+    _owned_device_or_404(db, device_id, current_user)
+
+    request_id, future = pending.create()
+    message = {"type": "list_monitors", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return MonitorsOut(**reply)
+
+
+@router.post("/devices/{device_id}/monitors", status_code=status.HTTP_204_NO_CONTENT)
+async def set_monitor(
+    device_id: str,
+    body: MonitorIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Escolhe qual tela capturar. `monitor` nulo volta ao principal.
+
+    Mão única: o agente troca a captura no tique seguinte e o resultado aparece
+    na imagem. Não há o que responder que a própria tela não diga.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    message = {"type": "set_monitor", "monitor": body.monitor}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
 
 
 @router.post("/devices/{device_id}/apps/launch", status_code=status.HTTP_204_NO_CONTENT)

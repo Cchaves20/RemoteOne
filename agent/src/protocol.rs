@@ -46,6 +46,15 @@ pub enum ClientMessage {
         request_id: String,
         apps: Vec<AppInfo>,
     },
+    /// Resposta a um `list_monitors`: as telas deste computador.
+    MonitorList {
+        request_id: String,
+        monitors: Vec<crate::capture::MonitorInfo>,
+        /// Qual está sendo capturada agora. `None` = ninguém escolheu, e vale
+        /// o principal.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        selected: Option<u32>,
+    },
     /// Resposta a um `system_info`: as métricas do computador, com o mesmo
     /// `request_id` do pedido.
     SystemStats {
@@ -183,6 +192,15 @@ pub enum ServerMessage {
     ListApps {
         request_id: String,
         kind: AppKind,
+    },
+    /// Pede a lista de monitores. O agente responde com `monitor_list`.
+    ListMonitors {
+        request_id: String,
+    },
+    /// Escolhe qual monitor capturar. `None` volta ao principal.
+    SetMonitor {
+        #[serde(default)]
+        monitor: Option<u32>,
     },
     /// Pede as métricas do computador (CPU, memória, disco). O agente responde
     /// com `system_stats` carregando o mesmo `request_id`.

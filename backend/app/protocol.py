@@ -51,6 +51,28 @@ class AppList(BaseModel):
     apps: list[AppInfo] = []
 
 
+class MonitorInfo(BaseModel):
+    """Uma tela do computador."""
+
+    #: Identificador do sistema. É por ele que o app escolhe, e não pela posição
+    #: na lista: a ordem muda quando alguém liga ou desliga um monitor.
+    id: int
+    name: str
+    width: int = 0
+    height: int = 0
+    primary: bool = False
+
+
+class MonitorList(BaseModel):
+    """Resposta do agente a um `list_monitors`."""
+
+    type: Literal["monitor_list"] = "monitor_list"
+    request_id: str
+    monitors: list[MonitorInfo] = []
+    #: Qual está sendo capturada. Ausente = ninguém escolheu, vale o principal.
+    selected: int | None = None
+
+
 class SystemSnapshot(BaseModel):
     """Métricas do computador, em bytes e porcentagem.
 
@@ -203,6 +225,7 @@ ClientMessage = Annotated[
     Hello
     | Heartbeat
     | AppList
+    | MonitorList
     | SystemStats
     | Foreground
     | Clipboard

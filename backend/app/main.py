@@ -25,6 +25,7 @@ from app.protocol import (
     FileList,
     Foreground,
     Hello,
+    MonitorList,
     PairCode,
     Paired,
     SystemStats,
@@ -85,6 +86,7 @@ FEATURES = [
     "audio-stream",
     "ice-servers",
     "clipboard",
+    "monitors",
 ]
 
 
@@ -234,6 +236,14 @@ async def agent_ws(websocket: WebSocket) -> None:
                 # está esperando (o endpoint HTTP que fez a pergunta).
                 pending.resolve(
                     message.request_id, [a.model_dump() for a in message.apps]
+                )
+            elif isinstance(message, MonitorList):
+                pending.resolve(
+                    message.request_id,
+                    {
+                        "monitors": [m.model_dump() for m in message.monitors],
+                        "selected": message.selected,
+                    },
                 )
             elif isinstance(message, FileList):
                 pending.resolve(

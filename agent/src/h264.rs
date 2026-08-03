@@ -114,6 +114,10 @@ impl Encoder {
 
     /// Codifica um quadro RGB (3 bytes por pixel, sem alfa).
     ///
+    /// RGB e não RGBA: só `RgbSliceU8` implementa `RGB8Source`, o caminho rápido
+    /// do `openh264`. O wrapper de RGBA existe, mas cai no caminho por pixel em
+    /// `f32` — trocar uma passagem de conversão por isso seria pior.
+    ///
     /// `elapsed` é o tempo **real** desde o início da transmissão. Precisa ser
     /// medido, não calculado a partir do fps pretendido: capturar e codificar
     /// leva dezenas de milissegundos, então o ritmo efetivo é sempre menor que o

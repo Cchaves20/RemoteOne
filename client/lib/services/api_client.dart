@@ -340,6 +340,26 @@ class ApiClient {
     return RemoteClipboard.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
+  /// As telas do computador, e qual delas está sendo capturada.
+  Future<RemoteMonitors> monitors(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/monitors'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return RemoteMonitors.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Escolhe qual tela capturar. `null` volta ao monitor principal.
+  Future<void> setMonitor(String deviceId, int? monitor) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/monitors'),
+      headers: _authHeaders,
+      body: jsonEncode({'monitor': monitor}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
   /// Coloca um texto na área de transferência do computador.
   Future<void> setClipboard(String deviceId, String text) async {
     final res = await _http.post(

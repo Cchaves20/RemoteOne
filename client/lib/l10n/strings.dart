@@ -425,6 +425,16 @@ class Strings {
       '已复制 $n 个文件',
       n == 1 ? '1 fichier copié' : '$n fichiers copiés',
       n == 1 ? '1 archivo copiado' : '$n archivos copiados');
+  String get monitorsTitle => _t('Tela do computador', 'Computer display',
+      '电脑显示器', "Écran de l'ordinateur", 'Pantalla del equipo');
+  String get monitorsSub => _t(
+      'Escolha qual monitor você quer ver e controlar.',
+      'Pick which monitor you want to see and control.',
+      '选择你想查看和控制的显示器。',
+      'Choisissez le moniteur que vous voulez voir et contrôler.',
+      'Elige qué monitor quieres ver y controlar.');
+  String get monitorPrimary =>
+      _t('principal', 'primary', '主显示器', 'principal', 'principal');
   String clipboardOutside(int n) => _t(
       n == 1
           ? '1 arquivo copiado está fora da pasta do usuário e não pode ser trazido'

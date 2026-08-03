@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../l10n/strings.dart';
+import '../theme.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/remote_app.dart';
@@ -155,6 +156,13 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// Arquivos copiados no computador, da última consulta.
   List<RemoteFile> _pcFiles = const [];
 
+  /// As telas do computador. Carregadas uma vez ao abrir: monitores não
+  /// aparecem e somem a cada segundo, e um pedido por tique seria gasto puro.
+  List<RemoteMonitor> _monitors = const [];
+
+  /// Qual tela está sendo capturada. `null` = o principal.
+  int? _selectedMonitor;
+
   /// Quantos arquivos copiados ficaram fora do alcance do computador. Uma
   /// lista vazia sem este número não distingue "não copiei nada" de "copiei
   /// de um disco que o agente não abre" — e a segunda merece uma explicação.
@@ -210,6 +218,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     // Quem está na frente do computador, para os ícones dos perfis.
     _startForegroundPolling();
     _loadIceServers();
+    _loadMonitors();
     // Reabre no perfil de atalhos da última vez (pode não existir mais).
     _profile = ControlProfile.byId(widget.state.profileId);
     // Na primeira vez que se controla um PC, mostra o tutorial de gestos (#20).
@@ -262,6 +271,107 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (!mounted || servers == null) return;
     _iceServers = servers;
     if (_video?.isLive != true) _connect();
+  }
+
+  /// Descobre as telas do computador, uma vez.
+  ///
+  /// Falha em silêncio de propósito: um computador com um monitor só, ou um
+  /// agente antigo que nem conhece o pedido, não deve gerar aviso nenhum — o
+  /// botão simplesmente não aparece.
+  Future<void> _loadMonitors() async {
+    try {
+      final telas = await widget.state.monitors(widget.device);
+      if (!mounted) return;
+      setState(() {
+        _monitors = telas.monitors;
+        _selectedMonitor = telas.selected;
+      });
+    } catch (_) {
+      // Sem lista, sem botão.
+    }
+  }
+
+  /// Folha de escolha da tela.
+  Future<void> _openMonitors() async {
+    HapticFeedback.selectionClick();
+    final t = widget.state.t;
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF14162C),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 4),
+              child: Text(
+                t.monitorsTitle,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+              child: Text(
+                t.monitorsSub,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ),
+            for (final m in _monitors)
+              ListTile(
+                leading: Icon(
+                  m.primary ? Icons.desktop_windows : Icons.monitor,
+                  color: _isCurrentMonitor(m) ? auroraCyan : Colors.white70,
+                ),
+                title: Text(
+                  m.name.isEmpty ? '#${m.id}' : m.name,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                ),
+                subtitle: Text(
+                  [
+                    if (m.resolution.isNotEmpty) m.resolution,
+                    if (m.primary) t.monitorPrimary,
+                  ].join(' · '),
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                trailing: _isCurrentMonitor(m)
+                    ? const Icon(Icons.check, color: auroraCyan)
+                    : null,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _pickMonitor(m.id);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Se esta é a tela em uso. Sem escolha explícita, vale o principal — que é
+  /// exatamente o que o agente faz do lado de lá.
+  bool _isCurrentMonitor(RemoteMonitor m) =>
+      _selectedMonitor == null ? m.primary : _selectedMonitor == m.id;
+
+  Future<void> _pickMonitor(int id) async {
+    final anterior = _selectedMonitor;
+    setState(() => _selectedMonitor = id);
+    try {
+      await widget.state.setMonitor(widget.device, id);
+    } catch (e) {
+      // Voltar ao que era: mostrar uma marca de seleção numa tela que não
+      // mudou seria mentir sobre o estado do computador.
+      if (mounted) setState(() => _selectedMonitor = anterior);
+      _avisar(e.toString());
+    }
   }
 
   void _connect() {
@@ -2070,6 +2180,15 @@ class _RemoteScreenState extends State<RemoteScreen>
               tooltip: widget.state.t.profilesPanel,
               onPressed: _toggleProfiles,
             ),
+            // Só aparece quando há mais de uma tela: um botão que abre uma
+            // lista de um item só é ruído na barra.
+            if (_monitors.length > 1)
+              _barToggle(
+                icon: Icons.desktop_windows,
+                open: _selectedMonitor != null,
+                tooltip: widget.state.t.monitorsTitle,
+                onPressed: _openMonitors,
+              ),
             // Área de transferência: abre uma folha, não uma faixa - é uma
             // visita curta, não algo para ficar na tela.
             _barToggle(

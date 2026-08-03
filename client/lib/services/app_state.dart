@@ -333,6 +333,12 @@ class AppState extends ChangeNotifier {
   Future<RemoteClipboard> clipboard(Device device) =>
       api.clipboard(device.deviceId);
 
+  Future<RemoteMonitors> monitors(Device device) =>
+      api.monitors(device.deviceId);
+
+  Future<void> setMonitor(Device device, int? monitor) =>
+      api.setMonitor(device.deviceId, monitor);
+
   Future<void> setClipboard(Device device, String text) =>
       api.setClipboard(device.deviceId, text);
 

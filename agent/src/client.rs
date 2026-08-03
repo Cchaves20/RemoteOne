@@ -114,21 +114,36 @@ fn desired_capture(
     video: bool,
     cfg: &StreamConfig,
     nivel: crate::adaptive::Level,
-) -> Option<(u32, u32)> {
-    if video {
+    monitor: Option<u32>,
+) -> Option<CaptureWanted> {
+    let (width, fps) = if video {
         let p = cfg.video_params(nivel);
-        Some((p.width, p.fps))
+        (p.width, p.fps)
     } else if streaming {
-        Some((cfg.max_width, cfg.fps.clamp(1, 60)))
+        (cfg.max_width, cfg.fps.clamp(1, 60))
     } else {
-        None
-    }
+        return None;
+    };
+    Some(CaptureWanted {
+        monitor,
+        width,
+        fps,
+    })
+}
+
+/// A captura que o estado atual pede. Trocar qualquer campo reabre a thread —
+/// inclusive o monitor, que é o ponto de trocar de tela sem reconectar nada.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CaptureWanted {
+    monitor: Option<u32>,
+    width: u32,
+    fps: u32,
 }
 
 /// Intervalo do ticker de quadros para uma captura desejada.
-fn rhythm(capture: Option<(u32, u32)>) -> Duration {
+fn rhythm(capture: Option<CaptureWanted>) -> Duration {
     match capture {
-        Some((_, fps)) => StreamConfig::interval_for(fps),
+        Some(c) => StreamConfig::interval_for(c.fps),
         None => IDLE_INTERVAL,
     }
 }
@@ -273,7 +288,10 @@ pub async fn run(
     // é a largura e a taxa com que ela foi aberta: quando o desejado difere, a
     // thread é recriada.
     let mut pump: Option<crate::capture::FramePump> = None;
-    let mut pump_config: Option<(u32, u32)> = None;
+    let mut pump_config: Option<CaptureWanted> = None;
+    // Monitor escolhido pelo app. `None` = o principal, e é onde toda sessão
+    // começa; a escolha vale enquanto o agente estiver de pé.
+    let mut tela: Option<u32> = None;
     // Contadores do resumo periódico: sem número, "está travado" não tem
     // como virar diagnóstico.
     let mut stats = VideoStats::default();
@@ -415,7 +433,8 @@ pub async fn run(
             }
             _ = frame_ticker.tick() => {
                 let quer_video = video.wants_video();
-                let desejada = desired_capture(streaming, quer_video, &active, ladder.current());
+                let desejada =
+                    desired_capture(streaming, quer_video, &active, ladder.current(), tela);
 
                 // O vídeo roda mais rápido que o JPEG e a ociosidade mais lenta
                 // que os dois. Sem acertar o ritmo, o vídeo herdaria os 10 fps
@@ -426,8 +445,9 @@ pub async fn run(
                     frame_ticker = interval(ritmo);
                     frame_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
                     match desejada {
-                        Some((_, fps)) => println!(
-                            "Ritmo da tela: {fps} fps ({})",
+                        Some(c) => println!(
+                            "Ritmo da tela: {} fps ({})",
+                            c.fps,
                             if quer_video { "vídeo" } else { "JPEG" },
                         ),
                         None => println!("Ritmo da tela: ocioso"),
@@ -467,8 +487,8 @@ pub async fn run(
                 if desejada != pump_config {
                     pump = None; // Drop encerra a thread antiga antes de abrir outra
                     pump_config = desejada;
-                    if let Some((largura, fps)) = desejada {
-                        match crate::capture::FramePump::start(largura, fps) {
+                    if let Some(c) = desejada {
+                        match crate::capture::FramePump::start(c.monitor, c.width, c.fps) {
                             Ok(started) => pump = Some(started),
                             Err(e) => {
                                 eprintln!("Não consegui iniciar a captura: {e}");
@@ -579,7 +599,7 @@ pub async fn run(
                             Some(Action::RestartFrameTicker) => {
                                 let ritmo = rhythm(desired_capture(
                                     streaming, video.wants_video(), &active,
-                                    ladder.current(),
+                                    ladder.current(), tela,
                                 ));
                                 if ritmo != ticker_interval {
                                     ticker_interval = ritmo;
@@ -590,6 +610,28 @@ pub async fn run(
                             }
                             // Métricas do computador: responde com o mesmo
                             // request_id, como a lista de aplicativos.
+                            Some(Action::ListMonitors { request_id }) => {
+                                let reply = serde_json::to_string(
+                                    &ClientMessage::MonitorList {
+                                        request_id,
+                                        monitors: crate::capture::monitors(),
+                                        selected: tela,
+                                    },
+                                )?;
+                                ws.send(Message::Text(reply)).await?;
+                            }
+                            Some(Action::SetMonitor { monitor: novo }) => {
+                                if novo != tela {
+                                    tela = novo;
+                                    // Nada mais a fazer: a captura é função do
+                                    // estado, e o próximo tique vê que o
+                                    // monitor mudou e reabre a thread sozinho.
+                                    match tela {
+                                        Some(id) => println!("Capturando o monitor {id}"),
+                                        None => println!("Capturando o monitor principal"),
+                                    }
+                                }
+                            }
                             Some(Action::SystemInfo { request_id }) => {
                                 let stats = monitor.snapshot();
                                 let reply = serde_json::to_string(
@@ -1114,6 +1156,10 @@ enum Action {
     RestartFrameTicker,
     /// Medir CPU/memória/disco e responder ao backend.
     SystemInfo { request_id: String },
+    /// Listar os monitores e responder ao backend.
+    ListMonitors { request_id: String },
+    /// Trocar o monitor capturado. `None` volta ao principal.
+    SetMonitor { monitor: Option<u32> },
     /// Descobrir o programa em primeiro plano e responder ao backend.
     ForegroundInfo { request_id: String },
     /// Ligar ou desligar a captura do som do computador, com o ganho.
@@ -1267,6 +1313,12 @@ fn handle_server_text(
             return Some(Action::ListApps { request_id, kind });
         }
         // Medir exige `&mut` no monitor, que vive no laço: volta como ação.
+        Ok(ServerMessage::ListMonitors { request_id }) => {
+            return Some(Action::ListMonitors { request_id });
+        }
+        Ok(ServerMessage::SetMonitor { monitor }) => {
+            return Some(Action::SetMonitor { monitor });
+        }
         Ok(ServerMessage::SystemInfo { request_id }) => {
             return Some(Action::SystemInfo { request_id });
         }
@@ -1419,6 +1471,11 @@ mod tests {
 
     /// O degrau de topo: é onde toda sessão começa, e é o estado em que estes
     /// testes checam os tetos configurados.
+    /// Uma captura pedida, para as comparações ficarem legíveis.
+    fn quer(width: u32, fps: u32) -> Option<CaptureWanted> {
+        Some(CaptureWanted { monitor: None, width, fps })
+    }
+
     fn topo() -> crate::adaptive::Level {
         crate::adaptive::LADDER[0]
     }
@@ -1435,15 +1492,15 @@ mod tests {
 
     #[test]
     fn ninguem_pedindo_a_tela_nao_pede_captura() {
-        assert_eq!(desired_capture(false, false, &config(), topo()), None);
+        assert_eq!(desired_capture(false, false, &config(), topo(), None), None);
         assert_eq!(rhythm(None), IDLE_INTERVAL);
     }
 
     #[test]
     fn jpeg_usa_a_largura_e_o_fps_do_preset() {
-        assert_eq!(desired_capture(true, false, &config(), topo()), Some((1600, 10)));
+        assert_eq!(desired_capture(true, false, &config(), topo(), None), quer(1600, 10));
         assert_eq!(
-            rhythm(desired_capture(true, false, &config(), topo())),
+            rhythm(desired_capture(true, false, &config(), topo(), None)),
             Duration::from_millis(100)
         );
     }
@@ -1451,9 +1508,9 @@ mod tests {
     #[test]
     fn video_tem_teto_proprio_e_manda_no_ritmo() {
         // 1280 e não 1600: codificar custa por pixel (ver `video_max_width`).
-        assert_eq!(desired_capture(true, true, &config(), topo()), Some((1280, 30)));
+        assert_eq!(desired_capture(true, true, &config(), topo(), None), quer(1280, 30));
         assert_eq!(
-            rhythm(desired_capture(true, true, &config(), topo())),
+            rhythm(desired_capture(true, true, &config(), topo(), None)),
             Duration::from_millis(33)
         );
     }
@@ -1461,7 +1518,7 @@ mod tests {
     #[test]
     fn video_dispensa_a_transmissao_jpeg() {
         // O app pode ter vídeo sem nunca pedir `start_stream`.
-        assert_eq!(desired_capture(false, true, &config(), topo()), Some((1280, 30)));
+        assert_eq!(desired_capture(false, true, &config(), topo(), None), quer(1280, 30));
     }
 
     #[test]
@@ -1495,14 +1552,27 @@ mod tests {
     }
 
     #[test]
+    fn trocar_de_monitor_muda_a_captura_pedida() {
+        // A thread de captura é recriada quando esta função muda de resposta.
+        // Se o monitor não entrasse na comparação, escolher outra tela no app
+        // não teria efeito nenhum - e nada quebraria para avisar.
+        let a = desired_capture(true, true, &config(), topo(), None);
+        let b = desired_capture(true, true, &config(), topo(), Some(7));
+        assert_ne!(a, b, "o monitor precisa fazer parte da captura pedida");
+        assert_eq!(b.unwrap().monitor, Some(7));
+        // O ritmo, esse, não muda: trocar de tela não é trocar de fps.
+        assert_eq!(rhythm(a), rhythm(b));
+    }
+
+    #[test]
     fn fps_absurdo_nao_vira_intervalo_zero() {
         let cfg = StreamConfig {
             fps: 0,
             video_fps: 9999,
             ..config()
         };
-        assert_eq!(desired_capture(true, false, &cfg, topo()), Some((1600, 1)));
-        assert_eq!(desired_capture(true, true, &cfg, topo()), Some((1280, 60)));
-        assert!(rhythm(desired_capture(true, true, &cfg, topo())) > Duration::ZERO);
+        assert_eq!(desired_capture(true, false, &cfg, topo(), None), quer(1600, 1));
+        assert_eq!(desired_capture(true, true, &cfg, topo(), None), quer(1280, 60));
+        assert!(rhythm(desired_capture(true, true, &cfg, topo(), None)) > Duration::ZERO);
     }
 }

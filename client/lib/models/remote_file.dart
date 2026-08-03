@@ -99,3 +99,51 @@ class RemoteClipboard {
     );
   }
 }
+
+
+/// Uma tela do computador.
+class RemoteMonitor {
+  const RemoteMonitor({
+    required this.id,
+    required this.name,
+    this.width = 0,
+    this.height = 0,
+    this.primary = false,
+  });
+
+  /// Identificador do sistema. É por ele que se escolhe, e não pela posição na
+  /// lista: a ordem muda quando alguém liga ou desliga um monitor, e uma
+  /// posição guardada passaria a apontar para outra tela.
+  final int id;
+  final String name;
+  final int width;
+  final int height;
+  final bool primary;
+
+  String get resolution => width > 0 && height > 0 ? '$width × $height' : '';
+
+  factory RemoteMonitor.fromJson(Map<String, dynamic> json) => RemoteMonitor(
+        id: (json['id'] as num).toInt(),
+        name: (json['name'] as String?) ?? '',
+        width: (json['width'] as num?)?.toInt() ?? 0,
+        height: (json['height'] as num?)?.toInt() ?? 0,
+        primary: (json['primary'] as bool?) ?? false,
+      );
+}
+
+/// As telas do computador e qual está sendo capturada.
+class RemoteMonitors {
+  const RemoteMonitors({this.monitors = const [], this.selected});
+
+  final List<RemoteMonitor> monitors;
+
+  /// `null` = ninguém escolheu, e vale o principal.
+  final int? selected;
+
+  factory RemoteMonitors.fromJson(Map<String, dynamic> json) => RemoteMonitors(
+        monitors: ((json['monitors'] as List?) ?? [])
+            .map((e) => RemoteMonitor.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        selected: (json['selected'] as num?)?.toInt(),
+      );
+}

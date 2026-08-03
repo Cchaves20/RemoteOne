@@ -170,7 +170,23 @@ juntos motivaram a migração:
   completo. Um codec resolve isso por blocos.
 
 A deduplicação e o filtro de caixa continuaram úteis depois do WebRTC: economizam
-CPU antes de qualquer codificação.
+CPU antes de qualquer codificação. O filtro, esse, mudou de implementação: o do
+`image` custava 26,5 ms por quadro a 1080p→720p, e o mesmo filtro com SIMD
+(`fast_image_resize`) custa 6,5 ms. Junto com isso, a conversão RGBA→RGB passou
+a acontecer **depois** da redução, sobre uma imagem 40% menor. O quadro sai
+igual: a maior diferença por canal, em conteúdo de tela, foi 2 de 255.
+
+## Um bug que a aritmética escondia
+
+A altura reduzida saía de `altura * teto / largura`, e isso dá número ímpar em
+telas comuns: 3000x2000 (Surface Book) vira 1280x853; 1366x768 vira 1280x719. O
+H.264 trabalha em blocos e subamostra a cor pela metade — **recusa dimensão
+ímpar**. Nessas telas o vídeo não codificava um único quadro: o agente reclamava
+a cada quadro e o app ficava só no JPEG, sem nada dizer por quê.
+
+O destino agora sai sempre par. É o tipo de defeito que só aparece em algumas
+máquinas, e por isso mesmo o teste percorre uma lista de resoluções reais em vez
+de conferir uma.
 
 Como isso se resolveu, com os números medidos, está em
 [`webrtc-plano.md`](webrtc-plano.md).

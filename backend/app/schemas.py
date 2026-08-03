@@ -187,6 +187,29 @@ class ClipboardOut(BaseModel):
     ignored: int = 0
 
 
+class MonitorOut(BaseModel):
+    """Uma tela do computador, como o app a mostra na lista."""
+
+    id: int
+    name: str
+    width: int = 0
+    height: int = 0
+    primary: bool = False
+
+
+class MonitorsOut(BaseModel):
+    """As telas do computador e qual delas está sendo capturada."""
+
+    monitors: list[MonitorOut] = []
+    selected: int | None = None
+
+
+class MonitorIn(BaseModel):
+    """Qual tela capturar. `None` volta ao monitor principal."""
+
+    monitor: int | None = None
+
+
 class ListingOut(BaseModel):
     """O conteúdo de uma pasta. `parent` ausente = já é a raiz permitida."""
 

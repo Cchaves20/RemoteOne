@@ -559,10 +559,10 @@ Dois detalhes conferidos no fonte, e não supostos:
   da espera é generoso de propósito — numa tela parada o WGC simplesmente não
   entrega quadro, e isso é normal, não erro.
 
-**Pendência declarada:** o caminho JPEG tem o mesmo defeito — `capture_frame_dedup`
-resolve o monitor a cada quadro. Não foi mexido nesta rodada porque é o fallback
-que precisa continuar funcionando enquanto o vídeo se estabiliza. O conserto certo
-é o JPEG passar a consumir o mesmo `FramePump`, que já entrega RGB reduzido.
+~~**Pendência declarada:** o caminho JPEG tem o mesmo defeito.~~ Resolvida: o
+JPEG passou a consumir o mesmo `FramePump` do vídeo, e o `jpeg_if_changed` não
+captura mais nada — recebe um quadro já pronto. Uma segunda captura da mesma
+tela dobraria o custo para produzir a mesma imagem.
 
 ### Regressão: tela preta ao trocar a qualidade
 
@@ -751,10 +751,26 @@ o que já é o caso hoje.
    Windows aqui, e o `openh264` compila C++ (precisa do MSVC). É o primeiro
    ponto a verificar ao subir o agente novo.
 4. **Tamanho e tempo de build do .ipa** — Codemagic tem cota mensal.
-5. **A captura vira o novo gargalo.** Com H.264 queremos 30 fps, e o `xcap`
-   custa dezenas de ms por quadro. A resposta certa é a **Desktop Duplication
-   API (DXGI)** do Windows, que entrega retângulos sujos e é bem mais rápida.
-   Provavelmente vira um item próprio.
+5. **A captura vira o novo gargalo.** Confirmado — mas a medição mudou o
+   diagnóstico. O suspeito era o `xcap`, e a resposta prevista era a Desktop
+   Duplication API (DXGI). Medindo o pipeline por etapa a 1920x1080, o custo
+   estava quase todo em software nosso:
+
+   | etapa | antes | agora |
+   |---|---|---|
+   | conversão RGBA→RGB | 3,7 ms | (feita depois de reduzir) |
+   | redução para 1280 | 26,5 ms | — |
+   | **total por quadro** | **~30 ms** | **7,2 ms** |
+
+   O conserto foi trocar o filtro de caixa do `image` pelo mesmo filtro com
+   SIMD (`fast_image_resize`) e inverter a ordem das duas operações: reduzir
+   primeiro, converter depois, sobre uma imagem que já é 40% do tamanho. A
+   imagem sai igual — a maior diferença por canal em conteúdo de tela foi 2 de
+   255.
+
+   O DXGI continua sendo o próximo passo **se** a medição pedir. Agora ela tem
+   como dizer: o resumo periódico do agente imprime `captura X ms/quadro`, e o
+   que sobrar ali é o custo de pegar o quadro do sistema, não o nosso.
 6. **Regressão de qualidade percebida.** H.264 a taxa baixa borra texto pequeno,
    e texto é justamente o que se lê numa tela de computador. Pode ser preciso
    forçar taxa mais alta ou perfil melhor para conteúdo de desktop.
