@@ -105,13 +105,22 @@ Backend: wss://antigo/ws/agent (da variável de ambiente, que vence o arquivo)
 ```
 
 Enquanto ela existir, trocar o servidor no `agent.conf` não terá efeito. Para
-apagá-la, num terminal:
+apagá-la, no PowerShell:
+
+```powershell
+[Environment]::SetEnvironmentVariable("REMOTEONE_BACKEND_URL", $null, "User")
+```
+
+ou, em qualquer terminal:
 
 ```
-setx REMOTEONE_BACKEND_URL ""
+reg delete "HKCU\Environment" /v REMOTEONE_BACKEND_URL /f
 ```
 
-e abra um terminal novo (a variável só some para processos novos).
+Depois feche e abra o terminal: a variável só some para processos novos.
+
+`setx REMOTEONE_BACKEND_URL ""` **não** serve — o `setx` recusa valor vazio com
+"sintaxe inválida". Ele grava variáveis; quem apaga é o registro.
 
 O atalho antigo na pasta Inicializar tem o mesmo nome do atual
 (`RemoteOneAgent.vbs`) e é substituído pelo `install`. Para conferir, abra-o no

@@ -294,7 +294,13 @@ mod imp {
                     println!();
                     println!("AVISO: a variável de ambiente REMOTEONE_BACKEND_URL vale {v}");
                     println!("e ela vence o arquivo. Provavelmente sobrou do instalador antigo.");
-                    println!("Para remover:  setx REMOTEONE_BACKEND_URL \"\"");
+                    // `setx VAR ""` **não** apaga: o setx recusa valor vazio.
+                    // Quem apaga uma variável de usuário é o registro.
+                    println!(
+                        "Para remover:  reg delete \"HKCU\\Environment\" \
+                         /v REMOTEONE_BACKEND_URL /f"
+                    );
+                    println!("e abra um terminal novo.");
                 }
             }
         }
