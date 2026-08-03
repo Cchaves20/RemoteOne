@@ -1,102 +1,156 @@
-# Rodar sem terminal (agente e backend em segundo plano)
+# Instalar o agente (rodar sem terminal)
 
 Para usar o RemoteOne no dia a dia — inclusive **desligar o PC pelo app** e
 depois **acordá-lo com Wake-on-LAN** — o computador não pode depender de um
-terminal aberto. O agente e o backend precisam:
+terminal aberto. O agente precisa:
 
-- iniciar sozinhos quando o Windows liga/faz login;
-- rodar ocultos (sem janela);
-- voltar sozinhos depois de um reinício, suspensão ou Wake-on-LAN.
+- iniciar sozinho quando você faz login;
+- rodar oculto, sem janela;
+- voltar sozinho depois de reiniciar, suspender ou acordar por Wake-on-LAN.
 
-Este guia deixa os dois assim. Faça no computador que você quer controlar
-(ex.: Dell G5 ou Surface).
+> Por que isso importa para o desligar/WoL: se o agente só roda no terminal, ao
+> desligar o PC pelo app não há como ele voltar — e mesmo acordando com
+> Wake-on-LAN, nada reconecta.
 
-> Por que isso importa para o desligar/WoL: se o agente só roda no terminal,
-> ao desligar o PC pelo app não há como ele voltar — e mesmo acordando com
-> Wake-on-LAN, nada reconecta. Com o agente como tarefa do Windows, ele sobe
-> junto com o sistema e o controle volta sozinho.
+## Instalar
 
-## 1. Agente em segundo plano (tarefa do Windows)
+Dois cliques em **`instalar.cmd`**, ou, no terminal:
 
-Na pasta do projeto, abra o **PowerShell** e rode:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File agent\scripts\install-agent-windows.ps1
+```
+remoteone-agent.exe install wss://seu-servidor/ws/agent
 ```
 
-O script compila o agente em modo release e coloca um launcher oculto na
-**pasta Inicializar** do seu usuário, então ele passa a iniciar **oculto a cada
-login** (e já inicia na hora, sem esperar o próximo login). **Não exige
-administrador.** O agente tem reconexão automática interna; se o Windows
-reiniciar, ele sobe de novo no login.
+A URL é opcional: sem ela, vale a que já estiver configurada — e, se não houver
+nenhuma, o backend da própria máquina (`ws://127.0.0.1:8000/ws/agent`).
 
-Se o backend **não** estiver no mesmo PC do agente, informe a URL:
+O que o comando faz:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File agent\scripts\install-agent-windows.ps1 -BackendUrl ws://IP_DO_BACKEND:8000/ws/agent
+1. Encerra qualquer agente que já esteja rodando.
+2. Copia o executável para `%LOCALAPPDATA%\Programs\RemoteOne`.
+3. Grava a URL do backend em `%APPDATA%\remoteone\agent.conf`.
+4. Põe um atalho oculto na pasta Inicializar do seu usuário.
+5. Registra o programa em **Aplicativos instalados**, com botão de desinstalar.
+6. Inicia o agente agora, sem esperar o próximo login.
+
+**Não precisa de administrador.** A instalação é da sua conta de usuário.
+
+### Conferir
+
+```
+remoteone-agent.exe status
 ```
 
-(O padrão é `ws://127.0.0.1:8000/ws/agent`, que já serve quando o backend roda
-na mesma máquina do agente.)
-
-Para remover do início automático:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File agent\scripts\uninstall-agent-windows.ps1
+```
+Instalado em: C:\Users\voce\AppData\Local\Programs\RemoteOne\remoteone-agent.exe
+Inicia com o Windows: sim
+Backend: wss://seu-servidor/ws/agent
+device_id: 6f3a…
 ```
 
-### Onde vejo o código de pareamento sem terminal?
+"Inicia com o Windows: **não**" com o programa instalado é um estado real e
+comum — alguém limpou a pasta Inicializar, ou um otimizador desativou a entrada.
+É por isso que as duas linhas são separadas: juntas, elas esconderiam
+exatamente o caso em que o computador some do app sem explicação.
+
+### Desinstalar
+
+Por **Aplicativos instalados** do Windows, por `desinstalar.cmd`, ou:
+
+```
+remoteone-agent.exe uninstall
+```
+
+A configuração e o `device_id` **ficam** em `%APPDATA%\remoteone`. É de
+propósito: reinstalar não deve obrigar a parear o computador de novo.
+
+## Configuração
+
+O arquivo é `%APPDATA%\remoteone\agent.conf`, no formato `CHAVE=valor`:
+
+```
+REMOTEONE_BACKEND_URL=wss://seu-servidor/ws/agent
+REMOTEONE_VIDEO_MAX_WIDTH=1280
+REMOTEONE_VIDEO_FPS=30
+```
+
+**Variável de ambiente vence o arquivo.** A ordem não é arbitrária: quem exporta
+uma variável está fazendo um teste pontual — "roda esta vez apontando para outro
+backend" — e essa intenção precisa vencer o que está gravado, senão o teste não
+acontece e ninguém entende por quê.
+
+Uma linha com erro de digitação é ignorada, e as outras continuam valendo: um
+engano numa chave não pode impedir o agente de subir.
+
+| Chave | O que faz |
+|---|---|
+| `REMOTEONE_BACKEND_URL` | Servidor a que o agente se conecta |
+| `REMOTEONE_VIDEO_MAX_WIDTH` | Teto de largura do vídeo (custo de CPU por pixel) |
+| `REMOTEONE_VIDEO_FPS` | Teto de quadros por segundo do vídeo |
+| `REMOTEONE_VIDEO_BITRATE` | Taxa alvo do H.264, em bits por segundo |
+| `REMOTEONE_STREAM_FPS` · `_MAX_WIDTH` · `_QUALITY` | O mesmo para o JPEG de reserva |
+| `REMOTEONE_ICE_SERVERS` | STUN, separados por vírgula. Vazio = só rede local |
+| `REMOTEONE_CONFIG_DIR` | Onde ficam o `device_id` e este arquivo |
+
+Os tetos daqui são tetos mesmo: a qualidade adaptativa só **abaixa** a partir
+deles (ver [`webrtc-plano.md`](webrtc-plano.md), Fase 4b).
+
+## Onde vejo o código de pareamento?
 
 Como o agente roda oculto, ao precisar parear ele:
 
-- mostra o código numa **janelinha** (MessageBox) no seu desktop; e
-- grava o código em **`%APPDATA%\remoteone\pairing-code.txt`**
-  (cole `%APPDATA%\remoteone` na barra do Explorer para abrir a pasta).
+- mostra o código numa **janelinha** no seu desktop; e
+- grava em **`%APPDATA%\remoteone\pairing-code.txt`** (cole
+  `%APPDATA%\remoteone` na barra do Explorer).
 
-O código também reaparece sozinho se você **remover o computador no app** — não
-precisa reiniciar o agente.
+O código reaparece sozinho se você **remover o computador no app** — não precisa
+reiniciar nada.
 
-## 2. Backend em segundo plano (Docker destacado)
+## Duas escolhas que valem explicação
 
-Suba a stack **destacada** (o `-d` libera o terminal) uma vez:
+**Pasta Inicializar, e não um serviço do Windows.** Um serviço roda antes do
+login, na sessão 0, **sem área de trabalho**: não conseguiria capturar a tela
+nem mover o mouse, que é tudo o que este agente faz. Ele precisa da sessão
+interativa, e por isso inicia no login. É também o que dispensa administrador.
+
+**A instalação vive dentro do executável**, e não num script à parte. O script
+de PowerShell que existia aqui antes exigia o código-fonte e o Rust instalados,
+apontava para dentro do repositório (mover a pasta quebrava o início automático,
+sem aviso) e não aparecia em "Aplicativos instalados". Além disso, um `.ps1` não
+entra na verificação cruzada de tipos para Windows nem tem teste — e este
+projeto já perdeu tempo com código que ninguém verifica.
+
+## O aviso azul do Windows
+
+Na primeira execução o SmartScreen mostra "O Windows protegeu o computador".
+É esperado: o executável não é assinado, e assinatura de código custa dinheiro
+(uns US$ 200/ano). Clique em **Mais informações → Executar assim mesmo**.
+
+Isso muda quando o produto for vendido; até lá, é o preço de distribuir um
+binário próprio.
+
+## O backend
+
+Se o backend roda no VPS, não há o que fazer aqui — a URL do `install` já
+aponta para lá.
+
+Se roda **nesta máquina** (desenvolvimento), suba a stack destacada uma vez:
 
 ```bash
 cd backend
 docker compose up -d --build
 ```
 
-O `docker-compose.yml` já usa `restart: unless-stopped`, então a API volta
-sozinha ao ligar o PC — desde que o Docker Desktop também suba no login:
+O compose usa `restart: unless-stopped`, então a API volta sozinha ao ligar o
+PC — desde que o Docker Desktop também suba no login: **Settings → General →
+Start Docker Desktop when you sign in**.
 
-1. Abra o **Docker Desktop** → engrenagem (**Settings**) → **General**.
-2. Marque **Start Docker Desktop when you sign in**.
-3. **Apply & restart**.
+## Verificar de ponta a ponta
 
-Pronto: ao ligar o computador, o Docker sobe, a API sobe com ele e você pode
-fechar todas as janelas.
+1. Reinicie o PC e **não abra terminal nenhum**.
+2. `remoteone-agent.exe status` (ou o app) deve mostrar o agente de pé.
+3. No app, o computador aparece **Online**.
+4. Desligar pelo app e depois acordar com Wake-on-LAN passa a funcionar sem
+   ninguém tocar na máquina.
 
-> Alternativa sem Docker: rodar o `uvicorn` como tarefa agendada. O Docker é o
-> caminho recomendado porque já está configurado e mantém Postgres/Redis juntos.
-
-## 3. Verificar
-
-1. Reinicie o PC e **não abra nenhum terminal**.
-2. No navegador do próprio PC, abra <http://localhost:8000/health> → deve
-   responder `{"status":"ok"}` (backend no ar).
-3. Abra <http://localhost:8000/api/v1/agents> → o agente deve aparecer na lista
-   (online).
-4. No app do celular (mesma rede Wi‑Fi, apontando para `http://IP_DO_PC:8000`),
-   o computador aparece **Online**. Desligar/suspender pelo app e depois acordar
-   com Wake-on-LAN passam a funcionar de ponta a ponta.
-
-## Observações
-
-- O agente roda na **sessão interativa** (necessário para capturar a tela e
-  mover o mouse/teclado); por isso ele inicia no **login**, não antes dele. Se a
-  conta do Windows exige senha, faça login uma vez após ligar (ou configure
-  logon automático se o PC for de uso pessoal).
-- Para **acordar** o PC com Wake-on-LAN, o computador precisa estar apenas
-  desligado/suspenso (não sem energia) e com o recurso ativado na BIOS e na
-  placa de rede. O passo a passo de WoL entra num próximo lote (recurso 9).
-- Para o ciclo completo **sem tocar no PC** (IP fixo + backend no boot + login
-  automático do Windows), veja [`pc-sempre-pronto.md`](pc-sempre-pronto.md).
+Para o ciclo completo sem tocar no PC (IP fixo, backend no boot, login
+automático), veja [`pc-sempre-pronto.md`](pc-sempre-pronto.md).

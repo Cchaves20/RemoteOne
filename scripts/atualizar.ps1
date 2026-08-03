@@ -225,7 +225,10 @@ if ($falhas.Count -eq 0) {
 
 if ($Ocultar) {
     Titulo "Agente oculto"
-    & powershell -ExecutionPolicy Bypass -File (Join-Path $raiz "agent\scripts\install-agent-windows.ps1") -BackendUrl "wss://$Dominio/ws/agent"
+    # Quem instala agora é o próprio executável: um `.ps1` não entra na
+    # verificação cruzada para Windows nem tem teste, e este projeto já pagou
+    # caro por código que ninguém verifica.
+    & (Join-Path $raiz "agent\target\release\remoteone-agent.exe") install "wss://$Dominio/ws/agent"
 } elseif ($Rodar) {
     Titulo "Agente (Ctrl+C para sair)"
     & (Join-Path $raiz "agent\target\release\remoteone-agent.exe")

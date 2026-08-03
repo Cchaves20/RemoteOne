@@ -168,9 +168,10 @@ Deve responder `{"status":"ok"}` com o cadeado de HTTPS. 🎉
 - **App (celular):** no campo **Servidor**, use
   `https://caio-remoteone.duckdns.org` (sem porta — 443 é implícito).
 - **Agente (cada PC):** instale apontando o WebSocket seguro:
-  ```powershell
-  powershell -ExecutionPolicy Bypass -File agent\scripts\install-agent-windows.ps1 -BackendUrl wss://caio-remoteone.duckdns.org/ws/agent
   ```
+  remoteone-agent.exe install wss://caio-remoteone.duckdns.org/ws/agent
+  ```
+  (ou dois cliques em `agent\scripts\instalar.cmd`)
 
 Como agora o backend é central e sempre ligado, **cadastre a conta uma vez** (é
 um banco novo) e refaça o pareamento de cada computador. A partir daí você

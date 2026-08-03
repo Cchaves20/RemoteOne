@@ -86,6 +86,12 @@ Duas regras, aprendidas errando:
 O que isso *não* cobre: comportamento. Se o loopback capta o som certo, se o
 ícone extraído é o do programa certo - isso só a máquina do usuário responde.
 
+Vale para tudo o que só existe no Windows — e foi por isso que a instalação em
+segundo plano saiu de um `.ps1` e entrou no executável, em `setup.rs`. Um script
+de PowerShell não é compilado, não é tipado e não é testado aqui; o mesmo código
+em Rust tem as partes puras cobertas (o escape de aspas do launcher, os caminhos
+de instalação, o texto do `status`) e o resto passa pela checagem cruzada.
+
 E, mais escorregadio, **pré-condição não é tipo**. Os arquivos copiados voltavam
 sempre vazios porque o código chamava `clipboard_win::get` em vez de
 `get_clipboard`: a primeira exige que a área de transferência já esteja aberta,
