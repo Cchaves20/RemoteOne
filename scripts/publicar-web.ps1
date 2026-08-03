@@ -149,10 +149,23 @@ if ($LASTEXITCODE -ne 0) {
 # `flutter_bootstrap.js`), e a conferencia nao pode quebrar por causa disso.
 # Buscar um asset pela URL tambem nao serve: com o `try_files` do Caddy, um
 # `main.dart.js` ausente responde o index.html com 200.
-& ssh @ssh $Servidor "curl -sf https://$Dominio/ | grep -qi flutter"
-if ($LASTEXITCODE -ne 0) {
+#
+# Roda AQUI, e nao pelo ssh: a VM da Oracle nao alcanca o proprio IP publico,
+# porque o NAT da nuvem nao faz hairpin. Um `curl` de la para o dominio falha
+# mesmo com tudo no lugar - o atualizar.ps1 ja acusou um deploy perfeito como
+# quebrado por causa disso.
+$pagina = ""
+try {
+    $pagina = (Invoke-WebRequest -Uri "https://$Dominio/" -TimeoutSec 20 -UseBasicParsing).Content
+} catch {
+    $pagina = ""
+}
+if ($pagina -notlike "*flutter*") {
+    $trecho = $pagina
+    if ($trecho.Length -gt 200) { $trecho = $trecho.Substring(0, 200) }
     Write-Host "  Publiquei, mas a pagina no ar nao parece o app Flutter." -ForegroundColor Red
-    Write-Host "  Confira o roteamento do Caddy (deploy/caddy/Caddyfile)." -ForegroundColor DarkGray
+    Write-Host "  Recebido: $trecho" -ForegroundColor DarkGray
+    Write-Host "  Confira o roteamento do Caddy em deploy/caddy/Caddyfile." -ForegroundColor DarkGray
     exit 1
 }
 

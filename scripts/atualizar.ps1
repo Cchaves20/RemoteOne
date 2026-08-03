@@ -320,20 +320,40 @@ if ($Vps) {
             # `caddy reload` troca a configuração **sem derrubar** conexão
             # nenhuma - e, se a configuração nova estiver errada, ele recusa e
             # mantém a antiga de pé. Ou seja, também serve de validação.
-            "sudo docker compose -f docker-compose.lite.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile",
-            # Prova, do próprio servidor, que o proxy leva /health à API e não
-            # ao app web. Sem isto o deploy termina "com sucesso" tendo posto
-            # um roteamento quebrado no ar - foi exatamente o que aconteceu, e
-            # o erro só apareceu na conferência, apontando para o lado errado.
-            "curl -sf https://$Dominio/health | grep -q webrtc-signaling"
+            "sudo docker compose -f docker-compose.lite.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile"
         )
         $remoto = $passos -join " && "
         & ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $remoto
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "  Backend atualizado." -ForegroundColor Green
-        } else {
+        if ($LASTEXITCODE -ne 0) {
             $falhas += "vps"
             Write-Host "  Falha ao atualizar o VPS." -ForegroundColor Red
+        } else {
+            # Prova que o proxy leva /health à API, e não ao app web. Sem isto o
+            # deploy termina "com sucesso" tendo posto um roteamento quebrado no
+            # ar - foi exatamente o que aconteceu, e o erro só apareceu depois,
+            # na conferência, apontando para o lado errado.
+            #
+            # Roda **aqui**, e não dentro do ssh. A VM da Oracle não alcança o
+            # próprio IP público: o NAT da nuvem não faz hairpin, então um
+            # `curl` de lá para o domínio falha mesmo com tudo funcionando. A
+            # primeira versão desta verificação era assim e passou a acusar
+            # falha num deploy perfeito.
+            $corpo = ""
+            try {
+                $corpo = (Invoke-WebRequest -Uri "https://$Dominio/health" -TimeoutSec 20 -UseBasicParsing).Content
+            } catch {
+                $corpo = ""
+            }
+            if ($corpo -like "*webrtc-signaling*") {
+                Write-Host "  Backend atualizado." -ForegroundColor Green
+            } else {
+                $falhas += "vps (roteamento)"
+                $trecho = $corpo
+                if ($trecho.Length -gt 200) { $trecho = $trecho.Substring(0, 200) }
+                Write-Host "  O backend subiu, mas /health não respondeu a API." -ForegroundColor Red
+                Write-Host "  Recebido: $trecho" -ForegroundColor DarkGray
+                Write-Host "  Se veio HTML, o Caddy está levando /health ao app web." -ForegroundColor DarkGray
+            }
         }
     }
 }
