@@ -25,7 +25,16 @@
     .\scripts\atualizar.ps1 -Vps
     Só o servidor.
 #>
-# ATENÇÃO ao editar: salve sempre como UTF-8 COM BOM, e não use travessão.
+# ATENÇÃO ao editar: salve sempre como UTF-8 COM BOM, não use travessão, e não
+# crie variável com o nome de um parâmetro.
+#
+# Nomes de variável no PowerShell são insensíveis a maiúsculas: `$agente` **é**
+# o parâmetro `[switch]$Agente`. Uma linha inocente como
+# `$agente = Join-Path $raiz "agent"` põe um texto dentro de um switch e derruba
+# o script com "não é possível converter System.String no tipo
+# SwitchParameter" - um erro que aponta para o próprio arquivo e não diz qual
+# linha. Custou quatro rodadas de depuração. Os nomes tomados hoje são:
+# Agente, App, Vps, Rodar, Ocultar, Branch, Dominio, Servidor, ChaveSsh, NoPull.
 #
 # O PowerShell 5.1 lê .ps1 sem BOM como ANSI. Nessa leitura, o travessão vira
 # a aspa curva ", que ele aceita como delimitador de string - e uma aspa solta
@@ -87,21 +96,6 @@ function Executar($programa, $argumentos, $onde) {
         Pop-Location
     }
 }
-
-# NOMES SEM HÍFEN, de propósito.
-#
-# As duas funções abaixo se chamavam `Pare-Agente` e `Quem-Segura`. A primeira
-# chamada a `Pare-Agente` derrubava o script inteiro com "não é possível
-# converter System.String no tipo SwitchParameter", apontando para o
-# **atualizar.ps1** - ou seja, o próprio script sendo invocado com um argumento
-# que não cabia num de seus `[switch]`, e `-Agente` é um deles.
-#
-# Não tenho explicação confirmada de como o PowerShell 5.1 chega lá a partir de
-# um nome de função. O que sei é que era a única construção nova naquele ponto
-# (nem a linha do "parando" nem a do "cargo build" chegaram a sair), que o
-# hífen no nome não me servia para nada, e que sem ele o problema não tem por
-# onde acontecer. Quando a causa não é clara, tirar a construção suspeita vale
-# mais do que uma teoria bonita.
 
 # Encerra qualquer agente em execução.
 #
@@ -201,9 +195,9 @@ if ($Agente) {
     # "Acesso negado (os error 5)". Parar antes evita isso.
     PararAgente
 
-    $agente = Join-Path $raiz "agent"
+    $pastaAgente = Join-Path $raiz "agent"
     Passo "cargo build --release"
-    if (Executar "cargo" @("build", "--release") $agente) {
+    if (Executar "cargo" @("build", "--release") $pastaAgente) {
         Write-Host "  Agente compilado." -ForegroundColor Green
     } else {
         # "Acesso negado" quase nunca é erro de código: é alguém segurando o
@@ -211,11 +205,11 @@ if ($Agente) {
         # gravado, e nesse caso esperar resolve. Uma segunda tentativa custa
         # segundos e evita mandar o usuário caçar um problema que não existe.
         Write-Host "  Falhou. Vendo quem está segurando o executável..." -ForegroundColor Yellow
-        QuemSegura (Join-Path $agente "target\release\remoteone-agent.exe")
+        QuemSegura (Join-Path $pastaAgente "target\release\remoteone-agent.exe")
         PararAgente
         Start-Sleep -Seconds 3
         Passo "cargo build --release (segunda tentativa)"
-        if (Executar "cargo" @("build", "--release") $agente) {
+        if (Executar "cargo" @("build", "--release") $pastaAgente) {
             Write-Host "  Agente compilado." -ForegroundColor Green
         } else {
             $falhas += "agente"
