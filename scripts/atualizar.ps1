@@ -349,21 +349,39 @@ Titulo "Conferência"
 # quando a aplicação está pronta para responder. Perguntar na mesma hora acusa
 # um servidor fora do ar que na verdade está só levantando.
 $saude = $null
+$bruto = ""
 $tentativas = 6
 for ($n = 1; $n -le $tentativas; $n++) {
     try {
-        $saude = Invoke-RestMethod "https://$Dominio/health" -TimeoutSec 10
-        break
+        # `Invoke-WebRequest` e não `Invoke-RestMethod`: guardar o texto cru é
+        # o que permite **mostrar** o que chegou quando a conferência reprova.
+        # Sem isso, uma resposta 200 que não seja o JSON esperado - a página do
+        # app, por exemplo, quando o proxy está mal roteado - vira "servidor
+        # desatualizado", e o diagnóstico sai pelo lado errado. Aconteceu.
+        $resposta = Invoke-WebRequest "https://$Dominio/health" -TimeoutSec 10 -UseBasicParsing
+        $bruto = $resposta.Content
+        $saude = $bruto | ConvertFrom-Json
     } catch {
-        if ($n -lt $tentativas) {
-            Passo "servidor ainda subindo, tentando de novo ($n/$tentativas)"
-            Start-Sleep -Seconds 5
-        }
+        $saude = $null
+        if ($bruto -eq "") { $bruto = $_.Exception.Message }
+    }
+
+    # Só para de tentar quando a resposta tem cara de saúde. Um 200 sem
+    # `features` costuma ser o servidor ainda subindo - ou o proxy entregando
+    # outra coisa -, e desistir na primeira vez perde os dois casos.
+    if ($null -ne $saude -and $null -ne $saude.features) { break }
+    if ($n -lt $tentativas) {
+        Passo "servidor ainda subindo, tentando de novo ($n/$tentativas)"
+        Start-Sleep -Seconds 5
     }
 }
 
-if ($null -eq $saude) {
-    Write-Host "  Não consegui falar com https://$Dominio/health" -ForegroundColor Red
+if ($null -eq $saude -or $null -eq $saude.features) {
+    Write-Host "  https://$Dominio/health não respondeu o que se espera." -ForegroundColor Red
+    $recorte = $bruto
+    if ($recorte.Length -gt 300) { $recorte = $recorte.Substring(0, 300) + "..." }
+    Write-Host "  Recebido: $recorte" -ForegroundColor DarkGray
+    Write-Host "  Se veio HTML, o proxy está mandando /health para o app web." -ForegroundColor DarkGray
     $falhas += "health"
 } else {
     $faltando = $esperado | Where-Object { $saude.features -notcontains $_ }
