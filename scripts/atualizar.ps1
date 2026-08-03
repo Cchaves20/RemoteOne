@@ -88,14 +88,26 @@ function Executar($programa, $argumentos, $onde) {
     }
 }
 
-# Encerra qualquer agente em execução, olhando o nome **e** o caminho.
+# NOMES SEM HÍFEN, de propósito.
 #
-# Pelo nome pega o caso comum; pelo caminho pega o agente que já foi instalado
-# em outra pasta e que também disputa o arquivo quando o antivírus resolve
-# examinar os dois. Sem `-Force` num, sem `-ErrorAction` no outro, isto
-# derrubaria o script inteiro quando não houvesse nada rodando - que é o caso
-# normal.
-function Pare-Agente {
+# As duas funções abaixo se chamavam `Pare-Agente` e `Quem-Segura`. A primeira
+# chamada a `Pare-Agente` derrubava o script inteiro com "não é possível
+# converter System.String no tipo SwitchParameter", apontando para o
+# **atualizar.ps1** - ou seja, o próprio script sendo invocado com um argumento
+# que não cabia num de seus `[switch]`, e `-Agente` é um deles.
+#
+# Não tenho explicação confirmada de como o PowerShell 5.1 chega lá a partir de
+# um nome de função. O que sei é que era a única construção nova naquele ponto
+# (nem a linha do "parando" nem a do "cargo build" chegaram a sair), que o
+# hífen no nome não me servia para nada, e que sem ele o problema não tem por
+# onde acontecer. Quando a causa não é clara, tirar a construção suspeita vale
+# mais do que uma teoria bonita.
+
+# Encerra qualquer agente em execução.
+#
+# `-ErrorAction SilentlyContinue` nos dois: não haver agente rodando é o caso
+# normal, e sem isso o script inteiro cairia por causa dele.
+function PararAgente {
     $vivos = Get-Process remoteone-agent -ErrorAction SilentlyContinue
     if ($vivos) {
         Passo "parando $($vivos.Count) agente(s) em execução"
@@ -109,7 +121,7 @@ function Pare-Agente {
 # Existe porque "Acesso negado" sozinho não é diagnóstico: manda a pessoa
 # adivinhar entre antivírus, Explorer, uma cópia do agente rodando e um build
 # anterior travado.
-function Quem-Segura($caminho) {
+function QuemSegura($caminho) {
     if (-not (Test-Path $caminho)) {
         Write-Host "  (o executável nem existe ainda: $caminho)" -ForegroundColor DarkGray
         return
@@ -187,7 +199,7 @@ if ($Agente) {
     Titulo "Agente (Rust)"
     # O agente rodando segura o próprio .exe, e o build falha com
     # "Acesso negado (os error 5)". Parar antes evita isso.
-    Pare-Agente
+    PararAgente
 
     $agente = Join-Path $raiz "agent"
     Passo "cargo build --release"
@@ -199,8 +211,8 @@ if ($Agente) {
         # gravado, e nesse caso esperar resolve. Uma segunda tentativa custa
         # segundos e evita mandar o usuário caçar um problema que não existe.
         Write-Host "  Falhou. Vendo quem está segurando o executável..." -ForegroundColor Yellow
-        Quem-Segura (Join-Path $agente "target\release\remoteone-agent.exe")
-        Pare-Agente
+        QuemSegura (Join-Path $agente "target\release\remoteone-agent.exe")
+        PararAgente
         Start-Sleep -Seconds 3
         Passo "cargo build --release (segunda tentativa)"
         if (Executar "cargo" @("build", "--release") $agente) {
