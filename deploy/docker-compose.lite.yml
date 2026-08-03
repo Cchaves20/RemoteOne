@@ -18,7 +18,13 @@ services:
     environment:
       DOMAIN: ${DOMAIN}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # A **pasta**, não o arquivo. Montar um arquivo solto prende o contêiner
+      # ao inode: o `git reset --hard` substitui o arquivo (inode novo) e o
+      # contêiner continua vendo o antigo para sempre. Foi assim que uma
+      # correção de roteamento ficou no disco do VPS enquanto o proxy quebrado
+      # seguia no ar - e o `caddy reload`, lendo de dentro do contêiner,
+      # recarregava a versão velha com sucesso.
+      - ./caddy:/etc/caddy:ro
       # O app web publicado. `:ro` porque o Caddy só lê, e a pasta pode não
       # existir: nesse caso o Docker a cria vazia e o app responde 404 até
       # alguém publicar - melhor do que recusar subir o servidor inteiro.

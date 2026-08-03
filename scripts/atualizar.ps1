@@ -315,7 +315,12 @@ if ($Vps) {
             # `caddy reload` troca a configuração **sem derrubar** conexão
             # nenhuma - e, se a configuração nova estiver errada, ele recusa e
             # mantém a antiga de pé. Ou seja, também serve de validação.
-            "sudo docker compose -f docker-compose.lite.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile"
+            "sudo docker compose -f docker-compose.lite.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile",
+            # Prova, do próprio servidor, que o proxy leva /health à API e não
+            # ao app web. Sem isto o deploy termina "com sucesso" tendo posto
+            # um roteamento quebrado no ar - foi exatamente o que aconteceu, e
+            # o erro só apareceu na conferência, apontando para o lado errado.
+            "curl -sf https://" + $Dominio + "/health | grep -q '\"features\"'"
         )
         $remoto = $passos -join " && "
         & ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $remoto

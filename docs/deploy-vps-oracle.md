@@ -232,6 +232,14 @@ O `Caddyfile` entra no contêiner por **volume**. Mudá-lo no disco não muda na
 no Caddy que já está rodando, e o `docker compose up -d` **não** recria o
 contêiner — do ponto de vista dele o serviço não mudou.
 
+> **Monte a pasta, nunca o arquivo.** Um bind mount de arquivo solto
+> (`./Caddyfile:/etc/caddy/Caddyfile`) prende o contêiner ao **inode**. O
+> `git reset --hard` substitui o arquivo, criando um inode novo, e o contêiner
+> continua vendo o antigo — para sempre, até ser recriado. Isso custou quatro
+> rodadas: a correção de roteamento estava no disco do VPS, o proxy quebrado
+> seguia no ar, e o `caddy reload` (que lê de dentro do contêiner) recarregava
+> a versão velha **com sucesso**. Por isso o volume hoje é `./caddy:/etc/caddy`.
+
 Isso já causou um susto: uma correção de roteamento ficou parada no disco
 enquanto o proxy quebrado seguia no ar, e a conferência do `atualizar` acusou
 "servidor desatualizado" — quando o servidor estava certo e o proxy é que não o
