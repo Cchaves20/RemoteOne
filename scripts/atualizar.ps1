@@ -321,11 +321,18 @@ if ($Vps) {
 
 # --- conferência -------------------------------------------------------------
 
-# O que este código espera do servidor. Quando um recurso novo entra, o nome
-# dele entra aqui - e o script passa a acusar servidor velho sozinho.
+# O que este código espera do servidor. Precisa espelhar a lista FEATURES do
+# `backend/app/main.py`: quando um recurso novo entra lá, o nome dele entra
+# aqui, e o script passa a acusar servidor velho sozinho.
+#
+# Ficou seis recursos atrasada sem ninguém notar - e uma conferência que não
+# confere o que existe hoje é a mesma armadilha do `flutter analyze` que saía
+# com sucesso: parece verificação, e não é.
 $esperado = @(
-    "pairing", "input", "screen-jpeg", "apps", "wake-on-lan", "totp",
-    "webrtc-signaling", "system-stats", "media-keys", "file-transfer"
+    "pairing", "input", "screen-jpeg", "apps",
+    "wake-on-lan", "totp", "webrtc-signaling", "system-stats",
+    "media-keys", "file-transfer", "foreground-app", "audio-stream",
+    "ice-servers", "clipboard", "monitors", "control-profiles"
 )
 
 Titulo "Conferência"

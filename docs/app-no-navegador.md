@@ -54,6 +54,29 @@ No Caddy, a lista de rotas do backend é **explícita** (`/api/*`, `/ws/*`,
 engoliria os arquivos do app, e o sintoma seria uma página em branco sem erro
 nenhum.
 
+### `handle`, e não matcher solto
+
+O Caddy executa as diretivas numa **ordem fixa própria**, não na ordem em que
+aparecem no arquivo. O `try_files` é uma reescrita, e reescritas rodam **antes**
+do `reverse_proxy`. A primeira versão deste arquivo era assim:
+
+```
+@backend path /api/* /ws/* /health
+reverse_proxy @backend api:8000
+try_files {path} /index.html
+file_server
+```
+
+Parece certo e **derruba a API inteira**. Todo pedido — inclusive `/health` e
+`/ws/agent` — era reescrito para `/index.html` antes de o matcher do backend ser
+avaliado, e aí ele não casava com nada. O sintoma foi o servidor parecer
+"velho": o `/health` respondia a página do app em vez do JSON, e a conferência
+do `atualizar` listou todos os recursos como ausentes.
+
+Blocos `handle` são mutuamente exclusivos e avaliados **na ordem escrita**. É a
+primitiva certa para "isto vai para lá, o resto vem para cá", e a reescrita de
+dentro do último bloco só vale dentro dele.
+
 ## O que muda no navegador
 
 | | Telefone | Navegador |
