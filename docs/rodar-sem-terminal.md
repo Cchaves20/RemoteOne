@@ -94,6 +94,30 @@ engano numa chave não pode impedir o agente de subir.
 Os tetos daqui são tetos mesmo: a qualidade adaptativa só **abaixa** a partir
 deles (ver [`webrtc-plano.md`](webrtc-plano.md), Fase 4b).
 
+## Vindo do instalador antigo
+
+O instalador de PowerShell guardava a URL do backend numa **variável de
+ambiente do usuário**, e variável vence arquivo. Se ela sobrou, o `status`
+avisa:
+
+```
+Backend: wss://antigo/ws/agent (da variável de ambiente, que vence o arquivo)
+```
+
+Enquanto ela existir, trocar o servidor no `agent.conf` não terá efeito. Para
+apagá-la, num terminal:
+
+```
+setx REMOTEONE_BACKEND_URL ""
+```
+
+e abra um terminal novo (a variável só some para processos novos).
+
+O atalho antigo na pasta Inicializar tem o mesmo nome do atual
+(`RemoteOneAgent.vbs`) e é substituído pelo `install`. Para conferir, abra-o no
+Bloco de Notas: o caminho lá dentro tem que apontar para
+`AppData\Local\Programs\RemoteOne`, e não para `target\release`.
+
 ## Onde vejo o código de pareamento?
 
 Como o agente roda oculto, ao precisar parear ele:

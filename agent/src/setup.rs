@@ -110,6 +110,12 @@ pub struct Status {
     pub autostart: bool,
     pub exe: PathBuf,
     pub backend: String,
+    /// Se o backend veio de uma variável de ambiente em vez do arquivo.
+    ///
+    /// Vale dizer porque a variável **vence** o arquivo: sem isso, alguém que
+    /// trocou o servidor no `agent.conf` veria aqui o valor antigo e não teria
+    /// como saber por quê.
+    pub backend_from_env: bool,
     pub device_id: Option<String>,
 }
 
@@ -129,7 +135,14 @@ pub fn status_lines(s: &Status) -> Vec<String> {
         "Inicia com o Windows: {}",
         if s.autostart { "sim" } else { "não" }
     ));
-    linhas.push(format!("Backend: {}", s.backend));
+    if s.backend_from_env {
+        linhas.push(format!(
+            "Backend: {} (da variável de ambiente, que vence o arquivo)",
+            s.backend
+        ));
+    } else {
+        linhas.push(format!("Backend: {}", s.backend));
+    }
     match &s.device_id {
         Some(id) => linhas.push(format!("device_id: {id}")),
         // Sem device_id é o estado de quem nunca rodou: dizer isso evita que a
@@ -194,13 +207,28 @@ mod imp {
         std::env::current_exe().map_err(|e| format!("não descobri o próprio caminho: {e}"))
     }
 
-    /// Encerra qualquer agente que já esteja rodando.
+    /// Encerra qualquer agente que já esteja rodando, **menos este processo**.
     ///
-    /// Sem isto, instalar por cima deixaria dois agentes conectados com o mesmo
-    /// `device_id` — e o backend entregaria os comandos a um deles, sorteando.
+    /// Sem parar os outros, instalar por cima deixaria dois agentes conectados
+    /// com o mesmo `device_id`, e o backend entregaria os comandos a um deles
+    /// por sorteio.
+    ///
+    /// A exclusão do próprio PID não é detalhe: quem instala **é** o
+    /// `remoteone-agent.exe`, e um `taskkill /IM remoteone-agent.exe` mata
+    /// todos os processos com esse nome — inclusive o instalador, no meio da
+    /// instalação. O sintoma foi um `install` que não imprimiu uma linha
+    /// sequer e não copiou nada, deixando para trás a impressão de que não
+    /// tinha feito nada por escolha.
     fn stop_running() {
+        let eu = std::process::id();
         let _ = Command::new("taskkill")
-            .args(["/IM", "remoteone-agent.exe", "/F"])
+            .args([
+                "/IM",
+                "remoteone-agent.exe",
+                "/F",
+                "/FI",
+                &format!("PID ne {eu}"),
+            ])
             .output();
     }
 
@@ -257,6 +285,18 @@ mod imp {
             std::fs::write(&caminho, cfg.to_text())
                 .map_err(|e| format!("não consegui gravar {}: {e}", caminho.display()))?;
             println!("Backend: {url}");
+            // O instalador antigo guardava a URL numa variável de ambiente do
+            // usuário, e variável vence arquivo. Sem este aviso, alguém
+            // trocaria de servidor aqui e continuaria conectando no antigo,
+            // com o arquivo na tela dizendo o contrário.
+            if let Ok(v) = std::env::var("REMOTEONE_BACKEND_URL") {
+                if !v.trim().is_empty() && v != url {
+                    println!();
+                    println!("AVISO: a variável de ambiente REMOTEONE_BACKEND_URL vale {v}");
+                    println!("e ela vence o arquivo. Provavelmente sobrou do instalador antigo.");
+                    println!("Para remover:  setx REMOTEONE_BACKEND_URL \"\"");
+                }
+            }
         }
 
         std::fs::write(&plano.startup, launcher_script(&plano.exe))
@@ -324,12 +364,16 @@ mod imp {
             .unwrap_or_default();
         let startup = startup_dir().map(|p| p.join(STARTUP_FILE)).unwrap_or_default();
         let cfg = crate::load_config();
+        let do_ambiente = std::env::var("REMOTEONE_BACKEND_URL")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
         Status {
             installed: exe.is_file(),
             autostart: startup.is_file(),
             exe,
             backend: crate::config::resolve(&cfg, "REMOTEONE_BACKEND_URL")
                 .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
+            backend_from_env: do_ambiente,
             device_id: std::fs::read_to_string(crate::device_id_path())
                 .ok()
                 .map(|s| s.trim().to_string())
@@ -355,12 +399,16 @@ mod imp {
 
     pub fn status() -> Status {
         let cfg = crate::load_config();
+        let do_ambiente = std::env::var("REMOTEONE_BACKEND_URL")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
         Status {
             installed: false,
             autostart: false,
             exe: std::env::current_exe().unwrap_or_default(),
             backend: crate::config::resolve(&cfg, "REMOTEONE_BACKEND_URL")
                 .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
+            backend_from_env: do_ambiente,
             device_id: std::fs::read_to_string(crate::device_id_path())
                 .ok()
                 .map(|s| s.trim().to_string())
@@ -486,6 +534,7 @@ mod tests {
             autostart: false,
             exe: p(r"C:\x\a.exe"),
             backend: "ws://127.0.0.1:8000/ws/agent".into(),
+            backend_from_env: false,
             device_id: None,
         });
         assert!(linhas[0].contains("Não instalado"));
@@ -501,12 +550,48 @@ mod tests {
             exe: install_dir(&caminho(&["C:", "Users", "eu", "AppData", "Local"]))
                 .join("remoteone-agent.exe"),
             backend: "wss://caio-remoteone.duckdns.org/ws/agent".into(),
+            backend_from_env: false,
             device_id: Some("abc123".into()),
         });
         assert!(linhas[0].contains("RemoteOne"));
         assert!(linhas[1].ends_with("sim"));
         assert!(linhas[2].contains("duckdns"));
         assert!(linhas[3].contains("abc123"));
+    }
+
+    #[test]
+    fn o_status_avisa_quando_o_ambiente_mascara_o_arquivo() {
+        // O instalador antigo guardava a URL numa variável de ambiente do
+        // usuário, e variável vence arquivo. Sem este aviso, quem trocasse de
+        // servidor no `agent.conf` veria aqui o valor antigo, com o arquivo na
+        // tela dizendo o contrário e nada explicando a diferença.
+        let linhas = status_lines(&Status {
+            installed: true,
+            autostart: true,
+            exe: p("x"),
+            backend: "wss://antigo/ws/agent".into(),
+            backend_from_env: true,
+            device_id: Some("id".into()),
+        });
+        assert!(linhas[2].contains("wss://antigo/ws/agent"));
+        assert!(
+            linhas[2].contains("variável de ambiente"),
+            "precisa dizer de onde veio: {}",
+            linhas[2]
+        );
+    }
+
+    #[test]
+    fn sem_variavel_o_status_nao_polui_a_linha() {
+        let linhas = status_lines(&Status {
+            installed: true,
+            autostart: true,
+            exe: p("x"),
+            backend: "wss://novo/ws/agent".into(),
+            backend_from_env: false,
+            device_id: Some("id".into()),
+        });
+        assert_eq!(linhas[2], "Backend: wss://novo/ws/agent");
     }
 
     #[test]
@@ -519,6 +604,7 @@ mod tests {
             autostart: false,
             exe: p(r"C:\x\a.exe"),
             backend: "x".into(),
+            backend_from_env: false,
             device_id: Some("id".into()),
         });
         assert!(linhas[0].starts_with("Instalado em:"));
