@@ -28,6 +28,11 @@
 # ATENÇÃO ao editar: salve sempre como UTF-8 COM BOM, não use travessão, e não
 # crie variável com o nome de um parâmetro.
 #
+# E `\"` NÃO escapa aspas no PowerShell: o escape é `""` (ou a crase). Uma
+# linha como `"... '\"features\"'"` não compila, e o erro aponta para o token
+# seguinte. Quando o texto precisar de aspas, prefira reescrever para não
+# precisar delas - foi o que se fez no `grep` da conferência do deploy.
+#
 # Nomes de variável no PowerShell são insensíveis a maiúsculas: `$agente` **é**
 # o parâmetro `[switch]$Agente`. Uma linha inocente como
 # `$agente = Join-Path $raiz "agent"` põe um texto dentro de um switch e derruba
@@ -320,7 +325,7 @@ if ($Vps) {
             # ao app web. Sem isto o deploy termina "com sucesso" tendo posto
             # um roteamento quebrado no ar - foi exatamente o que aconteceu, e
             # o erro só apareceu na conferência, apontando para o lado errado.
-            "curl -sf https://" + $Dominio + "/health | grep -q '\"features\"'"
+            "curl -sf https://$Dominio/health | grep -q webrtc-signaling"
         )
         $remoto = $passos -join " && "
         & ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $remoto
