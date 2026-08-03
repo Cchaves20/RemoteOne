@@ -11,7 +11,7 @@ Dell G5 5590** — sem possuir dispositivo Android nem Mac.
 | iPhone | Cliente iOS |
 | iPad | Cliente iPadOS (orientações, tablet) |
 | Surface Book 3 | Cliente Windows Tablet (touch) e agente Windows |
-| MateBook Fold | HarmonyOS em hardware real |
+| MateBook Fold | Agente Windows em tela dobrável (DPI alto, resolução que muda ao abrir/fechar) |
 | Dell G5 5590 | Agente Windows/Linux, backend (Docker), emulador Android e máquina controlada nos testes ponta a ponta |
 
 ## Lacunas e soluções
@@ -53,14 +53,16 @@ Dell G5 5590** — sem possuir dispositivo Android nem Mac.
 - Testar X11 **e** Wayland — o comportamento de captura de tela é
   completamente diferente entre os dois.
 
-### ChromeOS e HarmonyOS (segunda fase)
+### ChromeOS (segunda fase)
 
-- ChromeOS: o agente rodará via Crostini (container Linux), então o agente
-  Linux adianta a maior parte; validar com ChromeOS Flex em VM.
-- HarmonyOS: o MateBook Fold cobre hardware real; complementar com o
-  emulador do DevEco Studio. Atenção: Flutter **não** tem suporte oficial a
-  HarmonyOS NEXT — existe port da comunidade (OpenHarmony SIG). Tratar como
-  plataforma de segunda fase para não travar o MVP.
+O agente rodará via Crostini (container Linux), então o agente Linux adianta a
+maior parte; validar com ChromeOS Flex em VM.
+
+**HarmonyOS ficou fora do projeto.** O MateBook Fold é o único aparelho da
+casa que o roda, e ele também roda Windows — que já é uma plataforma
+suportada. Flutter não tem suporte oficial a HarmonyOS NEXT (só um port da
+comunidade), então cada tela custaria uma cadeia de build própria para cobrir
+um aparelho que já está coberto por outro caminho.
 
 ### Código só de Windows, escrito num Linux
 
@@ -119,7 +121,7 @@ funcionando", semanas depois.
    — teste ponta a ponta real do produto.
 3. Android via emulador no Dell + Firebase Test Lab nos marcos.
 4. Linux via VM no Dell, controlado pelo iPhone.
-5. macOS/ChromeOS/HarmonyOS: compilação contínua na CI; validação funcional
+5. macOS/ChromeOS: compilação contínua na CI; validação funcional
    nas versões 3.0/4.0.
 
 Único custo inevitável: Apple Developer (US$ 99/ano). Todo o resto tem

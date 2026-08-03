@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:local_auth/local_auth.dart';
 
 /// Autenticação biométrica (Face ID / Touch ID) para desbloquear o app.
@@ -10,10 +9,6 @@ class AppLock {
   final LocalAuthentication _auth = LocalAuthentication();
 
   Future<bool> authenticate() async {
-    // No navegador não há Face ID nem digital, e o plugin nem existe: a
-    // pergunta cairia no `catch` abaixo depois de sujar o console com um erro
-    // de plugin ausente a cada abertura do app.
-    if (kIsWeb) return true;
     try {
       final supported =
           await _auth.isDeviceSupported() && await _auth.canCheckBiometrics;

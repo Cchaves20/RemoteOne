@@ -30,10 +30,6 @@ dependencies:
   # ShareParams) é a mesma desde a 11. Assim o pub escolhe o que couber no
   # Flutter de cada máquina em vez de recusar a resolução.
   share_plus: ">=11.0.0 <14.0.0"
-  # Só o build web usa: é por ela que o download do navegador acontece
-  # (`file_saver_web.dart`). Substitui a `dart:html`, que está em fim de vida.
-  # No telefone ela não entra no binário - o import é condicional.
-  web: ^1.1.0
 
 dev_dependencies:
   flutter_test:

@@ -21,16 +21,12 @@ __pycache__/
 .env
 deploy/.env
 
-# App web publicado no VPS (sai do `flutter build web`, nao do repositorio).
-deploy/app/
-
 # Flutter / Dart
 client/.dart_tool/
 client/build/
 # Pastas de plataforma: geradas por `flutter create` na hora do build, como a
 # ios/ no Codemagic. Versionar traria arquivos que mudam com a versao do
 # Flutter e ninguem revisa.
-client/web/
 client/ios/
 client/android/
 client/.flutter-plugins*

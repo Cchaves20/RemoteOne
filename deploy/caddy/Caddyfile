@@ -4,53 +4,7 @@
 # certificado sozinho, desde que o domínio aponte para o IP do VPS e as portas
 # 80/443 estejam abertas. O reverse_proxy repassa também as conexões WebSocket
 # (/ws/agent e /ws/viewer) automaticamente.
-#
-# O mesmo domínio serve duas coisas: a **API** e o **app web**. Isso não é
-# economia de domínio, é requisito. Um app servido de outra origem esbarraria
-# no CORS a cada chamada, e uma página em https não pode falar com um servidor
-# em http (conteúdo misto). Na mesma origem nada disso existe, e o app abre
-# funcionando sem ninguém digitar endereço.
-#
-# ## Por que `handle`, e não matcher solto
-#
-# O Caddy executa as diretivas numa **ordem fixa própria**, e não na ordem em
-# que aparecem no arquivo. O `try_files` é uma reescrita, e reescritas rodam
-# **antes** do `reverse_proxy`. A primeira versão disto usava um matcher solto:
-#
-#     @backend path /api/* /ws/* /health
-#     reverse_proxy @backend api:8000
-#     try_files {path} /index.html
-#     file_server
-#
-# Parece certo e derruba a API inteira. Todo pedido - inclusive `/health` e
-# `/ws/agent` - era reescrito para `/index.html` primeiro, e aí o matcher do
-# backend já não casava com nada. O sintoma foi o servidor parecer "velho": o
-# `/health` respondia a página do app em vez do JSON.
-#
-# Blocos `handle` são mutuamente exclusivos e avaliados **na ordem escrita**.
-# É a primitiva certa para "isto vai para lá, o resto vem para cá", e a
-# reescrita de dentro do último bloco só vale dentro dele.
 
 {$DOMAIN} {
-	# A API, o WebSocket e a saúde. A lista é explícita de propósito: um
-	# `reverse_proxy` que pegasse tudo engoliria os arquivos do app.
-	@backend path /api/* /ws/* /health /docs /docs/* /redoc /openapi.json
-	handle @backend {
-		reverse_proxy api:8000
-	}
-
-	# Todo o resto é o app web, publicado em /srv/app (ver docker-compose).
-	handle {
-		root * /srv/app
-
-		# O app é uma página só: qualquer caminho que não seja arquivo cai no
-		# index.html e o roteamento acontece no navegador. Sem isto, recarregar
-		# a página numa tela interna daria 404.
-		try_files {path} /index.html
-		file_server
-	}
-
-	# O `main.dart.js` tem megabytes, e é ele que decide se a primeira
-	# abertura parece rápida ou travada.
-	encode gzip zstd
+	reverse_proxy api:8000
 }

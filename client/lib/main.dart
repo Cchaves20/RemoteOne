@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'screens/devices_screen.dart';
@@ -8,27 +7,13 @@ import 'services/api_client.dart';
 import 'services/app_state.dart';
 import 'theme.dart';
 
-/// URL do backend passada no build, se houver.
-///
-/// `--dart-define=REMOTEONE_BACKEND=http://SEU_IP:8000`. Vazio significa "não
-/// definiram", e aí vale a regra de [_defaultBackend].
-const _buildBackend = String.fromEnvironment('REMOTEONE_BACKEND');
-
-/// O backend a usar quando ninguém escolheu ainda.
-///
-/// **Na web, a própria origem da página.** O app é servido pelo mesmo domínio
-/// que atende a API, e por dois motivos que se reforçam: pedir a outra origem
-/// esbarraria no CORS do navegador, e uma página em `https` não pode falar com
-/// um servidor em `http` (conteúdo misto). Usar `Uri.base` faz o app abrir
-/// funcionando, sem ninguém digitar endereço nenhum.
-///
-/// Nas outras plataformas, `localhost` continua sendo o palpite de
-/// desenvolvimento - e a tela de login deixa trocar.
-String get _defaultBackend {
-  if (_buildBackend.isNotEmpty) return _buildBackend;
-  if (kIsWeb) return Uri.base.origin;
-  return 'http://localhost:8000';
-}
+/// URL padrão do backend. Pode ser sobrescrita no build com
+/// --dart-define=REMOTEONE_BACKEND=http://SEU_IP:8000 ou editada na tela de
+/// login (útil para apontar o celular ao computador na mesma rede).
+const _defaultBackend = String.fromEnvironment(
+  'REMOTEONE_BACKEND',
+  defaultValue: 'http://localhost:8000',
+);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
