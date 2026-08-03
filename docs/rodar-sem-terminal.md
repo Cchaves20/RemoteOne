@@ -14,11 +14,20 @@ terminal aberto. O agente precisa:
 
 ## Instalar
 
-Dois cliques em **`instalar.cmd`**, ou, no terminal:
+Dois cliques em **`instalar.cmd`**, que fica ao lado do executável. É o caminho
+mais curto e o que não erra caminho.
 
+Pelo terminal, entre na pasta onde o executável está e chame-o com `.\` na
+frente:
+
+```powershell
+cd C:\onde\voce\copiou
+.\remoteone-agent.exe install wss://seu-servidor/ws/agent
 ```
-remoteone-agent.exe install wss://seu-servidor/ws/agent
-```
+
+O `.\` não é enfeite: o PowerShell **não** procura executável na pasta atual,
+ao contrário do `cmd`. Sem ele a resposta é "não é reconhecido como nome de
+cmdlet", que parece arquivo ausente e não é.
 
 A URL é opcional: sem ela, vale a que já estiver configurada — e, se não houver
 nenhuma, o backend da própria máquina (`ws://127.0.0.1:8000/ws/agent`).
@@ -36,8 +45,8 @@ O que o comando faz:
 
 ### Conferir
 
-```
-remoteone-agent.exe status
+```powershell
+.\remoteone-agent.exe status
 ```
 
 ```
@@ -56,8 +65,8 @@ exatamente o caso em que o computador some do app sem explicação.
 
 Por **Aplicativos instalados** do Windows, por `desinstalar.cmd`, ou:
 
-```
-remoteone-agent.exe uninstall
+```powershell
+.\remoteone-agent.exe uninstall
 ```
 
 A configuração e o `device_id` **ficam** em `%APPDATA%\remoteone`. É de
@@ -177,10 +186,31 @@ O compose usa `restart: unless-stopped`, então a API volta sozinha ao ligar o
 PC — desde que o Docker Desktop também suba no login: **Settings → General →
 Start Docker Desktop when you sign in**.
 
+## Instalar em outro computador
+
+Não é preciso o código-fonte nem o Rust do outro lado. Copie dois arquivos:
+
+```
+agent\target\release\remoteone-agent.exe
+agent\scripts\instalar.cmd
+```
+
+Ponha os dois na mesma pasta da outra máquina (pendrive, OneDrive, pasta de
+rede) e dê dois cliques no `instalar.cmd`.
+
+Cada computador gera o **próprio** `device_id` na primeira execução, então ele
+mostra um código de pareamento novo. Digite-o no app, na mesma conta, e a
+máquina entra na sua lista ao lado das outras.
+
+**Se aparecer "VCRUNTIME140.dll não foi encontrado"**: o executável depende do
+runtime do Visual C++, que a maioria das máquinas já tem mas uma instalação
+limpa pode não ter. Instale o *Microsoft Visual C++ Redistributable (x64)*, que
+é gratuito.
+
 ## Verificar de ponta a ponta
 
 1. Reinicie o PC e **não abra terminal nenhum**.
-2. `remoteone-agent.exe status` (ou o app) deve mostrar o agente de pé.
+2. `.\remoteone-agent.exe status` (ou o app) deve mostrar o agente de pé.
 3. No app, o computador aparece **Online**.
 4. Desligar pelo app e depois acordar com Wake-on-LAN passa a funcionar sem
    ninguém tocar na máquina.
