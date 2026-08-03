@@ -4,7 +4,30 @@
 # certificado sozinho, desde que o domínio aponte para o IP do VPS e as portas
 # 80/443 estejam abertas. O reverse_proxy repassa também as conexões WebSocket
 # (/ws/agent e /ws/viewer) automaticamente.
+#
+# O mesmo domínio serve duas coisas: a **API** e o **app web**. Isso não é
+# economia de domínio, é requisito. Um app servido de outra origem esbarraria
+# no CORS a cada chamada, e uma página em https não pode falar com um servidor
+# em http (conteúdo misto). Na mesma origem nada disso existe, e o app abre
+# funcionando sem ninguém digitar endereço.
 
 {$DOMAIN} {
-	reverse_proxy api:8000
+	# A API, o WebSocket e a saúde vão para o backend. A lista é explícita de
+	# propósito: um `reverse_proxy` que pegasse tudo engoliria os arquivos do
+	# app, e o sintoma seria uma página em branco sem erro nenhum.
+	@backend path /api/* /ws/* /health /docs /docs/* /redoc /openapi.json
+	reverse_proxy @backend api:8000
+
+	# O restante é o app web, publicado em /srv/app (ver docker-compose).
+	root * /srv/app
+
+	# O app é uma página só: qualquer caminho que não seja arquivo cai no
+	# index.html e o roteamento acontece no navegador. Sem isto, recarregar a
+	# página numa tela interna daria 404.
+	try_files {path} /index.html
+	file_server
+
+	# O `main.dart.js` tem megabytes, e é ele que decide se a primeira
+	# abertura parece rápida ou travada.
+	encode gzip zstd
 }

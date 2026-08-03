@@ -1,14 +1,12 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../l10n/strings.dart';
 import '../models/device.dart';
 import '../models/remote_file.dart';
 import '../services/app_state.dart';
+import '../services/file_saver.dart';
 import '../theme.dart';
 
 /// Arquivos do computador: navegar, trazer para o celular e mandar para lá.
@@ -75,13 +73,12 @@ class _FilesScreenState extends State<FilesScreen> {
     setState(() => _busy = file.name);
     try {
       final bytes = await widget.state.downloadFile(widget.device, file.path);
-      final dir = await getTemporaryDirectory();
-      final local = File('${dir.path}/${file.name}');
-      await local.writeAsBytes(bytes);
-      if (!mounted) return;
+      // `null` = o navegador já baixou. Não é falha: falha vem como exceção.
+      final local = await saveDownloadedFile(bytes, file.name);
+      if (!mounted || local == null) return;
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(local.path)],
+          files: [XFile(local)],
           title: file.name,
           sharePositionOrigin: origem,
         ),

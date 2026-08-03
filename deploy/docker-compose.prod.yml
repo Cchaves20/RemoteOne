@@ -20,6 +20,10 @@ services:
       DOMAIN: ${DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # O app web publicado. `:ro` porque o Caddy só lê, e a pasta pode não
+      # existir: nesse caso o Docker a cria vazia e o app responde 404 até
+      # alguém publicar - melhor do que recusar subir o servidor inteiro.
+      - ./app:/srv/app:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

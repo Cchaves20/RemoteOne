@@ -21,6 +21,9 @@ __pycache__/
 .env
 deploy/.env
 
+# App web publicado no VPS (sai do `flutter build web`, nao do repositorio).
+deploy/app/
+
 # Flutter / Dart
 client/.dart_tool/
 client/build/
