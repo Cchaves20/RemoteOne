@@ -15,13 +15,18 @@ com navegador vira um controle.
 .\scripts\publicar-web.cmd
 ```
 
-Compila (`flutter build web --release`), envia ao VPS e troca a pasta. O Caddy
-lê os arquivos do disco: não é preciso reiniciar nada.
+Na primeira vez ele gera a pasta `client/web/` com
+`flutter create --platforms=web`, porque **este repositório não versiona pastas
+de plataforma** — o Codemagic faz o mesmo com a `ios/`. Sem esse passo o
+Flutter recusa com "This project is not configured for the web". Depois
+compila, envia ao VPS e troca a pasta. O Caddy lê os arquivos do disco: não é
+preciso reiniciar nada.
 
 Se preferir à mão, ou se o script atrapalhar:
 
 ```bash
 cd client
+flutter create --org com.remoteone --project-name remoteone_client --platforms=web .
 flutter build web --release
 scp -r -i SUA_CHAVE.key build/web ubuntu@147.15.45.45:~/RemoteOne/deploy/app-novo
 ssh -i SUA_CHAVE.key ubuntu@147.15.45.45 \

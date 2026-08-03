@@ -39,6 +39,35 @@ if ($ChaveSsh -eq "" -or -not (Test-Path $ChaveSsh)) {
 
 $cliente = Join-Path $raiz "client"
 
+# Este repositorio nao versiona pastas de plataforma: elas sao geradas na hora
+# do build. O Codemagic faz o mesmo com a `ios/`. Sem este passo o Flutter
+# recusa com "This project is not configured for the web".
+#
+# `flutter create` num projeto que ja existe so acrescenta o que falta: nao
+# toca em `lib/` nem no `pubspec.yaml`.
+if (-not (Test-Path (Join-Path $cliente "web\index.html"))) {
+    Write-Host ""
+    Write-Host "=== Gerando a pasta web/ (primeira vez) ===" -ForegroundColor Cyan
+    Push-Location $cliente
+    try {
+        & flutter create --org com.remoteone --project-name remoteone_client --platforms=web .
+    } finally {
+        Pop-Location
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  Nao consegui gerar a pasta web/." -ForegroundColor Red
+        exit 1
+    }
+
+    # O `flutter create` poe o nome do pacote no titulo da aba. Trocar aqui
+    # evita versionar a pasta inteira so por causa de uma linha.
+    $indice = Join-Path $cliente "web\index.html"
+    $texto = Get-Content $indice -Raw
+    $texto = $texto -replace "<title>[^<]*</title>", "<title>RemoteOne</title>"
+    $texto = $texto -replace 'content="remoteone_client"', 'content="RemoteOne"'
+    Set-Content -Path $indice -Value $texto -Encoding UTF8
+}
+
 Write-Host ""
 Write-Host "=== Compilando o app para a web ===" -ForegroundColor Cyan
 Push-Location $cliente
