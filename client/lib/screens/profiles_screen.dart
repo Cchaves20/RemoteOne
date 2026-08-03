@@ -135,6 +135,16 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                   child: ReorderableListView.builder(
                     padding: const EdgeInsets.only(bottom: 96),
                     itemCount: _fila.length,
+                    // `onReorderItem` substitui isto e já entrega o índice
+                    // corrigido - mas só existe nas versões mais novas do
+                    // Flutter, e o Codemagic compila em `stable`, que pode
+                    // estar atrás da máquina de quem escreve. Trocar agora
+                    // arriscaria quebrar o build por causa de um aviso.
+                    //
+                    // Ao trocar: **apague** o ajuste de índice em `_reordenar`.
+                    // O callback novo já o faz, e fazer duas vezes move o item
+                    // para o lugar errado sem nada quebrar.
+                    // ignore: deprecated_member_use
                     onReorder: _reordenar,
                     itemBuilder: (context, i) => _linha(_fila[i], t),
                   ),
@@ -436,7 +446,9 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
 
 /// Lista de programas de um computador, com seleção múltipla.
 class _AppPickerScreen extends StatefulWidget {
-  const _AppPickerScreen({super.key, required this.state, required this.device});
+  // Sem `key`: a classe é privada e só é instanciada num lugar. Um parâmetro
+  // opcional que ninguém passa é parâmetro morto, e o analisador acusa.
+  const _AppPickerScreen({required this.state, required this.device});
 
 
   final AppState state;
