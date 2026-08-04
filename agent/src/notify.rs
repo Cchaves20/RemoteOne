@@ -1,24 +1,59 @@
 //! Exibe o código de pareamento sem depender de um terminal aberto.
 //!
-//! Quando o agente roda em segundo plano (tarefa agendada, sem console), o
-//! `println!` do código não é visto por ninguém. Por isso também:
+//! Quando o agente roda em segundo plano, o `println!` do código não é visto
+//! por ninguém. Duas saídas, e as duas continuam valendo:
+//!
 //!  - grava o código num arquivo (`%APPDATA%\remoteone\pairing-code.txt`);
-//!  - no Windows, mostra uma janelinha (MessageBox) no desktop do usuário.
+//!  - guarda-o aqui, e a janela do agente o mostra em letra grande, com botão
+//!    de copiar - abrindo sozinha quando ele chega.
+//!
+//! ## O que saiu daqui
+//!
+//! Havia uma MessageBox disparada por `powershell.exe`. Custava cerca de um
+//! segundo, piscava, só aceitava ASCII (o texto perdia acento) e é o padrão
+//! que antivírus marcam: um processo em segundo plano invocando PowerShell.
+//! A janela própria faz o mesmo trabalho melhor, sem processo nenhum a mais.
+//!
+//! Um balão de notificação seria pior que a janela: some em segundos, e um
+//! código de pareamento é exatamente o tipo de coisa que a pessoa perde e
+//! precisa reencontrar.
 
 use std::path::PathBuf;
+use std::sync::Mutex;
+
+/// O código válido agora, se houver.
+///
+/// Global porque só existe um pareamento em curso por processo, e a
+/// alternativa seria carregar um canal do laço de rede até o desenho da tela,
+/// atravessando código que não tem nada a ver com isso.
+static PENDENTE: Mutex<Option<(String, u64)>> = Mutex::new(None);
 
 /// Anuncia o código de pareamento por vias que não exigem terminal.
 pub fn announce_pairing_code(code: &str, expires_in_seconds: u64) {
     if let Some(path) = code_file_path() {
         write_code_file(&path, code, expires_in_seconds);
     }
-    imp::popup(code, expires_in_seconds);
+    if let Ok(mut slot) = PENDENTE.lock() {
+        *slot = Some((code.to_string(), expires_in_seconds));
+    }
 }
 
-/// Remove o arquivo do código depois que o dispositivo é pareado (limpeza).
+/// O código à espera de ser digitado, para a janela mostrar.
+pub fn codigo_pendente() -> Option<(String, u64)> {
+    PENDENTE.lock().ok().and_then(|s| s.clone())
+}
+
+/// Remove o código depois que o dispositivo é pareado (limpeza).
+///
+/// Some do arquivo **e** da tela: um código já usado continuar em letra
+/// garrafal seria pedir para alguém tentar digitá-lo de novo e concluir que o
+/// pareamento está quebrado.
 pub fn clear_pairing_code() {
     if let Some(path) = code_file_path() {
         let _ = std::fs::remove_file(path);
+    }
+    if let Ok(mut slot) = PENDENTE.lock() {
+        *slot = None;
     }
 }
 
@@ -52,34 +87,6 @@ fn config_base() -> Option<PathBuf> {
     }
 }
 
-#[cfg(windows)]
-mod imp {
-    use std::process::Command;
-
-    pub fn popup(code: &str, expires_in_seconds: u64) {
-        let minutes = expires_in_seconds / 60;
-        // Texto ASCII para evitar problemas de code page ao passar o argumento.
-        // O `code` vem de um alfabeto fixo [A-Z2-9], sem aspas: seguro na string.
-        let message =
-            format!("Codigo de pareamento: {code}  (expira em {minutes} min). Informe no app.");
-        let script = format!(
-            "Add-Type -AssemblyName System.Windows.Forms; \
-             [System.Windows.Forms.MessageBox]::Show('{message}','RemoteOne - pareamento') | Out-Null"
-        );
-        // Dispara e segue a vida: a janela é modal para o usuário, não para nós.
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
-            .spawn();
-    }
-}
-
-#[cfg(not(windows))]
-mod imp {
-    pub fn popup(_code: &str, _expires_in_seconds: u64) {
-        // Sem GUI fora do Windows: o arquivo + o println! já bastam no dev.
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,5 +100,21 @@ mod tests {
         assert!(content.contains("ABC23XYZK"));
         assert!(content.contains("10 min"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn o_codigo_fica_disponivel_para_a_janela_e_some_ao_parear() {
+        announce_pairing_code("ABC23XYZK", 600);
+        assert_eq!(
+            codigo_pendente(),
+            Some(("ABC23XYZK".to_string(), 600)),
+            "a janela não teria o que mostrar"
+        );
+        clear_pairing_code();
+        assert_eq!(
+            codigo_pendente(),
+            None,
+            "um código já usado continuaria na tela convidando a digitá-lo de novo"
+        );
     }
 }

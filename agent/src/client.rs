@@ -180,9 +180,16 @@ pub async fn run(
     heartbeat: Duration,
     stream: StreamConfig,
     keep_awake: bool,
+    estado: crate::gui::Compartilhado,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (mut ws, _response) = connect_async(url).await?;
     println!("Conectado ao backend em {url}");
+    // A janela precisa saber daqui: é este o instante em que a conexão existe,
+    // e nenhum outro lugar tem essa informação sem adivinhar.
+    if let Ok(mut e) = estado.lock() {
+        e.conectado = true;
+        e.ultimo_erro = None;
+    }
 
     // Envia o hello e aguarda o welcome.
     let hello = serde_json::to_string(&identity.hello())?;
@@ -382,6 +389,10 @@ pub async fn run(
                     keep_awake,
                     crate::awake::power_source(),
                 ));
+                if let Ok(mut e) = estado.lock() {
+                    e.keep_awake = keep_awake;
+                    e.segurando = awake.holding();
+                }
             }
             // Sinalização vinda do webrtc-rs (resposta SDP, candidatos locais):
             // este laço é quem tem o WebSocket, então é quem despacha.
@@ -692,6 +703,10 @@ pub async fn run(
                                     enabled,
                                     crate::awake::power_source(),
                                 ));
+                                if let Ok(mut e) = estado.lock() {
+                                    e.keep_awake = enabled;
+                                    e.segurando = awake.holding();
+                                }
                                 // Grava para valer no próximo login. Uma falha
                                 // aqui não desfaz o efeito imediato: o pedido
                                 // já está de pé, só não sobreviveria a um

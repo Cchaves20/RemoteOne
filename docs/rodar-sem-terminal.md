@@ -150,16 +150,41 @@ O atalho antigo na pasta Inicializar tem o mesmo nome do atual
 Bloco de Notas: o caminho lá dentro tem que apontar para
 `AppData\Local\Programs\RemoteOne`, e não para `target\release`.
 
+## A janela e o ícone ao lado do relógio
+
+O agente tem um **ícone na bandeja**, ao lado do relógio. É a prova de que ele
+está de pé sem ninguém abrir terminal. Duplo clique abre a janela; o clique
+direito traz **Abrir o RemoteOne** e **Sair**.
+
+A janela mostra o computador, o servidor, o identificador, se a conexão está de
+pé (e o motivo, quando não está) e o estado do "manter pronto".
+
+**Fechar no X esconde, não encerra.** Sair de verdade é só pelo menu da
+bandeja. Um X que encerrasse o agente faria o computador sumir do aplicativo, e
+fechar uma janela é o gesto mais inocente que existe — ninguém associaria uma
+coisa à outra.
+
+Os atalhos do Menu Iniciar e da área de trabalho abrem **esta** janela, do
+agente que já está rodando.
+
 ## Onde vejo o código de pareamento?
 
-Como o agente roda oculto, ao precisar parear ele:
-
-- mostra o código numa **janelinha** no seu desktop; e
-- grava em **`%APPDATA%\remoteone\pairing-code.txt`** (cole
-  `%APPDATA%\remoteone` na barra do Explorer).
+Quando o agente precisa parear, a **janela abre sozinha** com o código em letra
+grande e um botão de copiar. O código também fica em
+**`%APPDATA%\remoteone\pairing-code.txt`** (cole `%APPDATA%\remoteone` na
+barra do Explorer).
 
 O código reaparece sozinho se você **remover o computador no app** — não precisa
-reiniciar nada.
+reiniciar nada. E some da tela assim que o pareamento acontece: um código já
+usado continuar em letra garrafal seria convidar alguém a digitá-lo de novo e
+concluir que o pareamento está quebrado.
+
+> Antes disto havia uma caixa de mensagem disparada por um `powershell.exe`.
+> Custava cerca de um segundo, piscava, perdia os acentos (só aceitava ASCII) e
+> é o padrão que antivírus marcam: um processo em segundo plano invocando
+> PowerShell. Um balão de notificação seria pior que a janela — some em
+> segundos, e um código de pareamento é justamente o que a pessoa perde e
+> precisa reencontrar.
 
 ## Duas escolhas que valem explicação
 

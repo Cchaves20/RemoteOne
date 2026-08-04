@@ -15,6 +15,7 @@ pub mod config;
 pub mod datachannel;
 pub mod files;
 pub mod foreground;
+pub mod gui;
 pub mod h264;
 pub mod identity;
 pub mod instance;

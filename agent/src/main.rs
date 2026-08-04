@@ -90,8 +90,47 @@ fn cfg_bool(file: &Config, name: &str, default: bool) -> bool {
     }
 }
 
-#[tokio::main]
-async fn main() {
+/// O laço de reconexão do agente, já dentro do runtime do `tokio`.
+///
+/// Separado da `main` porque a `main` agora pertence à interface: a biblioteca
+/// de janelas exige a thread principal, e o `tokio` não exige nada. Ver o
+/// cabeçalho de `gui.rs`.
+async fn laco_de_conexao(
+    url: String,
+    identity: AgentIdentity,
+    stream: StreamConfig,
+    keep_awake: bool,
+    estado: remoteone_agent::gui::Compartilhado,
+) {
+    loop {
+        // `stream` é clonado a cada tentativa: a config carrega a lista de
+        // servidores STUN, então não é mais `Copy`.
+        let erro = client::run(
+            &url,
+            &identity,
+            Duration::from_secs(HEARTBEAT_SECS),
+            stream.clone(),
+            keep_awake,
+            estado.clone(),
+        )
+        .await
+        .err();
+
+        if let Some(e) = erro {
+            eprintln!("Conexão perdida: {e}");
+            // A janela mostra o motivo. "Sem conexão" sozinho manda a pessoa
+            // reiniciar o computador à toa.
+            if let Ok(mut s) = estado.lock() {
+                s.conectado = false;
+                s.ultimo_erro = Some(e.to_string());
+            }
+        }
+        println!("Reconectando em {RECONNECT_SECS}s ...");
+        tokio::time::sleep(Duration::from_secs(RECONNECT_SECS)).await;
+    }
+}
+
+fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match parse_args(&args) {
         Cmd::Help => {
@@ -217,24 +256,39 @@ async fn main() {
     );
     println!("Conectando a {url} ...");
 
-    // Laço de reconexão: se a conexão cair, espera e tenta de novo.
-    loop {
-        // `stream` é clonado a cada tentativa: a config carrega a lista de
-        // servidores STUN, então não é mais `Copy`.
-        if let Err(e) = client::run(
-            &url,
-            &identity,
-            Duration::from_secs(HEARTBEAT_SECS),
-            stream.clone(),
-            keep_awake,
-        )
-        .await
-        {
-            eprintln!("Conexão perdida: {e}");
-        }
-        println!("Reconectando em {RECONNECT_SECS}s ...");
-        tokio::time::sleep(Duration::from_secs(RECONNECT_SECS)).await;
-    }
+    let estado = remoteone_agent::gui::compartilhar(remoteone_agent::gui::Estado {
+        hostname: identity.hostname.clone(),
+        device_id: device_id.clone(),
+        versao: AGENT_VERSION.to_string(),
+        backend: url.clone(),
+        conectado: false,
+        ultimo_erro: None,
+        keep_awake,
+        segurando: false,
+    });
+
+    // O agente sobe **antes** da interface e independe dela. Se a janela não
+    // abrir - sessão sem desktop, driver gráfico recusando -, o computador
+    // continua alcançável. O contrário seria uma troca péssima: perder o
+    // produto inteiro por causa da tela que mostra o produto.
+    let do_agente = estado.clone();
+    std::thread::Builder::new()
+        .name("remoteone-agente".into())
+        .spawn(move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+                Ok(rt) => rt,
+                Err(e) => {
+                    eprintln!("Não consegui criar o runtime do agente: {e}");
+                    return;
+                }
+            };
+            rt.block_on(laco_de_conexao(url, identity, stream, keep_awake, do_agente));
+        })
+        .expect("não consegui criar a thread do agente");
+
+    // Daqui não se volta: a interface fica com a thread principal até alguém
+    // escolher Sair no ícone ao lado do relógio.
+    remoteone_agent::gui::rodar(estado);
 }
 
 #[cfg(test)]
