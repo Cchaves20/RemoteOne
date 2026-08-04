@@ -65,10 +65,21 @@ São **dois** lugares (a pegadinha clássica da Oracle):
 
 **b) Firewall do Ubuntu (dentro da VM):** conecte por SSH (passo 6) e rode:
 ```bash
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+POS=$(sudo iptables -L INPUT --line-numbers -n | awk '$2=="REJECT"{print $1; exit}')
+sudo iptables -I INPUT ${POS:-1} -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT ${POS:-1} -m state --state NEW -p tcp --dport 443 -j ACCEPT
 sudo netfilter-persistent save
 ```
+
+> **Por que descobrir a posição em vez de fixar um número.** A imagem da Oracle
+> traz um `REJECT all` no fim da cadeia, e o `iptables` decide na **primeira**
+> regra que casa. Uma regra inserida depois do REJECT é aceita pelo comando,
+> salva pelo `netfilter-persistent` e **nunca aplicada** - o pacote já foi
+> rejeitado. Este guia dizia `-I INPUT 6` porque era onde o REJECT estava numa
+> instalação; noutra ele estava na 5, e todas as regras nasceram mortas.
+>
+> Confira sempre depois: `sudo iptables -L INPUT -n --line-numbers`. As suas
+> regras têm que aparecer **acima** da linha do REJECT.
 
 ### Portas do TURN (vídeo direto no 4G/5G)
 
@@ -84,13 +95,24 @@ Na **Security List**, mais três regras com Source `0.0.0.0/0`:
 | TCP | 3478 | o mesmo, para redes que bloqueiam UDP |
 | UDP | 49160-49200 | por onde o vídeo relayado passa |
 
-E no firewall do Ubuntu:
+E no firewall do Ubuntu, de novo **antes** do REJECT:
 ```bash
-sudo iptables -I INPUT 6 -m state --state NEW -p udp --dport 3478 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 3478 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p udp --dport 49160:49200 -j ACCEPT
+POS=$(sudo iptables -L INPUT --line-numbers -n | awk '$2=="REJECT"{print $1; exit}')
+sudo iptables -I INPUT ${POS:-1} -m state --state NEW -p udp --dport 3478 -j ACCEPT
+sudo iptables -I INPUT ${POS:-1} -m state --state NEW -p tcp --dport 3478 -j ACCEPT
+sudo iptables -I INPUT ${POS:-1} -m state --state NEW -p udp --dport 49160:49200 -j ACCEPT
 sudo netfilter-persistent save
 ```
+
+> **O TURN é o único que sente isso.** As portas 80 e 443 continuam
+> funcionando mesmo com as regras na posição errada, porque **contêiner Docker
+> com porta publicada não passa pela cadeia INPUT** - o tráfego é redirecionado
+> e atravessa a FORWARD. O coturn roda com `network_mode: host`, então ele é o
+> único serviço daqui que depende da INPUT de verdade.
+>
+> É por isso que o sintoma é tão enganoso: o site responde, o `/health`
+> responde, o app conecta, e só o vídeo direto falha - com uma mensagem sobre
+> ICE que não sugere firewall nenhum.
 
 ## 5. Domínio grátis no DuckDNS
 
