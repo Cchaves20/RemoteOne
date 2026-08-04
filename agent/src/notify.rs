@@ -28,6 +28,20 @@ use std::sync::Mutex;
 /// atravessando código que não tem nada a ver com isso.
 static PENDENTE: Mutex<Option<(String, u64)>> = Mutex::new(None);
 
+/// O que fazer quando um código chega. A interface registra "abrir a janela".
+///
+/// Um gancho, e não uma chamada direta à janela, porque este módulo é o do
+/// **aviso**: ele não deve saber se existe interface. Fora do Windows não
+/// existe, e nos testes também não.
+static AO_RECEBER: Mutex<Option<Box<dyn Fn() + Send + 'static>>> = Mutex::new(None);
+
+/// Registra quem deve ser avisado quando um código de pareamento chegar.
+pub fn ao_receber_codigo(f: impl Fn() + Send + 'static) {
+    if let Ok(mut slot) = AO_RECEBER.lock() {
+        *slot = Some(Box::new(f));
+    }
+}
+
 /// Anuncia o código de pareamento por vias que não exigem terminal.
 pub fn announce_pairing_code(code: &str, expires_in_seconds: u64) {
     if let Some(path) = code_file_path() {
@@ -35,6 +49,18 @@ pub fn announce_pairing_code(code: &str, expires_in_seconds: u64) {
     }
     if let Ok(mut slot) = PENDENTE.lock() {
         *slot = Some((code.to_string(), expires_in_seconds));
+    }
+    // O aviso sai **depois** de o código estar guardado: quem for avisado abre
+    // a janela, que lê o código já disponível. Na ordem inversa a janela
+    // abriria vazia numa corrida rara e difícil de reproduzir.
+    //
+    // Chamado com o cadeado de `AO_RECEBER` na mão. Isso obriga o avisado a
+    // não voltar a este módulo pelo mesmo caminho - e ele não volta: abrir a
+    // janela é uma chamada ao Windows. Ler o código usa outro cadeado.
+    if let Ok(slot) = AO_RECEBER.lock() {
+        if let Some(f) = slot.as_ref() {
+            f();
+        }
     }
 }
 
@@ -100,6 +126,23 @@ mod tests {
         assert!(content.contains("ABC23XYZK"));
         assert!(content.contains("10 min"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn quem_registrou_e_avisado_com_o_codigo_ja_no_lugar() {
+        // A ordem é o que importa aqui. A janela abre por causa do aviso e lê
+        // o código na hora; se o aviso saísse primeiro, ela abriria vazia.
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static VIU_O_CODIGO: AtomicBool = AtomicBool::new(false);
+        ao_receber_codigo(|| {
+            VIU_O_CODIGO.store(codigo_pendente().is_some(), Ordering::SeqCst);
+        });
+        announce_pairing_code("XYZ99ABCD", 300);
+        assert!(
+            VIU_O_CODIGO.load(Ordering::SeqCst),
+            "a janela abriria antes de o código existir"
+        );
+        clear_pairing_code();
     }
 
     #[test]

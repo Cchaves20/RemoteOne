@@ -77,6 +77,34 @@ pub fn load_config() -> config::Config {
     }
 }
 
+/// Registra uma linha no diário do agente.
+///
+/// Existe porque o agente instalado roda **sem console**: sobe pelo `wscript`,
+/// oculto, e todo `println!`/`eprintln!` cai no vazio. Enquanto foi só um
+/// programa de terminal isso não incomodou; com janela e bandeja, passou a
+/// haver falha que só acontece na máquina instalada - e sem registro nenhum a
+/// investigação vira adivinhação.
+///
+/// Sem data e sem níveis: o valor está em existir, e um formato elaborado só
+/// adiaria a primeira linha útil. Falha ao gravar é ignorada de propósito - um
+/// diário que derruba o programa que ele deveria explicar seria o pior dos
+/// dois mundos.
+pub fn diario(linha: &str) {
+    use std::io::Write;
+    println!("{linha}");
+    let caminho = config_dir().join("agent.log");
+    if let Some(pai) = caminho.parent() {
+        let _ = std::fs::create_dir_all(pai);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&caminho)
+    {
+        let _ = writeln!(f, "{linha}");
+    }
+}
+
 /// Grava a configuração, criando a pasta se preciso.
 ///
 /// Existe porque agora há dois lugares que escrevem aqui: o `install`, que

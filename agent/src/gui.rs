@@ -80,13 +80,73 @@ mod imp {
     /// dentro de três threads que não têm nada a ver umas com as outras.
     static CONTEXTO: OnceLock<egui::Context> = OnceLock::new();
 
+    const SW_SHOW: i32 = 5;
+    const SW_RESTORE: i32 = 9;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn FindWindowExW(pai: isize, apos: isize, classe: *const u16, titulo: *const u16) -> isize;
+        fn GetWindowThreadProcessId(janela: isize, pid: *mut u32) -> u32;
+        fn ShowWindow(janela: isize, comando: i32) -> i32;
+        fn SetForegroundWindow(janela: isize) -> i32;
+        fn IsIconic(janela: isize) -> i32;
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentProcessId() -> u32;
+    }
+
+    /// Acha a janela deste processo, mesmo escondida.
+    ///
+    /// Pelo título, e conferindo o **processo dono**: "RemoteOne" é um nome
+    /// que uma pasta do Explorer pode ter, e mandar `ShowWindow` na janela de
+    /// outra pessoa seria um jeito criativo de assombrar o usuário.
+    fn achar_janela() -> Option<isize> {
+        let titulo: Vec<u16> = "RemoteOne".encode_utf16().chain(std::iter::once(0)).collect();
+        let meu_pid = unsafe { GetCurrentProcessId() };
+        let mut atual = 0isize;
+        loop {
+            atual = unsafe { FindWindowExW(0, atual, std::ptr::null(), titulo.as_ptr()) };
+            if atual == 0 {
+                return None;
+            }
+            let mut pid = 0u32;
+            unsafe { GetWindowThreadProcessId(atual, &mut pid) };
+            if pid == meu_pid {
+                return Some(atual);
+            }
+        }
+    }
+
     /// Traz a janela para a frente. Chamável de qualquer thread.
+    ///
+    /// **Pelo Win32, e não só pelo `egui`.** Esta função já foi só um
+    /// `send_viewport_cmd(Visible(true))`, e não funcionava: uma janela
+    /// escondida não recebe `WM_PAINT`, então o `eframe` não chama `update`, e
+    /// é dentro do `update` que os comandos de viewport são aplicados. O
+    /// pedido ficava na fila para sempre. O sintoma era o pior tipo - o atalho
+    /// simplesmente não fazia nada, sem erro nenhum.
+    ///
+    /// `ShowWindow` não passa pelo laço do `egui`: fala com o Windows direto.
+    /// Uma vez visível, a janela volta a receber `WM_PAINT` e o `eframe`
+    /// retoma o comando. Os comandos de viewport continuam sendo enviados
+    /// depois, para o estado interno do `egui` concordar com a realidade.
     pub fn mostrar_janela() {
+        match achar_janela() {
+            Some(janela) => unsafe {
+                if IsIconic(janela) != 0 {
+                    ShowWindow(janela, SW_RESTORE);
+                } else {
+                    ShowWindow(janela, SW_SHOW);
+                }
+                SetForegroundWindow(janela);
+            },
+            None => crate::diario("janela: não achei a janela deste processo"),
+        }
         if let Some(ctx) = CONTEXTO.get() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-            // Acorda o laço de eventos: escondida, a janela não redesenha
-            // sozinha, e sem isto o comando ficaria na fila até alguém mexer.
             ctx.request_repaint();
         }
     }
@@ -151,8 +211,30 @@ mod imp {
             // sinaliza e sai, e quem abre a janela é este agente.
             std::thread::Builder::new()
                 .name("remoteone-atalho".into())
-                .spawn(|| crate::instance::escutar_pedidos_de_janela(mostrar_janela))
+                .spawn(|| {
+                    crate::instance::escutar_pedidos_de_janela(|| {
+                        crate::diario("janela: pedida pelo atalho");
+                        mostrar_janela();
+                    })
+                })
                 .ok();
+
+            // Um código de pareamento é a única coisa que justifica
+            // interromper o usuário: é tarefa com prazo, e ninguém vai
+            // adivinhar que precisa abrir a janela para vê-la.
+            //
+            // O aviso vem da rede, e não daqui: com a janela escondida o
+            // `update` não roda, e conferir o código lá dentro era conferir
+            // num lugar que só executa quando a janela **já** está aberta.
+            crate::notify::ao_receber_codigo(|| {
+                crate::diario("janela: pedida pelo código de pareamento");
+                mostrar_janela();
+            });
+
+            crate::diario(&format!(
+                "interface iniciada (bandeja: {})",
+                if bandeja.is_some() { "sim" } else { "NÃO" }
+            ));
 
             Self {
                 estado,
@@ -203,13 +285,6 @@ mod imp {
 
             let estado = self.estado.lock().map(|e| e.clone()).unwrap_or_default();
             let codigo = crate::notify::codigo_pendente();
-
-            // Um código novo é a única coisa aqui que justifica interromper o
-            // usuário: é uma tarefa com prazo, e ninguém vai adivinhar que
-            // precisa abrir a janela para vê-la.
-            if codigo.is_some() && !ctx.input(|i| i.viewport().focused.unwrap_or(false)) {
-                mostrar_janela();
-            }
 
             egui::CentralPanel::default().show(ctx, |ui| {
                 self.desenhar(ui, &estado, codigo);
@@ -356,7 +431,7 @@ mod imp {
         // Dormir para sempre é o comportamento certo: o processo continua, o
         // computador continua alcançável, e só a interface se perdeu.
         if let Err(e) = resultado {
-            eprintln!("A janela não abriu ({e}); o agente continua rodando.");
+            crate::diario(&format!("A janela não abriu ({e}); o agente continua rodando."));
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(3600));
             }
