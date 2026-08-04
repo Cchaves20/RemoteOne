@@ -17,6 +17,7 @@ pub mod files;
 pub mod foreground;
 pub mod h264;
 pub mod identity;
+pub mod instance;
 pub mod injector;
 pub mod input;
 pub mod notify;

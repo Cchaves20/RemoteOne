@@ -49,6 +49,14 @@ audiopus = "0.2"
 # contador que o Windows muda a cada cópia - é ele que permite perceber uma
 # cópia nova sem ficar lendo o conteúdo o segundo inteiro.
 clipboard-win = "5"
+# Atalhos do Menu Iniciar e da area de trabalho. Escreve o .lnk direto, sem
+# COM e sem PowerShell: o instalador que dependia de um `powershell.exe` para
+# cada passo era lento, piscava janela e e o padrao que antivirus marcam.
+mslnk = "0.1"
+
+# Embute o icone e a versao no .exe (ver build.rs). So roda no alvo Windows.
+[build-dependencies]
+winresource = "0.1"
 
 [dev-dependencies]
 image = { version = "0.25", features = ["png"] }

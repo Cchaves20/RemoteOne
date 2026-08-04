@@ -86,19 +86,37 @@ pub struct Plan {
     pub exe: PathBuf,
     /// Atalho na pasta Inicializar.
     pub startup: PathBuf,
+    /// Atalho no Menu Iniciar.
+    pub start_menu: PathBuf,
+    /// Atalho na área de trabalho.
+    pub desktop: PathBuf,
     /// Se o executável precisa ser copiado (falso ao reconfigurar no lugar).
     pub copy: bool,
 }
 
+/// Onde o Windows guarda cada coisa. Agrupadas porque são quatro caminhos que
+/// andam juntos, e quatro parâmetros soltos do mesmo tipo `Path` são um convite
+/// a trocar dois de lugar sem o compilador notar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Places {
+    pub local_app_data: PathBuf,
+    pub startup: PathBuf,
+    pub start_menu: PathBuf,
+    pub desktop: PathBuf,
+}
+
 /// Monta o plano a partir dos caminhos do sistema.
-pub fn plan(exe_atual: &Path, local_app_data: &Path, startup_dir: &Path) -> Plan {
-    let dir = install_dir(local_app_data);
+pub fn plan(exe_atual: &Path, lugares: &Places) -> Plan {
+    let dir = install_dir(&lugares.local_app_data);
     let exe = dir.join("remoteone-agent.exe");
     let copy = !already_installed(exe_atual, &exe);
     Plan {
         dir,
         exe,
-        startup: startup_dir.join(STARTUP_FILE),
+        startup: lugares.startup.join(STARTUP_FILE),
+        // O `.lnk` leva o nome que aparece embaixo do ícone.
+        start_menu: lugares.start_menu.join(format!("{APP_NAME}.lnk")),
+        desktop: lugares.desktop.join(format!("{APP_NAME}.lnk")),
         copy,
     }
 }
@@ -203,6 +221,73 @@ mod imp {
             .join("Startup"))
     }
 
+    /// O Menu Iniciar do usuário: a mesma raiz da pasta Inicializar, um nível
+    /// acima. Fica em Aplicativos, achável pelo nome na busca do Windows.
+    fn start_menu_dir() -> Result<PathBuf, String> {
+        Ok(pasta("APPDATA")?
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs"))
+    }
+
+    /// A área de trabalho.
+    ///
+    /// `%USERPROFILE%\\Desktop` erra quando a pasta foi redirecionada para o
+    /// OneDrive - e isso é o padrão em máquina nova com conta Microsoft, que é
+    /// justamente o caso do usuário comum. O caminho certo está no registro,
+    /// em Shell Folders, que o Windows mantém atualizado.
+    fn desktop_dir() -> Result<PathBuf, String> {
+        let saida = Command::new("reg")
+            .args([
+                "query",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+                "/v",
+                "Desktop",
+            ])
+            .output()
+            .map_err(|e| format!("não consegui perguntar onde fica a área de trabalho: {e}"))?;
+        let texto = String::from_utf8_lossy(&saida.stdout);
+        // A saída é "    Desktop    REG_SZ    C:\Users\eu\OneDrive\Desktop".
+        let caminho = texto
+            .lines()
+            .find_map(|l| l.split("REG_SZ").nth(1))
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        match caminho {
+            Some(c) => Ok(PathBuf::from(c)),
+            // Sem registro, o palpite antigo ainda é melhor que desistir.
+            None => Ok(pasta("USERPROFILE")?.join("Desktop")),
+        }
+    }
+
+    fn lugares() -> Result<Places, String> {
+        Ok(Places {
+            local_app_data: pasta("LOCALAPPDATA")?,
+            startup: startup_dir()?,
+            start_menu: start_menu_dir()?,
+            desktop: desktop_dir()?,
+        })
+    }
+
+    /// Cria um atalho `.lnk` apontando para o executável instalado.
+    ///
+    /// Escrito direto, sem COM e sem PowerShell. O instalador já é o momento
+    /// em que mais coisa pode dar errado numa máquina alheia, e cada processo
+    /// externo é mais uma forma de falhar - incluindo antivírus que barram um
+    /// `powershell.exe` disparado por um instalador.
+    fn criar_atalho(exe: &Path, destino: &Path) -> Result<(), String> {
+        if let Some(pai) = destino.parent() {
+            let _ = std::fs::create_dir_all(pai);
+        }
+        let mut link = mslnk::ShellLink::new(exe)
+            .map_err(|e| format!("não montei o atalho: {e}"))?;
+        link.set_name(Some(format!("{APP_NAME} - controle remoto")));
+        // O ícone vem do próprio executável (embutido pelo build.rs).
+        link.create_lnk(destino)
+            .map_err(|e| format!("não gravei {}: {e}", destino.display()))
+    }
+
     fn current_exe() -> Result<PathBuf, String> {
         std::env::current_exe().map_err(|e| format!("não descobri o próprio caminho: {e}"))
     }
@@ -258,7 +343,7 @@ mod imp {
 
     pub fn install(backend: Option<&str>) -> Result<(), String> {
         let exe_atual = current_exe()?;
-        let plano = plan(&exe_atual, &pasta("LOCALAPPDATA")?, &startup_dir()?);
+        let plano = plan(&exe_atual, &lugares()?);
 
         stop_running();
 
@@ -308,6 +393,19 @@ mod imp {
         std::fs::write(&plano.startup, launcher_script(&plano.exe))
             .map_err(|e| format!("não consegui criar o atalho de início: {e}"))?;
 
+        // Atalhos são conveniência, não requisito: sem eles o agente roda
+        // igual. Uma área de trabalho redirecionada para uma pasta de rede
+        // fora do ar não pode derrubar uma instalação que já funciona.
+        for (onde, destino) in [
+            ("Menu Iniciar", &plano.start_menu),
+            ("área de trabalho", &plano.desktop),
+        ] {
+            match criar_atalho(&plano.exe, destino) {
+                Ok(()) => println!("Atalho no {onde}."),
+                Err(e) => eprintln!("Aviso: sem atalho no {onde} ({e})"),
+            }
+        }
+
         for (nome, valor) in uninstall_entries(&plano.exe, env!("CARGO_PKG_VERSION")) {
             // O registro é conveniência, não requisito: sem ele o agente roda
             // igual, só não aparece em "Aplicativos instalados". Falhar aqui
@@ -326,6 +424,7 @@ mod imp {
 
         println!();
         println!("Pronto. O agente roda oculto e sobe junto com o Windows.");
+        println!("Os atalhos abrem o programa que já está rodando, não um segundo.");
         println!("O código de pareamento aparece numa janelinha e também em:");
         println!("  %APPDATA%\\remoteone\\pairing-code.txt");
         println!();
@@ -335,10 +434,12 @@ mod imp {
 
     pub fn uninstall() -> Result<(), String> {
         let exe_atual = current_exe()?;
-        let plano = plan(&exe_atual, &pasta("LOCALAPPDATA")?, &startup_dir()?);
+        let plano = plan(&exe_atual, &lugares()?);
 
         stop_running();
         let _ = std::fs::remove_file(&plano.startup);
+        let _ = std::fs::remove_file(&plano.start_menu);
+        let _ = std::fs::remove_file(&plano.desktop);
         let _ = Command::new("reg")
             .args(["delete", &format!("HKCU\\{UNINSTALL_KEY}"), "/f"])
             .output();
@@ -482,18 +583,41 @@ mod tests {
         );
     }
 
+    fn lugares_de_teste() -> Places {
+        Places {
+            local_app_data: caminho(&["C:", "Users", "eu", "AppData", "Local"]),
+            startup: caminho(&["C:", "Users", "eu", "Startup"]),
+            start_menu: caminho(&["C:", "Users", "eu", "Menu"]),
+            desktop: caminho(&["C:", "Users", "eu", "Desktop"]),
+        }
+    }
+
     #[test]
     fn rodar_de_fora_copia_o_executavel() {
-        let local = caminho(&["C:", "Users", "eu", "AppData", "Local"]);
-        let startup = caminho(&["C:", "Users", "eu", "Startup"]);
+        let lugares = lugares_de_teste();
         let plano = plan(
             &caminho(&["C:", "repo", "target", "release", "remoteone-agent.exe"]),
-            &local,
-            &startup,
+            &lugares,
         );
         assert!(plano.copy);
-        assert_eq!(plano.exe, install_dir(&local).join("remoteone-agent.exe"));
-        assert_eq!(plano.startup, startup.join(STARTUP_FILE));
+        assert_eq!(
+            plano.exe,
+            install_dir(&lugares.local_app_data).join("remoteone-agent.exe")
+        );
+        assert_eq!(plano.startup, lugares.startup.join(STARTUP_FILE));
+    }
+
+    #[test]
+    fn os_atalhos_apontam_para_o_executavel_instalado() {
+        // O atalho tem que apontar para a cópia em Programs, e não para onde
+        // o instalador foi executado. Apontar para a pasta de downloads faria
+        // o atalho quebrar no dia em que alguém a limpasse - sem aviso, e sem
+        // ninguém associar uma coisa à outra.
+        let lugares = lugares_de_teste();
+        let plano = plan(&caminho(&["C:", "Downloads", "remoteone-agent.exe"]), &lugares);
+        assert_eq!(plano.start_menu, lugares.start_menu.join("RemoteOne.lnk"));
+        assert_eq!(plano.desktop, lugares.desktop.join("RemoteOne.lnk"));
+        assert!(plano.exe.starts_with(&plano.dir));
     }
 
     #[test]
@@ -503,7 +627,7 @@ mod tests {
         // roda `install` já instalado está reconfigurando.
         let local = caminho(&["C:", "Users", "eu", "AppData", "Local"]);
         let instalado = install_dir(&local).join("remoteone-agent.exe");
-        let plano = plan(&instalado, &local, &caminho(&["C:", "Users", "eu", "Startup"]));
+        let plano = plan(&instalado, &Places { local_app_data: local, ..lugares_de_teste() });
         assert!(!plano.copy);
     }
 

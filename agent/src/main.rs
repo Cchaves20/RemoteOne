@@ -121,6 +121,22 @@ async fn main() {
         Cmd::Run => {}
     }
 
+    // Uma instância só por usuário. Sem isto, clicar no atalho do Menu
+    // Iniciar com o agente já rodando subiria um segundo agente com o mesmo
+    // `device_id`: os dois conectam, e o backend entrega os comandos a um
+    // deles por sorteio. O sintoma seria controle remoto pela metade, sem
+    // erro nenhum explicando.
+    //
+    // `_guarda` e não `_`: o sublinhado sozinho descartaria o guarda na hora,
+    // liberando o nome de volta - o oposto do que se quer.
+    let _guarda = match remoteone_agent::instance::reivindicar() {
+        remoteone_agent::instance::Start::JaRodando => {
+            println!("O RemoteOne já está rodando neste computador.");
+            return;
+        }
+        remoteone_agent::instance::Start::Primeira(g) => g,
+    };
+
     let plat = platform::current();
     let cfg = load_config();
     let url = resolve(&cfg, "REMOTEONE_BACKEND_URL")

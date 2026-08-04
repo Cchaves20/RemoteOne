@@ -38,8 +38,16 @@ O que o comando faz:
 2. Copia o executável para `%LOCALAPPDATA%\Programs\RemoteOne`.
 3. Grava a URL do backend em `%APPDATA%\remoteone\agent.conf`.
 4. Põe um atalho oculto na pasta Inicializar do seu usuário.
-5. Registra o programa em **Aplicativos instalados**, com botão de desinstalar.
-6. Inicia o agente agora, sem esperar o próximo login.
+5. Cria atalhos no **Menu Iniciar** e na **área de trabalho**.
+6. Registra o programa em **Aplicativos instalados**, com botão de desinstalar.
+7. Inicia o agente agora, sem esperar o próximo login.
+
+Os atalhos abrem o programa que **já está rodando**, e não um segundo. O agente
+reserva um nome no Windows ao subir; um segundo processo percebe que o nome já
+é de alguém, pede a janela ao primeiro e sai. Sem essa guarda, o atalho seria
+uma armadilha: dois agentes com o mesmo `device_id`, os dois conectados, e o
+servidor entregando os comandos a um deles por sorteio - controle remoto pela
+metade, sem erro nenhum explicando.
 
 **Não precisa de administrador.** A instalação é da sua conta de usuário.
 
