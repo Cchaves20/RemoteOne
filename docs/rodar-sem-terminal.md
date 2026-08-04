@@ -167,22 +167,27 @@ coisa à outra.
 Os atalhos do Menu Iniciar e da área de trabalho abrem **esta** janela, do
 agente que já está rodando.
 
-### Se a janela não abrir
+### Máquinas sem placa de vídeo
 
-Acontece em **máquina virtual** e em **sessão de Área de Trabalho Remota**, que
-não oferecem placa de vídeo de verdade. O agente continua inteiro: conecta,
-pareia e é controlado normalmente — só a janela e o ícone da bandeja não
-aparecem. O `agent.log` diz o motivo.
+Acontece em **máquina virtual**, em **sessão de Área de Trabalho Remota** e em
+Windows enxuto de nuvem. Numa VM real este projeto encontrou o caso extremo:
+**zero adaptadores** — sem Vulkan, sem DX12, sem OpenGL 2.0, e nem o
+renderizador por software do Windows aparecendo.
 
-Nesse caso o código de pareamento vem numa **caixa de mensagem do Windows**,
-que não depende de placa de vídeo nenhuma.
+Nessas máquinas o RemoteOne cai num modo mais simples, e **avisa disso na
+própria tela de estado**:
 
-A primeira versão desta janela usava OpenGL e morria com *"requires opengl
-2.0+"* nessas máquinas. Hoje usa DX12 e, quando não há placa de vídeo alguma
-disponível, o **renderizador por software** do próprio Windows. Uma janela com
-cinco linhas de texto não perde nada rodando por software.
+- o **ícone ao lado do relógio continua lá**, com o menu de sempre;
+- o estado e o código de pareamento aparecem em **caixas do próprio Windows**,
+  que desenham sem placa de vídeo;
+- o controle remoto funciona **normalmente** — captura de tela, teclado, mouse,
+  som, arquivos. Nada disso depende da janela.
 
-O `agent.log` diz qual foi usado, na linha `janela: usando ...`.
+O que se perde é só a janela bonita. O `agent.log` diz qual caminho foi usado:
+`janela: usando <adaptador>` quando há placa, `bandeja simples` quando não há.
+
+A ordem de tentativa é: placa dedicada, integrada, virtual, software e, por
+fim, o modo sem placa nenhuma.
 
 ## Onde vejo o código de pareamento?
 

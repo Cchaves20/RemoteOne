@@ -426,6 +426,7 @@ mod imp {
             ..Default::default()
         };
 
+        let estado_reserva = estado.clone();
         let resultado = eframe::run_native(
             "RemoteOne",
             opcoes,
@@ -433,35 +434,145 @@ mod imp {
         );
 
         // A janela não abrir não pode parar o agente, que roda noutra thread.
-        // Dormir para sempre é o comportamento certo: o processo continua, o
-        // computador continua alcançável, e só a interface se perdeu.
         if let Err(e) = resultado {
-            crate::diario(&format!("A janela não abriu ({e}); o agente continua rodando."));
+            crate::diario(&format!("A janela não abriu ({e}); indo para a bandeja simples."));
+            bandeja_sem_placa_de_video(estado_reserva);
+        }
+    }
 
-            // Sem janela, o código de pareamento não teria como ser visto por
-            // quem instalou o agente oculto - restaria o arquivo de texto, que
-            // ninguém sabe que existe. Uma caixa do próprio Windows não
-            // depende de placa de vídeo nenhuma.
-            //
-            // Não é a MessageBox que foi removida daqui: aquela era disparada
-            // por um `powershell.exe`, com o segundo de espera, o piscar e a
-            // perda de acentos. Esta é a API direto, sem processo nenhum a
-            // mais - e só entra em cena quando a janela de verdade falhou.
-            crate::notify::ao_receber_codigo(|| {
-                if let Some((code, expira)) = crate::notify::codigo_pendente() {
-                    caixa_de_pareamento(&code, expira);
+    /// Interface para máquina sem placa de vídeo nenhuma.
+    ///
+    /// Existe porque uma máquina virtual real respondeu **zero adaptadores**:
+    /// sem Vulkan, sem DX12 e sem OpenGL 2.0, e nem o renderizador por
+    /// software do Windows aparecia. Não é caso exótico - sessão de Área de
+    /// Trabalho Remota, VM de nuvem e Windows enxuto caem no mesmo lugar, e
+    /// num produto de controle remoto essas são justamente as máquinas onde
+    /// alguém vai instalar o agente.
+    ///
+    /// O que se perde: a janela com o texto grande. O que se mantém: o ícone
+    /// ao lado do relógio, o menu, o estado e o código de pareamento - tudo em
+    /// caixas do próprio Windows, que desenham sem placa de vídeo. É menos
+    /// bonito e é infinitamente melhor que nada, que era o que essas máquinas
+    /// tinham.
+    fn bandeja_sem_placa_de_video(estado: Compartilhado) {
+        let abrir = MenuItem::new("Estado do RemoteOne", true, None);
+        let sair = MenuItem::new("Sair", true, None);
+        let (id_abrir, id_sair) = (abrir.id().clone(), sair.id().clone());
+
+        let menu = Menu::new();
+        let _ = menu.append(&abrir);
+        let _ = menu.append(&tray_icon::menu::PredefinedMenuItem::separator());
+        let _ = menu.append(&sair);
+
+        let mut construtor = TrayIconBuilder::new()
+            .with_menu(Box::new(menu))
+            .with_tooltip("RemoteOne");
+        if let Some(icone) = icone_bandeja() {
+            construtor = construtor.with_icon(icone);
+        }
+        // O ícone tem que nascer nesta thread: é ela que vai bombear as
+        // mensagens do Windows, e no Windows um ícone de bandeja pertence à
+        // fila de mensagens de quem o criou.
+        let _bandeja = construtor.build().ok();
+        crate::diario(&format!(
+            "bandeja simples ({})",
+            if _bandeja.is_some() { "criada" } else { "FALHOU" }
+        ));
+
+        // Sem janela, estas três coisas viram caixas do Windows.
+        let do_menu = estado.clone();
+        std::thread::Builder::new()
+            .name("remoteone-menu".into())
+            .spawn(move || {
+                while let Ok(evento) = MenuEvent::receiver().recv() {
+                    if evento.id == id_abrir {
+                        caixa_de_estado(&do_menu);
+                    } else if evento.id == id_sair {
+                        std::process::exit(0);
+                    }
                 }
-            });
-            // Um código que chegou enquanto a janela tentava abrir não pode se
-            // perder no meio da troca.
+            })
+            .ok();
+
+        let do_duplo_clique = estado.clone();
+        std::thread::Builder::new()
+            .name("remoteone-bandeja".into())
+            .spawn(move || {
+                while let Ok(evento) = TrayIconEvent::receiver().recv() {
+                    if matches!(evento, TrayIconEvent::DoubleClick { .. }) {
+                        caixa_de_estado(&do_duplo_clique);
+                    }
+                }
+            })
+            .ok();
+
+        let do_atalho = estado.clone();
+        std::thread::Builder::new()
+            .name("remoteone-atalho".into())
+            .spawn(move || {
+                crate::instance::escutar_pedidos_de_janela(|| caixa_de_estado(&do_atalho))
+            })
+            .ok();
+
+        crate::notify::ao_receber_codigo(|| {
             if let Some((code, expira)) = crate::notify::codigo_pendente() {
                 caixa_de_pareamento(&code, expira);
             }
+        });
+        // Um código que chegou enquanto a janela tentava abrir não pode se
+        // perder no meio da troca.
+        if let Some((code, expira)) = crate::notify::codigo_pendente() {
+            caixa_de_pareamento(&code, expira);
+        }
 
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(3600));
+        // O laço de mensagens. Sem ele o ícone aparece e não responde a nada:
+        // no Windows quem entrega clique de bandeja é a fila de mensagens da
+        // thread que criou o ícone, e ninguém mais.
+        let mut msg = Msg::default();
+        loop {
+            let r = unsafe { GetMessageW(&mut msg, 0, 0, 0) };
+            if r <= 0 {
+                break;
+            }
+            unsafe {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
             }
         }
+    }
+
+    /// O estado do agente numa caixa do Windows.
+    fn caixa_de_estado(estado: &Compartilhado) {
+        let e = estado.lock().map(|e| e.clone()).unwrap_or_default();
+        let texto = format!(
+            "RemoteOne {}\n\n\
+             {}\n\n\
+             Computador: {}\n\
+             Servidor: {}\n\
+             Identificador: {}\n\
+             Manter pronto: {}\n\n\
+             Esta máquina não tem placa de vídeo disponível, por isso o \
+             RemoteOne mostra o estado aqui em vez de numa janela própria. \
+             O controle remoto funciona normalmente.",
+            e.versao,
+            if e.conectado {
+                "Conectado".to_string()
+            } else {
+                match &e.ultimo_erro {
+                    Some(erro) => format!("Sem conexão: {erro}"),
+                    None => "Sem conexão".to_string(),
+                }
+            },
+            e.hostname,
+            e.backend,
+            e.device_id,
+            match (e.keep_awake, e.segurando) {
+                (false, _) => "desligado",
+                (true, true) => "ativo agora",
+                (true, false) => "ligado (na bateria, sem efeito)",
+            },
+        );
+        caixa(&texto);
     }
 
     /// Escolhe a placa de vídeo, aceitando as de software.
@@ -540,14 +651,21 @@ mod imp {
 
     /// Última linha de defesa: o código numa caixa do próprio Windows.
     fn caixa_de_pareamento(code: &str, expira_em: u64) {
-        let texto = format!(
+        caixa(&format!(
             "Código de pareamento:\n\n{code}\n\nDigite este código no aplicativo.\n\
              Expira em {} min.",
             expira_em / 60
-        );
-        // Numa thread própria: `MessageBoxW` só volta quando alguém fecha a
-        // caixa, e quem avisa aqui é a thread de rede do agente. Bloqueá-la
-        // pararia o controle remoto até alguém clicar em OK.
+        ));
+    }
+
+    /// Mostra um texto numa caixa do Windows, sem travar quem chamou.
+    ///
+    /// A thread própria não é zelo: `MessageBoxW` só volta quando alguém fecha
+    /// a caixa, e quem chama aqui costuma ser a thread de rede do agente ou a
+    /// que bombeia as mensagens da bandeja. Bloquear qualquer uma das duas
+    /// pararia o controle remoto até alguém clicar em OK.
+    fn caixa(texto: &str) {
+        let texto = texto.to_string();
         std::thread::spawn(move || {
             let texto: Vec<u16> = texto.encode_utf16().chain(std::iter::once(0)).collect();
             let titulo: Vec<u16> = "RemoteOne"
@@ -563,6 +681,27 @@ mod imp {
                 )
             };
         });
+    }
+
+    /// A `MSG` do Windows. Só precisa do tamanho e da ordem certos: quem lê os
+    /// campos é o próprio sistema.
+    #[repr(C)]
+    #[derive(Default)]
+    struct Msg {
+        hwnd: isize,
+        message: u32,
+        wparam: usize,
+        lparam: isize,
+        time: u32,
+        pt_x: i32,
+        pt_y: i32,
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetMessageW(msg: *mut Msg, janela: isize, primeira: u32, ultima: u32) -> i32;
+        fn TranslateMessage(msg: *const Msg) -> i32;
+        fn DispatchMessageW(msg: *const Msg) -> isize;
     }
 }
 
