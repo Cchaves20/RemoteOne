@@ -9,6 +9,7 @@ import '../l10n/strings.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
+import '../models/keep_awake.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/stream_quality.dart';
@@ -438,6 +439,14 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('audioGain', audioGain);
   }
+
+  /// Se o computador está sendo mantido pronto para ser alcançado.
+  Future<KeepAwakeState> keepAwake(Device device) =>
+      api.keepAwake(device.deviceId);
+
+  /// Liga ou desliga o "manter pronto" naquele computador.
+  Future<void> setKeepAwake(Device device, bool enabled) =>
+      api.setKeepAwake(device.deviceId, enabled);
 
   /// Qual programa está em primeiro plano no computador (para os ícones dos
   /// perfis). `null` quando não há nenhum em foco.

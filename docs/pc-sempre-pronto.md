@@ -1,10 +1,57 @@
 # Deixar o PC pronto para controle remoto sem tocar nele
 
-Objetivo: ligar/desligar e controlar o computador pelo app **sem precisar
-encostar nele nem abrir terminal** — inclusive depois de desligar pelo app e
-acordar com Wake-on-LAN.
+Objetivo: controlar o computador pelo app **sem precisar encostar nele nem
+abrir terminal**.
 
-Para isso, três coisas precisam estar de pé sozinhas quando o Windows liga:
+## O caminho curto: não deixar dormir
+
+O agente já faz isto sozinho, e vem **ligado de fábrica**. Enquanto o
+computador estiver na tomada, ele pede ao Windows que não suspenda; ao cair
+para a bateria, solta o pedido para não descarregar o aparelho com a tampa
+fechada.
+
+Não precisa de administrador, de BIOS, de placa de rede nem de roteador. A
+tela continua apagando normalmente — é dela que vem quase toda a economia de
+energia.
+
+**Por que isto e não Wake-on-LAN.** Acordar uma máquina adormecida exige a
+placa de rede armada no firmware e no driver, e isso varia de computador para
+computador. Não é uma limitação do RemoteOne: nenhum programa consegue
+configurar aquilo por conta própria, porque uma máquina desligada não roda
+programa nenhum. Já *não adormecer* é uma chamada de sistema que existe em
+qualquer Windows desde o XP.
+
+No app: menu do computador → **Manter pronto**. A tela mostra três coisas
+diferentes, e a distinção importa:
+
+| O que aparece | O que significa |
+|---|---|
+| Ativo agora | O computador não vai dormir |
+| Ligado, mas sem efeito | Está na bateria; volta sozinho na tomada |
+| Desligado | Dorme normalmente, e voltar depende de Wake-on-LAN |
+
+"Ligado" e "segurando" são estados diferentes de propósito. Um notebook na
+bateria com a chave ligada vai dormir do mesmo jeito, e juntar as duas
+informações numa só prometeria um computador alcançável que some justamente
+quando a pessoa está longe.
+
+Para desligar de vez numa máquina (um servidor com energia cara, por exemplo),
+a chave do app basta. À mão, `REMOTEONE_KEEP_AWAKE=0` no `agent.conf`.
+
+### O que isto não cobre
+
+Fechar a tampa do notebook, desligar pelo menu Iniciar e queda de energia. Nos
+três casos o computador vai dormir ou desligar de verdade, e aí o **Wake-on-LAN
+continua sendo o caminho** — ele não foi substituído, virou a rede de
+segurança.
+
+## O caminho completo (Wake-on-LAN e ligar sem ninguém em casa)
+
+Se você quer poder **desligar o PC pelo app** e acordá-lo depois, ou se prefere
+suspender para economizar energia, aí sim entram os três ajustes abaixo. Eles
+também são o que faz o computador voltar sozinho depois de uma queda de luz.
+
+Três coisas precisam estar de pé sozinhas quando o Windows liga:
 
 1. **IP fixo** — pra você nunca mais reeditar o campo *Servidor* no app.
 2. **Backend no boot** — a API que o app acessa.
@@ -143,6 +190,10 @@ Depois disso o app entra normalmente. Os passos acima fazem isso acontecer
 sozinho nas próximas vezes.
 
 > Observação sobre Wake‑on‑LAN: ele acorda o PC que está **suspenso/desligado
-> mas com energia**, e funciona **na mesma rede local**. Acordar pela internet
-> (fora de casa) exige liberar/rotear o pacote mágico no roteador — tratado no
-> recurso 9 (próximo lote).
+> mas com energia**, e funciona **na mesma rede local** — o app usa outro
+> computador seu já ligado ali para soltar o pacote. Acordar pela internet
+> exige liberar/rotear o pacote mágico no roteador, o que a tela "Ligar o PC à
+> distância" explica.
+>
+> Se os ajustes de BIOS/placa forem trabalhosos demais na sua máquina, a saída
+> é a do começo desta página: não deixar dormir. Foi para isso que ela existe.

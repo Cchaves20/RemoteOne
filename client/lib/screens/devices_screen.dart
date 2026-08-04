@@ -7,6 +7,7 @@ import '../widgets/pulse.dart';
 import '../widgets/transitions.dart';
 import 'apps_screen.dart';
 import 'files_screen.dart';
+import 'keep_awake_screen.dart';
 import 'remote_screen.dart';
 import 'settings_screen.dart';
 
@@ -216,6 +217,12 @@ class _DevicesScreenState extends State<DevicesScreen> {
             Navigator.of(context).push(
               fadeThroughRoute(FilesScreen(state: widget.state, device: d)),
             );
+          case 'ready':
+            Navigator.of(context).push(
+              fadeThroughRoute(
+                KeepAwakeScreen(state: widget.state, device: d),
+              ),
+            );
           case 'rename':
             _showRenameDialog(d);
           case 'shutdown':
@@ -258,6 +265,14 @@ class _DevicesScreenState extends State<DevicesScreen> {
             child: ListTile(
               leading: const Icon(Icons.folder),
               title: Text(t.files),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'ready',
+            enabled: d.online,
+            child: ListTile(
+              leading: const Icon(Icons.bedtime_off),
+              title: Text(t.keepAwakeTitle),
             ),
           ),
           PopupMenuItem(

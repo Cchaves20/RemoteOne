@@ -179,6 +179,7 @@ pub async fn run(
     identity: &AgentIdentity,
     heartbeat: Duration,
     stream: StreamConfig,
+    keep_awake: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (mut ws, _response) = connect_async(url).await?;
     println!("Conectado ao backend em {url}");
@@ -192,6 +193,16 @@ pub async fn run(
 
     // Injetor de entrada da plataforma (real no Windows, stub no restante).
     let mut injector = crate::injector::controller();
+
+    // Manter o computador pronto para ser alcançado. Reavaliado a cada batida
+    // do relógio porque a fonte de energia muda no meio da vida do agente -
+    // tirar o notebook da tomada precisa soltar o pedido sem reiniciar nada.
+    let mut keep_awake = keep_awake;
+    let mut awake = crate::awake::Keeper::new();
+    awake.set(crate::awake::should_hold(
+        keep_awake,
+        crate::awake::power_source(),
+    ));
 
     // Métricas do computador. Criado agora, e não no primeiro pedido, porque a
     // leitura de referência da CPU precisa acontecer 200 ms antes da primeira
@@ -365,6 +376,12 @@ pub async fn run(
             _ = ticker.tick() => {
                 let hb = serde_json::to_string(&ClientMessage::Heartbeat)?;
                 ws.send(Message::Text(hb)).await?;
+                // De carona no relógio que já existe: não vale um temporizador
+                // próprio para ler um byte do sistema.
+                awake.set(crate::awake::should_hold(
+                    keep_awake,
+                    crate::awake::power_source(),
+                ));
             }
             // Sinalização vinda do webrtc-rs (resposta SDP, candidatos locais):
             // este laço é quem tem o WebSocket, então é quem despacha.
@@ -668,6 +685,36 @@ pub async fn run(
                                 if enabled {
                                     let _ = clipboard.changed();
                                 }
+                            }
+                            Some(Action::KeepAwake { enabled }) => {
+                                keep_awake = enabled;
+                                awake.set(crate::awake::should_hold(
+                                    enabled,
+                                    crate::awake::power_source(),
+                                ));
+                                // Grava para valer no próximo login. Uma falha
+                                // aqui não desfaz o efeito imediato: o pedido
+                                // já está de pé, só não sobreviveria a um
+                                // reinício - e dizer isso é melhor que fingir
+                                // que deu certo.
+                                let mut cfg = crate::load_config();
+                                cfg.set(
+                                    "REMOTEONE_KEEP_AWAKE",
+                                    if enabled { "1" } else { "0" },
+                                );
+                                if let Err(e) = crate::save_config(&cfg) {
+                                    eprintln!("Não consegui gravar a escolha: {e}");
+                                }
+                            }
+                            Some(Action::KeepAwakeInfo { request_id }) => {
+                                let estado = ClientMessage::KeepAwakeState {
+                                    request_id,
+                                    enabled: keep_awake,
+                                    holding: awake.holding(),
+                                    source: crate::awake::power_source(),
+                                };
+                                let texto = serde_json::to_string(&estado)?;
+                                ws.send(Message::Text(texto)).await?;
                             }
                             Some(Action::SetIceServers { servers }) => {
                                 video.set_ice_servers(servers);
@@ -1170,6 +1217,10 @@ enum Action {
     ClipboardSet { text: String },
     /// Ligar/desligar o aviso automático de cópia nova.
     ClipboardSync { enabled: bool },
+    /// Ligar/desligar o "manter o computador pronto", gravando a escolha.
+    KeepAwake { enabled: bool },
+    /// Responder ao backend se o computador está sendo mantido pronto.
+    KeepAwakeInfo { request_id: String },
     /// Usar os servidores ICE que o backend mandou (STUN e TURN).
     SetIceServers {
         servers: Vec<crate::protocol::IceServer>,
@@ -1336,6 +1387,13 @@ fn handle_server_text(
         }
         Ok(ServerMessage::ClipboardSync { enabled }) => {
             return Some(Action::ClipboardSync { enabled });
+        }
+        // Gravar em disco e responder pelo socket: os dois vivem no laço.
+        Ok(ServerMessage::KeepAwake { enabled }) => {
+            return Some(Action::KeepAwake { enabled });
+        }
+        Ok(ServerMessage::KeepAwakeInfo { request_id }) => {
+            return Some(Action::KeepAwakeInfo { request_id });
         }
         Ok(ServerMessage::Audio { enabled, gain }) => {
             return Some(Action::SetAudio { enabled, gain });

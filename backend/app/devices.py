@@ -26,6 +26,8 @@ from app.schemas import (
     ClipboardSyncRequest,
     DeviceOut,
     ForegroundOut,
+    KeepAwakeOut,
+    KeepAwakeRequest,
     ListingOut,
     MediaRequest,
     MonitorIn,
@@ -336,6 +338,55 @@ async def foreground_app(
             detail="o computador demorou para responder",
         ) from exc
     return ForegroundOut(**reply)
+
+
+@router.get("/devices/{device_id}/keep-awake", response_model=KeepAwakeOut)
+async def keep_awake_state(
+    device_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> KeepAwakeOut:
+    """Se o computador está sendo mantido pronto para ser alcançado.
+
+    Pergunta ao agente em vez de guardar no banco, e de propósito: o estado
+    depende de o notebook estar ou não na tomada, o que muda a qualquer
+    momento e sem passar por aqui. Um valor guardado estaria errado na hora
+    exata em que a resposta importa.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    request_id, future = pending.create()
+    message = {"type": "keep_awake_info", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return KeepAwakeOut(**reply)
+
+
+@router.post("/devices/{device_id}/keep-awake", status_code=status.HTTP_204_NO_CONTENT)
+async def set_keep_awake(
+    device_id: str,
+    body: KeepAwakeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Liga ou desliga o "manter pronto". O agente grava a escolha em disco."""
+    _owned_device_or_404(db, device_id, current_user)
+    message = {"type": "keep_awake", "enabled": body.enabled}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
 
 
 @router.post("/devices/{device_id}/media", status_code=status.HTTP_204_NO_CONTENT)

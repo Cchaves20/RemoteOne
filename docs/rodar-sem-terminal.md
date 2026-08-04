@@ -98,10 +98,16 @@ engano numa chave não pode impedir o agente de subir.
 | `REMOTEONE_VIDEO_BITRATE` | Taxa alvo do H.264, em bits por segundo |
 | `REMOTEONE_STREAM_FPS` · `_MAX_WIDTH` · `_QUALITY` | O mesmo para o JPEG de reserva |
 | `REMOTEONE_ICE_SERVERS` | STUN, separados por vírgula. Vazio = só rede local |
+| `REMOTEONE_KEEP_AWAKE` | `1` (padrão) mantém o PC acordado na tomada; `0` desliga |
 | `REMOTEONE_CONFIG_DIR` | Onde ficam o `device_id` e este arquivo |
 
 Os tetos daqui são tetos mesmo: a qualidade adaptativa só **abaixa** a partir
 deles (ver [`webrtc-plano.md`](webrtc-plano.md), Fase 4b).
+
+`REMOTEONE_KEEP_AWAKE` também é mudado pelo app (menu do computador → **Manter
+pronto**), e o agente grava a escolha aqui — ela precisa valer no próximo
+login. O detalhe de por que este recurso existe está em
+[`pc-sempre-pronto.md`](pc-sempre-pronto.md).
 
 ## Vindo do instalador antigo
 

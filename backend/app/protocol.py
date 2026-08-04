@@ -120,6 +120,25 @@ class Foreground(BaseModel):
     app: ForegroundApp | None = None
 
 
+class KeepAwakeState(BaseModel):
+    """Resposta do agente a um `keep_awake_info`.
+
+    São três informações e não uma. "Desligado" e "ligado, mas solto agora"
+    são estados diferentes: um notebook na bateria com a opção ligada não está
+    segurando nada, e mostrar só a chave ligada prometeria ao usuário um
+    computador alcançável que vai dormir na próxima pausa.
+    """
+
+    type: Literal["keep_awake_state"] = "keep_awake_state"
+    request_id: str
+    #: O que o usuário escolheu.
+    enabled: bool
+    #: Se o pedido ao sistema está de pé neste instante.
+    holding: bool
+    #: De onde vem a energia: "ac", "battery" ou "unknown".
+    source: Literal["ac", "battery", "unknown"]
+
+
 class ClipboardChanged(BaseModel):
     """Aviso de que alguém copiou algo novo no computador.
 
@@ -230,6 +249,7 @@ ClientMessage = Annotated[
     | Foreground
     | Clipboard
     | ClipboardChanged
+    | KeepAwakeState
     | FileList
     | FileChunk
     | FileDone
@@ -267,6 +287,20 @@ class Error(BaseModel):
 
     type: Literal["error"] = "error"
     message: str
+
+
+class KeepAwake(BaseModel):
+    """Liga ou desliga o "manter o computador pronto para controle remoto"."""
+
+    type: Literal["keep_awake"] = "keep_awake"
+    enabled: bool
+
+
+class KeepAwakeInfo(BaseModel):
+    """Pergunta ao agente se o computador está sendo mantido pronto."""
+
+    type: Literal["keep_awake_info"] = "keep_awake_info"
+    request_id: str
 
 
 class PairCode(BaseModel):

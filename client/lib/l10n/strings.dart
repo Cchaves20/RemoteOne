@@ -792,6 +792,52 @@ class Strings {
       '•  在路由器设置中创建一条规则，让"开机信号"能从互联网到达家里的电脑。\n•  有些路由器已内置"Wake on LAN"按钮。\n•  如果你不熟悉路由器设置，最安全的做法是使用普通模式（在家保持一台电脑开着）。',
       "•  Dans les paramètres du routeur, on crée une règle qui laisse le « signal d'allumage » atteindre l'ordinateur à la maison depuis Internet.\n•  Certains routeurs ont déjà un bouton « Wake on LAN ».\n•  Si vous n'êtes pas à l'aise avec les paramètres du routeur, le plus sûr est de rester en mode normal (garder un ordinateur allumé à la maison).",
       '•  En la configuración del router, se crea una regla que deja que la "señal de encendido" llegue desde internet al equipo de casa.\n•  Algunos routers ya tienen un botón llamado "Wake on LAN".\n•  Si no tienes familiaridad con la configuración del router, lo más seguro es quedarte en el modo normal (dejar un equipo encendido en casa).');
+  // Manter o computador pronto (a alternativa genérica ao Wake-on-LAN)
+  String get keepAwakeTitle => _t('Manter pronto', 'Keep ready', '保持就绪',
+      'Garder prêt', 'Mantener listo');
+  String get keepAwakeSwitch => _t(
+      'Não deixar este computador dormir',
+      "Don't let this computer sleep",
+      '不让这台电脑休眠',
+      'Ne pas laisser cet ordinateur se mettre en veille',
+      'No dejar que este equipo se duerma');
+  String get keepAwakeWhy => _t(
+      'Um computador que dorme só volta com Wake-on-LAN, e isso depende de configurações de fábrica que mudam de máquina para máquina. Deixando-o acordado, não há nada para acordar: ele continua alcançável de qualquer lugar, sem você configurar nada.\n\nA tela continua apagando normalmente — é dela que vem quase toda a economia de energia. Um notebook acordado com a tela apagada gasta pouco, algo como uma lâmpada fraca.',
+      'A sleeping computer only comes back with Wake-on-LAN, and that depends on factory settings that differ from machine to machine. Keeping it awake means there is nothing to wake: it stays reachable from anywhere, with no setup.\n\nThe screen still turns off normally — that is where almost all the power saving comes from. An awake laptop with the screen off uses little, about as much as a dim light bulb.',
+      '休眠的电脑只能靠网络唤醒（Wake-on-LAN）恢复，而这取决于因机器而异的出厂设置。让它保持唤醒，就没有什么需要唤醒的：它随时随地都可连接，无需任何配置。\n\n屏幕仍会正常熄灭——几乎所有的省电都来自屏幕。屏幕熄灭的笔记本耗电很少，大致相当于一盏暗灯。',
+      "Un ordinateur en veille ne revient qu'avec Wake-on-LAN, et cela dépend de réglages d'usine qui varient d'une machine à l'autre. En le gardant éveillé, il n'y a rien à réveiller : il reste joignable de partout, sans aucune configuration.\n\nL'écran continue de s'éteindre normalement — c'est de là que vient presque toute l'économie d'énergie. Un portable éveillé avec l'écran éteint consomme peu, comme une ampoule faible.",
+      'Un equipo que se duerme solo vuelve con Wake-on-LAN, y eso depende de ajustes de fábrica que cambian de una máquina a otra. Manteniéndolo despierto, no hay nada que despertar: sigue accesible desde cualquier lugar, sin configurar nada.\n\nLa pantalla se sigue apagando normalmente — de ahí viene casi todo el ahorro de energía. Un portátil despierto con la pantalla apagada gasta poco, como una bombilla tenue.');
+  String get keepAwakeHolding => _t(
+      'Ativo agora: este computador não vai dormir.',
+      'Active now: this computer will not sleep.',
+      '当前生效：这台电脑不会休眠。',
+      "Actif maintenant : cet ordinateur ne se mettra pas en veille.",
+      'Activo ahora: este equipo no se va a dormir.');
+  String get keepAwakeOnBattery => _t(
+      'Ligado, mas sem efeito agora: o computador está na bateria. Ele volta a ser mantido acordado assim que for para a tomada — segurar na bateria descarregaria o aparelho com a tampa fechada.',
+      'On, but not in effect now: the computer is on battery. It will be kept awake again as soon as it is plugged in — holding it on battery would drain the machine with the lid closed.',
+      '已开启，但当前未生效：电脑正在使用电池。接上电源后会重新保持唤醒——用电池时保持唤醒会在合盖后耗尽电量。',
+      "Activé, mais sans effet pour l'instant : l'ordinateur est sur batterie. Il sera de nouveau gardé éveillé dès qu'il sera branché — le maintenir sur batterie viderait l'appareil couvercle fermé.",
+      'Encendido, pero sin efecto ahora: el equipo está con batería. Volverá a mantenerse despierto en cuanto se enchufe — mantenerlo con batería agotaría el aparato con la tapa cerrada.');
+  String get keepAwakeOff => _t(
+      'Desligado: o computador dorme normalmente, e voltar a alcançá-lo depende de Wake-on-LAN.',
+      'Off: the computer sleeps normally, and reaching it again depends on Wake-on-LAN.',
+      '已关闭：电脑会正常休眠，再次连接需要依靠网络唤醒。',
+      "Désactivé : l'ordinateur se met en veille normalement, et le rejoindre dépend du Wake-on-LAN.",
+      'Apagado: el equipo se duerme normalmente, y volver a alcanzarlo depende de Wake-on-LAN.');
+  String get keepAwakeLimits => _t(
+      'O que isto não cobre: fechar a tampa do notebook, desligar pelo menu Iniciar e queda de energia. Nesses casos o Wake-on-LAN continua sendo o caminho.',
+      'What this does not cover: closing the laptop lid, shutting down from the Start menu, and power outages. In those cases Wake-on-LAN is still the way.',
+      '本功能不涵盖：合上笔记本盖子、从开始菜单关机、断电。这些情况仍需依靠网络唤醒。',
+      "Ce que cela ne couvre pas : fermer le capot du portable, éteindre depuis le menu Démarrer et les coupures de courant. Dans ces cas, le Wake-on-LAN reste la solution.",
+      'Lo que esto no cubre: cerrar la tapa del portátil, apagar desde el menú Inicio y cortes de energía. En esos casos el Wake-on-LAN sigue siendo el camino.');
+  String get keepAwakeOffline => _t(
+      'O computador precisa estar ligado para mudar isto.',
+      'The computer must be on to change this.',
+      '电脑需要开机才能更改此设置。',
+      "L'ordinateur doit être allumé pour changer ceci.",
+      'El equipo debe estar encendido para cambiar esto.');
+
   String get wolRouterFuture => _t(
       'Este modo avançado ainda será integrado ao botão "Ligar" numa próxima atualização.',
       'This advanced mode will be integrated into the "Turn on" button in a future update.',

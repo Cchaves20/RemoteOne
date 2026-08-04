@@ -26,6 +26,7 @@ from app.protocol import (
     FileList,
     Foreground,
     Hello,
+    KeepAwakeState,
     MonitorList,
     PairCode,
     Paired,
@@ -90,6 +91,7 @@ FEATURES = [
     "clipboard",
     "monitors",
     "control-profiles",
+    "keep-awake",
 ]
 
 
@@ -300,6 +302,15 @@ async def agent_ws(websocket: WebSocket) -> None:
                 pending.resolve(
                     message.request_id,
                     {"app": message.app.model_dump() if message.app else None},
+                )
+            elif isinstance(message, KeepAwakeState):
+                pending.resolve(
+                    message.request_id,
+                    {
+                        "enabled": message.enabled,
+                        "holding": message.holding,
+                        "source": message.source,
+                    },
                 )
             elif isinstance(message, SystemStats):
                 # Métricas medidas: entrega a quem pediu (o endpoint HTTP).

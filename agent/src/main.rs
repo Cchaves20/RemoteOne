@@ -71,6 +71,25 @@ fn cfg_u32(file: &Config, name: &str, default: u32) -> u32 {
         .unwrap_or(default)
 }
 
+/// Lê um liga/desliga da configuração.
+///
+/// Aceita as escritas que alguém usaria à mão num arquivo de texto. Valor
+/// irreconhecível cai no padrão em vez de virar `false`: um erro de digitação
+/// não pode desligar em silêncio o que mantém o computador alcançável.
+fn cfg_bool(file: &Config, name: &str, default: bool) -> bool {
+    match resolve(file, name) {
+        None => default,
+        Some(v) => match v.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "sim" | "yes" | "on" => true,
+            "0" | "false" | "nao" | "não" | "no" | "off" => false,
+            outro => {
+                eprintln!("{name}: não entendi \"{outro}\"; mantendo o padrão ({default})");
+                default
+            }
+        },
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -147,6 +166,11 @@ async fn main() {
         },
     };
 
+    // Ligado por padrão, e é uma decisão de produto: o motivo de existir é
+    // funcionar em qualquer máquina sem ninguém configurar nada. Desligado por
+    // padrão, o recurso só serviria a quem já sabia que ele existe.
+    let keep_awake = cfg_bool(&cfg, "REMOTEONE_KEEP_AWAKE", true);
+
     println!(
         "RemoteOne Agent {AGENT_VERSION} — sistema: {}",
         plat.os_name()
@@ -167,6 +191,14 @@ async fn main() {
             stream.ice_servers.join(", ")
         }
     );
+    println!(
+        "Manter o computador pronto: {}",
+        if keep_awake {
+            "sim (solta sozinho ao cair para a bateria)"
+        } else {
+            "não"
+        }
+    );
     println!("Conectando a {url} ...");
 
     // Laço de reconexão: se a conexão cair, espera e tenta de novo.
@@ -178,6 +210,7 @@ async fn main() {
             &identity,
             Duration::from_secs(HEARTBEAT_SECS),
             stream.clone(),
+            keep_awake,
         )
         .await
         {

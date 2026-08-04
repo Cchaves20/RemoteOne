@@ -91,6 +91,23 @@ pub enum ClientMessage {
     ClipboardChanged {
         text: String,
     },
+    /// Resposta a um `keep_awake_info`: se o computador está sendo mantido
+    /// pronto para controle remoto.
+    ///
+    /// São **três** informações, e não uma, porque "desligado" e "ligado mas
+    /// solto agora" são estados diferentes e o usuário precisa distinguir os
+    /// dois. Um notebook na bateria com a opção ligada não está segurando
+    /// nada, e mostrar só a chave ligada faria parecer que ele vai continuar
+    /// alcançável — que é justamente a promessa que ele não pode cumprir.
+    KeepAwakeState {
+        request_id: String,
+        /// O que o usuário escolheu.
+        enabled: bool,
+        /// Se o pedido está de pé neste instante.
+        holding: bool,
+        /// Por que não está, quando não está.
+        source: crate::awake::PowerSource,
+    },
     /// Resposta a um `list_files`: o conteúdo da pasta, **ou** o motivo de não
     /// ter conseguido. Uma pasta sem permissão não pode chegar ao app como
     /// pasta vazia — são coisas diferentes para quem procura um arquivo.
@@ -223,6 +240,16 @@ pub enum ServerMessage {
     /// Liga ou desliga o aviso automático de cópia nova no computador.
     ClipboardSync {
         enabled: bool,
+    },
+    /// Liga ou desliga o "manter o computador pronto para controle remoto".
+    /// A escolha é gravada no `agent.conf`: ela precisa valer no próximo login.
+    KeepAwake {
+        enabled: bool,
+    },
+    /// Pergunta se o computador está sendo mantido pronto. O agente responde
+    /// com `keep_awake_state` carregando o mesmo `request_id`.
+    KeepAwakeInfo {
+        request_id: String,
     },
     /// Liga ou desliga o envio do som do computador. Mão única: o resultado
     /// aparece (ou não) no telefone, e um erro aqui não tem o que responder.

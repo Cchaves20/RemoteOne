@@ -7,6 +7,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
+import '../models/keep_awake.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
@@ -330,6 +331,29 @@ class ApiClient {
         .get(_uri('/api/v1/devices/$deviceId/foreground'), headers: _authHeaders)
         .timeout(const Duration(seconds: 10));
     return ForegroundApp.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Se o computador está sendo mantido pronto para ser alcançado.
+  ///
+  /// Pergunta ao agente a cada vez em vez de guardar: o estado depende de o
+  /// notebook estar ou não na tomada, o que muda sem passar pelo servidor.
+  Future<KeepAwakeState> keepAwake(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/keep-awake'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return KeepAwakeState.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Liga ou desliga o "manter pronto". O agente grava a escolha em disco.
+  Future<void> setKeepAwake(String deviceId, bool enabled) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/keep-awake'),
+      headers: _authHeaders,
+      body: jsonEncode({'enabled': enabled}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
   }
 
   /// O que está na área de transferência do computador: o texto e os

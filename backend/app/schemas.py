@@ -160,6 +160,26 @@ class ForegroundOut(BaseModel):
     app: ForegroundAppOut | None = None
 
 
+class KeepAwakeOut(BaseModel):
+    """Se o computador está sendo mantido pronto para controle remoto.
+
+    Os três campos dizem coisas diferentes e o app precisa dos três: `enabled`
+    é a escolha do usuário, `holding` é o que está valendo agora, e `source`
+    explica a diferença entre os dois quando ela existe - na bateria, ligado
+    não significa segurando.
+    """
+
+    enabled: bool
+    holding: bool
+    source: Literal["ac", "battery", "unknown"]
+
+
+class KeepAwakeRequest(BaseModel):
+    """Liga ou desliga o "manter pronto" no computador."""
+
+    enabled: bool
+
+
 class FileEntryOut(BaseModel):
     """Um item de uma pasta do computador."""
 

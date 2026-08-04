@@ -356,7 +356,8 @@ $esperado = @(
     "pairing", "input", "screen-jpeg", "apps",
     "wake-on-lan", "totp", "webrtc-signaling", "system-stats",
     "media-keys", "file-transfer", "foreground-app", "audio-stream",
-    "ice-servers", "clipboard", "monitors", "control-profiles"
+    "ice-servers", "clipboard", "monitors", "control-profiles",
+    "keep-awake"
 )
 
 Titulo "Conferência"

@@ -7,6 +7,7 @@
 pub mod adaptive;
 pub mod apps;
 pub mod audio;
+pub mod awake;
 pub mod capture;
 pub mod client;
 pub mod clipboard;
@@ -72,4 +73,20 @@ pub fn load_config() -> config::Config {
         Ok(texto) => config::Config::parse(&texto),
         Err(_) => config::Config::new(),
     }
+}
+
+/// Grava a configuração, criando a pasta se preciso.
+///
+/// Existe porque agora há dois lugares que escrevem aqui: o `install`, que
+/// guarda a URL do backend, e o agente em execução, quando o app liga ou
+/// desliga o "manter pronto". Uma escolha feita no telefone precisa sobreviver
+/// ao próximo login — senão ela vale até a máquina reiniciar e ninguém entende
+/// por que voltou sozinha.
+pub fn save_config(cfg: &config::Config) -> Result<(), String> {
+    let caminho = config_path();
+    if let Some(pai) = caminho.parent() {
+        let _ = std::fs::create_dir_all(pai);
+    }
+    std::fs::write(&caminho, cfg.to_text())
+        .map_err(|e| format!("não consegui gravar {}: {e}", caminho.display()))
 }
