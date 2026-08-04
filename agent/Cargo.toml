@@ -55,11 +55,17 @@ clipboard-win = "5"
 # COM e sem PowerShell: o instalador que dependia de um `powershell.exe` para
 # cada passo era lento, piscava janela e e o padrao que antivirus marcam.
 mslnk = "0.1"
-# A janela e o icone ao lado do relogio. `default-features = false` + `glow`
-# evita o `wgpu` inteiro: a janela desenha texto e alguns retangulos, e nao ha
-# por que carregar uma pilha grafica moderna para isso. Sao ~100 crates a
-# menos e um binario bem menor.
-eframe = { version = "0.29", default-features = false, features = ["glow", "default_fonts"] }
+# A janela e o icone ao lado do relogio.
+#
+# `wgpu` e nao `glow`, depois de a versao com `glow` falhar numa maquina de
+# verdade: "egui_glow requires opengl 2.0+". Maquina virtual costuma nao ter
+# OpenGL 2.0, e sessao de Area de Trabalho Remota prende o OpenGL na versao
+# 1.1 - instalar por RDP e cenario comum demais num produto de controle
+# remoto. No Windows o `wgpu` usa DX12, que existe nos dois casos.
+#
+# Custa ~75 crates a mais que o `glow`. E o preco de a janela abrir onde o
+# usuario esta, e nao so onde o desenvolvedor testou.
+eframe = { version = "0.29", default-features = false, features = ["wgpu", "default_fonts"] }
 tray-icon = "0.19"
 
 # Embute o icone e a versao no .exe (ver build.rs). So roda no alvo Windows.

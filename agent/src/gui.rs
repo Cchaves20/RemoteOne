@@ -418,6 +418,10 @@ mod imp {
 
         let opcoes = eframe::NativeOptions {
             viewport,
+            // DX12, e não OpenGL. Ver o comentário no Cargo.toml: a versão com
+            // `glow` morria com "requires opengl 2.0+" em máquina virtual e em
+            // sessão de Área de Trabalho Remota.
+            renderer: eframe::Renderer::Wgpu,
             ..Default::default()
         };
 
@@ -432,10 +436,68 @@ mod imp {
         // computador continua alcançável, e só a interface se perdeu.
         if let Err(e) = resultado {
             crate::diario(&format!("A janela não abriu ({e}); o agente continua rodando."));
+
+            // Sem janela, o código de pareamento não teria como ser visto por
+            // quem instalou o agente oculto - restaria o arquivo de texto, que
+            // ninguém sabe que existe. Uma caixa do próprio Windows não
+            // depende de placa de vídeo nenhuma.
+            //
+            // Não é a MessageBox que foi removida daqui: aquela era disparada
+            // por um `powershell.exe`, com o segundo de espera, o piscar e a
+            // perda de acentos. Esta é a API direto, sem processo nenhum a
+            // mais - e só entra em cena quando a janela de verdade falhou.
+            crate::notify::ao_receber_codigo(|| {
+                if let Some((code, expira)) = crate::notify::codigo_pendente() {
+                    caixa_de_pareamento(&code, expira);
+                }
+            });
+            // Um código que chegou enquanto a janela tentava abrir não pode se
+            // perder no meio da troca.
+            if let Some((code, expira)) = crate::notify::codigo_pendente() {
+                caixa_de_pareamento(&code, expira);
+            }
+
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(3600));
             }
         }
+    }
+
+    const MB_OK: u32 = 0x0000_0000;
+    const MB_ICONINFORMATION: u32 = 0x0000_0040;
+    const MB_SETFOREGROUND: u32 = 0x0001_0000;
+    const MB_TOPMOST: u32 = 0x0004_0000;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(dono: isize, texto: *const u16, titulo: *const u16, tipo: u32) -> i32;
+    }
+
+    /// Última linha de defesa: o código numa caixa do próprio Windows.
+    fn caixa_de_pareamento(code: &str, expira_em: u64) {
+        let texto = format!(
+            "Código de pareamento:\n\n{code}\n\nDigite este código no aplicativo.\n\
+             Expira em {} min.",
+            expira_em / 60
+        );
+        // Numa thread própria: `MessageBoxW` só volta quando alguém fecha a
+        // caixa, e quem avisa aqui é a thread de rede do agente. Bloqueá-la
+        // pararia o controle remoto até alguém clicar em OK.
+        std::thread::spawn(move || {
+            let texto: Vec<u16> = texto.encode_utf16().chain(std::iter::once(0)).collect();
+            let titulo: Vec<u16> = "RemoteOne"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            unsafe {
+                MessageBoxW(
+                    0,
+                    texto.as_ptr(),
+                    titulo.as_ptr(),
+                    MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST,
+                )
+            };
+        });
     }
 }
 

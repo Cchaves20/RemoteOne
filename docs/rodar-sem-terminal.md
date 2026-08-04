@@ -167,6 +167,19 @@ coisa à outra.
 Os atalhos do Menu Iniciar e da área de trabalho abrem **esta** janela, do
 agente que já está rodando.
 
+### Se a janela não abrir
+
+Acontece em **máquina virtual** e em **sessão de Área de Trabalho Remota**, que
+não oferecem placa de vídeo de verdade. O agente continua inteiro: conecta,
+pareia e é controlado normalmente — só a janela e o ícone da bandeja não
+aparecem. O `agent.log` diz o motivo.
+
+Nesse caso o código de pareamento vem numa **caixa de mensagem do Windows**,
+que não depende de placa de vídeo nenhuma.
+
+A primeira versão desta janela usava OpenGL e morria com *"requires opengl
+2.0+"* nessas máquinas. Hoje usa DX12, que existe nos dois casos.
+
 ## Onde vejo o código de pareamento?
 
 Quando o agente precisa parear, a **janela abre sozinha** com o código em letra
