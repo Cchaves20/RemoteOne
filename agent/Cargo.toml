@@ -65,7 +65,12 @@ mslnk = "0.1"
 #
 # Custa ~75 crates a mais que o `glow`. E o preco de a janela abrir onde o
 # usuario esta, e nao so onde o desenvolvedor testou.
-eframe = { version = "0.29", default-features = false, features = ["wgpu", "default_fonts"] }
+#
+# A versao 0.31 e nao a 0.29 por um motivo so: e a partir dela que existe o
+# `native_adapter_selector`, que deixa escolher a placa de video. Sem ele o
+# `egui-wgpu` pede o adaptador com `force_fallback_adapter: false` cravado no
+# codigo, e o renderizador por software do Windows nunca e considerado.
+eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts"] }
 tray-icon = "0.19"
 
 # Embute o icone e a versao no .exe (ver build.rs). So roda no alvo Windows.

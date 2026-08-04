@@ -178,7 +178,11 @@ Nesse caso o código de pareamento vem numa **caixa de mensagem do Windows**,
 que não depende de placa de vídeo nenhuma.
 
 A primeira versão desta janela usava OpenGL e morria com *"requires opengl
-2.0+"* nessas máquinas. Hoje usa DX12, que existe nos dois casos.
+2.0+"* nessas máquinas. Hoje usa DX12 e, quando não há placa de vídeo alguma
+disponível, o **renderizador por software** do próprio Windows. Uma janela com
+cinco linhas de texto não perde nada rodando por software.
+
+O `agent.log` diz qual foi usado, na linha `janela: usando ...`.
 
 ## Onde vejo o código de pareamento?
 

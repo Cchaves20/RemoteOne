@@ -422,6 +422,7 @@ mod imp {
             // `glow` morria com "requires opengl 2.0+" em máquina virtual e em
             // sessão de Área de Trabalho Remota.
             renderer: eframe::Renderer::Wgpu,
+            wgpu_options: configuracao_wgpu(),
             ..Default::default()
         };
 
@@ -461,6 +462,70 @@ mod imp {
                 std::thread::sleep(std::time::Duration::from_secs(3600));
             }
         }
+    }
+
+    /// Escolhe a placa de vídeo, aceitando as de software.
+    ///
+    /// Isto existe por causa de uma linha do `egui-wgpu`: por padrão ele pede
+    /// um adaptador com `force_fallback_adapter: false`, e o WARP - o
+    /// renderizador por software que **todo** Windows 10+ tem - nunca chega a
+    /// ser considerado. Numa máquina virtual sem placa de vídeo acessível, a
+    /// resposta é "no suitable adapter found" e a janela não abre, embora o
+    /// Windows tenha ali o que desenhá-la.
+    ///
+    /// A ordem de preferência é a óbvia: placa dedicada, integrada, virtual e,
+    /// por último, software. Uma janela que mostra cinco linhas de texto não
+    /// perde nada rodando por software - e é a diferença entre existir e não
+    /// existir na máquina de quem instalou.
+    fn escolher_adaptador(
+        adaptadores: &[eframe::wgpu::Adapter],
+        superficie: Option<&eframe::wgpu::Surface<'_>>,
+    ) -> Result<eframe::wgpu::Adapter, String> {
+        use eframe::wgpu::DeviceType;
+
+        let serve = |a: &eframe::wgpu::Adapter| match superficie {
+            Some(s) => a.is_surface_supported(s),
+            None => true,
+        };
+        let nota = |t: DeviceType| match t {
+            DeviceType::DiscreteGpu => 0,
+            DeviceType::IntegratedGpu => 1,
+            DeviceType::VirtualGpu => 2,
+            DeviceType::Cpu => 3,
+            DeviceType::Other => 4,
+        };
+
+        let escolhido = adaptadores
+            .iter()
+            .filter(|a| serve(a))
+            .min_by_key(|a| nota(a.get_info().device_type))
+            .cloned();
+
+        match escolhido {
+            Some(a) => {
+                let info = a.get_info();
+                crate::diario(&format!(
+                    "janela: usando {} ({:?}, {:?})",
+                    info.name, info.device_type, info.backend
+                ));
+                Ok(a)
+            }
+            None => Err(format!(
+                "nenhum adaptador serve a esta janela ({} encontrado(s))",
+                adaptadores.len()
+            )),
+        }
+    }
+
+    fn configuracao_wgpu() -> eframe::egui_wgpu::WgpuConfiguration {
+        let mut cfg = eframe::egui_wgpu::WgpuConfiguration::default();
+        if let eframe::egui_wgpu::WgpuSetup::CreateNew(novo) = &mut cfg.wgpu_setup {
+            novo.native_adapter_selector =
+                Some(std::sync::Arc::new(|adaptadores, superficie| {
+                    escolher_adaptador(adaptadores, superficie)
+                }));
+        }
+        cfg
     }
 
     const MB_OK: u32 = 0x0000_0000;
