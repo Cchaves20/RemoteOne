@@ -59,10 +59,14 @@ void main() {
 
   group('aprendizado', () {
     test('palavra usada aparece, mesmo fora do dicionário', () {
+      // A palavra é inventada de propósito. Já foi o nome do produto, e uma
+      // renomeação trocou a palavra sem trocar o prefixo procurado - o teste
+      // passou a aprender uma coisa e perguntar por outra. Dado de teste que
+      // coincide com nome de projeto é dado de teste que quebra sozinho.
       final s = WordSuggester(seed: ['arquivo']);
-      expect(s.suggest('remo'), isEmpty);
-      s.learn('Deskside');
-      expect(s.suggest('remo'), contains('deskside'));
+      expect(s.suggest('xyzz'), isEmpty);
+      s.learn('Xyzzuva');
+      expect(s.suggest('xyzz'), contains('xyzzuva'));
     });
 
     test('a mais usada vem antes', () {
@@ -85,12 +89,12 @@ void main() {
     test('o histórico atravessa a troca de idioma', () {
       // O que a pessoa digitou não pertence ao idioma da interface.
       final s = WordSuggester.forLanguage(AppLanguage.ptBr);
-      s.learn('deskside');
+      s.learn('xyzzuva');
       final outro = WordSuggester.forLanguage(
         AppLanguage.en,
         learned: s.learned,
       );
-      expect(outro.suggest('remo'), contains('deskside'));
+      expect(outro.suggest('xyzz'), contains('xyzzuva'));
     });
   });
 

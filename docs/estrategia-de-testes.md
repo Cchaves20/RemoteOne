@@ -64,6 +64,23 @@ suportada. Flutter não tem suporte oficial a HarmonyOS NEXT (só um port da
 comunidade), então cada tela custaria uma cadeia de build própria para cobrir
 um aparelho que já está coberto por outro caminho.
 
+### Dado de teste não pode ser o nome do projeto
+
+Dois testes do sugeridor de palavras usavam o nome do produto como "palavra
+fora do dicionário". Era conveniente e parecia inofensivo — até a renomeação
+para Deskside trocar a **palavra aprendida** e não o **prefixo procurado**. Os
+testes passaram a ensinar uma coisa e perguntar por outra, e só quebraram na
+CI, depois do push.
+
+A regra que fica: quando um teste precisa de uma palavra qualquer, use uma
+palavra inventada de verdade. O nome do projeto parece um valor estável e não
+é — ele é justamente o que muda quando o projeto cresce.
+
+O mesmo vale para caminhos: a substituição global que renomeou o projeto também
+trocou `cd ~/RemoteOne` no comando de deploy, apontando para uma pasta que só
+existe fora do repositório. Busca e substituição é ótima para texto e perigosa
+para qualquer coisa que se refira ao mundo real.
+
 ### Código só de Windows, escrito num Linux
 
 O agente tem partes que só existem no Windows (injeção de entrada, captura de
