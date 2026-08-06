@@ -306,7 +306,12 @@ if ($Vps) {
         # é texto dentro de uma string - quem o executa é o shell do Linux, não
         # o PowerShell (que nem o suporta na versão 5.1).
         $passos = @(
-            "cd ~/Deskside",
+            # O caminho do clone no servidor, que **não** é a marca: é só onde
+            # o repositório foi baixado. A renomeação do projeto trocou este
+            # texto junto e derrubou o deploy com "No such file or directory".
+            # Aceitar os dois nomes deixa a pasta ser renomeada quando der
+            # vontade, sem prender o deploy a essa decisão.
+            "cd ~/Deskside 2>/dev/null || cd ~/RemoteOne",
             "git fetch origin $Branch",
             "git checkout $Branch",
             "git reset --hard origin/$Branch",
