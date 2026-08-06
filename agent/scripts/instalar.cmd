@@ -22,7 +22,9 @@ if not exist "%EXE%" (
   exit /b 1
 )
 
-rem A URL do backend e opcional: sem ela, vale a que ja estiver configurada.
+rem A URL do backend e opcional: sem ela, vale a que ja estiver configurada e,
+rem na primeira instalacao, o servidor do Deskside - por isso dois cliques aqui
+rem bastam. Para apontar para outro servidor, chame pelo terminal com a URL.
 "%EXE%" install %*
 
 echo.

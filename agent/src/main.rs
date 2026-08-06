@@ -60,7 +60,9 @@ Deskside Agent — controla este computador pelo celular.
   deskside-agent status             onde está instalado e para onde aponta
 
 A URL é a do backend (ex.: wss://seu-servidor/ws/agent). Sem ela, vale a que
-já estiver configurada, ou o servidor da própria máquina.
+já estiver configurada e, na primeira instalação, o servidor do Deskside -
+então instalar sem argumento nenhum já funciona. Veja para onde aponta com
+`deskside-agent status`.
 
 Não precisa de administrador: a instalação é da sua conta de usuário.";
 

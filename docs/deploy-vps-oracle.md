@@ -225,11 +225,21 @@ Deve responder `{"status":"ok"}` com o cadeado de HTTPS. 🎉
 
 - **App (celular):** no campo **Servidor**, use
   `https://caio-remoteone.duckdns.org` (sem porta — 443 é implícito).
-- **Agente (cada PC):** instale apontando o WebSocket seguro:
+- **Agente (cada PC):** enquanto o projeto está em teste, este endereço já é o
+  padrão de fábrica (`DEFAULT_BACKEND_URL`, em `agent/src/lib.rs`), então basta:
+  ```
+  deskside-agent.exe install
+  ```
+  (ou dois cliques em `agent\scripts\instalar.cmd`)
+
+  A URL continua aceita, e é ela que manda quando aparece:
   ```
   deskside-agent.exe install wss://caio-remoteone.duckdns.org/ws/agent
   ```
-  (ou dois cliques em `agent\scripts\instalar.cmd`)
+  Use a forma explícita para **mudar** o servidor de um agente já instalado: sem
+  argumento, o `install` preserva o que estiver gravado no `agent.conf`.
+
+  Confira com `deskside-agent.exe status`.
 
 Como agora o backend é central e sempre ligado, **cadastre a conta uma vez** (é
 um banco novo) e refaça o pareamento de cada computador. A partir daí você

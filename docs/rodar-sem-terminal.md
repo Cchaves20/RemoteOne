@@ -29,8 +29,30 @@ O `.\` não é enfeite: o PowerShell **não** procura executável na pasta atual
 ao contrário do `cmd`. Sem ele a resposta é "não é reconhecido como nome de
 cmdlet", que parece arquivo ausente e não é.
 
-A URL é opcional: sem ela, vale a que já estiver configurada — e, se não houver
-nenhuma, o backend da própria máquina (`ws://127.0.0.1:8000/ws/agent`).
+A URL é opcional, e enquanto o projeto está em teste **instalar sem ela já
+funciona**: o padrão de fábrica é o servidor do Deskside. A ordem é esta —
+o que já estiver gravado no `agent.conf` primeiro, e o padrão só quando não há
+nada.
+
+Duas consequências que economizam uma investigação:
+
+- **Instalar sem URL não troca o servidor.** Num agente já configurado, o
+  `install` sem argumento preserva o endereço que estava lá. Para mudar, passe
+  a URL nova.
+- **Um agente antigo instalado sem URL ficou apontando para a própria
+  máquina** (`ws://127.0.0.1:8000/ws/agent`, o padrão de antes). O sintoma é a
+  janela dizendo "Sem conexão" sem mais nada. Conserta-se com um
+  `install wss://.../ws/agent`.
+
+Para conferir para onde ele aponta, `deskside-agent.exe status`.
+
+Para desenvolver contra o backend local, compile com o padrão trocado — assim
+não é preciso editar o código:
+
+```powershell
+$env:DESKSIDE_DEFAULT_BACKEND = "ws://127.0.0.1:8000/ws/agent"
+cargo build --release
+```
 
 O que o comando faz:
 

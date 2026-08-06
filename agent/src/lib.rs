@@ -34,8 +34,31 @@ pub mod wol;
 
 use std::path::PathBuf;
 
-/// Backend padrão quando ninguém configurou nada: o da própria máquina.
-pub const DEFAULT_BACKEND_URL: &str = "ws://127.0.0.1:8000/ws/agent";
+/// Backend padrão quando ninguém configurou nada.
+///
+/// Aponta para o servidor do projeto, e não para `127.0.0.1`, porque é isso que
+/// faz `deskside-agent install` sem argumento nenhum funcionar. O padrão
+/// anterior era o backend da própria máquina - defensável para quem
+/// desenvolve, e errado para todo o resto: instalar num computador que não roda
+/// backend deixava o agente tentando falar com um servidor que não existe ali,
+/// e a janela dizia "Sem conexão" sem dizer o motivo.
+///
+/// Enquanto o produto está em teste, esse servidor é um só e é conhecido. Na
+/// hora de haver mais de um, isto vira uma escolha na instalação em vez de uma
+/// constante.
+///
+/// `option_env!` para quem desenvolve não precisar editar este arquivo:
+///
+/// ```text
+/// DESKSIDE_DEFAULT_BACKEND=ws://127.0.0.1:8000/ws/agent cargo build --release
+/// ```
+///
+/// Continua valendo, em ordem, o que já valia: a variável de ambiente
+/// `DESKSIDE_BACKEND_URL`, depois o `agent.conf`, e só então este padrão.
+pub const DEFAULT_BACKEND_URL: &str = match option_env!("DESKSIDE_DEFAULT_BACKEND") {
+    Some(url) => url,
+    None => "wss://caio-remoteone.duckdns.org/ws/agent",
+};
 
 /// Diretório onde ficam o `device_id` e a configuração.
 ///
@@ -147,4 +170,40 @@ pub fn save_config(cfg: &config::Config) -> Result<(), String> {
     }
     std::fs::write(&caminho, cfg.to_text())
         .map_err(|e| format!("não consegui gravar {}: {e}", caminho.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DEFAULT_BACKEND_URL;
+
+    /// Guarda contra a volta do padrão antigo.
+    ///
+    /// `127.0.0.1` como padrão de fábrica é o tipo de defeito que não parece
+    /// defeito para quem desenvolve: na máquina de desenvolvimento o backend
+    /// está mesmo ali, e funciona. Em qualquer outro computador o agente fica
+    /// tentando falar com um servidor que não existe, e a janela diz "Sem
+    /// conexão" sem dizer por quê.
+    #[test]
+    fn o_padrao_nao_pode_ser_a_propria_maquina() {
+        // Compilar apontando para localhost é legítimo para desenvolver (ver
+        // `DESKSIDE_DEFAULT_BACKEND`); o que não pode é ser o padrão embutido.
+        if option_env!("DESKSIDE_DEFAULT_BACKEND").is_some() {
+            return;
+        }
+        assert!(
+            !DEFAULT_BACKEND_URL.contains("127.0.0.1")
+                && !DEFAULT_BACKEND_URL.contains("localhost"),
+            "padrão de fábrica não pode ser a própria máquina: {DEFAULT_BACKEND_URL}"
+        );
+    }
+
+    #[test]
+    fn o_padrao_e_o_endereco_do_agente() {
+        // Errar o caminho daria um erro de conexão idêntico ao de servidor
+        // fora do ar, e mandaria a investigação para o lado errado.
+        assert!(
+            DEFAULT_BACKEND_URL.ends_with("/ws/agent"),
+            "o backend do agente termina em /ws/agent: {DEFAULT_BACKEND_URL}"
+        );
+    }
 }
