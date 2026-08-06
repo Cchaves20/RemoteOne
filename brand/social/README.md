@@ -6,8 +6,8 @@ conta própria: se o tema do app mudar, estas mudam junto.
 
 | Arquivo | Medida | Onde |
 |---|---|---|
-| `remoteone-perfil.png` | 1080×1080 | Foto de perfil |
-| `remoteone-post.png` | 1080×1350 | Post (4:5, o formato que ocupa mais tela no feed) |
+| `deskside-perfil.png` | 1080×1080 | Foto de perfil |
+| `deskside-post.png` | 1080×1350 | Post (4:5, o formato que ocupa mais tela no feed) |
 
 ## Como refazer
 
@@ -28,8 +28,8 @@ que a `--window-size`, e sem o corte sobra uma faixa clara no rodapé.
 
 ```python
 from PIL import Image
-Image.open('_perfil.png').convert('RGB').crop((0,0,1080,1080)).save('remoteone-perfil.png')
-Image.open('_post.png').convert('RGB').crop((0,0,1080,1350)).save('remoteone-post.png')
+Image.open('_perfil.png').convert('RGB').crop((0,0,1080,1080)).save('deskside-perfil.png')
+Image.open('_post.png').convert('RGB').crop((0,0,1080,1350)).save('deskside-post.png')
 ```
 
 ## Decisões
