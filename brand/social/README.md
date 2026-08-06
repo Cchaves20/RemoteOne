@@ -38,6 +38,9 @@ Image.open('_post.png').convert('RGB').crop((0,0,1080,1350)).save('remoteone-pos
   ~40px na maioria das telas; qualquer palavra ali vira borrão. O desenho fica
   dentro de um círculo seguro, e as quinas são só fundo.
 - **O post é 4:5**, não quadrado: ocupa mais altura no feed pelo mesmo scroll.
+- **O gradiente da palavra em destaque começa claro.** Ele atravessa uma
+  palavra curta; começando no violeta escuro da paleta, as primeiras letras
+  somem no fundo. É a mesma cor da marca, deslocada para o claro.
 - **A ilustração não tem seta nem ondas.** O celular mostra o mesmo monitor que
   está atrás dele - o espelhamento já diz que um comanda o outro, e as versões
   com arcos de sinal pareciam adorno solto.
