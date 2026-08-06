@@ -107,12 +107,20 @@ function Passo($texto) { Write-Host "  $texto" -ForegroundColor DarkGray }
 # o pior de todos os mundos, porque some a prova e ainda se afirma o contrário.
 # O `cargo` escapou por acaso: ele fala quase tudo pelo erro padrão.
 #
-# `2>&1` traz o erro padrão junto para a tela; `Write-Host` escreve direto no
-# console, que é o único destino que **não** vira valor de retorno.
+# `Write-Host` escreve direto no console, que é o único destino que **não** vira
+# valor de retorno.
+#
+# Só a saída padrão passa por aqui, de propósito. A primeira tentativa trouxe o
+# erro padrão junto com `2>&1`, e o resultado foi pior: o PowerShell converte
+# cada linha de erro de um programa externo num objeto de erro e a imprime com
+# o enfeite todo - nome do script, número da linha, `CategoryInfo`,
+# `FullyQualifiedErrorId` -, transformando um "40 issues found." de uma linha
+# num bloco vermelho de seis. Sem a redireção, o erro padrão vai direto para o
+# console pelo caminho de sempre, limpo, como sempre foi.
 function Executar($programa, $argumentos, $onde) {
     Push-Location $onde
     try {
-        & $programa @argumentos 2>&1 | ForEach-Object { Write-Host $_ }
+        & $programa @argumentos | ForEach-Object { Write-Host $_ }
         return ($LASTEXITCODE -eq 0)
     } finally {
         Pop-Location

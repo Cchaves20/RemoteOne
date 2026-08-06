@@ -34,7 +34,13 @@ class TecladoFisico {
   final bool cmdViraCtrl;
 
   /// As teclas que não produzem caractere e têm nome próprio no protocolo.
-  static const Map<LogicalKeyboardKey, String> _especiais = {
+  ///
+  /// `final`, e não `const`: `LogicalKeyboardKey` sobrescreve `==` e
+  /// `hashCode`, e o Dart proíbe esses tipos como chave de mapa constante — um
+  /// mapa `const` é montado em tempo de compilação, quando ainda não dá para
+  /// chamar o `==` de ninguém. Como é `static`, continua existindo uma vez só
+  /// para todas as instâncias, que era o que o `const` estava fazendo aqui.
+  static final Map<LogicalKeyboardKey, String> _especiais = {
     LogicalKeyboardKey.enter: 'enter',
     LogicalKeyboardKey.numpadEnter: 'enter',
     LogicalKeyboardKey.backspace: 'backspace',
@@ -64,7 +70,9 @@ class TecladoFisico {
   };
 
   /// As teclas que só existem para modificar outras. Sozinhas não mandam nada.
-  static const Set<LogicalKeyboardKey> _modificadoras = {
+  ///
+  /// `final` pelo mesmo motivo do mapa acima.
+  static final Set<LogicalKeyboardKey> _modificadoras = {
     LogicalKeyboardKey.controlLeft,
     LogicalKeyboardKey.controlRight,
     LogicalKeyboardKey.control,
