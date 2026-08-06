@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -939,6 +940,100 @@ class _RemoteScreenState extends State<RemoteScreen>
     _send({'kind': 'mouse_move_to', 'x': p.x, 'y': p.y});
   }
 
+  // --- mouse e trackpad -------------------------------------------------------
+
+  /// Há um ponteiro de verdade conectado (mouse ou trackpad do iPad).
+  ///
+  /// Descoberto sem plugin nativo e sem adivinhação: **dedo não faz hover**.
+  /// A simples chegada de um `PointerHoverEvent` prova que existe um
+  /// dispositivo apontador, e o `kind` diz qual.
+  bool _apontador = false;
+
+  /// Um botão do mouse está apertado agora.
+  ///
+  /// Existe para os gestos de toque saírem do caminho enquanto o mouse manda:
+  /// sem isto, o mesmo clique chegaria duas vezes ao computador - uma pela
+  /// escuta do ponteiro, outra pelo `GestureDetector`, que no Flutter também
+  /// recebe eventos de mouse.
+  bool _mouseApertado = false;
+
+  /// De que veio o gesto em curso: mouse ou dedo.
+  ///
+  /// Marcado na **descida** do ponteiro e não limpo na subida, porque um gesto
+  /// dura mais que o evento que o começou: o `onTapUp` e o `onScaleEnd` chegam
+  /// depois de o botão já ter sido solto, e uma bandeira que se apaga cedo
+  /// deixaria o fim do gesto escapar para o caminho errado.
+  ///
+  /// Sem isto o mesmo clique sai duas vezes para o computador - uma pela
+  /// escuta do ponteiro, outra pelo detector de toque, que no Flutter recebe
+  /// mouse também. O sintoma seria duplo clique onde se pediu um.
+  bool _gestoDeMouse = false;
+
+  static bool _ehApontador(PointerDeviceKind kind) =>
+      kind == PointerDeviceKind.mouse || kind == PointerDeviceKind.trackpad;
+
+  // Bits da máscara de botões. Escritos aqui, e não importados das constantes
+  // do Flutter, para não depender de qual biblioteca as reexporta: um import a
+  // mais que o analisador considere redundante reprova a compilação inteira
+  // com `--fatal-infos`, e estes três valores são estáveis desde sempre.
+  static const int _botaoEsquerdo = 0x01;
+  static const int _botaoDireito = 0x02;
+  static const int _botaoMeio = 0x04;
+
+  /// Traduz a máscara de botões do Flutter para o nome que o agente espera.
+  ///
+  /// É máscara, e não valor: com dois botões apertados os dois bits estão
+  /// ligados. A ordem aqui define a precedência, e o esquerdo vem primeiro
+  /// porque é o que quase sempre importa.
+  static String? _botao(int mascara) {
+    if (mascara & _botaoEsquerdo != 0) return 'left';
+    if (mascara & _botaoDireito != 0) return 'right';
+    if (mascara & _botaoMeio != 0) return 'middle';
+    return null;
+  }
+
+  void _pontoMoveu(PointerHoverEvent e, Size box) {
+    if (!_ehApontador(e.kind)) return;
+    if (!_apontador) setState(() => _apontador = true);
+    _moveTo(e.localPosition, box);
+  }
+
+  void _pontoDesceu(PointerDownEvent e, Size box) {
+    _gestoDeMouse = _ehApontador(e.kind);
+    if (!_gestoDeMouse) return;
+    final botao = _botao(e.buttons);
+    if (botao == null) return;
+    _mouseApertado = true;
+    if (!_apontador) setState(() => _apontador = true);
+    // Move antes de apertar: quem usa mouse pode ter entrado na área já
+    // clicando, e sem esta posição o clique cairia onde o cursor estava antes.
+    final p = _norm(e.localPosition, box);
+    _send({'kind': 'mouse_move_to', 'x': p.x, 'y': p.y});
+    _send({'kind': 'mouse_press', 'button': botao, 'clicks': 1});
+  }
+
+  void _pontoArrastou(PointerMoveEvent e, Size box) {
+    if (!_ehApontador(e.kind) || !_mouseApertado) return;
+    _moveTo(e.localPosition, box);
+  }
+
+  void _pontoSubiu(PointerUpEvent e, Size box) {
+    if (!_ehApontador(e.kind) || !_mouseApertado) return;
+    _mouseApertado = false;
+    // `e.buttons` já vem zerado no evento de soltura - o botão que saiu é o
+    // que estava na descida. Soltar os três é inofensivo e dispensa guardar
+    // estado que só serviria para isto.
+    for (final botao in const ['left', 'right', 'middle']) {
+      _send({'kind': 'mouse_release', 'button': botao});
+    }
+  }
+
+  void _pontoRolou(PointerSignalEvent e) {
+    if (e is! PointerScrollEvent) return;
+    _pendingScroll += e.scrollDelta.dy;
+    _flushScroll();
+  }
+
   void _flushScroll() {
     final steps = (_pendingScroll / _scrollDivisor).truncate();
     if (steps == 0) return;
@@ -1657,18 +1752,44 @@ class _RemoteScreenState extends State<RemoteScreen>
                     transformHitTests: true,
                     child: child,
                   ),
-                  child: GestureDetector(
-                    onTapDown: (d) => _touchDown(d.localPosition, box),
-                    onTapUp: (d) => _tapAt(d.localPosition, box),
+                  // A escuta do ponteiro envolve o detector de toque, e os
+                  // dois compartilham o mesmo `box` - que é o da imagem, já
+                  // dentro do `AspectRatio`. Duas consequências boas de graça:
+                  // o mapeamento não sofre com as barras pretas, e o cursor só
+                  // comanda o computador **enquanto está sobre o vídeo**. Fora
+                  // dele, nenhum evento chega aqui e o iPad usa o cursor dele
+                  // normalmente, que é o comportamento pedido.
+                  child: Listener(
+                    onPointerHover: (e) => _pontoMoveu(e, box),
+                    onPointerDown: (e) => _pontoDesceu(e, box),
+                    onPointerMove: (e) => _pontoArrastou(e, box),
+                    onPointerUp: (e) => _pontoSubiu(e, box),
+                    onPointerSignal: _pontoRolou,
+                    child: GestureDetector(
+                    // O mouse já foi tratado pela escuta acima; deixar o
+                    // gesto seguir mandaria tudo em dobro.
+                    onTapDown: (d) {
+                      if (_gestoDeMouse) return;
+                      _touchDown(d.localPosition, box);
+                    },
+                    onTapUp: (d) {
+                      if (_gestoDeMouse) return;
+                      _tapAt(d.localPosition, box);
+                    },
                     // Sem `onTapCancel`: ele dispara assim que o dedo anda
                     // além do limiar de toque, que é exatamente o começo do
                     // arrasto de seleção. Quem solta o botão é o `onScaleEnd`,
                     // que vale para os dois desfechos.
-                    onLongPressStart: (d) => _rightClickAt(d.localPosition, box),
+                    onLongPressStart: (d) {
+                      if (_gestoDeMouse) return;
+                      _rightClickAt(d.localPosition, box);
+                    },
                     onScaleStart: (d) {
+                      if (_gestoDeMouse) return;
                       if (d.pointerCount < 2) _touchDown(d.localFocalPoint, box);
                     },
                     onScaleUpdate: (d) {
+                      if (_gestoDeMouse) return;
                       if (d.pointerCount >= 2) {
                         _pendingScroll += d.focalPointDelta.dy;
                       } else {
@@ -1676,8 +1797,12 @@ class _RemoteScreenState extends State<RemoteScreen>
                         _moveTo(d.localFocalPoint, box);
                       }
                     },
-                    onScaleEnd: (_) => _touchUp(),
+                    onScaleEnd: (_) {
+                      if (_gestoDeMouse) return;
+                      _touchUp();
+                    },
                     child: image,
+                    ),
                   ),
                 ),
               );
@@ -1703,13 +1828,30 @@ class _RemoteScreenState extends State<RemoteScreen>
     final Widget viewArea = LayoutBuilder(
       builder: (context, constraints) {
         final area = Size(constraints.maxWidth, constraints.maxHeight);
+
+        // Deitado, os dois docks ficam nas bordas laterais - e no celular eles
+        // são estreitos o bastante para flutuar sem incomodar. Num iPad em
+        // paisagem, não: eles passaram a cobrir justamente a tela do
+        // computador, que é o que a pessoa veio olhar.
+        //
+        // A imagem recua o suficiente para eles caberem ao lado dela. Continuam
+        // flutuando e arrastáveis como antes; o que muda é que agora flutuam
+        // sobre margem, e não sobre conteúdo.
+        //
+        // Isto também é pré-requisito do ponteiro: o mouse mapeia para o
+        // retângulo da imagem, e área de imagem escondida atrás de um dock
+        // seria área onde apontar não corresponde a clicar.
+        final margemDock = isPortrait
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(horizontal: _dockThickness + 16);
+
         return Stack(
           // expand é essencial: sem ele o Stack se dimensiona pelo filho não
           // posicionado (a dock) e, quando ela está vazia, a tela inteira
           // encolheria para um ponto.
           fit: StackFit.expand,
           children: [
-            Positioned.fill(child: _liveView()),
+            Positioned.fill(child: Padding(padding: margemDock, child: _liveView())),
             // No modo lupa a dock sai da frente, para não atrapalhar quem
             // está ampliando a imagem.
             if (!_zoomMode) _appDock(vertical: !isPortrait, area: area),
