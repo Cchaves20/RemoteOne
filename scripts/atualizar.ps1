@@ -119,6 +119,21 @@ function Passo($texto) { Write-Host "  $texto" -ForegroundColor DarkGray }
 # console pelo caminho de sempre, limpo, como sempre foi.
 function Executar($programa, $argumentos, $onde) {
     Push-Location $onde
+    # O `$ErrorActionPreference = "Stop"` lá de cima vale para os comandos do
+    # PowerShell, onde ele é bom: um `Get-FileHash` que falha deve parar tudo.
+    # Aqui dentro ele é perigoso, porque o PowerShell trata **qualquer** linha
+    # que um programa externo escreva no erro padrão como erro - e com "Stop"
+    # isso encerra o script.
+    #
+    # Não é hipótese. Aconteceu: o `git pull` escreve "From https://..." no erro
+    # padrão em toda execução normal, e uma versão deste arquivo com `2>&1`
+    # morreu nessa linha, no primeiro passo, **antes** de conseguir baixar a
+    # correção de si mesma. A rede de segurança do `.cmd` não pegou: ela cobre
+    # arquivo que não compila, e este compilava.
+    #
+    # A atribuição é local à função - o PowerShell restaura o valor de fora ao
+    # sair, sem precisar guardar e devolver a mão.
+    $ErrorActionPreference = "Continue"
     try {
         & $programa @argumentos | ForEach-Object { Write-Host $_ }
         return ($LASTEXITCODE -eq 0)
