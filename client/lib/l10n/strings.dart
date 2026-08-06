@@ -681,6 +681,14 @@ class Strings {
   String get zoomExit => _t('Sair da lupa', 'Exit magnifier', '退出放大', 'Quitter la loupe', 'Salir de la lupa');
   String get zoomEnter => _t('Ampliar (lupa)', 'Magnify', '放大（放大镜）', 'Agrandir (loupe)', 'Ampliar (lupa)');
 
+  // Teclado físico (iPad com teclado Bluetooth)
+  String get physicalKeyboard => _t(
+      'Teclado físico detectado: digite direto. Cmd funciona como Ctrl.',
+      'Physical keyboard detected: just type. Cmd works as Ctrl.',
+      '检测到实体键盘：直接输入即可。Cmd 相当于 Ctrl。',
+      'Clavier physique détecté : tapez directement. Cmd fait office de Ctrl.',
+      'Teclado físico detectado: escribe directamente. Cmd funciona como Ctrl.');
+
   // Tutorial de gestos
   String get howToControlTitle =>
       _t('Como controlar', 'How to control', '如何控制', 'Comment contrôler', 'Cómo controlar');

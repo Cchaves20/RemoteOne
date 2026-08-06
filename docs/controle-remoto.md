@@ -245,3 +245,101 @@ O valor esta em ter algo util no primeiro toque. Um editor de atalhos e uma
 tela a mais para atravessar antes de o recurso servir para alguma coisa, e a
 lista pronta ja cobre o que se faz num computador pelo celular: assistir,
 navegar, escrever, apresentar.
+
+## Mouse e teclado de verdade (iPad com acessórios)
+
+Um iPad com teclado e mouse Bluetooth deixa de ser um controle remoto e passa
+a ser um computador de acesso: aponta-se, clica-se e digita-se como na
+máquina que está do outro lado. Tudo isto vive no cliente — o protocolo não
+mudou uma linha, porque `mouse_move_to`, `mouse_press`, `key_text` e
+`key_combo` já existiam para o toque e para o teclado da tela.
+
+### Como o app sabe que há um mouse ou um teclado
+
+Não pergunta. O iPadOS não responde a um app comum quais acessórios estão
+ligados, e um plugin nativo só para isso seria muito código para uma resposta
+que o próprio uso dá de graça:
+
+- **Dedo não faz *hover*.** A chegada de um `PointerHoverEvent` prova que
+  existe um dispositivo apontador, e o `kind` (`mouse` ou `trackpad`) diz
+  qual.
+- **Tecla que chega é teclado.** Um `KeyEvent` no `Focus` da tela só existe se
+  houver teclado físico — o teclado da tela do app manda ações direto, sem
+  passar por eventos de tecla.
+
+Nos dois casos a descoberta é uma via só: uma vez ligada, fica ligada até sair
+da tela. Desligar quando o acessório some exigiria detectar a ausência, que é
+justamente o que não dá para observar.
+
+### O cursor só comanda em cima do vídeo
+
+Pedido explícito, e a implementação caiu de graça: o `Listener` que escuta o
+ponteiro fica **dentro** do `AspectRatio` da imagem, compartilhando o mesmo
+retângulo com o detector de toque. Fora da imagem nenhum evento chega ali, e
+o cursor do iPad continua sendo o cursor do iPad — dá para tocar num botão da
+barra de cima sem que o cursor do computador salte junto.
+
+O mesmo encaixe resolve as barras pretas: como o retângulo é o da imagem e não
+o da tela, o mapeamento de posição não sofre com a letra-caixa.
+
+Uma consequência disso é a margem lateral com o iPad deitado. A dock de
+aplicativos e a barra de perfis flutuam sobre a imagem; num celular elas são
+estreitas e não incomodam, mas num iPad em paisagem passaram a cobrir a tela
+do computador. Agora a imagem recua o suficiente para elas caberem ao lado —
+e área de imagem escondida atrás de uma dock seria área onde apontar não
+corresponde a clicar.
+
+### Clique único, não duplo
+
+No Flutter o `GestureDetector` também recebe eventos de mouse. Sem cuidado, um
+clique chegaria duas vezes ao computador: uma pela escuta do ponteiro, outra
+pelo detector de toque. A bandeira `_gestoDeMouse` é marcada na **descida** e
+não é limpa na subida, porque um gesto dura mais que o evento que o começou —
+`onTapUp` e `onScaleEnd` chegam depois de o botão já ter sido solto, e uma
+bandeira que se apaga cedo deixaria o fim do gesto escapar para o caminho
+errado.
+
+Não há captura de ponteiro no iPadOS, então o mapeamento é sempre **absoluto**
+(posição na imagem → posição na tela do computador), nunca relativo.
+
+### Cmd vira Ctrl
+
+No teclado do iPad, Cmd fica exatamente onde o Ctrl fica num teclado de PC, e
+é ele que a pessoa aperta para copiar. Sem a troca, Cmd+C chegaria ao Windows
+como Meta+C — que abre o menu Iniciar em vez de copiar. A troca é o padrão de
+`TecladoFisico` (`cmdViraCtrl`), e com ela desligada o Cmd volta a ser Meta.
+
+### As três saídas do tradutor
+
+`client/lib/services/teclado_fisico.dart` é função pura, isolada da tela de
+propósito: quem tem o foco e se o teclado da tela deve sumir são coisas do
+aparelho, mas a tradução dá para testar aqui
+(`client/test/teclado_fisico_test.dart`).
+
+| Entrada | Sai como | Por quê |
+|---|---|---|
+| Letra, número, acento | `key_text` | Preserva o layout. O til e a vogal viram "ã" antes de chegar ao app; mandar código de tecla erraria se o computador estivesse noutro layout. |
+| Enter, setas, F5, Delete | `key_press` | Não produzem caractere. |
+| Ctrl/Alt/Cmd + tecla | `key_combo` | Modificadores separados, como o teclado da tela já mandava. |
+| Shift sozinho + letra | `key_text` | O Shift **já está** no caractere: "A" é "A". Tratá-lo como modificador mandaria Shift+A, que é outra coisa. |
+| Shift + seta | `key_combo` | Aqui ele é modificador de verdade — uma seta não tem caractere onde se esconder. É assim que se seleciona texto. |
+| Ctrl, Alt, Shift, Cmd sozinhos | nada | Segurar Cmd antes de apertar C passa por aqui primeiro; mandar algo agora digitaria lixo antes do atalho. |
+
+### O que o iPadOS fica para si
+
+Cmd+Espaço, Cmd+Tab, Cmd+H e as capturas de tela nunca chegam ao aplicativo —
+o sistema os intercepta antes. Não há contorno. Um `Alt+Tab` no computador
+remoto continua saindo pela barra de perfis ou pelo teclado da tela, que é
+justamente por que o botão do teclado passa a aparecer também em pé quando há
+teclado físico: o teclado desenhado para de subir sozinho (quem tem teclado de
+verdade não quer metade da tela ocupada), mas fica a um toque de distância.
+
+### Foco
+
+O `Focus` que recebe as teclas envolve a tela inteira — teclado não tem
+posição. Ele só encaminha quando está na cadeia de foco e a rota está no topo:
+sem essa guarda, digitar num campo de texto da folha da área de transferência
+escreveria no campo **e** no computador ao mesmo tempo. Tocar na imagem
+devolve o foco para cá, porque um botão da barra de cima pode tê-lo tomado no
+toque anterior — e a partir dali as teclas parariam de chegar sem nenhum sinal
+do porquê.

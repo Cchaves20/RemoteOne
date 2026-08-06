@@ -19,6 +19,7 @@ import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
 import '../services/app_state.dart';
+import '../services/teclado_fisico.dart';
 import '../services/video_session.dart';
 import '../theme.dart';
 import '../widgets/profile_bar.dart';
@@ -552,6 +553,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _video?.removeListener(_onVideoChanged);
     _video?.dispose();
     _transform.dispose();
+    _foco.dispose();
     _dockAnim.dispose();
     _statsTimer?.cancel();
     _foregroundTimer?.cancel();
@@ -999,6 +1001,11 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   void _pontoDesceu(PointerDownEvent e, Size box) {
+    // Tocar na tela do computador devolve as teclas para cá. Um botão da barra
+    // de cima pode ter ficado com o foco no toque anterior, e a partir dali as
+    // teclas parariam de chegar sem nenhum sinal do porquê. Aqui é seguro: esta
+    // área não tem campo de texto nenhum.
+    if (!_foco.hasPrimaryFocus) _foco.requestFocus();
     _gestoDeMouse = _ehApontador(e.kind);
     if (!_gestoDeMouse) return;
     final botao = _botao(e.buttons);
@@ -1026,6 +1033,83 @@ class _RemoteScreenState extends State<RemoteScreen>
     for (final botao in const ['left', 'right', 'middle']) {
       _send({'kind': 'mouse_release', 'button': botao});
     }
+  }
+
+  // --- teclado físico ---------------------------------------------------------
+
+  /// Para onde as teclas vão enquanto esta tela está no ar.
+  ///
+  /// Explícito, e não um `FocusScope` qualquer: precisa ser possível perguntar
+  /// se **este** nó está na cadeia de foco. Sem isso, um campo de texto aberto
+  /// numa folha (a área de transferência) receberia a letra e a mandaria ao
+  /// computador ao mesmo tempo.
+  final FocusNode _foco = FocusNode(debugLabel: 'teclas-do-computador');
+
+  /// Tradutor de teclas. Sem estado, por isso `const` e compartilhado.
+  static const TecladoFisico _tradutor = TecladoFisico();
+
+  /// Já chegou alguma tecla de um teclado de verdade.
+  ///
+  /// Mesma ideia do ponteiro: em vez de perguntar ao sistema quais aparelhos
+  /// existem — o que o iPadOS não responde a um app comum —, deixa o próprio
+  /// evento provar. Ligado, o teclado da tela para de aparecer sozinho: quem
+  /// tem teclado não quer metade da tela ocupada por outro.
+  bool _tecladoFisico = false;
+
+  /// Uma tecla física chegou.
+  ///
+  /// Devolve `handled` só quando algo foi mandado ao computador. `ignored` no
+  /// resto deixa o iPadOS seguir com o atalho dele, que é o certo para as
+  /// teclas que este app não usa.
+  KeyEventResult _aoTeclar(FocusNode node, KeyEvent evento) {
+    // Só a descida (e a repetição, que é segurar a tecla). A subida não gera
+    // ação: o agente digita, não simula pressionar e soltar.
+    if (evento is KeyUpEvent) return KeyEventResult.ignored;
+    // Fora da cadeia de foco, ou com uma folha aberta por cima, as teclas são
+    // de quem está na frente — não desta tela.
+    if (!node.hasFocus) return KeyEventResult.ignored;
+    final rota = ModalRoute.of(context);
+    if (rota != null && !rota.isCurrent) return KeyEventResult.ignored;
+
+    // A prova de que existe teclado é a tecla ter chegado, inclusive quando
+    // ela é só um Shift — que não vira ação nenhuma.
+    if (!_tecladoFisico) {
+      setState(() => _tecladoFisico = true);
+      _avisar(widget.state.t.physicalKeyboard);
+    }
+
+    final teclado = HardwareKeyboard.instance;
+    final acao = _tradutor.traduzir(
+      tecla: evento.logicalKey,
+      caractere: evento.character,
+      ctrl: teclado.isControlPressed,
+      alt: teclado.isAltPressed,
+      shift: teclado.isShiftPressed,
+      meta: teclado.isMetaPressed,
+    );
+    if (acao == null) return KeyEventResult.ignored;
+    _rastrearPalavra(acao);
+    _send(acao);
+    return KeyEventResult.handled;
+  }
+
+  /// Mantém o rastro da palavra digitada, o mesmo que o teclado da tela
+  /// alimenta. Sem isto, alternar entre os dois deixaria a barra de sugestões
+  /// oferecendo o fim de uma palavra que já mudou.
+  void _rastrearPalavra(Map<String, dynamic> acao) {
+    final kind = acao['kind'];
+    if (kind == 'key_text') {
+      for (final c in (acao['text'] as String).split('')) {
+        _typedWord.addChar(c);
+      }
+      return;
+    }
+    if (kind == 'key_press' && acao['key'] == 'backspace') {
+      _typedWord.backspace();
+      return;
+    }
+    // Seta, Enter, atalho: o cursor foi para outro lugar e o rastro morreu.
+    _typedWord.reset();
   }
 
   void _pontoRolou(PointerSignalEvent e) {
@@ -1820,7 +1904,13 @@ class _RemoteScreenState extends State<RemoteScreen>
     // Na vertical, o teclado aparece automaticamente (modo digitação); na
     // horizontal, é opcional (mais tela). Layout em Column: a barra de
     // controles e o teclado ficam FORA da imagem, sem cobri-la.
-    final showKeyboard = isPortrait || _keyboardVisible;
+    //
+    // Com teclado físico ligado, ele deixa de aparecer sozinho: quem está com
+    // um teclado de verdade na frente não quer metade da tela ocupada pelo
+    // desenho de outro. Continua a um toque de distância pelo botão da barra —
+    // as teclas especiais dos perfis ainda são úteis.
+    final showKeyboard =
+        _tecladoFisico ? _keyboardVisible : (isPortrait || _keyboardVisible);
     // A dock continua flutuando sobre a imagem (é o comportamento de dock, e
     // ela é estreita); os painéis, não. Eles ocupam espaço próprio e empurram
     // a imagem, do mesmo jeito que o teclado — assim nada fica por cima da
@@ -1886,12 +1976,12 @@ class _RemoteScreenState extends State<RemoteScreen>
       },
     );
 
-    return Scaffold(
+    final Widget tela = Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           children: [
-            _topBar(showToggle: !isPortrait),
+            _topBar(showToggle: !isPortrait || _tecladoFisico),
             // Deitado, as métricas viram uma coluna ao lado da imagem: a tela
             // é baixa e uma faixa horizontal comeria altura demais. Em pé, o
             // contrário — sobra altura, e a faixa fica no topo.
@@ -1931,6 +2021,16 @@ class _RemoteScreenState extends State<RemoteScreen>
           ],
         ),
       ),
+    );
+
+    // O `Focus` envolve a tela inteira porque teclado não tem posição: a tecla
+    // vale onde quer que o dedo esteja. `autofocus` para funcionar já na
+    // abertura, sem exigir um toque antes da primeira letra.
+    return Focus(
+      focusNode: _foco,
+      autofocus: true,
+      onKeyEvent: _aoTeclar,
+      child: tela,
     );
   }
 
