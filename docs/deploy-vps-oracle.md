@@ -114,6 +114,37 @@ sudo netfilter-persistent save
 > responde, o app conecta, e só o vídeo direto falha - com uma mensagem sobre
 > ICE que não sugere firewall nenhum.
 
+### Swap: obrigatório numa VM de 1 GB
+
+A imagem da Oracle vem **sem swap**. Com 1 GB de RAM e nenhuma paginação, um
+pico de memória não deixa o sistema lento — ele **mata processos**. E como o
+Docker e o `sshd` dividem a mesma memória, o que morre junto costuma ser a sua
+conexão.
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+free -h
+```
+
+A linha no `/etc/fstab` é o que faz o swap voltar depois de reiniciar. Sem ela
+a proteção some no primeiro reboot, e o problema volta meses depois sem
+ninguém ligar uma coisa à outra.
+
+**Como isso aparece quando falta.** Aconteceu aqui: um `docker compose build`
+travou a máquina inteira no meio do `pip install`, o SSH caiu com
+`Connection reset`, e depois nem conectava mais - respondendo
+`Connection closed by ... port 22`, que é o `sshd` vivo sem memória para criar
+a sessão. A única saída foi reiniciar a instância pelo console da Oracle.
+
+O detalhe cruel: os deploys anteriores passavam porque o `pip install` vinha
+do **cache de camadas** do Docker. O dia em que o cache foi invalidado - por
+uma renomeação de pacote, no caso - o build rodou inteiro e derrubou tudo. A
+falta de swap estava lá o tempo todo, esperando.
+
 ## 5. Domínio grátis no DuckDNS
 
 1. Acesse <https://www.duckdns.org>, entre (Google/GitHub) e crie um subdomínio,
