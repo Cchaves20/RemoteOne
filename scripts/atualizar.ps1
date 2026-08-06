@@ -92,10 +92,27 @@ function Passo($texto) { Write-Host "  $texto" -ForegroundColor DarkGray }
 
 # Roda um programa externo e devolve $false se ele falhar, sem derrubar o
 # script: uma etapa quebrada não deve impedir as outras de rodarem.
+#
+# O `Write-Host` no meio não é enfeite, e a falta dele custou caro. No
+# PowerShell, o que um programa externo escreve na saída padrão entra no fluxo
+# de saída da função - junto do $true/$false do `return`. Quem chama com
+# `if (Executar ...)` recebe então um **vetor** com as linhas do programa mais o
+# booleano, e vetor não vazio é verdadeiro. Resultado: qualquer programa que
+# imprima alguma coisa passava por bem-sucedido, e as linhas dele sumiam da tela
+# por terem sido capturadas pelo `if`.
+#
+# Foi exatamente isto que aconteceu com o `flutter analyze`: ele escreve os
+# apontamentos na saída padrão e só o resumo no erro padrão. A tela mostrava
+# "40 issues found." seguido de "App sem apontamentos", sem a lista no meio -
+# o pior de todos os mundos, porque some a prova e ainda se afirma o contrário.
+# O `cargo` escapou por acaso: ele fala quase tudo pelo erro padrão.
+#
+# `2>&1` traz o erro padrão junto para a tela; `Write-Host` escreve direto no
+# console, que é o único destino que **não** vira valor de retorno.
 function Executar($programa, $argumentos, $onde) {
     Push-Location $onde
     try {
-        & $programa @argumentos
+        & $programa @argumentos 2>&1 | ForEach-Object { Write-Host $_ }
         return ($LASTEXITCODE -eq 0)
     } finally {
         Pop-Location
