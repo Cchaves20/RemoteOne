@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// Símbolo do RemoteOne: a "tela com cursor" em gradiente (mesmo glifo do
+/// Símbolo do Deskside: a "tela com cursor" em gradiente (mesmo glifo do
 /// ícone do app). Usado no login e no "Sobre".
-class RemoteOneMark extends StatelessWidget {
-  const RemoteOneMark({super.key, this.size = 72});
+class DesksideMark extends StatelessWidget {
+  const DesksideMark({super.key, this.size = 72});
 
   final double size;
 
@@ -15,7 +15,7 @@ class RemoteOneMark extends StatelessWidget {
       width: size,
       height: size,
       child: Image.asset(
-        'assets/icon/remoteone_glyph.png',
+        'assets/icon/deskside_glyph.png',
         width: size,
         height: size,
         filterQuality: FilterQuality.medium,

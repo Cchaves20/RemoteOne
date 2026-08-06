@@ -8,10 +8,10 @@ import 'services/app_state.dart';
 import 'theme.dart';
 
 /// URL padrão do backend. Pode ser sobrescrita no build com
-/// --dart-define=REMOTEONE_BACKEND=http://SEU_IP:8000 ou editada na tela de
+/// --dart-define=DESKSIDE_BACKEND=http://SEU_IP:8000 ou editada na tela de
 /// login (útil para apontar o celular ao computador na mesma rede).
 const _defaultBackend = String.fromEnvironment(
-  'REMOTEONE_BACKEND',
+  'DESKSIDE_BACKEND',
   defaultValue: 'http://localhost:8000',
 );
 
@@ -23,12 +23,12 @@ Future<void> main() async {
   // Mostra a UI imediatamente; a restauração da sessão (rede) roda depois,
   // sem travar a abertura. Assim, um servidor fora do ar nunca causa tela
   // branca — a UI reage via ChangeNotifier quando a sessão resolve.
-  runApp(RemoteOneApp(state: state));
+  runApp(DesksideApp(state: state));
   state.restoreSession();
 }
 
-class RemoteOneApp extends StatelessWidget {
-  const RemoteOneApp({super.key, required this.state});
+class DesksideApp extends StatelessWidget {
+  const DesksideApp({super.key, required this.state});
 
   final AppState state;
 
@@ -38,7 +38,7 @@ class RemoteOneApp extends StatelessWidget {
       listenable: state,
       builder: (context, _) {
         return MaterialApp(
-          title: 'RemoteOne',
+          title: 'Deskside',
           theme: buildTheme(Brightness.light),
           darkTheme: buildTheme(Brightness.dark),
           themeMode: state.themeMode,

@@ -11,10 +11,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      REMOTEONE_DATABASE_URL: postgresql://remoteone:remoteone@db:5432/remoteone
-      REMOTEONE_REDIS_URL: redis://redis:6379/0
+      DESKSIDE_DATABASE_URL: postgresql://deskside:deskside@db:5432/deskside
+      DESKSIDE_REDIS_URL: redis://redis:6379/0
       # Segredo de desenvolvimento. Em produção, defina um valor forte e único.
-      REMOTEONE_JWT_SECRET: dev-only-change-me
+      DESKSIDE_JWT_SECRET: dev-only-change-me
     depends_on:
       - db
       - redis
@@ -23,9 +23,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: remoteone
-      POSTGRES_PASSWORD: remoteone
-      POSTGRES_DB: remoteone
+      POSTGRES_USER: deskside
+      POSTGRES_PASSWORD: deskside
+      POSTGRES_DB: deskside
     ports:
       - "5432:5432"
     volumes:

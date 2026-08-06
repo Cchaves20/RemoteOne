@@ -1,6 +1,6 @@
 # Deploy do backend no Oracle Cloud Free + DuckDNS (HTTPS)
 
-Coloca o backend do RemoteOne num servidor **sempre ligado e independente** dos
+Coloca o backend do Deskside num servidor **sempre ligado e independente** dos
 computadores controlados — controlável de qualquer lugar (não só no Wi‑Fi de
 casa) e com **HTTPS** (senha nunca trafega em texto puro).
 
@@ -118,6 +118,11 @@ sudo netfilter-persistent save
 
 1. Acesse <https://www.duckdns.org>, entre (Google/GitHub) e crie um subdomínio,
    ex.: `caio-remoteone` → vira `caio-remoteone.duckdns.org`.
+
+   > O subdomínio ainda diz `remoteone` porque o projeto mudou de nome depois
+   > dele existir. Trocá-lo exigiria certificado novo e reconfigurar cada
+   > agente instalado - com o serviço fora do ar no intervalo. É mudança de
+   > infraestrutura, e não de código: fica para quando houver motivo.
 2. No campo **current ip**, coloque o **IP público do VPS** (passo 2/3) e clique
    **update ip**.
 
@@ -143,15 +148,15 @@ Reentre por SSH.
 ## 8. Baixar o projeto e configurar
 
 ```bash
-git clone https://github.com/Cchaves20/RemoteOne.git
-cd RemoteOne/deploy
+git clone https://github.com/Cchaves20/Deskside.git
+cd Deskside/deploy
 cp .env.example .env
 nano .env
 ```
 No `.env`, preencha:
 - `DOMAIN=caio-remoteone.duckdns.org` (o seu subdomínio),
-- `REMOTEONE_JWT_SECRET=` um segredo longo (gere com `openssl rand -base64 48`),
-- `REMOTEONE_TURN_SECRET=` outro segredo longo (mesmo comando). É o que o
+- `DESKSIDE_JWT_SECRET=` um segredo longo (gere com `openssl rand -base64 48`),
+- `DESKSIDE_TURN_SECRET=` outro segredo longo (mesmo comando). É o que o
   backend usa para gerar as credenciais temporárias e o coturn para conferir -
   se os dois discordarem, o TURN recusa todo mundo e a falha aparece só como
   "não conectou",
@@ -171,7 +176,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 > **Na VM AMD Micro (1 GB de RAM)** use o compose **leve** (SQLite, sem
-> Postgres/Redis) — no `.env` basta `DOMAIN` e `REMOTEONE_JWT_SECRET`:
+> Postgres/Redis) — no `.env` basta `DOMAIN` e `DESKSIDE_JWT_SECRET`:
 > ```bash
 > docker compose -f docker-compose.lite.yml up -d --build
 > ```
@@ -191,7 +196,7 @@ Deve responder `{"status":"ok"}` com o cadeado de HTTPS. 🎉
   `https://caio-remoteone.duckdns.org` (sem porta — 443 é implícito).
 - **Agente (cada PC):** instale apontando o WebSocket seguro:
   ```
-  remoteone-agent.exe install wss://caio-remoteone.duckdns.org/ws/agent
+  deskside-agent.exe install wss://caio-remoteone.duckdns.org/ws/agent
   ```
   (ou dois cliques em `agent\scripts\instalar.cmd`)
 
@@ -233,7 +238,7 @@ respondeu.
 
 - **Atualizar o backend** (após um `git pull`):
   ```bash
-  cd ~/RemoteOne && git pull && cd deploy
+  cd ~/Deskside && git pull && cd deploy
   docker compose -f docker-compose.prod.yml up -d --build
   ```
 - **Ver logs:** `docker compose -f docker-compose.prod.yml logs -f api`
@@ -244,7 +249,7 @@ respondeu.
 
 - Só 80/443 ficam abertos; API/Postgres/Redis não têm porta pública.
 - HTTPS/WSS criptografa tudo (login, tela, comandos).
-- Troque `REMOTEONE_JWT_SECRET` e `POSTGRES_PASSWORD` por valores fortes e
+- Troque `DESKSIDE_JWT_SECRET` e `POSTGRES_PASSWORD` por valores fortes e
   **nunca** versione o `.env`.
 - Mantenha o SSH só com chave (a Oracle já faz isso por padrão).
 
@@ -270,7 +275,7 @@ alcançava.
 O `atualizar` agora recarrega sozinho. À mão:
 
 ```bash
-cd ~/RemoteOne/deploy
+cd ~/Deskside/deploy
 sudo docker compose -f docker-compose.lite.yml exec -T caddy \
   caddy reload --config /etc/caddy/Caddyfile
 ```

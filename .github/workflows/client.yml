@@ -55,7 +55,7 @@ jobs:
       - name: Gerar pasta android/ se ainda não versionada
         run: |
           if [ ! -d android ]; then
-            flutter create --org com.remoteone --project-name remoteone_client --platforms=android .
+            flutter create --org com.deskside --project-name deskside_client --platforms=android .
           fi
 
       - name: Build APK (debug)
@@ -63,5 +63,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: remoteone-android-debug
+          name: deskside-android-debug
           path: client/build/app/outputs/flutter-apk/app-debug.apk

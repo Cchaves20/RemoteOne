@@ -22,13 +22,13 @@ o app aponta para o IP do computador → você controla o PC.**
 ## Etapa 1 — Gerar o .ipa no Codemagic
 
 1. Acesse <https://codemagic.io> e entre com sua conta do GitHub.
-2. Autorize o acesso ao repositório `RemoteOne`.
+2. Autorize o acesso ao repositório `Deskside`.
 3. O Codemagic detecta o `codemagic.yaml`. Clique em **Start new build**.
 4. Selecione:
    - **Branch:** `claude/testing-strategy-multiplatform-0nztwm`
    - **Workflow:** `iOS (.ipa não assinado para sideload)`
 5. Aguarde (~15 min). Ao terminar, baixe o artefato
-   **`RemoteOne-unsigned.ipa`** para o Dell.
+   **`Deskside-unsigned.ipa`** para o Dell.
 
 ## Etapa 2 — Preparar o Windows
 
@@ -40,13 +40,13 @@ o app aponta para o IP do computador → você controla o PC.**
 ## Etapa 3 — Instalar com o Sideloadly
 
 1. Abra o Sideloadly. Ele deve mostrar o iPhone conectado.
-2. Arraste o `RemoteOne-unsigned.ipa` para a janela.
+2. Arraste o `Deskside-unsigned.ipa` para a janela.
 3. Em **Apple ID**, informe seu Apple ID (com verificação em duas etapas, gere
    uma *senha de app* em appleid.apple.com e use-a aqui).
 4. Clique em **Start**. O Sideloadly reassina e instala (alguns minutos).
 5. No iPhone: **Ajustes → Geral → VPN e Gerenciamento de Dispositivo** →
    toque no seu Apple ID e em **Confiar**.
-6. Abra o app **RemoteOne** na tela inicial.
+6. Abra o app **Deskside** na tela inicial.
 
 ## Etapa 4 — Apontar o app ao computador
 
@@ -64,7 +64,7 @@ O **Firewall do Windows** costuma bloquear conexões de fora na porta 8000.
 Libere a porta (uma vez):
 
 ```powershell
-New-NetFirewallRule -DisplayName "RemoteOne 8000" -Direction Inbound `
+New-NetFirewallRule -DisplayName "Deskside 8000" -Direction Inbound `
   -Protocol TCP -LocalPort 8000 -Action Allow
 ```
 

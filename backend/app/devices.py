@@ -39,7 +39,7 @@ from app.schemas import (
 from app.screen import frame_store
 from app.transfers import MAX_TRANSFER_BYTES, TransferError, transfers
 
-logger = logging.getLogger("remoteone")
+logger = logging.getLogger("deskside")
 
 router = APIRouter(prefix="/api/v1", tags=["devices"])
 

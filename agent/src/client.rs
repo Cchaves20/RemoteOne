@@ -74,7 +74,7 @@ impl StreamConfig {
     /// limitado pelos tetos configurados.
     ///
     /// A ordem importa e é sempre esta: o ajuste automático **só abaixa**. Quem
-    /// pôs `REMOTEONE_VIDEO_MAX_WIDTH=800` porque a máquina é fraca não quer
+    /// pôs `DESKSIDE_VIDEO_MAX_WIDTH=800` porque a máquina é fraca não quer
     /// que uma rede boa devolva 1280 — o teto é do dono da máquina, o degrau é
     /// da rede, e a rede não manda no dono da máquina.
     fn video_params(&self, nivel: crate::adaptive::Level) -> crate::adaptive::Level {
@@ -502,7 +502,7 @@ pub async fn run(
                             println!(
                                 "Vídeo limitado a {largura}px de largura (o preset pede \
                                  {}px). Codificar custa por pixel; ajuste com \
-                                 REMOTEONE_VIDEO_MAX_WIDTH.",
+                                 DESKSIDE_VIDEO_MAX_WIDTH.",
                                 active.max_width,
                             );
                         }
@@ -714,7 +714,7 @@ pub async fn run(
                                 // que deu certo.
                                 let mut cfg = crate::load_config();
                                 cfg.set(
-                                    "REMOTEONE_KEEP_AWAKE",
+                                    "DESKSIDE_KEEP_AWAKE",
                                     if enabled { "1" } else { "0" },
                                 );
                                 if let Err(e) = crate::save_config(&cfg) {

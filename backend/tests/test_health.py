@@ -25,4 +25,4 @@ def test_health_lista_os_recursos_do_codigo():
 def test_api_root_returns_app_name():
     response = client.get("/api/v1")
     assert response.status_code == 200
-    assert response.json()["name"] == "RemoteOne Backend"
+    assert response.json()["name"] == "Deskside Backend"

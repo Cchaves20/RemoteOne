@@ -23,7 +23,7 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// Cliente REST do backend do RemoteOne.
+/// Cliente REST do backend do Deskside.
 ///
 /// Os tokens são guardados em disco (armazenamento seguro) para manter o login
 /// entre aberturas do app; nos testes, um `TokenStore` em memória é injetado.

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:remoteone_client/l10n/strings.dart';
-import 'package:remoteone_client/services/word_suggester.dart';
+import 'package:deskside_client/l10n/strings.dart';
+import 'package:deskside_client/services/word_suggester.dart';
 
 void main() {
   group('sugestões', () {
@@ -61,8 +61,8 @@ void main() {
     test('palavra usada aparece, mesmo fora do dicionário', () {
       final s = WordSuggester(seed: ['arquivo']);
       expect(s.suggest('remo'), isEmpty);
-      s.learn('RemoteOne');
-      expect(s.suggest('remo'), contains('remoteone'));
+      s.learn('Deskside');
+      expect(s.suggest('remo'), contains('deskside'));
     });
 
     test('a mais usada vem antes', () {
@@ -85,12 +85,12 @@ void main() {
     test('o histórico atravessa a troca de idioma', () {
       // O que a pessoa digitou não pertence ao idioma da interface.
       final s = WordSuggester.forLanguage(AppLanguage.ptBr);
-      s.learn('remoteone');
+      s.learn('deskside');
       final outro = WordSuggester.forLanguage(
         AppLanguage.en,
         learned: s.learned,
       );
-      expect(outro.suggest('remo'), contains('remoteone'));
+      expect(outro.suggest('remo'), contains('deskside'));
     });
   });
 

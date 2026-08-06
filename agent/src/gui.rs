@@ -99,11 +99,11 @@ mod imp {
 
     /// Acha a janela deste processo, mesmo escondida.
     ///
-    /// Pelo título, e conferindo o **processo dono**: "RemoteOne" é um nome
+    /// Pelo título, e conferindo o **processo dono**: "Deskside" é um nome
     /// que uma pasta do Explorer pode ter, e mandar `ShowWindow` na janela de
     /// outra pessoa seria um jeito criativo de assombrar o usuário.
     fn achar_janela() -> Option<isize> {
-        let titulo: Vec<u16> = "RemoteOne".encode_utf16().chain(std::iter::once(0)).collect();
+        let titulo: Vec<u16> = "Deskside".encode_utf16().chain(std::iter::once(0)).collect();
         let meu_pid = unsafe { GetCurrentProcessId() };
         let mut atual = 0isize;
         loop {
@@ -182,7 +182,7 @@ mod imp {
         fn new(cc: &eframe::CreationContext<'_>, estado: Compartilhado) -> Self {
             let _ = CONTEXTO.set(cc.egui_ctx.clone());
 
-            let abrir = MenuItem::new("Abrir o RemoteOne", true, None);
+            let abrir = MenuItem::new("Abrir o Deskside", true, None);
             let sair = MenuItem::new("Sair", true, None);
             let (id_abrir, id_sair) = (abrir.id().clone(), sair.id().clone());
 
@@ -193,7 +193,7 @@ mod imp {
 
             let mut construtor = TrayIconBuilder::new()
                 .with_menu(Box::new(menu))
-                .with_tooltip("RemoteOne");
+                .with_tooltip("Deskside");
             if let Some(icone) = icone_bandeja() {
                 construtor = construtor.with_icon(icone);
             }
@@ -210,7 +210,7 @@ mod imp {
             // O atalho do Menu Iniciar chega por aqui: a segunda instância
             // sinaliza e sai, e quem abre a janela é este agente.
             std::thread::Builder::new()
-                .name("remoteone-atalho".into())
+                .name("deskside-atalho".into())
                 .spawn(|| {
                     crate::instance::escutar_pedidos_de_janela(|| {
                         crate::diario("janela: pedida pelo atalho");
@@ -249,7 +249,7 @@ mod imp {
     /// Threads que ficam ouvindo o ícone da bandeja.
     fn escutar_bandeja() {
         std::thread::Builder::new()
-            .name("remoteone-bandeja".into())
+            .name("deskside-bandeja".into())
             .spawn(|| {
                 let fila = TrayIconEvent::receiver();
                 while let Ok(evento) = fila.recv() {
@@ -305,7 +305,7 @@ mod imp {
             codigo: Option<(String, u64)>,
         ) {
             ui.add_space(8.0);
-            ui.heading("RemoteOne");
+            ui.heading("Deskside");
             ui.label(
                 egui::RichText::new(format!("versão {}", estado.versao))
                     .small()
@@ -357,7 +357,7 @@ mod imp {
             ui.add_space(16.0);
             ui.label(
                 egui::RichText::new(
-                    "Fechar esta janela não encerra o RemoteOne. \
+                    "Fechar esta janela não encerra o Deskside. \
                      Para sair, use o ícone ao lado do relógio.",
                 )
                 .small()
@@ -428,7 +428,7 @@ mod imp {
 
         let estado_reserva = estado.clone();
         let resultado = eframe::run_native(
-            "RemoteOne",
+            "Deskside",
             opcoes,
             Box::new(|cc| Ok(Box::new(App::new(cc, estado)))),
         );
@@ -455,7 +455,7 @@ mod imp {
     /// bonito e é infinitamente melhor que nada, que era o que essas máquinas
     /// tinham.
     fn bandeja_sem_placa_de_video(estado: Compartilhado) {
-        let abrir = MenuItem::new("Estado do RemoteOne", true, None);
+        let abrir = MenuItem::new("Estado do Deskside", true, None);
         let sair = MenuItem::new("Sair", true, None);
         let (id_abrir, id_sair) = (abrir.id().clone(), sair.id().clone());
 
@@ -466,7 +466,7 @@ mod imp {
 
         let mut construtor = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
-            .with_tooltip("RemoteOne");
+            .with_tooltip("Deskside");
         if let Some(icone) = icone_bandeja() {
             construtor = construtor.with_icon(icone);
         }
@@ -482,7 +482,7 @@ mod imp {
         // Sem janela, estas três coisas viram caixas do Windows.
         let do_menu = estado.clone();
         std::thread::Builder::new()
-            .name("remoteone-menu".into())
+            .name("deskside-menu".into())
             .spawn(move || {
                 while let Ok(evento) = MenuEvent::receiver().recv() {
                     if evento.id == id_abrir {
@@ -496,7 +496,7 @@ mod imp {
 
         let do_duplo_clique = estado.clone();
         std::thread::Builder::new()
-            .name("remoteone-bandeja".into())
+            .name("deskside-bandeja".into())
             .spawn(move || {
                 while let Ok(evento) = TrayIconEvent::receiver().recv() {
                     if matches!(evento, TrayIconEvent::DoubleClick { .. }) {
@@ -508,7 +508,7 @@ mod imp {
 
         let do_atalho = estado.clone();
         std::thread::Builder::new()
-            .name("remoteone-atalho".into())
+            .name("deskside-atalho".into())
             .spawn(move || {
                 crate::instance::escutar_pedidos_de_janela(|| caixa_de_estado(&do_atalho))
             })
@@ -545,14 +545,14 @@ mod imp {
     fn caixa_de_estado(estado: &Compartilhado) {
         let e = estado.lock().map(|e| e.clone()).unwrap_or_default();
         let texto = format!(
-            "RemoteOne {}\n\n\
+            "Deskside {}\n\n\
              {}\n\n\
              Computador: {}\n\
              Servidor: {}\n\
              Identificador: {}\n\
              Manter pronto: {}\n\n\
              Esta máquina não tem placa de vídeo disponível, por isso o \
-             RemoteOne mostra o estado aqui em vez de numa janela própria. \
+             Deskside mostra o estado aqui em vez de numa janela própria. \
              O controle remoto funciona normalmente.",
             e.versao,
             if e.conectado {
@@ -668,7 +668,7 @@ mod imp {
         let texto = texto.to_string();
         std::thread::spawn(move || {
             let texto: Vec<u16> = texto.encode_utf16().chain(std::iter::once(0)).collect();
-            let titulo: Vec<u16> = "RemoteOne"
+            let titulo: Vec<u16> = "Deskside"
                 .encode_utf16()
                 .chain(std::iter::once(0))
                 .collect();

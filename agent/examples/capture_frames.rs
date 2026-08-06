@@ -43,7 +43,7 @@ fn main() {
     let mut written = 0u32;
     for i in 0..count {
         let started = Instant::now();
-        match remoteone_agent::capture::capture_rgb(MAX_WIDTH) {
+        match deskside_agent::capture::capture_rgb(MAX_WIDTH) {
             Ok((rgb, w, h)) => {
                 let path = dir.join(format!("quadro_{i:04}.png"));
                 match image::RgbImage::from_raw(w, h, rgb) {

@@ -30,7 +30,7 @@ workflows:
       - name: Gerar pasta ios/ se ainda não versionada
         script: |
           if [ ! -d ios ]; then
-            flutter create --org com.remoteone --project-name remoteone_client --platforms=ios .
+            flutter create --org com.deskside --project-name deskside_client --platforms=ios .
           fi
       - name: Dependências
         script: flutter pub get
@@ -51,11 +51,11 @@ workflows:
           fi
           perl -pi -e "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g" \
             ios/Runner.xcodeproj/project.pbxproj
-          # O binário do WebRTC referencia câmera e microfone. O RemoteOne só
+          # O binário do WebRTC referencia câmera e microfone. O Deskside só
           # recebe vídeo e não usa nenhum dos dois, mas sem estas chaves o iOS
           # encerra o app caso alguma dessas APIs seja tocada.
           PLIST=ios/Runner/Info.plist
-          MOTIVO="Nao utilizado: o RemoteOne apenas recebe a tela e o som do computador."
+          MOTIVO="Nao utilizado: o Deskside apenas recebe a tela e o som do computador."
           for KEY in NSCameraUsageDescription NSMicrophoneUsageDescription; do
             /usr/libexec/PlistBuddy -c "Add :$KEY string $MOTIVO" "$PLIST" \
               || /usr/libexec/PlistBuddy -c "Set :$KEY $MOTIVO" "$PLIST"
@@ -72,7 +72,7 @@ workflows:
       - name: Permissão de Face ID no Info.plist
         script: |
           PLIST=ios/Runner/Info.plist
-          REASON="Desbloquear o RemoteOne"
+          REASON="Desbloquear o Deskside"
           /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string $REASON" "$PLIST" \
             || /usr/libexec/PlistBuddy -c "Set :NSFaceIDUsageDescription $REASON" "$PLIST"
       - name: Análise e testes
@@ -85,7 +85,7 @@ workflows:
           mkdir -p build/ipa/Payload
           cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
           cd build/ipa
-          zip -r RemoteOne-unsigned.ipa Payload
+          zip -r Deskside-unsigned.ipa Payload
           ls -la "$CM_BUILD_DIR/client/build/ipa"
     # Caminhos cobrindo as duas interpretações (relativo à working_directory e
     # à raiz do clone) + um glob que acha o .ipa em qualquer lugar.
@@ -105,7 +105,7 @@ workflows:
   #       - app_store            # chave da App Store Connect API (painel do Codemagic)
   #     ios_signing:
   #       distribution_type: app_store
-  #       bundle_identifier: com.remoteone.remoteoneClient
+  #       bundle_identifier: com.deskside.desksideClient
   #   scripts:
   #     - flutter pub get
   #     - flutter build ipa --export-options-plist=/Users/builder/export_options.plist

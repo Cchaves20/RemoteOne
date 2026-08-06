@@ -1,6 +1,6 @@
 # Atualizar tudo de um terminal só
 
-O RemoteOne tem três partes que precisam andar juntas: o **agente** no Windows,
+O Deskside tem três partes que precisam andar juntas: o **agente** no Windows,
 o **app** no iPhone e o **backend** no VPS. Atualizar uma e esquecer as outras
 foi a causa da maioria dos defeitos que investigamos — componente novo
 conversando com componente velho, com sintoma que não parece ter nada a ver
@@ -53,7 +53,7 @@ Parar o agente para compilar é obrigatório: rodando, ele segura o próprio
 próximo login** — e ninguém associa "sumiu do app" a "rodei o atualizar".
 
 Por isso, terminada a compilação, o script reinstala com o binário novo quando
-detecta que já havia instalação (`%LOCALAPPDATA%\Programs\RemoteOne`). O
+detecta que já havia instalação (`%LOCALAPPDATA%\Programs\Deskside`). O
 `install` vai sem URL de propósito: atualizar não é hora de reescrever
 configuração, e o backend gravado continua valendo.
 

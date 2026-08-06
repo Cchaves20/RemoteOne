@@ -14,7 +14,7 @@ class AppLock {
           await _auth.isDeviceSupported() && await _auth.canCheckBiometrics;
       if (!supported) return true; // sem biometria → não bloqueia
       return await _auth.authenticate(
-        localizedReason: 'Desbloqueie o RemoteOne',
+        localizedReason: 'Desbloqueie o Deskside',
         options: const AuthenticationOptions(stickyAuth: true),
       );
     } catch (_) {

@@ -3,9 +3,9 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:remoteone_client/l10n/strings.dart';
-import 'package:remoteone_client/models/control_profile.dart';
-import 'package:remoteone_client/widgets/profile_bar.dart';
+import 'package:deskside_client/l10n/strings.dart';
+import 'package:deskside_client/models/control_profile.dart';
+import 'package:deskside_client/widgets/profile_bar.dart';
 
 /// Teclas com nome próprio aceitas pelo computador. Esta lista é a mesma de
 /// `backend/app/input.py` e `agent/src/input.rs` — está repetida aqui de

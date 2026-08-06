@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:remoteone_client/models/system_stats.dart';
-import 'package:remoteone_client/services/api_client.dart';
-import 'package:remoteone_client/services/token_store.dart';
+import 'package:deskside_client/models/system_stats.dart';
+import 'package:deskside_client/services/api_client.dart';
+import 'package:deskside_client/services/token_store.dart';
 
 void main() {
   test('login guarda o token e envia Bearer nas chamadas seguintes', () async {

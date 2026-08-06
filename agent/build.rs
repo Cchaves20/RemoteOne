@@ -18,13 +18,13 @@ fn main() {
         return;
     }
 
-    println!("cargo:rerun-if-changed=assets/remoteone.ico");
+    println!("cargo:rerun-if-changed=assets/deskside.ico");
 
     let mut recurso = winresource::WindowsResource::new();
-    recurso.set_icon("assets/remoteone.ico");
-    recurso.set("ProductName", "RemoteOne");
-    recurso.set("FileDescription", "Agente do RemoteOne");
-    recurso.set("CompanyName", "RemoteOne");
+    recurso.set_icon("assets/deskside.ico");
+    recurso.set("ProductName", "Deskside");
+    recurso.set("FileDescription", "Agente do Deskside");
+    recurso.set("CompanyName", "Deskside");
     recurso.set("LegalCopyright", "MIT");
 
     // Falhar aqui derrubaria a compilação inteira por causa de um ícone. O

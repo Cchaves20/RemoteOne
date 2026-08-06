@@ -1,6 +1,6 @@
 ﻿<#
 .SINOPSE
-    Atualiza as três pontas do RemoteOne de um terminal só: o agente no
+    Atualiza as três pontas do Deskside de um terminal só: o agente no
     Windows, o app Flutter e o backend no VPS.
 
 .DESCRIÇÃO
@@ -107,7 +107,7 @@ function Executar($programa, $argumentos, $onde) {
 # `-ErrorAction SilentlyContinue` nos dois: não haver agente rodando é o caso
 # normal, e sem isso o script inteiro cairia por causa dele.
 function PararAgente {
-    $vivos = Get-Process remoteone-agent -ErrorAction SilentlyContinue
+    $vivos = Get-Process deskside-agent -ErrorAction SilentlyContinue
     if ($vivos) {
         Passo "parando $($vivos.Count) agente(s) em execução"
         $vivos | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -153,14 +153,14 @@ function QuemSegura($caminho) {
 function ReinstalarSeInstalado($pasta) {
     if ($Ocultar -or $Rodar) { return }
 
-    $jaInstalado = Join-Path $env:LOCALAPPDATA "Programs\RemoteOne\remoteone-agent.exe"
+    $jaInstalado = Join-Path $env:LOCALAPPDATA "Programs\Deskside\deskside-agent.exe"
     if (-not (Test-Path $jaInstalado)) {
         Passo "agente não está instalado: nada a reiniciar"
         return
     }
 
     Passo "reinstalando com o binário novo"
-    $recem = Join-Path $pasta "target\release\remoteone-agent.exe"
+    $recem = Join-Path $pasta "target\release\deskside-agent.exe"
     if (Executar $recem @("install") $pasta) {
         Write-Host "  Agente reinstalado e rodando." -ForegroundColor Green
     } else {
@@ -244,7 +244,7 @@ if ($Agente) {
         # gravado, e nesse caso esperar resolve. Uma segunda tentativa custa
         # segundos e evita mandar o usuário caçar um problema que não existe.
         Write-Host "  Falhou. Vendo quem está segurando o executável..." -ForegroundColor Yellow
-        QuemSegura (Join-Path $pastaAgente "target\release\remoteone-agent.exe")
+        QuemSegura (Join-Path $pastaAgente "target\release\deskside-agent.exe")
         PararAgente
         Start-Sleep -Seconds 3
         Passo "cargo build --release (segunda tentativa)"
@@ -306,7 +306,7 @@ if ($Vps) {
         # é texto dentro de uma string - quem o executa é o shell do Linux, não
         # o PowerShell (que nem o suporta na versão 5.1).
         $passos = @(
-            "cd ~/RemoteOne",
+            "cd ~/Deskside",
             "git fetch origin $Branch",
             "git checkout $Branch",
             "git reset --hard origin/$Branch",
@@ -424,8 +424,8 @@ if ($Ocultar) {
     # Quem instala agora é o próprio executável: um `.ps1` não entra na
     # verificação cruzada para Windows nem tem teste, e este projeto já pagou
     # caro por código que ninguém verifica.
-    & (Join-Path $raiz "agent\target\release\remoteone-agent.exe") install "wss://$Dominio/ws/agent"
+    & (Join-Path $raiz "agent\target\release\deskside-agent.exe") install "wss://$Dominio/ws/agent"
 } elseif ($Rodar) {
     Titulo "Agente (Ctrl+C para sair)"
-    & (Join-Path $raiz "agent\target\release\remoteone-agent.exe")
+    & (Join-Path $raiz "agent\target\release\deskside-agent.exe")
 }

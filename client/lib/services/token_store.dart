@@ -12,8 +12,8 @@ abstract class TokenStore {
 /// KeyStore no Android). Persiste o login entre aberturas do app.
 class SecureTokenStore implements TokenStore {
   static const _storage = FlutterSecureStorage();
-  static const _kAccess = 'remoteone_access';
-  static const _kRefresh = 'remoteone_refresh';
+  static const _kAccess = 'deskside_access';
+  static const _kRefresh = 'deskside_refresh';
 
   @override
   Future<void> save(String? access, String? refresh) async {

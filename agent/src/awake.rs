@@ -65,7 +65,7 @@ impl Keeper {
     pub fn new() -> Self {
         let (tx, rx) = std::sync::mpsc::channel::<bool>();
         let thread = std::thread::Builder::new()
-            .name("remoteone-awake".into())
+            .name("deskside-awake".into())
             .spawn(move || {
                 for want in rx {
                     imp::set(want);

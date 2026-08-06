@@ -41,9 +41,9 @@ sempre mostra o estado atual da tela, sem acumular atraso (ver a classe
 
 - Parâmetros do agente ajustáveis por variável de ambiente (sem recompilar),
   com padrão 30 fps / largura 1280 px / qualidade 50:
-  - `REMOTEONE_STREAM_FPS` (1–60)
-  - `REMOTEONE_STREAM_MAX_WIDTH`
-  - `REMOTEONE_STREAM_QUALITY` (1–100)
+  - `DESKSIDE_STREAM_FPS` (1–60)
+  - `DESKSIDE_STREAM_MAX_WIDTH`
+  - `DESKSIDE_STREAM_QUALITY` (1–100)
 
   A captura roda em `spawn_blocking` para não travar o tratamento de comandos.
   O fps real depende do quanto a máquina consegue capturar + comprimir por
@@ -54,7 +54,7 @@ sempre mostra o estado atual da tela, sem acumular atraso (ver a classe
 > A compressão JPEG é bem mais rápida otimizada — em teste, o debug entregou
 > ~11 fps e o release ~31 fps com os mesmos parâmetros. Para 30 fps de verdade
 > na resolução cheia, use release; se ainda não sustentar, baixe
-> `REMOTEONE_STREAM_MAX_WIDTH`/`REMOTEONE_STREAM_QUALITY`.
+> `DESKSIDE_STREAM_MAX_WIDTH`/`DESKSIDE_STREAM_QUALITY`.
 
 ### Alternativa por HTTP (para testar no navegador/`/docs`)
 

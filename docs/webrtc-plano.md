@@ -184,7 +184,7 @@ e sai quando o vídeo por WebRTC estiver funcionando.
 
 #### Como rodar o S1
 
-O diagnóstico foi embutido no próprio RemoteOne, em **Configurações →
+O diagnóstico foi embutido no próprio Deskside, em **Configurações →
 Diagnóstico → Testar WebRTC**, e não num app separado: com Apple ID grátis só
 cabem 3 apps, e não vale gastar um slot com uma ferramenta temporária. Um
 sideload entrega o app normal e o spike.
@@ -441,7 +441,7 @@ que a do JPEG. Três causas, e a terceira é de projeto:
    por vídeo custa menos rede que 5 fps por JPEG. E taxa baixa é justamente o que
    faz vídeo parecer travado: sem quadros intermediários, o movimento vira
    saltos. O caminho de vídeo passou a ter taxa própria
-   (`REMOTEONE_VIDEO_FPS`, padrão 30), desacoplada do preset do JPEG.
+   (`DESKSIDE_VIDEO_FPS`, padrão 30), desacoplada do preset do JPEG.
 
 **Segunda rodada, ainda travado.** O pipeline era totalmente serial: cada tique
 esperava captura + conversão + escala + codificação antes de enviar, então o
@@ -495,7 +495,7 @@ exatamente a medição real: o preset em uso era o "Nítido" (1600px) numa tela 
 
 Duas consequências:
 
-1. **O vídeo ganhou teto de resolução próprio** (`REMOTEONE_VIDEO_MAX_WIDTH`,
+1. **O vídeo ganhou teto de resolução próprio** (`DESKSIDE_VIDEO_MAX_WIDTH`,
    padrão 1280), usando o menor entre ele e o do preset. Os presets do app foram
    dimensionados pela banda do JPEG; no vídeo a banda sobra (0,2–0,5 Mbps
    medidos) e quem aperta é a CPU. Só isso corta o custo de codificação quase

@@ -48,7 +48,7 @@ from app.signaling import (
 )
 from app.transfers import transfers
 
-logger = logging.getLogger("remoteone")
+logger = logging.getLogger("deskside")
 
 
 @asynccontextmanager

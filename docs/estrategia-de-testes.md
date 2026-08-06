@@ -1,6 +1,6 @@
 # Estratégia de testes multiplataforma
 
-Como testar todas as plataformas-alvo do RemoteOne com os aparelhos
+Como testar todas as plataformas-alvo do Deskside com os aparelhos
 disponíveis: **iPhone, iPad, Surface Book 3, Huawei MateBook Fold e
 Dell G5 5590** — sem possuir dispositivo Android nem Mac.
 

@@ -136,8 +136,8 @@ remoto em [`controle-remoto.md`](controle-remoto.md).
 ## Estado e identidade
 
 - O `device_id` é um UUID gerado pelo agente na primeira execução e
-  persistido em disco (`%APPDATA%\remoteone\device_id` no Windows,
-  `~/.config/remoteone/device_id` no Linux/macOS), então o mesmo computador
+  persistido em disco (`%APPDATA%\deskside\device_id` no Windows,
+  `~/.config/deskside/device_id` no Linux/macOS), então o mesmo computador
   é reconhecido em conexões futuras.
 - O registro de agentes online vive em memória no backend
   ([`backend/app/agents.py`](../backend/app/agents.py)). Ao escalar para

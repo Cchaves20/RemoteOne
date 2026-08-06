@@ -240,7 +240,7 @@ class VideoSession extends ChangeNotifier {
               )
               .timeout(const Duration(seconds: 3));
         } catch (e) {
-          debugPrint('RemoteOne: sessão sem faixa de som — $e');
+          debugPrint('Deskside: sessão sem faixa de som — $e');
         }
       }
 
@@ -346,7 +346,7 @@ class VideoSession extends ChangeNotifier {
     } catch (e) {
       // Em plataformas sem sessão de áudio da Apple isto não existe, e o som
       // já sai pela saída padrão: não é motivo para derrubar o vídeo.
-      debugPrint('RemoteOne: saída de áudio padrão — $e');
+      debugPrint('Deskside: saída de áudio padrão — $e');
     }
   }
 
@@ -367,7 +367,7 @@ class VideoSession extends ChangeNotifier {
       ));
       return true;
     } catch (e) {
-      debugPrint('RemoteOne: falha ao enviar entrada pelo canal — $e');
+      debugPrint('Deskside: falha ao enviar entrada pelo canal — $e');
       return false;
     }
   }
@@ -446,7 +446,7 @@ class VideoSession extends ChangeNotifier {
       // Um candidato recusado não derruba a sessão — o ICE tenta os outros —
       // mas engolir isso em silêncio esconderia justamente o tipo de problema
       // que faz a conexão nunca fechar.
-      debugPrint('RemoteOne: candidato ICE recusado — $e');
+      debugPrint('Deskside: candidato ICE recusado — $e');
     }
   }
 
@@ -470,7 +470,7 @@ class VideoSession extends ChangeNotifier {
     if (_disposed || state == VideoState.live) return;
     error = 'a conexão fechou mas nenhum quadro foi desenhado em '
         '${_firstFrameTimeout.inSeconds}s — $iceSummary';
-    debugPrint('RemoteOne: sem imagem pelo WebRTC — $error');
+    debugPrint('Deskside: sem imagem pelo WebRTC — $error');
     _set(VideoState.failed);
   }
 
@@ -479,7 +479,7 @@ class VideoSession extends ChangeNotifier {
     error = reason;
     // Sem isso o motivo se perde: o usuário só veria a tela seguir em JPEG,
     // sem pista nenhuma de por que o vídeo não entrou.
-    debugPrint('RemoteOne: vídeo por WebRTC indisponível — $reason');
+    debugPrint('Deskside: vídeo por WebRTC indisponível — $reason');
     _timeout?.cancel();
     _set(VideoState.failed);
     // Solta a conexão, mas mantém o renderizador: a tela pode estar no meio de

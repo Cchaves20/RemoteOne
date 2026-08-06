@@ -1,7 +1,7 @@
 [project]
-name = "remoteone-backend"
+name = "deskside-backend"
 version = "0.1.0"
-description = "Backend do RemoteOne: autenticação, pareamento e comunicação em tempo real"
+description = "Backend do Deskside: autenticação, pareamento e comunicação em tempo real"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

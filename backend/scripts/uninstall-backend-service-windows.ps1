@@ -1,6 +1,6 @@
-# Remove o servico do backend do RemoteOne. Rode como ADMINISTRADOR.
+# Remove o servico do backend do Deskside. Rode como ADMINISTRADOR.
 #
-# Mantem os dados (banco SQLite e segredo em C:\ProgramData\RemoteOne). Para
+# Mantem os dados (banco SQLite e segredo em C:\ProgramData\Deskside). Para
 # apagar tudo, remova essa pasta manualmente depois.
 #
 # Uso (PowerShell como administrador):
@@ -17,8 +17,8 @@ if (-not $isAdmin) {
 }
 
 # Para e remove a tarefa/servico.
-Stop-ScheduledTask -TaskName "RemoteOneBackend"
-Unregister-ScheduledTask -TaskName "RemoteOneBackend" -Confirm:$false
+Stop-ScheduledTask -TaskName "DesksideBackend"
+Unregister-ScheduledTask -TaskName "DesksideBackend" -Confirm:$false
 
 # Encerra o uvicorn que porventura ainda esteja rodando.
 Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
@@ -26,6 +26,6 @@ Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
 # Remove a regra de Firewall.
-Remove-NetFirewallRule -DisplayName "RemoteOne backend 8000"
+Remove-NetFirewallRule -DisplayName "Deskside backend 8000"
 
-Write-Host "Servico do backend removido. Os dados em C:\ProgramData\RemoteOne foram mantidos."
+Write-Host "Servico do backend removido. Os dados em C:\ProgramData\Deskside foram mantidos."

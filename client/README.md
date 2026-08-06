@@ -1,4 +1,4 @@
-# RemoteOne — Cliente (Flutter)
+# Deskside — Cliente (Flutter)
 
 Aplicativo usado no celular/tablet para controlar os computadores.
 
@@ -71,7 +71,7 @@ lib/
 Gere as pastas de plataforma (uma vez) e rode:
 
 ```bash
-flutter create --org com.remoteone --project-name remoteone_client \
+flutter create --org com.deskside --project-name deskside_client \
   --platforms=android,ios,windows .
 flutter pub get
 flutter analyze        # confira que não há erros
@@ -89,7 +89,7 @@ Para o **celular/emulador**, use o **IP do computador na rede local** (ex.:
 `http://192.168.0.10:8000`) — descubra com `ipconfig` (Windows). Você pode:
 
 - editar o campo **Servidor** na tela de login, ou
-- fixar no build: `flutter run --dart-define=REMOTEONE_BACKEND=http://192.168.0.10:8000`
+- fixar no build: `flutter run --dart-define=DESKSIDE_BACKEND=http://192.168.0.10:8000`
 
 Casos comuns:
 

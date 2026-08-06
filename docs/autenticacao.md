@@ -1,6 +1,6 @@
 # Autenticação (Etapa 2)
 
-Fundação de autenticação do RemoteOne: cadastro e login com e-mail e senha,
+Fundação de autenticação do Deskside: cadastro e login com e-mail e senha,
 emitindo tokens JWT. Os métodos externos (Google, Apple, Microsoft) e o 2FA
 são construídos por cima desta base.
 
@@ -15,8 +15,8 @@ O payload traz um campo `type` (`access`/`refresh`); o backend recusa usar um
 no lugar do outro. Senhas são guardadas com hash **bcrypt** (nunca em texto).
 
 Configuração por variável de ambiente (ver `app/config.py`):
-`REMOTEONE_JWT_SECRET` (obrigatório trocar em produção),
-`REMOTEONE_ACCESS_TOKEN_TTL_MINUTES`, `REMOTEONE_REFRESH_TOKEN_TTL_DAYS`.
+`DESKSIDE_JWT_SECRET` (obrigatório trocar em produção),
+`DESKSIDE_ACCESS_TOKEN_TTL_MINUTES`, `DESKSIDE_REFRESH_TOKEN_TTL_DAYS`.
 
 ## Endpoints
 

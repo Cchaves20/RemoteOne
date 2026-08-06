@@ -12,7 +12,7 @@ Fica no menu de cada computador na lista, em **Arquivos**.
   compartilhamento, onde você escolhe "Salvar em Arquivos", mandar por
   WhatsApp, abrir num app — o que quiser.
 - **Enviar um arquivo**: o botão flutuante abre o seletor do iPhone, e o
-  arquivo aparece no computador em `Downloads\RemoteOne`.
+  arquivo aparece no computador em `Downloads\Deskside`.
 
 Limite de **100 MB** por arquivo, nos dois sentidos.
 
@@ -137,7 +137,7 @@ custaria uma cópia a mais em cada ponta.
    que sempre dá erro seria um beco sem saída.
 4. Toque num arquivo pequeno: a folha de compartilhamento abre com ele.
 5. Botão **Enviar arquivo**: escolha algo no iPhone e confira que apareceu em
-   `Downloads\RemoteOne` no computador.
+   `Downloads\Deskside` no computador.
 6. Mande o mesmo arquivo de novo: tem de virar `nome (2).ext`, sem apagar o
    primeiro.
 

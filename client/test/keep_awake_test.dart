@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:remoteone_client/models/keep_awake.dart';
-import 'package:remoteone_client/services/api_client.dart';
-import 'package:remoteone_client/services/token_store.dart';
+import 'package:deskside_client/models/keep_awake.dart';
+import 'package:deskside_client/services/api_client.dart';
+import 'package:deskside_client/services/token_store.dart';
 
 void main() {
   group('KeepAwakeState', () {

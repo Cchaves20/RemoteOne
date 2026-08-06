@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:remoteone_client/l10n/strings.dart';
-import 'package:remoteone_client/main.dart';
-import 'package:remoteone_client/services/api_client.dart';
-import 'package:remoteone_client/services/app_state.dart';
-import 'package:remoteone_client/services/token_store.dart';
+import 'package:deskside_client/l10n/strings.dart';
+import 'package:deskside_client/main.dart';
+import 'package:deskside_client/services/api_client.dart';
+import 'package:deskside_client/services/app_state.dart';
+import 'package:deskside_client/services/token_store.dart';
 
 /// Constrói um AppState com um http.Client falso, roteado por [handler]. Fixa o
 /// idioma em pt-BR para as asserções de texto serem determinísticas.
@@ -25,9 +25,9 @@ AppState _stateWith(Future<http.Response> Function(http.Request) handler) {
 void main() {
   testWidgets('mostra a tela de login quando não autenticado', (tester) async {
     final state = _stateWith((_) async => http.Response('{}', 200));
-    await tester.pumpWidget(RemoteOneApp(state: state));
+    await tester.pumpWidget(DesksideApp(state: state));
 
-    expect(find.text('RemoteOne'), findsOneWidget);
+    expect(find.text('Deskside'), findsOneWidget);
     expect(find.text('Entrar'), findsWidgets);
     expect(find.text('Criar uma conta'), findsOneWidget);
   });
@@ -46,7 +46,7 @@ void main() {
       return http.Response('{}', 404);
     });
 
-    await tester.pumpWidget(RemoteOneApp(state: state));
+    await tester.pumpWidget(DesksideApp(state: state));
     await tester.enterText(find.byType(TextField).at(0), 'caio@example.com');
     await tester.enterText(find.byType(TextField).at(1), 'senhaSegura123');
     await tester.tap(find.widgetWithText(FilledButton, 'Entrar'));
@@ -61,7 +61,7 @@ void main() {
       return http.Response(jsonEncode({'detail': 'e-mail ou senha inválidos'}), 401);
     });
 
-    await tester.pumpWidget(RemoteOneApp(state: state));
+    await tester.pumpWidget(DesksideApp(state: state));
     await tester.enterText(find.byType(TextField).at(0), 'x@y.com');
     await tester.enterText(find.byType(TextField).at(1), 'senhaSegura123');
     await tester.tap(find.widgetWithText(FilledButton, 'Entrar'));

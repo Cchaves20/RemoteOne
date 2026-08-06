@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use remoteone_agent::client::{self, AgentIdentity, StreamConfig};
-use remoteone_agent::config::{resolve, Config};
-use remoteone_agent::identity::load_or_create_device_id;
-use remoteone_agent::platform::{self, Platform};
-use remoteone_agent::{device_id_path, load_config, setup, DEFAULT_BACKEND_URL};
+use deskside_agent::client::{self, AgentIdentity, StreamConfig};
+use deskside_agent::config::{resolve, Config};
+use deskside_agent::identity::load_or_create_device_id;
+use deskside_agent::platform::{self, Platform};
+use deskside_agent::{device_id_path, load_config, setup, DEFAULT_BACKEND_URL};
 
 const AGENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const HEARTBEAT_SECS: u64 = 10;
@@ -49,15 +49,15 @@ fn parse_args(args: &[String]) -> Cmd {
 }
 
 const HELP: &str = "\
-RemoteOne Agent — controla este computador pelo celular.
+Deskside Agent — controla este computador pelo celular.
 
-  remoteone-agent                    roda o agente (o que acontece ao dar
+  deskside-agent                    roda o agente (o que acontece ao dar
                                      dois cliques no executável)
-  remoteone-agent install [URL]      instala: passa a subir junto com o
+  deskside-agent install [URL]      instala: passa a subir junto com o
                                      Windows, oculto, e aparece em
                                      \"Aplicativos instalados\"
-  remoteone-agent uninstall          desfaz a instalação
-  remoteone-agent status             onde está instalado e para onde aponta
+  deskside-agent uninstall          desfaz a instalação
+  deskside-agent status             onde está instalado e para onde aponta
 
 A URL é a do backend (ex.: wss://seu-servidor/ws/agent). Sem ela, vale a que
 já estiver configurada, ou o servidor da própria máquina.
@@ -100,7 +100,7 @@ async fn laco_de_conexao(
     identity: AgentIdentity,
     stream: StreamConfig,
     keep_awake: bool,
-    estado: remoteone_agent::gui::Compartilhado,
+    estado: deskside_agent::gui::Compartilhado,
 ) {
     loop {
         // `stream` é clonado a cada tentativa: a config carrega a lista de
@@ -168,17 +168,23 @@ fn main() {
     //
     // `_guarda` e não `_`: o sublinhado sozinho descartaria o guarda na hora,
     // liberando o nome de volta - o oposto do que se quer.
-    let _guarda = match remoteone_agent::instance::reivindicar() {
-        remoteone_agent::instance::Start::JaRodando => {
-            println!("O RemoteOne já está rodando neste computador.");
+    let _guarda = match deskside_agent::instance::reivindicar() {
+        deskside_agent::instance::Start::JaRodando => {
+            println!("O Deskside já está rodando neste computador.");
             return;
         }
-        remoteone_agent::instance::Start::Primeira(g) => g,
+        deskside_agent::instance::Start::Primeira(g) => g,
     };
+
+    // Antes de ler qualquer configuração: quem vem da versão RemoteOne tem
+    // tudo na pasta antiga, incluindo o `device_id`. Sem isto o computador
+    // apareceria no aplicativo como uma máquina nova, pedindo pareamento, e a
+    // antiga ficaria na lista como um fantasma que nunca mais fica online.
+    deskside_agent::migrar_configuracao_antiga();
 
     let plat = platform::current();
     let cfg = load_config();
-    let url = resolve(&cfg, "REMOTEONE_BACKEND_URL")
+    let url = resolve(&cfg, "DESKSIDE_BACKEND_URL")
         .unwrap_or_else(|| DEFAULT_BACKEND_URL.to_string());
 
     let device_id = load_or_create_device_id(&device_id_path())
@@ -203,14 +209,14 @@ fn main() {
     // Parâmetros de transmissão (ajustáveis sem recompilar).
     let default = StreamConfig::default();
     let stream = StreamConfig {
-        fps: cfg_u32(&cfg, "REMOTEONE_STREAM_FPS", default.fps),
-        max_width: cfg_u32(&cfg, "REMOTEONE_STREAM_MAX_WIDTH", default.max_width),
-        quality: cfg_u32(&cfg, "REMOTEONE_STREAM_QUALITY", default.quality as u32) as u8,
-        video_bitrate: cfg_u32(&cfg, "REMOTEONE_VIDEO_BITRATE", default.video_bitrate),
-        video_fps: cfg_u32(&cfg, "REMOTEONE_VIDEO_FPS", default.video_fps),
-        video_max_width: cfg_u32(&cfg, "REMOTEONE_VIDEO_MAX_WIDTH", default.video_max_width),
+        fps: cfg_u32(&cfg, "DESKSIDE_STREAM_FPS", default.fps),
+        max_width: cfg_u32(&cfg, "DESKSIDE_STREAM_MAX_WIDTH", default.max_width),
+        quality: cfg_u32(&cfg, "DESKSIDE_STREAM_QUALITY", default.quality as u32) as u8,
+        video_bitrate: cfg_u32(&cfg, "DESKSIDE_VIDEO_BITRATE", default.video_bitrate),
+        video_fps: cfg_u32(&cfg, "DESKSIDE_VIDEO_FPS", default.video_fps),
+        video_max_width: cfg_u32(&cfg, "DESKSIDE_VIDEO_MAX_WIDTH", default.video_max_width),
         // Lista separada por vírgulas; vazio desliga o STUN (só rede local).
-        ice_servers: match resolve(&cfg, "REMOTEONE_ICE_SERVERS") {
+        ice_servers: match resolve(&cfg, "DESKSIDE_ICE_SERVERS") {
             None => default.ice_servers.clone(),
             Some(list) => list
                 .split(',')
@@ -224,10 +230,10 @@ fn main() {
     // Ligado por padrão, e é uma decisão de produto: o motivo de existir é
     // funcionar em qualquer máquina sem ninguém configurar nada. Desligado por
     // padrão, o recurso só serviria a quem já sabia que ele existe.
-    let keep_awake = cfg_bool(&cfg, "REMOTEONE_KEEP_AWAKE", true);
+    let keep_awake = cfg_bool(&cfg, "DESKSIDE_KEEP_AWAKE", true);
 
     println!(
-        "RemoteOne Agent {AGENT_VERSION} — sistema: {}",
+        "Deskside Agent {AGENT_VERSION} — sistema: {}",
         plat.os_name()
     );
     println!("device_id: {device_id}");
@@ -256,7 +262,7 @@ fn main() {
     );
     println!("Conectando a {url} ...");
 
-    let estado = remoteone_agent::gui::compartilhar(remoteone_agent::gui::Estado {
+    let estado = deskside_agent::gui::compartilhar(deskside_agent::gui::Estado {
         hostname: identity.hostname.clone(),
         device_id: device_id.clone(),
         versao: AGENT_VERSION.to_string(),
@@ -273,7 +279,7 @@ fn main() {
     // produto inteiro por causa da tela que mostra o produto.
     let do_agente = estado.clone();
     std::thread::Builder::new()
-        .name("remoteone-agente".into())
+        .name("deskside-agente".into())
         .spawn(move || {
             let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
                 Ok(rt) => rt,
@@ -288,7 +294,7 @@ fn main() {
 
     // Daqui não se volta: a interface fica com a thread principal até alguém
     // escolher Sair no ícone ao lado do relógio.
-    remoteone_agent::gui::rodar(estado);
+    deskside_agent::gui::rodar(estado);
 }
 
 #[cfg(test)]
@@ -348,11 +354,11 @@ mod tests {
 
     #[test]
     fn a_configuracao_do_arquivo_vale_para_os_numeros() {
-        let cfg = Config::parse("REMOTEONE_VIDEO_FPS=24\n");
-        assert_eq!(cfg_u32(&cfg, "REMOTEONE_VIDEO_FPS", 30), 24);
+        let cfg = Config::parse("DESKSIDE_VIDEO_FPS=24\n");
+        assert_eq!(cfg_u32(&cfg, "DESKSIDE_VIDEO_FPS", 30), 24);
         // Chave ausente ou ilegível cai no padrão em vez de zerar o valor.
         assert_eq!(cfg_u32(&cfg, "NAO_EXISTE", 30), 30);
-        let ruim = Config::parse("REMOTEONE_VIDEO_FPS=trinta\n");
-        assert_eq!(cfg_u32(&ruim, "REMOTEONE_VIDEO_FPS", 30), 30);
+        let ruim = Config::parse("DESKSIDE_VIDEO_FPS=trinta\n");
+        assert_eq!(cfg_u32(&ruim, "DESKSIDE_VIDEO_FPS", 30), 30);
     }
 }

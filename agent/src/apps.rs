@@ -184,7 +184,7 @@ mod imp {
     /// programa em primeiro plano. Uma cópia para cada acabaria divergindo.
     pub(crate) const ICON_HELPER: &str = r#"
 Add-Type -AssemblyName System.Drawing
-Add-Type -Namespace RemoteOne -Name IconApi -MemberDefinition @'
+Add-Type -Namespace Deskside -Name IconApi -MemberDefinition @'
 [DllImport("user32.dll", CharSet = CharSet.Unicode)]
 public static extern int PrivateExtractIcons(string szFileName, int nIconIndex,
     int cxIcon, int cyIcon, IntPtr[] phicon, int[] piconid, int nIcons, int flags);
@@ -199,7 +199,7 @@ function Get-IconBase64($caminho, $indice, $tamanho) {
   $h = New-Object IntPtr[] 1
   $ids = New-Object int[] 1
   try {
-    $n = [RemoteOne.IconApi]::PrivateExtractIcons($caminho, $indice, $tamanho, $tamanho, $h, $ids, 1, 0)
+    $n = [Deskside.IconApi]::PrivateExtractIcons($caminho, $indice, $tamanho, $tamanho, $h, $ids, 1, 0)
     if ($n -le 0 -or $h[0] -eq [IntPtr]::Zero) { return '' }
     $ico = [System.Drawing.Icon]::FromHandle($h[0])
     $bmp = $ico.ToBitmap()
@@ -209,7 +209,7 @@ function Get-IconBase64($caminho, $indice, $tamanho) {
     $ms.Dispose(); $bmp.Dispose(); $ico.Dispose()
     return $b64
   } catch { return '' }
-  finally { if ($h[0] -ne [IntPtr]::Zero) { [void][RemoteOne.IconApi]::DestroyIcon($h[0]) } }
+  finally { if ($h[0] -ne [IntPtr]::Zero) { [void][Deskside.IconApi]::DestroyIcon($h[0]) } }
 }
 "#;
 
@@ -597,7 +597,7 @@ mod tests {
     }
 
     fn temp(nome: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("remoteone-apps-{nome}"));
+        let dir = std::env::temp_dir().join(format!("deskside-apps-{nome}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

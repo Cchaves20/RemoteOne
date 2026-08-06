@@ -45,8 +45,8 @@ fn wide(s: &str) -> Vec<u16> {
 mod imp {
     use super::{wide, Start};
 
-    const NOME_MUTEX: &str = r"Local\RemoteOneAgent.instancia";
-    const NOME_EVENTO: &str = r"Local\RemoteOneAgent.mostrar-janela";
+    const NOME_MUTEX: &str = r"Local\DesksideAgent.instancia";
+    const NOME_EVENTO: &str = r"Local\DesksideAgent.mostrar-janela";
 
     const ERROR_ALREADY_EXISTS: u32 = 183;
     const EVENT_MODIFY_STATE: u32 = 0x0002;

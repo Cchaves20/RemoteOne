@@ -1,4 +1,4 @@
-# Caddy: proxy reverso com HTTPS automático (Let's Encrypt) para o RemoteOne.
+# Caddy: proxy reverso com HTTPS automático (Let's Encrypt) para o Deskside.
 #
 # $DOMAIN vem do docker-compose (arquivo .env). O Caddy obtém e renova o
 # certificado sozinho, desde que o domínio aponte para o IP do VPS e as portas

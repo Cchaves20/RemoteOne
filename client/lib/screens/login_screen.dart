@@ -88,9 +88,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const RemoteOneMark(size: 84),
+                    const DesksideMark(size: 84),
                     const SizedBox(height: 18),
-                    Text('RemoteOne', style: theme.textTheme.headlineSmall),
+                    Text('Deskside', style: theme.textTheme.headlineSmall),
                     const SizedBox(height: 4),
                     Text(
                       _registering ? t.createAccountTitle : t.signInTitle,

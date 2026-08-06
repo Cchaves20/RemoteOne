@@ -16,7 +16,7 @@ energia.
 
 **Por que isto e não Wake-on-LAN.** Acordar uma máquina adormecida exige a
 placa de rede armada no firmware e no driver, e isso varia de computador para
-computador. Não é uma limitação do RemoteOne: nenhum programa consegue
+computador. Não é uma limitação do Deskside: nenhum programa consegue
 configurar aquilo por conta própria, porque uma máquina desligada não roda
 programa nenhum. Já *não adormecer* é uma chamada de sistema que existe em
 qualquer Windows desde o XP.
@@ -36,7 +36,7 @@ informações numa só prometeria um computador alcançável que some justamente
 quando a pessoa está longe.
 
 Para desligar de vez numa máquina (um servidor com energia cara, por exemplo),
-a chave do app basta. À mão, `REMOTEONE_KEEP_AWAKE=0` no `agent.conf`.
+a chave do app basta. À mão, `DESKSIDE_KEEP_AWAKE=0` no `agent.conf`.
 
 ### O que isto não cobre
 
@@ -101,7 +101,7 @@ depende de alguém logar.
 Abra o **PowerShell como Administrador** e rode:
 
 ```powershell
-cd C:\Users\SEU_USUARIO\RemoteOne\backend
+cd C:\Users\SEU_USUARIO\Deskside\backend
 powershell -ExecutionPolicy Bypass -File scripts\install-backend-service-windows.ps1
 ```
 
@@ -119,7 +119,7 @@ Para remover: `scripts\uninstall-backend-service-windows.ps1` (como admin).
 
 1. Suba a stack **destacada** uma vez (o `-d` libera o terminal):
    ```powershell
-   cd C:\Users\SEU_USUARIO\RemoteOne\backend
+   cd C:\Users\SEU_USUARIO\Deskside\backend
    docker compose up -d --build
    ```
    O `docker-compose.yml` já usa `restart: unless-stopped`, então os containers
@@ -182,7 +182,7 @@ Com o **serviço** (Opção A) instalado, ele já sobe sozinho no boot — não 
 fazer nada. Se ainda estiver no Docker (Opção B):
 
 ```powershell
-cd C:\Users\SEU_USUARIO\RemoteOne\backend
+cd C:\Users\SEU_USUARIO\Deskside\backend
 docker compose up -d
 ```
 

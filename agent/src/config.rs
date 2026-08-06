@@ -64,7 +64,7 @@ impl Config {
     /// O arquivo como texto, pronto para gravar.
     pub fn to_text(&self) -> String {
         let mut saida = String::from(
-            "# Configuração do agente do RemoteOne.\n\
+            "# Configuração do agente do Deskside.\n\
              # Uma chave por linha. As variáveis de ambiente de mesmo nome têm\n\
              # prioridade sobre o que estiver aqui.\n\n",
         );
@@ -130,8 +130,8 @@ mod tests {
 
     #[test]
     fn le_chave_e_valor() {
-        let c = Config::parse("REMOTEONE_BACKEND_URL=ws://exemplo/ws/agent\n");
-        assert_eq!(c.get("REMOTEONE_BACKEND_URL"), Some("ws://exemplo/ws/agent"));
+        let c = Config::parse("DESKSIDE_BACKEND_URL=ws://exemplo/ws/agent\n");
+        assert_eq!(c.get("DESKSIDE_BACKEND_URL"), Some("ws://exemplo/ws/agent"));
     }
 
     #[test]
@@ -158,16 +158,16 @@ mod tests {
 
     #[test]
     fn a_grafia_da_chave_nao_importa() {
-        let c = Config::parse("remoteone_backend_url=x\n");
-        assert_eq!(c.get("REMOTEONE_BACKEND_URL"), Some("x"));
-        assert_eq!(c.get("remoteone_backend_url"), Some("x"));
+        let c = Config::parse("deskside_backend_url=x\n");
+        assert_eq!(c.get("DESKSIDE_BACKEND_URL"), Some("x"));
+        assert_eq!(c.get("deskside_backend_url"), Some("x"));
     }
 
     #[test]
     fn ida_e_volta_pelo_texto_preserva_tudo() {
         let mut c = Config::new();
-        c.set("REMOTEONE_BACKEND_URL", "ws://caio/ws/agent");
-        c.set("REMOTEONE_VIDEO_FPS", "24");
+        c.set("DESKSIDE_BACKEND_URL", "ws://caio/ws/agent");
+        c.set("DESKSIDE_VIDEO_FPS", "24");
         assert_eq!(Config::parse(&c.to_text()), c);
     }
 

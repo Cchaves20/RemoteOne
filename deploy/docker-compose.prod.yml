@@ -1,4 +1,4 @@
-# Deploy de produção do backend do RemoteOne (VPS + HTTPS automático).
+# Deploy de produção do backend do Deskside (VPS + HTTPS automático).
 #
 # O Caddy fica na frente e cuida do certificado HTTPS (Let's Encrypt) para o
 # domínio em $DOMAIN. Só as portas 80/443 ficam expostas — a API, o Postgres e
@@ -35,13 +35,13 @@ services:
     build: ../backend
     restart: unless-stopped
     environment:
-      REMOTEONE_DATABASE_URL: postgresql://remoteone:${POSTGRES_PASSWORD}@db:5432/remoteone
-      REMOTEONE_REDIS_URL: redis://redis:6379/0
-      REMOTEONE_JWT_SECRET: ${REMOTEONE_JWT_SECRET}
+      DESKSIDE_DATABASE_URL: postgresql://deskside:${POSTGRES_PASSWORD}@db:5432/deskside
+      DESKSIDE_REDIS_URL: redis://redis:6379/0
+      DESKSIDE_JWT_SECRET: ${DESKSIDE_JWT_SECRET:?renomeie REMOTEONE_JWT_SECRET para DESKSIDE_JWT_SECRET no deploy/.env}
       # TURN: o backend entrega o endereço e gera as credenciais temporárias.
       # Vazio = só STUN (é o comportamento de antes).
-      REMOTEONE_TURN_HOST: ${DOMAIN}
-      REMOTEONE_TURN_SECRET: ${REMOTEONE_TURN_SECRET}
+      DESKSIDE_TURN_HOST: ${DOMAIN}
+      DESKSIDE_TURN_SECRET: ${DESKSIDE_TURN_SECRET:?renomeie REMOTEONE_TURN_SECRET para DESKSIDE_TURN_SECRET no deploy/.env}
     depends_on:
       - db
       - redis
@@ -51,9 +51,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: remoteone
+      POSTGRES_USER: deskside
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: remoteone
+      POSTGRES_DB: deskside
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -98,7 +98,7 @@ services:
       # usuário, que carrega a hora de expiração. É o mesmo segredo que o
       # backend usa para gerar (app/ice.py).
       - --use-auth-secret
-      - --static-auth-secret=${REMOTEONE_TURN_SECRET}
+      - --static-auth-secret=${DESKSIDE_TURN_SECRET:?renomeie REMOTEONE_TURN_SECRET para DESKSIDE_TURN_SECRET no deploy/.env}
       - --realm=${DOMAIN}
       # Faixa curta de propósito: são 40 portas, o suficiente para dezenas de
       # sessões, e é o que se precisa liberar no firewall da nuvem.

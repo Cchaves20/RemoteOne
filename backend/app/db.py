@@ -1,6 +1,6 @@
 """Camada de acesso ao banco de dados (SQLAlchemy 2.0).
 
-Em produção usa PostgreSQL (via `REMOTEONE_DATABASE_URL`); nos testes usa
+Em produção usa PostgreSQL (via `DESKSIDE_DATABASE_URL`); nos testes usa
 SQLite. A criação de tabelas é feita por `init_db()` na inicialização do app —
 quando o esquema evoluir, migramos para Alembic.
 """

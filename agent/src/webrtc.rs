@@ -175,7 +175,7 @@ impl Video {
                 ..Default::default()
             },
             "tela".to_owned(),
-            "remoteone".to_owned(),
+            "deskside".to_owned(),
         ));
         let sender = connection
             .add_track(Arc::clone(&track) as Arc<dyn TrackLocal + Send + Sync>)
@@ -249,7 +249,7 @@ impl Video {
                     ..Default::default()
                 },
                 "som".to_owned(),
-                "remoteone".to_owned(),
+                "deskside".to_owned(),
             ));
             // Sem `?`: **o som não pode derrubar a tela**. Ver o computador é
             // a função do app; ouvi-lo é um extra. Um erro aqui abortava a

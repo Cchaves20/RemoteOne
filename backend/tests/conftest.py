@@ -7,8 +7,8 @@ fixture autouse recria as tabelas a cada teste, garantindo isolamento.
 
 import os
 
-os.environ.setdefault("REMOTEONE_DATABASE_URL", "sqlite:///./test_remoteone.db")
-os.environ.setdefault("REMOTEONE_JWT_SECRET", "test-secret")
+os.environ.setdefault("DESKSIDE_DATABASE_URL", "sqlite:///./test_deskside.db")
+os.environ.setdefault("DESKSIDE_JWT_SECRET", "test-secret")
 
 import pytest  # noqa: E402
 

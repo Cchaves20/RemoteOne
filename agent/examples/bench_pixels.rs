@@ -4,7 +4,7 @@
 //! `image`) com o atual (reduzir com SIMD e depois converter).
 use std::time::Instant;
 use image::{imageops, RgbImage};
-use remoteone_agent::capture::{target_size, Scaler};
+use deskside_agent::capture::{target_size, Scaler};
 
 /// Uma "tela": fundo claro, barra de janela e traços finos do tamanho de texto.
 fn tela(w: u32, h: u32) -> Vec<u8> {

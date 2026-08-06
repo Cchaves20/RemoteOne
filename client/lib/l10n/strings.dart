@@ -194,7 +194,7 @@ class Strings {
   String get twoFactor => _t('Verificação em duas etapas (2FA)', 'Two-step verification (2FA)',
       '两步验证 (2FA)', 'Vérification en deux étapes (2FA)', 'Verificación en dos pasos (2FA)');
   String get appLocked =>
-      _t('RemoteOne bloqueado', 'RemoteOne locked', 'RemoteOne 已锁定', 'RemoteOne verrouillé', 'RemoteOne bloqueado');
+      _t('Deskside bloqueado', 'Deskside locked', 'Deskside 已锁定', 'Deskside verrouillé', 'Deskside bloqueado');
   String get unlock => _t('Desbloquear', 'Unlock', '解锁', 'Déverrouiller', 'Desbloquear');
   String get twoFactorSub => _t('Pede um código do autenticador ao entrar',
       'Asks for an authenticator code at sign-in', '登录时要求身份验证器代码',
@@ -750,11 +750,11 @@ class Strings {
   String get wolHowTitle =>
       _t('Como funciona', 'How it works', '工作原理', 'Comment ça marche', 'Cómo funciona');
   String get wolHowBody => _t(
-      'Um computador desligado não consegue receber comandos sozinho. Mas, se você tem outro computador seu ligado na mesma casa (na mesma internet), o RemoteOne usa esse que está ligado para "acordar" o que está desligado.\n\nResumindo: se você tem dois ou mais computadores na mesma rede e pelo menos um está ligado, o botão "Ligar" acende os outros — sem você precisar configurar nada.',
-      'A computer that is off cannot receive commands on its own. But if you have another computer of yours turned on in the same house (same network), RemoteOne uses that one to "wake" the one that is off.\n\nIn short: if you have two or more computers on the same network and at least one is on, the "Turn on" button wakes the others — with no setup.',
-      '关机的电脑无法自行接收命令。但如果你在同一处（同一网络）还有另一台开着的电脑，RemoteOne 会用它来"唤醒"已关机的那台。\n\n简单说：只要同一网络里有两台以上电脑，且至少一台开着，"开机"按钮就能唤醒其他电脑——无需任何配置。',
-      "Un ordinateur éteint ne peut pas recevoir de commandes seul. Mais si vous avez un autre de vos ordinateurs allumé dans la même maison (même réseau), RemoteOne l'utilise pour « réveiller » celui qui est éteint.\n\nEn bref : si vous avez deux ordinateurs ou plus sur le même réseau et qu'au moins un est allumé, le bouton « Allumer » réveille les autres — sans aucune configuration.",
-      'Un equipo apagado no puede recibir comandos por sí solo. Pero si tienes otro equipo tuyo encendido en la misma casa (misma red), RemoteOne usa ese para "despertar" al que está apagado.\n\nEn resumen: si tienes dos o más equipos en la misma red y al menos uno encendido, el botón "Encender" despierta a los demás — sin configurar nada.');
+      'Um computador desligado não consegue receber comandos sozinho. Mas, se você tem outro computador seu ligado na mesma casa (na mesma internet), o Deskside usa esse que está ligado para "acordar" o que está desligado.\n\nResumindo: se você tem dois ou mais computadores na mesma rede e pelo menos um está ligado, o botão "Ligar" acende os outros — sem você precisar configurar nada.',
+      'A computer that is off cannot receive commands on its own. But if you have another computer of yours turned on in the same house (same network), Deskside uses that one to "wake" the one that is off.\n\nIn short: if you have two or more computers on the same network and at least one is on, the "Turn on" button wakes the others — with no setup.',
+      '关机的电脑无法自行接收命令。但如果你在同一处（同一网络）还有另一台开着的电脑，Deskside 会用它来"唤醒"已关机的那台。\n\n简单说：只要同一网络里有两台以上电脑，且至少一台开着，"开机"按钮就能唤醒其他电脑——无需任何配置。',
+      "Un ordinateur éteint ne peut pas recevoir de commandes seul. Mais si vous avez un autre de vos ordinateurs allumé dans la même maison (même réseau), Deskside l'utilise pour « réveiller » celui qui est éteint.\n\nEn bref : si vous avez deux ordinateurs ou plus sur le même réseau et qu'au moins un est allumé, le bouton « Allumer » réveille les autres — sans aucune configuration.",
+      'Un equipo apagado no puede recibir comandos por sí solo. Pero si tienes otro equipo tuyo encendido en la misma casa (misma red), Deskside usa ese para "despertar" al que está apagado.\n\nEn resumen: si tienes dos o más equipos en la misma red y al menos uno encendido, el botón "Encender" despierta a los demás — sin configurar nada.');
   String get wolNote => _t(
       'Se todos os seus computadores dessa casa estiverem desligados ao mesmo tempo, não dá para ligar nenhum à distância. É preciso deixar pelo menos um ligado.',
       'If all your computers on that network are off at the same time, none can be turned on remotely. Keep at least one on.',

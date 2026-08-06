@@ -293,7 +293,7 @@ pub fn open_read(path: &str) -> Result<(std::fs::File, u64), String> {
 
 /// Onde os arquivos vindos do celular são guardados, criada se não existir.
 pub fn inbox() -> Result<std::path::PathBuf, String> {
-    let dir = home()?.join("Downloads").join("RemoteOne");
+    let dir = home()?.join("Downloads").join("Deskside");
     std::fs::create_dir_all(&dir).map_err(|e| format!("não consegui criar {dir:?}: {e}"))?;
     Ok(dir)
 }
@@ -493,16 +493,16 @@ mod tests {
 
     #[test]
     fn resolve_aceita_subpasta_existente() {
-        let sub = home().unwrap().join("remoteone-teste-resolve");
+        let sub = home().unwrap().join("deskside-teste-resolve");
         std::fs::create_dir_all(&sub).unwrap();
         let resolvido = resolve(&sub.to_string_lossy()).unwrap();
-        assert!(resolvido.ends_with("remoteone-teste-resolve"));
+        assert!(resolvido.ends_with("deskside-teste-resolve"));
         std::fs::remove_dir_all(&sub).ok();
     }
 
     #[test]
     fn listagem_ordena_pastas_antes_de_arquivos() {
-        let base = home().unwrap().join("remoteone-teste-lista");
+        let base = home().unwrap().join("deskside-teste-lista");
         std::fs::create_dir_all(base.join("zpasta")).unwrap();
         std::fs::write(base.join("aarquivo.txt"), b"oi").unwrap();
         std::fs::write(base.join(".oculto"), b"x").unwrap();
@@ -536,7 +536,7 @@ mod tests {
 
     #[test]
     fn free_path_nao_sobrescreve() {
-        let dir = home().unwrap().join("remoteone-teste-livre");
+        let dir = home().unwrap().join("deskside-teste-livre");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("nota.txt"), b"antigo").unwrap();
 
@@ -553,7 +553,7 @@ mod tests {
 
     #[test]
     fn recebido_so_aparece_pronto_no_fim() {
-        let mut incoming = Incoming::create("teste-remoteone.bin", 1024).unwrap();
+        let mut incoming = Incoming::create("teste-deskside.bin", 1024).unwrap();
         let destino = incoming.final_path.clone();
         incoming.write(b"parte um ").unwrap();
         assert!(!destino.exists(), "não existe enquanto está pela metade");
@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn leitura_recusa_pasta_e_aceita_arquivo() {
-        let dir = home().unwrap().join("remoteone-teste-leitura");
+        let dir = home().unwrap().join("deskside-teste-leitura");
         std::fs::create_dir_all(&dir).unwrap();
         let arquivo = dir.join("dados.bin");
         std::fs::write(&arquivo, vec![7u8; 100]).unwrap();

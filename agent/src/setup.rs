@@ -10,7 +10,7 @@
 //! - Não aparecia em "Aplicativos instalados", então desinstalar era procurar
 //!   um script.
 //!
-//! Agora quem instala é o **próprio executável** (`remoteone-agent.exe
+//! Agora quem instala é o **próprio executável** (`deskside-agent.exe
 //! install`). A razão de estar aqui, em Rust, e não num script: este código
 //! entra na verificação cruzada de tipos para Windows e tem as partes puras
 //! cobertas por teste. Um `.ps1` não tem nem uma coisa nem outra — e o histórico
@@ -26,15 +26,15 @@
 use std::path::{Path, PathBuf};
 
 /// Nome da pasta e da entrada em "Aplicativos instalados".
-pub const APP_NAME: &str = "RemoteOne";
+pub const APP_NAME: &str = "Deskside";
 
 /// Nome do atalho na pasta Inicializar.
-pub const STARTUP_FILE: &str = "RemoteOneAgent.vbs";
+pub const STARTUP_FILE: &str = "DesksideAgent.vbs";
 
 /// Chave de desinstalação, sob `HKCU`. Fica no usuário e não na máquina porque
 /// a instalação é por usuário — e escrever em `HKLM` exigiria administrador.
 pub const UNINSTALL_KEY: &str =
-    r"Software\Microsoft\Windows\CurrentVersion\Uninstall\RemoteOne";
+    r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Deskside";
 
 /// O launcher que roda o agente **oculto**.
 ///
@@ -49,7 +49,7 @@ pub const UNINSTALL_KEY: &str =
 pub fn launcher_script(exe: &Path) -> String {
     let caminho = exe.display().to_string().replace('"', "\"\"");
     format!(
-        "' Inicia o agente do RemoteOne oculto, sem janela de console.\r\n\
+        "' Inicia o agente do Deskside oculto, sem janela de console.\r\n\
          Set sh = CreateObject(\"WScript.Shell\")\r\n\
          sh.Run \"\"\"{caminho}\"\"\", 0, False\r\n"
     )
@@ -108,7 +108,7 @@ pub struct Places {
 /// Monta o plano a partir dos caminhos do sistema.
 pub fn plan(exe_atual: &Path, lugares: &Places) -> Plan {
     let dir = install_dir(&lugares.local_app_data);
-    let exe = dir.join("remoteone-agent.exe");
+    let exe = dir.join("deskside-agent.exe");
     let copy = !already_installed(exe_atual, &exe);
     Plan {
         dir,
@@ -172,7 +172,7 @@ pub fn status_lines(s: &Status) -> Vec<String> {
 
 /// Os valores da chave de desinstalação, como o Windows os espera.
 ///
-/// É esta chave que faz o RemoteOne aparecer em "Aplicativos instalados" com um
+/// É esta chave que faz o Deskside aparecer em "Aplicativos instalados" com um
 /// botão de desinstalar. Sem ela o programa fica invisível para o sistema, e a
 /// única forma de removê-lo seria saber de cor onde ele se escondeu.
 pub fn uninstall_entries(exe: &Path, versao: &str) -> Vec<(String, String)> {
@@ -299,7 +299,7 @@ mod imp {
     /// por sorteio.
     ///
     /// A exclusão do próprio PID não é detalhe: quem instala **é** o
-    /// `remoteone-agent.exe`, e um `taskkill /IM remoteone-agent.exe` mata
+    /// `deskside-agent.exe`, e um `taskkill /IM deskside-agent.exe` mata
     /// todos os processos com esse nome — inclusive o instalador, no meio da
     /// instalação. O sintoma foi um `install` que não imprimiu uma linha
     /// sequer e não copiou nada, deixando para trás a impressão de que não
@@ -309,7 +309,7 @@ mod imp {
         let _ = Command::new("taskkill")
             .args([
                 "/IM",
-                "remoteone-agent.exe",
+                "deskside-agent.exe",
                 "/F",
                 "/FI",
                 &format!("PID ne {eu}"),
@@ -363,7 +363,7 @@ mod imp {
         if let Some(url) = backend {
             let caminho = crate::config_path();
             let mut cfg = crate::load_config();
-            cfg.set("REMOTEONE_BACKEND_URL", url);
+            cfg.set("DESKSIDE_BACKEND_URL", url);
             if let Some(pai) = caminho.parent() {
                 let _ = std::fs::create_dir_all(pai);
             }
@@ -374,16 +374,16 @@ mod imp {
             // usuário, e variável vence arquivo. Sem este aviso, alguém
             // trocaria de servidor aqui e continuaria conectando no antigo,
             // com o arquivo na tela dizendo o contrário.
-            if let Ok(v) = std::env::var("REMOTEONE_BACKEND_URL") {
+            if let Ok(v) = std::env::var("DESKSIDE_BACKEND_URL") {
                 if !v.trim().is_empty() && v != url {
                     println!();
-                    println!("AVISO: a variável de ambiente REMOTEONE_BACKEND_URL vale {v}");
+                    println!("AVISO: a variável de ambiente DESKSIDE_BACKEND_URL vale {v}");
                     println!("e ela vence o arquivo. Provavelmente sobrou do instalador antigo.");
                     // `setx VAR ""` **não** apaga: o setx recusa valor vazio.
                     // Quem apaga uma variável de usuário é o registro.
                     println!(
                         "Para remover:  reg delete \"HKCU\\Environment\" \
-                         /v REMOTEONE_BACKEND_URL /f"
+                         /v DESKSIDE_BACKEND_URL /f"
                     );
                     println!("e abra um terminal novo.");
                 }
@@ -426,9 +426,9 @@ mod imp {
         println!("Pronto. O agente roda oculto e sobe junto com o Windows.");
         println!("Os atalhos abrem o programa que já está rodando, não um segundo.");
         println!("O código de pareamento aparece numa janelinha e também em:");
-        println!("  %APPDATA%\\remoteone\\pairing-code.txt");
+        println!("  %APPDATA%\\deskside\\pairing-code.txt");
         println!();
-        println!("Para remover: remoteone-agent.exe uninstall");
+        println!("Para remover: deskside-agent.exe uninstall");
         Ok(())
     }
 
@@ -460,25 +460,25 @@ mod imp {
             .spawn();
 
         println!("Removido do início automático e de \"Aplicativos instalados\".");
-        println!("A configuração e o device_id ficam em %APPDATA%\\remoteone");
+        println!("A configuração e o device_id ficam em %APPDATA%\\deskside");
         println!("(assim, reinstalar não obriga a parear de novo).");
         Ok(())
     }
 
     pub fn status() -> Status {
         let exe = pasta("LOCALAPPDATA")
-            .map(|p| install_dir(&p).join("remoteone-agent.exe"))
+            .map(|p| install_dir(&p).join("deskside-agent.exe"))
             .unwrap_or_default();
         let startup = startup_dir().map(|p| p.join(STARTUP_FILE)).unwrap_or_default();
         let cfg = crate::load_config();
-        let do_ambiente = std::env::var("REMOTEONE_BACKEND_URL")
+        let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
             .map(|v| !v.trim().is_empty())
             .unwrap_or(false);
         Status {
             installed: exe.is_file(),
             autostart: startup.is_file(),
             exe,
-            backend: crate::config::resolve(&cfg, "REMOTEONE_BACKEND_URL")
+            backend: crate::config::resolve(&cfg, "DESKSIDE_BACKEND_URL")
                 .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
             backend_from_env: do_ambiente,
             device_id: std::fs::read_to_string(crate::device_id_path())
@@ -506,14 +506,14 @@ mod imp {
 
     pub fn status() -> Status {
         let cfg = crate::load_config();
-        let do_ambiente = std::env::var("REMOTEONE_BACKEND_URL")
+        let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
             .map(|v| !v.trim().is_empty())
             .unwrap_or(false);
         Status {
             installed: false,
             autostart: false,
             exe: std::env::current_exe().unwrap_or_default(),
-            backend: crate::config::resolve(&cfg, "REMOTEONE_BACKEND_URL")
+            backend: crate::config::resolve(&cfg, "DESKSIDE_BACKEND_URL")
                 .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
             backend_from_env: do_ambiente,
             device_id: std::fs::read_to_string(crate::device_id_path())
@@ -579,7 +579,7 @@ mod tests {
         let local = caminho(&["C:", "Users", "eu", "AppData", "Local"]);
         assert_eq!(
             install_dir(&local),
-            caminho(&["C:", "Users", "eu", "AppData", "Local", "Programs", "RemoteOne"])
+            caminho(&["C:", "Users", "eu", "AppData", "Local", "Programs", "Deskside"])
         );
     }
 
@@ -596,13 +596,13 @@ mod tests {
     fn rodar_de_fora_copia_o_executavel() {
         let lugares = lugares_de_teste();
         let plano = plan(
-            &caminho(&["C:", "repo", "target", "release", "remoteone-agent.exe"]),
+            &caminho(&["C:", "repo", "target", "release", "deskside-agent.exe"]),
             &lugares,
         );
         assert!(plano.copy);
         assert_eq!(
             plano.exe,
-            install_dir(&lugares.local_app_data).join("remoteone-agent.exe")
+            install_dir(&lugares.local_app_data).join("deskside-agent.exe")
         );
         assert_eq!(plano.startup, lugares.startup.join(STARTUP_FILE));
     }
@@ -614,9 +614,9 @@ mod tests {
         // o atalho quebrar no dia em que alguém a limpasse - sem aviso, e sem
         // ninguém associar uma coisa à outra.
         let lugares = lugares_de_teste();
-        let plano = plan(&caminho(&["C:", "Downloads", "remoteone-agent.exe"]), &lugares);
-        assert_eq!(plano.start_menu, lugares.start_menu.join("RemoteOne.lnk"));
-        assert_eq!(plano.desktop, lugares.desktop.join("RemoteOne.lnk"));
+        let plano = plan(&caminho(&["C:", "Downloads", "deskside-agent.exe"]), &lugares);
+        assert_eq!(plano.start_menu, lugares.start_menu.join("Deskside.lnk"));
+        assert_eq!(plano.desktop, lugares.desktop.join("Deskside.lnk"));
         assert!(plano.exe.starts_with(&plano.dir));
     }
 
@@ -626,7 +626,7 @@ mod tests {
         // negado" - um erro que manda o diagnóstico para o lado errado. Quem
         // roda `install` já instalado está reconfigurando.
         let local = caminho(&["C:", "Users", "eu", "AppData", "Local"]);
-        let instalado = install_dir(&local).join("remoteone-agent.exe");
+        let instalado = install_dir(&local).join("deskside-agent.exe");
         let plano = plan(&instalado, &Places { local_app_data: local, ..lugares_de_teste() });
         assert!(!plano.copy);
     }
@@ -645,16 +645,16 @@ mod tests {
         // Se a `UninstallString` apontasse para o script do repositório, quem
         // recebeu só o .exe não teria como desinstalar pelo Windows.
         let exe = install_dir(&caminho(&["C:", "Users", "eu", "AppData", "Local"]))
-            .join("remoteone-agent.exe");
+            .join("deskside-agent.exe");
         let entradas = uninstall_entries(&exe, "0.9.0");
         let mapa: std::collections::HashMap<_, _> = entradas.into_iter().collect();
         assert_eq!(
             mapa["UninstallString"],
             format!("\"{}\" uninstall", exe.display())
         );
-        assert_eq!(mapa["DisplayName"], "RemoteOne");
+        assert_eq!(mapa["DisplayName"], "Deskside");
         assert_eq!(mapa["DisplayVersion"], "0.9.0");
-        assert!(mapa["InstallLocation"].ends_with("RemoteOne"));
+        assert!(mapa["InstallLocation"].ends_with("Deskside"));
     }
 
     #[test]
@@ -678,12 +678,12 @@ mod tests {
             installed: true,
             autostart: true,
             exe: install_dir(&caminho(&["C:", "Users", "eu", "AppData", "Local"]))
-                .join("remoteone-agent.exe"),
+                .join("deskside-agent.exe"),
             backend: "wss://caio-remoteone.duckdns.org/ws/agent".into(),
             backend_from_env: false,
             device_id: Some("abc123".into()),
         });
-        assert!(linhas[0].contains("RemoteOne"));
+        assert!(linhas[0].contains("Deskside"));
         assert!(linhas[1].ends_with("sim"));
         assert!(linhas[2].contains("duckdns"));
         assert!(linhas[3].contains("abc123"));

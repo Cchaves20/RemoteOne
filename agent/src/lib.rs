@@ -1,4 +1,4 @@
-//! Núcleo do agente desktop do RemoteOne.
+//! Núcleo do agente desktop do Deskside.
 //!
 //! A lógica portável (pareamento, protocolo, identidade, cliente) vive nesta
 //! biblioteca e é testada em Windows, Linux e macOS pela CI. O binário
@@ -19,6 +19,7 @@ pub mod gui;
 pub mod h264;
 pub mod identity;
 pub mod instance;
+pub mod migracao;
 pub mod injector;
 pub mod input;
 pub mod notify;
@@ -38,15 +39,42 @@ pub const DEFAULT_BACKEND_URL: &str = "ws://127.0.0.1:8000/ws/agent";
 
 /// Diretório onde ficam o `device_id` e a configuração.
 ///
-/// `%APPDATA%\remoteone` no Windows, `~/.config/remoteone` no restante.
+/// `%APPDATA%\deskside` no Windows, `~/.config/deskside` no restante.
 /// Deliberadamente **fora** da pasta de instalação: reinstalar ou atualizar não
 /// pode obrigar a parear o computador de novo.
 pub fn config_dir() -> PathBuf {
-    let base = std::env::var_os("REMOTEONE_CONFIG_DIR")
+    let base = std::env::var_os("DESKSIDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(platform_config_dir)
+        .unwrap_or_else(|| PathBuf::from("."));
+    base.join("deskside")
+}
+
+/// A pasta onde a configuração ficava quando o projeto se chamava RemoteOne.
+///
+/// Existe só para a migração automática (ver `migracao.rs`). Some daqui quando
+/// não houver mais instalação antiga em campo.
+pub fn config_dir_antiga() -> PathBuf {
+    let base = std::env::var_os("DESKSIDE_CONFIG_DIR")
         .map(PathBuf::from)
         .or_else(platform_config_dir)
         .unwrap_or_else(|| PathBuf::from("."));
     base.join("remoteone")
+}
+
+/// Traz a configuração do nome antigo, se ainda não houver a nova.
+///
+/// Chamada uma vez, no início. **Não** fica escondida dentro de `config_dir()`:
+/// função que devolve um caminho não deve mexer em disco - quem lê
+/// `config_dir()` espera uma resposta, não um efeito colateral.
+pub fn migrar_configuracao_antiga() {
+    if migracao::migrar(&config_dir_antiga(), &config_dir()) {
+        diario(&format!(
+            "configuração migrada de {} para {}",
+            config_dir_antiga().display(),
+            config_dir().display()
+        ));
+    }
 }
 
 /// Diretório de configuração do sistema, sem dependência externa.

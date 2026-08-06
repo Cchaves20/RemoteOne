@@ -1277,6 +1277,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 
 [[package]]
+name = "deskside-agent"
+version = "0.1.0"
+dependencies = [
+ "audiopus",
+ "base64",
+ "clipboard-win",
+ "cpal",
+ "eframe",
+ "enigo",
+ "fast_image_resize",
+ "futures-util",
+ "gethostname 0.5.0",
+ "image",
+ "mac_address",
+ "mslnk",
+ "openh264",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tokio",
+ "tokio-tungstenite",
+ "tray-icon",
+ "uuid",
+ "webrtc",
+ "winresource",
+ "xcap",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4861,36 +4891,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "remoteone-agent"
-version = "0.1.0"
-dependencies = [
- "audiopus",
- "base64",
- "clipboard-win",
- "cpal",
- "eframe",
- "enigo",
- "fast_image_resize",
- "futures-util",
- "gethostname 0.5.0",
- "image",
- "mac_address",
- "mslnk",
- "openh264",
- "rand 0.8.7",
- "serde",
- "serde_json",
- "sysinfo",
- "tokio",
- "tokio-tungstenite",
- "tray-icon",
- "uuid",
- "webrtc",
- "winresource",
- "xcap",
-]
 
 [[package]]
 name = "rend"

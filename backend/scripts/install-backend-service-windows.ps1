@@ -1,4 +1,4 @@
-# Instala o backend do RemoteOne como servico do Windows (sobe no BOOT, ANTES
+# Instala o backend do Deskside como servico do Windows (sobe no BOOT, ANTES
 # do login, sem Docker e sem Postgres/Redis — usa SQLite).
 #
 # Roda como conta SYSTEM via Tarefa Agendada com gatilho "Ao iniciar". Um
@@ -24,10 +24,10 @@ if (-not $isAdmin) {
 
 # backend/scripts -> backend
 $backendDir = Split-Path -Parent $PSScriptRoot
-$taskName = "RemoteOneBackend"
-$dataDir = "C:\ProgramData\RemoteOne"
+$taskName = "DesksideBackend"
+$dataDir = "C:\ProgramData\Deskside"
 $secretFile = Join-Path $dataDir "jwt-secret.txt"
-$dbFile = Join-Path $dataDir "remoteone.db"
+$dbFile = Join-Path $dataDir "deskside.db"
 $launcher = Join-Path $dataDir "run-backend.cmd"
 
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
@@ -55,15 +55,15 @@ if (-not (Test-Path $secretFile)) {
 $dbUrl = "sqlite:///" + ($dbFile -replace '\\', '/')
 @"
 @echo off
-for /f "usebackq delims=" %%s in ("$secretFile") do set REMOTEONE_JWT_SECRET=%%s
-set REMOTEONE_DATABASE_URL=$dbUrl
+for /f "usebackq delims=" %%s in ("$secretFile") do set DESKSIDE_JWT_SECRET=%%s
+set DESKSIDE_DATABASE_URL=$dbUrl
 cd /d "$backendDir"
 "$py" -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 "@ | Set-Content -Encoding ASCII $launcher
 
 # --- libera a porta 8000 no Firewall (senao o celular da timeout) ------------
-if (-not (Get-NetFirewallRule -DisplayName "RemoteOne backend 8000" -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName "RemoteOne backend 8000" -Direction Inbound `
+if (-not (Get-NetFirewallRule -DisplayName "Deskside backend 8000" -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName "Deskside backend 8000" -Direction Inbound `
         -LocalPort 8000 -Protocol TCP -Action Allow | Out-Null
     Write-Host "Regra de Firewall criada (TCP 8000 liberada)."
 }
@@ -81,7 +81,7 @@ $settings = New-ScheduledTaskSettingsSet `
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
     -Principal $principal -Settings $settings `
-    -Description "Backend do RemoteOne (servico, sem login)" -Force | Out-Null
+    -Description "Backend do Deskside (servico, sem login)" -Force | Out-Null
 
 Start-ScheduledTask -TaskName $taskName
 

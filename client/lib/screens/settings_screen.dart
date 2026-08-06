@@ -122,12 +122,12 @@ class SettingsScreen extends StatelessWidget {
               staggered(_card(context, t.about, Icons.info_outline, [
                 Row(
                   children: [
-                    const RemoteOneMark(size: 44),
+                    const DesksideMark(size: 44),
                     const SizedBox(width: 14),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('RemoteOne',
+                        Text('Deskside',
                             style: Theme.of(context).textTheme.titleMedium),
                         Text(t.version(_appVersion),
                             style: Theme.of(context).textTheme.bodySmall),

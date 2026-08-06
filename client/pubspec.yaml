@@ -1,5 +1,5 @@
-name: remoteone_client
-description: Cliente multiplataforma do RemoteOne (iOS, Android, iPadOS, Windows)
+name: deskside_client
+description: Cliente multiplataforma do Deskside (iOS, Android, iPadOS, Windows)
 publish_to: "none"
 version: 0.1.0+1
 
@@ -41,11 +41,11 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/icon/remoteone_glyph.png
+    - assets/icon/deskside_glyph.png
 
 # Ícone do app (gerado por `dart run flutter_launcher_icons`).
 flutter_launcher_icons:
-  image_path: "assets/icon/remoteone.png"
+  image_path: "assets/icon/deskside.png"
   remove_alpha_ios: true
   ios: true
   android: false
@@ -53,7 +53,7 @@ flutter_launcher_icons:
 # Splash screen (gerada por `dart run flutter_native_splash:create`).
 flutter_native_splash:
   color: "#0D0F20"
-  image: assets/icon/remoteone_glyph.png
+  image: assets/icon/deskside_glyph.png
   fullscreen: true
   ios: true
   android: false

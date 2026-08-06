@@ -1,6 +1,6 @@
 # Instalar o agente (rodar sem terminal)
 
-Para usar o RemoteOne no dia a dia — inclusive **desligar o PC pelo app** e
+Para usar o Deskside no dia a dia — inclusive **desligar o PC pelo app** e
 depois **acordá-lo com Wake-on-LAN** — o computador não pode depender de um
 terminal aberto. O agente precisa:
 
@@ -22,7 +22,7 @@ frente:
 
 ```powershell
 cd C:\onde\voce\copiou
-.\remoteone-agent.exe install wss://seu-servidor/ws/agent
+.\deskside-agent.exe install wss://seu-servidor/ws/agent
 ```
 
 O `.\` não é enfeite: o PowerShell **não** procura executável na pasta atual,
@@ -35,8 +35,8 @@ nenhuma, o backend da própria máquina (`ws://127.0.0.1:8000/ws/agent`).
 O que o comando faz:
 
 1. Encerra qualquer agente que já esteja rodando.
-2. Copia o executável para `%LOCALAPPDATA%\Programs\RemoteOne`.
-3. Grava a URL do backend em `%APPDATA%\remoteone\agent.conf`.
+2. Copia o executável para `%LOCALAPPDATA%\Programs\Deskside`.
+3. Grava a URL do backend em `%APPDATA%\deskside\agent.conf`.
 4. Põe um atalho oculto na pasta Inicializar do seu usuário.
 5. Cria atalhos no **Menu Iniciar** e na **área de trabalho**.
 6. Registra o programa em **Aplicativos instalados**, com botão de desinstalar.
@@ -54,11 +54,11 @@ metade, sem erro nenhum explicando.
 ### Conferir
 
 ```powershell
-.\remoteone-agent.exe status
+.\deskside-agent.exe status
 ```
 
 ```
-Instalado em: C:\Users\voce\AppData\Local\Programs\RemoteOne\remoteone-agent.exe
+Instalado em: C:\Users\voce\AppData\Local\Programs\Deskside\deskside-agent.exe
 Inicia com o Windows: sim
 Backend: wss://seu-servidor/ws/agent
 device_id: 6f3a…
@@ -74,20 +74,20 @@ exatamente o caso em que o computador some do app sem explicação.
 Por **Aplicativos instalados** do Windows, por `desinstalar.cmd`, ou:
 
 ```powershell
-.\remoteone-agent.exe uninstall
+.\deskside-agent.exe uninstall
 ```
 
-A configuração e o `device_id` **ficam** em `%APPDATA%\remoteone`. É de
+A configuração e o `device_id` **ficam** em `%APPDATA%\deskside`. É de
 propósito: reinstalar não deve obrigar a parear o computador de novo.
 
 ## Configuração
 
-O arquivo é `%APPDATA%\remoteone\agent.conf`, no formato `CHAVE=valor`:
+O arquivo é `%APPDATA%\deskside\agent.conf`, no formato `CHAVE=valor`:
 
 ```
-REMOTEONE_BACKEND_URL=wss://seu-servidor/ws/agent
-REMOTEONE_VIDEO_MAX_WIDTH=1280
-REMOTEONE_VIDEO_FPS=30
+DESKSIDE_BACKEND_URL=wss://seu-servidor/ws/agent
+DESKSIDE_VIDEO_MAX_WIDTH=1280
+DESKSIDE_VIDEO_FPS=30
 ```
 
 **Variável de ambiente vence o arquivo.** A ordem não é arbitrária: quem exporta
@@ -100,22 +100,40 @@ engano numa chave não pode impedir o agente de subir.
 
 | Chave | O que faz |
 |---|---|
-| `REMOTEONE_BACKEND_URL` | Servidor a que o agente se conecta |
-| `REMOTEONE_VIDEO_MAX_WIDTH` | Teto de largura do vídeo (custo de CPU por pixel) |
-| `REMOTEONE_VIDEO_FPS` | Teto de quadros por segundo do vídeo |
-| `REMOTEONE_VIDEO_BITRATE` | Taxa alvo do H.264, em bits por segundo |
-| `REMOTEONE_STREAM_FPS` · `_MAX_WIDTH` · `_QUALITY` | O mesmo para o JPEG de reserva |
-| `REMOTEONE_ICE_SERVERS` | STUN, separados por vírgula. Vazio = só rede local |
-| `REMOTEONE_KEEP_AWAKE` | `1` (padrão) mantém o PC acordado na tomada; `0` desliga |
-| `REMOTEONE_CONFIG_DIR` | Onde ficam o `device_id` e este arquivo |
+| `DESKSIDE_BACKEND_URL` | Servidor a que o agente se conecta |
+| `DESKSIDE_VIDEO_MAX_WIDTH` | Teto de largura do vídeo (custo de CPU por pixel) |
+| `DESKSIDE_VIDEO_FPS` | Teto de quadros por segundo do vídeo |
+| `DESKSIDE_VIDEO_BITRATE` | Taxa alvo do H.264, em bits por segundo |
+| `DESKSIDE_STREAM_FPS` · `_MAX_WIDTH` · `_QUALITY` | O mesmo para o JPEG de reserva |
+| `DESKSIDE_ICE_SERVERS` | STUN, separados por vírgula. Vazio = só rede local |
+| `DESKSIDE_KEEP_AWAKE` | `1` (padrão) mantém o PC acordado na tomada; `0` desliga |
+| `DESKSIDE_CONFIG_DIR` | Onde ficam o `device_id` e este arquivo |
 
 Os tetos daqui são tetos mesmo: a qualidade adaptativa só **abaixa** a partir
 deles (ver [`webrtc-plano.md`](webrtc-plano.md), Fase 4b).
 
-`REMOTEONE_KEEP_AWAKE` também é mudado pelo app (menu do computador → **Manter
+`DESKSIDE_KEEP_AWAKE` também é mudado pelo app (menu do computador → **Manter
 pronto**), e o agente grava a escolha aqui — ela precisa valer no próximo
 login. O detalhe de por que este recurso existe está em
 [`pc-sempre-pronto.md`](pc-sempre-pronto.md).
+
+## Vindo da versão RemoteOne
+
+O projeto mudou de nome. Ao subir pela primeira vez, o agente **traz sozinho** a
+configuração antiga de `%APPDATA%\remoteone` para `%APPDATA%\deskside`,
+incluindo o `device_id` e trocando o prefixo das chaves de `REMOTEONE_` para
+`DESKSIDE_`.
+
+Isso importa por um motivo só: o `device_id` é o que identifica a máquina no
+aplicativo. Sem a migração, cada computador apareceria como novo, pedindo
+pareamento, e o antigo ficaria na lista como um fantasma que nunca mais fica
+online.
+
+**A pasta antiga não é apagada.** Copiar custa alguns quilobytes e mantém a
+volta atrás possível. Se algo sair errado, ela está lá inteira.
+
+A migração só acontece quando a pasta nova **ainda não existe** — rodar duas
+vezes não sobrescreve configuração nova com a velha.
 
 ## Vindo do instalador antigo
 
@@ -131,30 +149,30 @@ Enquanto ela existir, trocar o servidor no `agent.conf` não terá efeito. Para
 apagá-la, no PowerShell:
 
 ```powershell
-[Environment]::SetEnvironmentVariable("REMOTEONE_BACKEND_URL", $null, "User")
+[Environment]::SetEnvironmentVariable("DESKSIDE_BACKEND_URL", $null, "User")
 ```
 
 ou, em qualquer terminal:
 
 ```
-reg delete "HKCU\Environment" /v REMOTEONE_BACKEND_URL /f
+reg delete "HKCU\Environment" /v DESKSIDE_BACKEND_URL /f
 ```
 
 Depois feche e abra o terminal: a variável só some para processos novos.
 
-`setx REMOTEONE_BACKEND_URL ""` **não** serve — o `setx` recusa valor vazio com
+`setx DESKSIDE_BACKEND_URL ""` **não** serve — o `setx` recusa valor vazio com
 "sintaxe inválida". Ele grava variáveis; quem apaga é o registro.
 
 O atalho antigo na pasta Inicializar tem o mesmo nome do atual
-(`RemoteOneAgent.vbs`) e é substituído pelo `install`. Para conferir, abra-o no
+(`DesksideAgent.vbs`) e é substituído pelo `install`. Para conferir, abra-o no
 Bloco de Notas: o caminho lá dentro tem que apontar para
-`AppData\Local\Programs\RemoteOne`, e não para `target\release`.
+`AppData\Local\Programs\Deskside`, e não para `target\release`.
 
 ## A janela e o ícone ao lado do relógio
 
 O agente tem um **ícone na bandeja**, ao lado do relógio. É a prova de que ele
 está de pé sem ninguém abrir terminal. Duplo clique abre a janela; o clique
-direito traz **Abrir o RemoteOne** e **Sair**.
+direito traz **Abrir o Deskside** e **Sair**.
 
 A janela mostra o computador, o servidor, o identificador, se a conexão está de
 pé (e o motivo, quando não está) e o estado do "manter pronto".
@@ -174,7 +192,7 @@ Windows enxuto de nuvem. Numa VM real este projeto encontrou o caso extremo:
 **zero adaptadores** — sem Vulkan, sem DX12, sem OpenGL 2.0, e nem o
 renderizador por software do Windows aparecendo.
 
-Nessas máquinas o RemoteOne cai num modo mais simples, e **avisa disso na
+Nessas máquinas o Deskside cai num modo mais simples, e **avisa disso na
 própria tela de estado**:
 
 - o **ícone ao lado do relógio continua lá**, com o menu de sempre;
@@ -193,7 +211,7 @@ fim, o modo sem placa nenhuma.
 
 Quando o agente precisa parear, a **janela abre sozinha** com o código em letra
 grande e um botão de copiar. O código também fica em
-**`%APPDATA%\remoteone\pairing-code.txt`** (cole `%APPDATA%\remoteone` na
+**`%APPDATA%\deskside\pairing-code.txt`** (cole `%APPDATA%\deskside` na
 barra do Explorer).
 
 O código reaparece sozinho se você **remover o computador no app** — não precisa
@@ -252,7 +270,7 @@ Start Docker Desktop when you sign in**.
 Não é preciso o código-fonte nem o Rust do outro lado. Copie dois arquivos:
 
 ```
-agent\target\release\remoteone-agent.exe
+agent\target\release\deskside-agent.exe
 agent\scripts\instalar.cmd
 ```
 
@@ -271,7 +289,7 @@ limpa pode não ter. Instale o *Microsoft Visual C++ Redistributable (x64)*, que
 ## Verificar de ponta a ponta
 
 1. Reinicie o PC e **não abra terminal nenhum**.
-2. `.\remoteone-agent.exe status` (ou o app) deve mostrar o agente de pé.
+2. `.\deskside-agent.exe status` (ou o app) deve mostrar o agente de pé.
 3. No app, o computador aparece **Online**.
 4. Desligar pelo app e depois acordar com Wake-on-LAN passa a funcionar sem
    ninguém tocar na máquina.

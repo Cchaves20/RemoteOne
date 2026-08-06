@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ..Default::default()
         },
         "video".to_owned(),
-        "remoteone".to_owned(),
+        "deskside".to_owned(),
     ));
     sender
         .add_track(Arc::clone(&track) as Arc<dyn TrackLocal + Send + Sync>)

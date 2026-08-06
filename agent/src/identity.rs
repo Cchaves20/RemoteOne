@@ -34,7 +34,7 @@ mod tests {
 
     #[test]
     fn creates_when_missing_and_is_stable() {
-        let dir = std::env::temp_dir().join(format!("remoteone-test-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("deskside-test-{}", Uuid::new_v4()));
         let path = dir.join("device_id");
 
         let first = load_or_create_device_id(&path).unwrap();
@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn generates_valid_uuid() {
-        let dir = std::env::temp_dir().join(format!("remoteone-test-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("deskside-test-{}", Uuid::new_v4()));
         let path = dir.join("device_id");
 
         let id = load_or_create_device_id(&path).unwrap();
