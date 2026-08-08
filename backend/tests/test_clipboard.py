@@ -43,16 +43,30 @@ def _add_device(user_id: int, device_id: str) -> None:
         db.commit()
 
 
+#: O que os campos de imagem valem quando não há imagem copiada. Fica separado
+#: porque quase todo teste daqui é sobre texto ou arquivo, e repetir quatro
+#: `None` em cada asserção esconderia o que cada teste está de fato medindo.
+SEM_IMAGEM = {
+    "image": None,
+    "image_mime": None,
+    "image_width": None,
+    "image_height": None,
+}
+
+
 class InstantAgent:
     def __init__(
         self,
         text: str | None = None,
         files: list[dict] | None = None,
         ignored: int = 0,
+        image: dict | None = None,
     ):
         self.text = text
         self.files = files or []
         self.ignored = ignored
+        #: Os quatro campos da imagem, ou nada quando o agente não copiou uma.
+        self.image = image or SEM_IMAGEM
         self.sent: list[dict] = []
 
     async def send_json(self, message: dict) -> None:
@@ -60,7 +74,12 @@ class InstantAgent:
         if message.get("type") == "clipboard_get" and self.text is not None:
             pending.resolve(
                 message["request_id"],
-                {"text": self.text, "files": self.files, "ignored": self.ignored},
+                {
+                    "text": self.text,
+                    "files": self.files,
+                    "ignored": self.ignored,
+                    **self.image,
+                },
             )
 
     def of_type(self, kind: str) -> list[dict]:
@@ -107,7 +126,12 @@ def test_traz_o_texto_do_computador():
     finally:
         manager.unregister("dev-clip-1")
     assert resp.status_code == 200
-    assert resp.json() == {"text": "do computador", "files": [], "ignored": 0}
+    assert resp.json() == {
+        "text": "do computador",
+        "files": [],
+        "ignored": 0,
+        **SEM_IMAGEM,
+    }
 
 
 def test_manda_o_texto_ao_computador():
@@ -258,7 +282,7 @@ def test_conta_os_arquivos_recusados():
     finally:
         manager.unregister("dev-clip-8")
     assert resp.status_code == 200
-    assert resp.json() == {"text": "", "files": [], "ignored": 3}
+    assert resp.json() == {"text": "", "files": [], "ignored": 3, **SEM_IMAGEM}
 
 
 def test_agente_antigo_nao_conta_recusados():
@@ -268,3 +292,40 @@ def test_agente_antigo_nao_conta_recusados():
         {"type": "clipboard", "request_id": "r1", "text": "x"}
     )
     assert message.ignored == 0
+
+
+def test_traz_a_imagem_copiada():
+    """A imagem atravessa o backend com os bytes, e não com um caminho.
+
+    É a diferença para os arquivos: copiar um vídeo no Explorer guarda o
+    **caminho** dele, mas uma imagem copiada não existe em disco - ela só existe
+    na área de transferência, e ou vêm os bytes ou não vem nada.
+
+    O `response_model` do FastAPI descarta o que não estiver no schema, então
+    sem este teste esquecer um campo no `ClipboardOut` some com a imagem inteira
+    sem erro nenhum aparecer.
+    """
+    headers, uid = _auth_headers("clip9@example.com")
+    _add_device(uid, "dev-clip-9")
+    imagem = {
+        "image": "aGVsbG8=",
+        "image_mime": "image/png",
+        "image_width": 800,
+        "image_height": 600,
+    }
+    manager.register("dev-clip-9", InstantAgent("", [], image=imagem))
+    try:
+        resp = client.get("/api/v1/devices/dev-clip-9/clipboard", headers=headers)
+    finally:
+        manager.unregister("dev-clip-9")
+    assert resp.status_code == 200
+    assert resp.json() == {"text": "", "files": [], "ignored": 0, **imagem}
+
+
+def test_agente_antigo_nao_manda_imagem():
+    """Sem os campos, `None` - e o app simplesmente não mostra imagem nenhuma."""
+    message = parse_client_message(
+        {"type": "clipboard", "request_id": "r1", "text": "x"}
+    )
+    assert message.image is None
+    assert message.image_mime is None

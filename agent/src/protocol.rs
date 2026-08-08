@@ -85,6 +85,22 @@ pub enum ClientMessage {
         /// "não copiei nada" chegam ao telefone iguais.
         #[serde(default)]
         ignored: usize,
+        /// A imagem copiada, em base64, quando há uma.
+        ///
+        /// Vai só na resposta a um pedido, nunca no aviso automático de cópia:
+        /// texto custa quilobytes e uma captura de tela custa megabytes, e
+        /// mandar isso sem ninguém pedir gastaria a rede de quem copiou uma
+        /// imagem para colar no próprio computador.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        image: Option<String>,
+        /// `image/png` ou `image/jpeg`. O app precisa saber o que gravar
+        /// quando a pessoa manda o arquivo para outro aplicativo.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        image_mime: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        image_width: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        image_height: Option<u32>,
     },
     /// Aviso de que alguém copiou algo novo no computador. Sai sem pedido, e
     /// só enquanto a sincronia automática estiver ligada.

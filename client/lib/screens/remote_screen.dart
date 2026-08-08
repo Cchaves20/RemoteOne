@@ -2177,8 +2177,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     // Busca o que está no computador antes de abrir: a folha já nasce com a
     // informação, em vez de abrir vazia e piscar.
     String? lido;
+    RemoteClipboard? conteudo;
     try {
       final atual = await widget.state.clipboard(widget.device);
+      conteudo = atual;
       lido = atual.text;
       _pcClipboard = atual.text;
       _pcFiles = atual.files;
@@ -2186,6 +2188,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     } catch (_) {
       // Sem rede ou agente antigo: mostra o último conhecido (ou nada).
     }
+    // A imagem **não** fica guardada em `_pcImagem` como o texto: são
+    // megabytes, e segurá-los na tela pelo resto da sessão custaria memória
+    // por algo que a pessoa já viu. Vale só enquanto a folha está aberta.
+    final imagem = conteudo;
     // `final` para o Dart poder promover o tipo dentro dos fechamentos abaixo
     // (com uma variável que ainda pode mudar, ele exige `!` em toda leitura).
     final doPc = lido ?? _pcClipboard;
@@ -2238,6 +2244,54 @@ class _RemoteScreenState extends State<RemoteScreen>
                   ),
                 ),
               ),
+              // A imagem copiada, quando há uma. Fica logo abaixo do texto
+              // porque são as duas coisas que a pessoa "tem copiado agora";
+              // os arquivos vêm depois, e são de outra natureza (caminhos).
+              if (imagem != null && imagem.hasImage) ...[
+                const SizedBox(height: 14),
+                Text(
+                  t.clipboardImage(imagem.imageWidth ?? 0, imagem.imageHeight ?? 0),
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: double.infinity,
+                    // Teto de altura: uma captura de tela em pé ocuparia a
+                    // folha inteira e empurraria os botões para fora da vista.
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    color: Colors.black26,
+                    child: Image.memory(
+                      imagem.image!,
+                      fit: BoxFit.contain,
+                      // Imagem ilegível não pode derrubar a folha: o texto e os
+                      // arquivos continuam valendo.
+                      errorBuilder: (_, __, ___) => Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          t.clipboardImageFailed,
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Salvar em vez de colar: pôr uma imagem na área de
+                // transferência do iOS exige um plugin nativo que este app não
+                // tem. A folha de compartilhar resolve o mesmo problema por um
+                // caminho que já existe - dali a imagem vai para Fotos, para o
+                // WhatsApp ou para onde a pessoa quiser.
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.ios_share, size: 18),
+                  label: Text(t.clipboardImageShare),
+                  onPressed: () => _compartilharImagem(imagem),
+                ),
+              ],
               const SizedBox(height: 14),
               Row(
                 children: [
@@ -2352,6 +2406,39 @@ class _RemoteScreenState extends State<RemoteScreen>
         ),
       ),
     );
+  }
+
+  /// Manda a imagem copiada no computador para a folha de compartilhar do iOS.
+  ///
+  /// **Não** é "colar no telefone", e a diferença é uma limitação real: pôr uma
+  /// imagem na área de transferência do iOS exige um plugin nativo, porque o
+  /// `Clipboard` do Flutter só trata texto. A folha de compartilhar chega ao
+  /// mesmo lugar por um caminho que o app já usa para os arquivos — dali a
+  /// imagem vai para Fotos, para uma conversa, para onde a pessoa quiser.
+  ///
+  /// Grava num arquivo temporário porque é isso que a folha aceita: ela
+  /// compartilha arquivos, não bytes soltos na memória.
+  Future<void> _compartilharImagem(RemoteClipboard c) async {
+    final bytes = c.image;
+    if (bytes == null) return;
+    final t = widget.state.t;
+    final origem = _shareOrigin();
+    Navigator.of(context).pop();
+    try {
+      final dir = await getTemporaryDirectory();
+      // Nome com a hora: duas imagens compartilhadas na mesma sessão não podem
+      // sobrescrever uma à outra enquanto a primeira ainda está sendo enviada.
+      final agora = DateTime.now().millisecondsSinceEpoch;
+      final local = File('${dir.path}/deskside-$agora.${c.imageExtension}');
+      await local.writeAsBytes(bytes);
+      if (!mounted) return;
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(local.path, mimeType: c.imageMime)],
+        sharePositionOrigin: origem,
+      ));
+    } catch (e) {
+      _avisar('${t.clipboardImageFailed}: $e');
+    }
   }
 
   /// Um arquivo copiado no computador, pronto para trazer.

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 /// Um item de uma pasta do computador, como vem de GET /devices/{id}/files.
 class RemoteFile {
   const RemoteFile({
@@ -79,6 +82,10 @@ class RemoteClipboard {
     this.text = '',
     this.files = const [],
     this.ignored = 0,
+    this.image,
+    this.imageMime,
+    this.imageWidth,
+    this.imageHeight,
   });
 
   final String text;
@@ -89,14 +96,49 @@ class RemoteClipboard {
   /// mesma tela vazia — e são coisas bem diferentes para quem está olhando.
   final int ignored;
 
+  /// A imagem copiada no computador, já decodificada.
+  ///
+  /// Diferente dos arquivos, e a diferença é do Windows: copiar um vídeo no
+  /// Explorer guarda o **caminho** dele, mas uma imagem copiada (um Print
+  /// Screen, um recorte) não existe em disco — ela só existe na área de
+  /// transferência. Ou vêm os bytes, ou não vem nada.
+  final Uint8List? image;
+
+  /// `image/png` ou `image/jpeg`. Decide a extensão do arquivo na hora de
+  /// compartilhar: um `.png` que na verdade é JPEG confunde outros aplicativos.
+  final String? imageMime;
+  final int? imageWidth;
+  final int? imageHeight;
+
+  bool get hasImage => image != null;
+
+  /// A extensão que corresponde ao tipo. `.png` como padrão porque é o formato
+  /// que o agente prefere, e o único que sobra quando o tipo não veio.
+  String get imageExtension => imageMime == 'image/jpeg' ? 'jpg' : 'png';
+
   factory RemoteClipboard.fromJson(Map<String, dynamic> json) {
+    final b64 = json['image'] as String?;
     return RemoteClipboard(
       text: (json['text'] as String?) ?? '',
       files: ((json['files'] as List?) ?? [])
           .map((e) => RemoteFile.fromJson(e as Map<String, dynamic>))
           .toList(),
       ignored: (json['ignored'] as num?)?.toInt() ?? 0,
+      // Base64 corrompido não pode derrubar a folha inteira: o texto e os
+      // arquivos continuam valendo, e a imagem simplesmente não aparece.
+      image: (b64 == null || b64.isEmpty) ? null : _decodificar(b64),
+      imageMime: json['image_mime'] as String?,
+      imageWidth: (json['image_width'] as num?)?.toInt(),
+      imageHeight: (json['image_height'] as num?)?.toInt(),
     );
+  }
+
+  static Uint8List? _decodificar(String b64) {
+    try {
+      return base64Decode(b64);
+    } catch (_) {
+      return null;
+    }
   }
 }
 

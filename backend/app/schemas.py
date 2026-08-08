@@ -250,6 +250,14 @@ class ClipboardOut(BaseModel):
     #: usuário. Separa "não copiei nada" de "copiei de um disco que o agente
     #: não alcança" - que chegam iguais aqui se ninguém contar.
     ignored: int = 0
+    #: A imagem copiada, em base64, quando há uma. Diferente dos arquivos: aqui
+    #: vêm os **bytes**, porque uma imagem copiada não tem caminho em disco -
+    #: ela existe só na área de transferência.
+    image: str | None = None
+    #: "image/png" ou "image/jpeg".
+    image_mime: str | None = None
+    image_width: int | None = None
+    image_height: int | None = None
 
 
 class MonitorOut(BaseModel):

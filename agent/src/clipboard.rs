@@ -64,6 +64,125 @@ impl Tracker {
     }
 }
 
+/// Teto do que uma imagem copiada pode ocupar depois de codificada.
+///
+/// Dois megabytes, contra os 64 KB do texto, porque as duas coisas não têm o
+/// mesmo tamanho natural: um texto copiado quase nunca passa de alguns
+/// quilobytes, e uma captura de tela nasce com milhões de pixels. Ainda assim é
+/// um teto — a mensagem atravessa o WebSocket em base64, que infla um terço, e
+/// a imagem passa por um servidor de 1 GB de memória.
+pub const MAX_IMAGE_BYTES: usize = 2 * 1024 * 1024;
+
+/// Maior lado depois da redução.
+///
+/// Uma captura de uma tela 4K tem 3840 px de largura. No telefone ela aparece
+/// num espaço de 400 px, e mandar os 3840 seria pagar rede e memória por
+/// detalhe que ninguém vê. 1600 ainda permite ler texto pequeno ao ampliar.
+pub const MAX_IMAGE_SIDE: u32 = 1600;
+
+/// Uma imagem pronta para o fio.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Imagem {
+    pub bytes: Vec<u8>,
+    /// `image/png` ou `image/jpeg`. Vai junto porque o app precisa saber o que
+    /// gravar quando a pessoa manda o arquivo para outro aplicativo.
+    pub mime: &'static str,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Converte a imagem crua da área de transferência no que vai ao telefone.
+///
+/// Pura, e é a única parte disto que dá para testar fora do Windows — o resto é
+/// API do sistema. Recebe um BMP (que é como o Windows entrega) e devolve PNG
+/// ou JPEG.
+///
+/// ## Por que PNG primeiro e JPEG depois
+///
+/// A imagem copiada mais comum, de longe, é uma **captura de tela**: texto,
+/// janelas, linhas retas. Nisso o PNG ganha do JPEG em tamanho *e* em
+/// qualidade, porque não borra as bordas das letras. Já uma foto colada do
+/// navegador comprime mal em PNG e pode passar do teto — aí vale trocar por
+/// JPEG, que é exatamente o formato feito para ela.
+///
+/// Tentar os dois e ficar com o que couber é mais simples, e mais certo, do que
+/// adivinhar o tipo de imagem pelo conteúdo.
+pub fn preparar_imagem(bruta: &[u8]) -> Result<Imagem, String> {
+    let mut img = image::load_from_memory(bruta)
+        .map_err(|e| format!("não consegui ler a imagem copiada: {e}"))?;
+
+    // Reduz antes de tentar codificar: é o que resolve o caso comum de uma vez,
+    // e codificar 8 milhões de pixels para depois descartar seria trabalho puro.
+    let (mut largura, mut altura) = (img.width(), img.height());
+    if largura.max(altura) > MAX_IMAGE_SIDE {
+        img = img.resize(
+            MAX_IMAGE_SIDE,
+            MAX_IMAGE_SIDE,
+            image::imageops::FilterType::Triangle,
+        );
+        largura = img.width();
+        altura = img.height();
+    }
+
+    // Três rodadas no máximo. Sem limite, uma imagem patológica prenderia o
+    // agente reduzindo para sempre; com ele, o pior caso é uma imagem de 200 px
+    // — feia, mas entregue.
+    for rodada in 0..3 {
+        if let Ok(png) = codificar(&img, image::ImageFormat::Png) {
+            if png.len() <= MAX_IMAGE_BYTES {
+                return Ok(Imagem {
+                    bytes: png,
+                    mime: "image/png",
+                    width: largura,
+                    height: altura,
+                });
+            }
+        }
+        if let Ok(jpeg) = codificar_jpeg(&img) {
+            if jpeg.len() <= MAX_IMAGE_BYTES {
+                return Ok(Imagem {
+                    bytes: jpeg,
+                    mime: "image/jpeg",
+                    width: largura,
+                    height: altura,
+                });
+            }
+        }
+        // Ainda não coube: metade do lado, um quarto dos pixels.
+        if rodada < 2 {
+            img = img.resize(
+                (largura / 2).max(1),
+                (altura / 2).max(1),
+                image::imageops::FilterType::Triangle,
+            );
+            largura = img.width();
+            altura = img.height();
+        }
+    }
+    Err("a imagem copiada é grande demais para caber na mensagem".to_string())
+}
+
+fn codificar(img: &image::DynamicImage, formato: image::ImageFormat) -> Result<Vec<u8>, String> {
+    let mut buf = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut buf, formato)
+        .map_err(|e| format!("não consegui codificar a imagem: {e}"))?;
+    Ok(buf.into_inner())
+}
+
+/// JPEG a 80: a qualidade em que a diferença deixa de ser visível numa tela de
+/// telefone, e o arquivo já é uma fração do PNG.
+///
+/// Converte para RGB antes porque **JPEG não tem canal alfa**. Sem a conversão a
+/// codificação falha, e um recorte com fundo transparente é justamente o tipo
+/// de imagem que se copia.
+fn codificar_jpeg(img: &image::DynamicImage) -> Result<Vec<u8>, String> {
+    let mut buf = std::io::Cursor::new(Vec::new());
+    let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 80);
+    enc.encode_image(&img.to_rgb8())
+        .map_err(|e| format!("não consegui codificar a imagem: {e}"))?;
+    Ok(buf.into_inner())
+}
+
 /// O que estava copiado como arquivo — e quantos ficaram de fora.
 ///
 /// A contagem existe porque o zero tem dois significados muito diferentes:
@@ -192,6 +311,41 @@ mod imp {
             }
         }
 
+        /// A imagem que está na área de transferência agora, se houver.
+        ///
+        /// Só a pedido, e nunca no aviso automático de cópia. A diferença é de
+        /// ordem de grandeza: o aviso de texto custa alguns quilobytes e sai
+        /// sozinho a cada cópia, enquanto uma captura de tela custa megabytes.
+        /// Mandar isso sem ninguém ter pedido gastaria a rede de quem copiou
+        /// uma imagem só para colar no próprio computador.
+        pub fn image(&mut self) -> Option<super::Imagem> {
+            // Perguntar antes de abrir: quem copiou um texto passa por aqui
+            // também, e este teste não exige abrir a área de transferência.
+            if !clipboard_win::raw::is_format_avail(clipboard_win::formats::CF_BITMAP) {
+                return None;
+            }
+            let bruta: Vec<u8> =
+                match clipboard_win::get_clipboard(clipboard_win::formats::Bitmap) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        crate::diario(&format!(
+                            "Área de transferência: não consegui ler a imagem copiada: {e}"
+                        ));
+                        return None;
+                    }
+                };
+            match super::preparar_imagem(&bruta) {
+                Ok(img) => Some(img),
+                Err(motivo) => {
+                    // Registrado e não devolvido: o app já mostra o texto e os
+                    // arquivos, e uma imagem grande demais não pode derrubar a
+                    // resposta inteira.
+                    crate::diario(&format!("Área de transferência: {motivo}"));
+                    None
+                }
+            }
+        }
+
         /// Novidade desde a última chamada, se houver.
         ///
         /// Barato o suficiente para chamar de segundo em segundo: só lê o
@@ -239,6 +393,10 @@ mod imp {
 
         pub fn files(&mut self) -> CopiedFiles {
             CopiedFiles::default()
+        }
+
+        pub fn image(&mut self) -> Option<super::Imagem> {
+            None
         }
     }
 }
@@ -288,6 +446,113 @@ mod tests {
         let mut t = Tracker::new();
         t.remember("vindo do telefone");
         assert_eq!(t.accept("vindo do telefone".into()), None);
+    }
+
+    /// Um BMP de verdade, do tamanho pedido, como o Windows entregaria.
+    ///
+    /// Gerado e não fixo em disco: o que se testa aqui é o comportamento com
+    /// imagens de tamanhos diferentes, e um arquivo por caso encheria o
+    /// repositório de binário.
+    fn bmp(largura: u32, altura: u32, ruido: bool) -> Vec<u8> {
+        let mut img = image::RgbImage::new(largura, altura);
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            *p = if ruido {
+                // Ruído comprime mal: é assim que se força o PNG a estourar o
+                // teto, que é o caminho que leva ao JPEG. A mistura precisa ser
+                // boa de verdade - um padrão que se repete por linha o PNG
+                // comprime bem, e o teste passaria a medir outra coisa.
+                let mut s = (y as u64) << 32 | x as u64;
+                s ^= s << 13;
+                s ^= s >> 7;
+                s = s.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+                s ^= s >> 31;
+                image::Rgb([s as u8, (s >> 8) as u8, (s >> 16) as u8])
+            } else {
+                image::Rgb([200, 210, 220])
+            };
+        }
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut buf, image::ImageFormat::Bmp)
+            .unwrap();
+        buf.into_inner()
+    }
+
+    #[test]
+    fn captura_de_tela_vai_como_png() {
+        // O caso comum: texto, janelas, linhas retas. PNG ganha do JPEG em
+        // tamanho e em qualidade, porque não borra a borda das letras.
+        let img = preparar_imagem(&bmp(800, 600, false)).unwrap();
+        assert_eq!(img.mime, "image/png");
+        assert_eq!((img.width, img.height), (800, 600));
+        assert!(img.bytes.len() <= MAX_IMAGE_BYTES);
+    }
+
+    #[test]
+    fn imagem_gigante_e_reduzida() {
+        // Uma captura de uma tela 4K tem 3840 px. No telefone ela aparece num
+        // espaço de 400, e mandar os 3840 seria pagar rede por detalhe que
+        // ninguém vê.
+        let img = preparar_imagem(&bmp(3840, 2160, false)).unwrap();
+        assert!(img.width <= MAX_IMAGE_SIDE, "largura {}", img.width);
+        assert!(img.height <= MAX_IMAGE_SIDE, "altura {}", img.height);
+        // A proporção tem que sobreviver: 16:9 esticado viraria outra imagem.
+        let proporcao = img.width as f32 / img.height as f32;
+        assert!((proporcao - 3840.0 / 2160.0).abs() < 0.02, "{proporcao}");
+    }
+
+    #[test]
+    fn imagem_que_nao_cabe_em_png_cai_para_jpeg() {
+        // Ruído não comprime: neste tamanho o PNG passa dos 2 MB (~3 MB) e o
+        // JPEG cabe (~1,3 MB). É o caminho da foto colada do navegador - e o
+        // que se preserva aqui é que a imagem chega **do tamanho original**,
+        // trocando de formato em vez de encolher.
+        let img = preparar_imagem(&bmp(1000, 1000, true)).unwrap();
+        assert!(img.bytes.len() <= MAX_IMAGE_BYTES, "{} bytes", img.bytes.len());
+        assert_eq!(img.mime, "image/jpeg");
+        assert_eq!((img.width, img.height), (1000, 1000));
+    }
+
+    #[test]
+    fn quando_nenhum_formato_cabe_a_imagem_encolhe() {
+        // Ruído em 1600x1600 estoura os dois formatos (PNG ~7,7 MB, JPEG
+        // ~3,5 MB). A saída é reduzir e tentar de novo - entregar uma imagem
+        // menor é melhor que não entregar nada, e é o pior caso previsto.
+        let img = preparar_imagem(&bmp(1600, 1600, true)).unwrap();
+        assert!(img.bytes.len() <= MAX_IMAGE_BYTES, "{} bytes", img.bytes.len());
+        assert!(img.width < 1600, "não encolheu: {}", img.width);
+    }
+
+    #[test]
+    fn o_resultado_e_uma_imagem_valida() {
+        // O app decodifica isto. Se o que sai daqui não for legível, o erro
+        // aparece no telefone, longe da causa.
+        let img = preparar_imagem(&bmp(300, 200, false)).unwrap();
+        let volta = image::load_from_memory(&img.bytes).unwrap();
+        assert_eq!((volta.width(), volta.height()), (img.width, img.height));
+    }
+
+    #[test]
+    fn lixo_no_lugar_da_imagem_vira_erro_e_nao_panico() {
+        assert!(preparar_imagem(b"isto nao e uma imagem").is_err());
+        assert!(preparar_imagem(&[]).is_err());
+    }
+
+    #[test]
+    fn imagem_com_transparencia_atravessa() {
+        // Um recorte com fundo transparente é justamente o tipo de imagem que
+        // se copia. Se o caminho do JPEG for usado sem tirar o canal alfa, a
+        // codificação falha - e este teste é o que pega isso.
+        let mut img = image::RgbaImage::new(64, 64);
+        for p in img.pixels_mut() {
+            *p = image::Rgba([10, 20, 30, 0]);
+        }
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .unwrap();
+        let pronta = preparar_imagem(&buf.into_inner()).unwrap();
+        assert_eq!((pronta.width, pronta.height), (64, 64));
     }
 
     #[test]

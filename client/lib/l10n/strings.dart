@@ -438,6 +438,24 @@ class Strings {
       '已复制 $n 个文件',
       n == 1 ? '1 fichier copié' : '$n fichiers copiés',
       n == 1 ? '1 archivo copiado' : '$n archivos copiados');
+
+  /// Cabeçalho da imagem copiada, com o tamanho. O tamanho importa: uma
+  /// captura reduzida pelo agente não é a mesma coisa que a original, e quem
+  /// vai usar a imagem em outro lugar precisa saber com o que está lidando.
+  String clipboardImage(int w, int h) => _t(
+      'Imagem copiada · $w×$h',
+      'Copied image · $w×$h',
+      '已复制的图片 · $w×$h',
+      'Image copiée · $w×$h',
+      'Imagen copiada · $w×$h');
+  String get clipboardImageShare => _t('Salvar ou compartilhar',
+      'Save or share', '保存或分享', 'Enregistrer ou partager', 'Guardar o compartir');
+  String get clipboardImageFailed => _t(
+      'Não consegui abrir a imagem',
+      "Couldn't open the image",
+      '无法打开该图片',
+      "Impossible d'ouvrir l'image",
+      'No se pudo abrir la imagen');
   // Perfis de controle
   String get profilesTitle =>
       _t('Perfis', 'Profiles', '配置文件', 'Profils', 'Perfiles');

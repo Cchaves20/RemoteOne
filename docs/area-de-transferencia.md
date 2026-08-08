@@ -47,9 +47,8 @@ prontos. Então a folha mostra os arquivos copiados no computador, com o
 tamanho, e o botão traz cada um pela folha de compartilhar do iOS - o mesmo
 caminho da tela de arquivos.
 
-O que **não** vem por aqui é imagem copiada de um editor ou do navegador (aí
-são pixels, não caminho). Isso exigiria um plugin nativo no iOS para escrever
-imagem na área de transferência do aparelho, e ficou de fora.
+Imagem copiada é outra coisa, e tem seção própria abaixo: ali são pixels, não
+caminho.
 
 Dois casos em que o botão nasce apagado, com o motivo à vista em vez de falhar
 depois do toque:
@@ -63,6 +62,63 @@ oferecer um botão que falha. Mas sumir em silêncio é pior: quem copiou três
 arquivos de `D:\` veria exatamente a mesma tela de quem não copiou nada. Por
 isso o agente conta os recusados, o número atravessa até o app, e a folha diz
 "3 arquivos copiados estão fora da pasta do usuário".
+
+## Imagem copiada
+
+Um Print Screen, um recorte da ferramenta de captura, uma imagem copiada do
+navegador. Aqui **não há caminho nenhum**: a imagem existe só na área de
+transferência, e ou vêm os bytes ou não vem nada. É a diferença para os
+arquivos, e é ela que faz este caminho ser separado.
+
+A folha mostra a imagem com o tamanho e um botão de **salvar ou compartilhar**.
+
+### Por que "salvar" e não "colar"
+
+Colar a imagem direto na área de transferência do iPhone exigiria um plugin
+nativo: o `Clipboard` do Flutter só trata texto. A folha de compartilhar chega
+ao mesmo lugar por um caminho que o app já usa para os arquivos — dali a imagem
+vai para Fotos, para uma conversa, para onde a pessoa quiser. É um toque a mais
+e nenhuma dependência nova.
+
+O caminho inverso (imagem do telefone → computador) continua de fora pela mesma
+razão, com um agravante: além de escrever, seria preciso **ler** a área de
+transferência do iOS, que é exatamente a operação que o sistema denuncia na tela
+a cada vez.
+
+### O que o agente faz com a imagem antes de mandar
+
+O Windows entrega um DIB — um BMP sem cabeçalho de arquivo. Uma captura de tela
+4K em BMP tem cerca de 25 MB, e isso não pode virar uma mensagem no WebSocket.
+O agente:
+
+1. **Reduz** se o maior lado passa de 1600 px. No telefone a imagem aparece num
+   espaço de 400 px; mandar 3840 seria pagar rede e memória por detalhe que
+   ninguém vê, e 1600 ainda deixa ler texto pequeno ao ampliar.
+2. **Tenta PNG.** A imagem copiada mais comum, de longe, é uma captura de tela:
+   texto, janelas, linhas retas. Nisso o PNG ganha do JPEG em tamanho *e* em
+   qualidade, porque não borra a borda das letras.
+3. **Cai para JPEG a 80** se o PNG passar de 2 MB. Uma foto colada do navegador
+   comprime mal em PNG, e o JPEG é o formato feito para ela. (A conversão tira o
+   canal alfa antes: JPEG não tem transparência, e um recorte com fundo
+   transparente é justamente o tipo de imagem que se copia.)
+4. **Reduz de novo e repete**, no máximo duas vezes, se nenhum dos dois couber.
+   Entregar uma imagem menor é melhor que não entregar nada, e o limite impede
+   que uma imagem patológica prenda o agente reduzindo para sempre.
+
+Tentar os dois formatos e ficar com o que couber é mais simples, e mais certo,
+do que adivinhar o tipo de imagem pelo conteúdo.
+
+### A imagem não vai no aviso automático
+
+O aviso de cópia nova continua sendo **só texto**. A diferença é de ordem de
+grandeza: um texto copiado custa alguns quilobytes e o aviso sai sozinho a cada
+cópia, enquanto uma captura de tela custa megabytes. Mandar isso sem ninguém ter
+pedido gastaria a rede de quem copiou uma imagem só para colar no próprio
+computador.
+
+Então a imagem vem **a pedido**, quando a folha abre. E ela não fica guardada na
+tela depois que a folha fecha: são megabytes, e segurá-los pelo resto da sessão
+custaria memória por algo que a pessoa já viu.
 
 ### Abrir antes de ler
 

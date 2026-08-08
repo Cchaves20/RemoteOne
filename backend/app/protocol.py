@@ -205,6 +205,15 @@ class Clipboard(BaseModel):
     #: Quantos caminhos foram recusados por estarem fora da pasta do usuário.
     #: Agente antigo não manda o campo, e zero é a leitura certa para ele.
     ignored: int = 0
+    #: A imagem copiada, em base64. Vem só na resposta a um pedido, nunca no
+    #: aviso automático de cópia: texto custa quilobytes e uma captura de tela
+    #: custa megabytes.
+    image: str | None = None
+    #: "image/png" ou "image/jpeg" - o app precisa saber o que gravar quando a
+    #: pessoa manda o arquivo para outro aplicativo.
+    image_mime: str | None = None
+    image_width: int | None = None
+    image_height: int | None = None
 
 
 

@@ -670,12 +670,26 @@ pub async fn run(
                             Some(Action::ClipboardGet { request_id }) => {
                                 let texto = clipboard.read().unwrap_or_default();
                                 let arquivos = clipboard.files();
+                                // A imagem entra só aqui, na resposta a um
+                                // pedido - o aviso automático de cópia continua
+                                // sendo só texto. Ver `clipboard::Clipboard`.
+                                let imagem = clipboard.image();
                                 let reply = serde_json::to_string(
                                     &ClientMessage::Clipboard {
                                         request_id,
                                         text: texto,
                                         files: arquivos.entries,
                                         ignored: arquivos.ignored,
+                                        image: imagem.as_ref().map(|i| {
+                                            use base64::Engine;
+                                            base64::engine::general_purpose::STANDARD
+                                                .encode(&i.bytes)
+                                        }),
+                                        image_mime: imagem
+                                            .as_ref()
+                                            .map(|i| i.mime.to_string()),
+                                        image_width: imagem.as_ref().map(|i| i.width),
+                                        image_height: imagem.as_ref().map(|i| i.height),
                                     },
                                 )?;
                                 ws.send(Message::Text(reply)).await?;
