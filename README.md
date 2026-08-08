@@ -16,6 +16,10 @@ O escopo completo de features e etapas está no documento do projeto; a
 estratégia para testar todas as plataformas sem possuir todos os aparelhos
 está em [`docs/estrategia-de-testes.md`](docs/estrategia-de-testes.md).
 
+Onde o projeto está em relação a esse documento — e **o que foi cortado dele** —
+fica em [`docs/estado-do-projeto.md`](docs/estado-do-projeto.md). O plano da
+próxima versão está em [`docs/plano-4.0.md`](docs/plano-4.0.md).
+
 Documentação por etapa:
 
 - [`docs/protocolo-websocket.md`](docs/protocolo-websocket.md) — canal agente ↔ backend (Etapa 4)
@@ -33,6 +37,8 @@ Documentação por etapa:
 - [`docs/instalar-no-iphone.md`](docs/instalar-no-iphone.md) — instalar o app no iPhone sem Mac (sideload)
 - [`docs/rodar-sem-terminal.md`](docs/rodar-sem-terminal.md) — agente e backend em segundo plano (sem terminal; base para desligar/Wake-on-LAN)
 - [`docs/pc-sempre-pronto.md`](docs/pc-sempre-pronto.md) — IP fixo + backend no boot + login automático (controlar sem tocar no PC)
+- [`docs/estado-do-projeto.md`](docs/estado-do-projeto.md) — o que está pronto, o que falta e o que foi cortado do escopo
+- [`docs/plano-4.0.md`](docs/plano-4.0.md) — automações, IA e outros sistemas: arquitetura e ordem
 - [`docs/deploy-vps-oracle.md`](docs/deploy-vps-oracle.md) — backend na nuvem (Oracle Free + DuckDNS + HTTPS), controlar de qualquer lugar
 
 ## Como rodar
