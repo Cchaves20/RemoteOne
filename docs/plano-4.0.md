@@ -3,13 +3,16 @@
 A 4.0 do documento do projeto tem três pedaços: **automações** (Etapa 17),
 **integração com IA** (Etapa 18) e **suporte completo aos sistemas operacionais**.
 
+Depois de planejar os três, **a IA saiu** — o motivo está na Fase 2, e ele não é
+técnico: a conta de uso não fecha. Sobraram automações e sistemas operacionais.
+
 Este documento decide a ordem, a arquitetura e o que fica de fora. O estado geral
 do projeto e os cortes já feitos estão em
 [`estado-do-projeto.md`](estado-do-projeto.md).
 
-## A decisão que organiza tudo
+## A decisão que organizava tudo, e por que ela sobreviveu ao corte
 
-**A saída da IA é uma automação.**
+**A saída da IA seria uma automação.**
 
 Sem isso, os dois recursos seriam sistemas paralelos: um jeito de guardar uma
 sequência de ações, e outro jeito de a IA executar ações. Dois formatos, duas
@@ -24,8 +27,12 @@ IA nasce sem poder nenhum que o editor já não tenha.
 fechado**, não inventa comandos. Não há caminho pelo qual ela produza algo que um
 usuário não pudesse ter montado à mão.
 
-Consequência prática: **automações primeiro**. A IA sem elas seria construir o
-formato duas vezes.
+Consequência prática seria: **automações primeiro**. A IA sem elas seria
+construir o formato duas vezes.
+
+Esta parte continua valendo mesmo com a IA cortada, e por isso fica registrada: se
+ela voltar um dia, é por aqui que entra. O que mudou foi o **papel** dela — de
+quem executa para quem escreve. Ver a Fase 2.
 
 ## Fase 1 — Automações
 
@@ -83,18 +90,55 @@ entre passos acontece onde ela faz sentido.
 - **Teto de passos e de duração total.** A lista chega pela rede; ela não pode
   prender o agente para sempre nem virar um laço de mil aberturas de programa.
 - **Passos destrutivos confirmam antes.** Desligar e fechar programa entram na
-  automação, mas com aviso no app antes de rodar — ver a Fase 2, onde isso deixa
-  de ser cuidado e vira requisito.
+  automação, mas com aviso no app antes de rodar. Aqui é cuidado; se a IA um dia
+  escrever automações, vira requisito.
 
-### Onde aparece no app
+### Onde aparece no app: na tela de perfis
 
-Tela própria: lista de automações e editor. **Não** dentro do editor de perfis —
-um perfil é um punhado de atalhos que a pessoa escolhe um a um; uma automação é
-um botão que faz uma sequência. Misturar os dois no mesmo editor obrigaria a
-explicar a diferença antes de o recurso servir para alguma coisa.
+A tela de perfis já era uma pré-automação, e é por isso que as duas moram juntas.
 
-Ligar uma automação a um botão da barra de perfis é natural e fica para depois de
-o recurso existir sozinho.
+Compare o que se preenche em cada uma:
+
+| Perfil personalizado (hoje) | Automação |
+|---|---|
+| ícone | ícone |
+| nome | nome |
+| **lista de programas** | **lista de passos** |
+| em quais computadores vale | em qual computador roda |
+
+É a mesma tela, o mesmo gesto e o mesmo lugar na cabeça de quem usa: *"coisas que
+eu montei para o meu jeito de trabalhar"*. Uma tela separada nas configurações
+obrigaria a pessoa a saber, antes de procurar, em qual das duas gavetas o que ela
+quer foi guardado — e a diferença entre as duas é sutil demais para isso.
+
+Então: **a tela de perfis vira a tela dos dois**, com duas seções.
+
+### Mas continuam sendo dois objetos, e não um
+
+Juntar na mesma tela é certo; juntar no mesmo objeto, não. A diferença aparece no
+editor, e é uma só:
+
+**Num perfil a ordem não significa nada** — são botões lado a lado, e você toca
+no que quiser. **Numa automação a ordem é o recurso inteiro**, com espera entre
+os passos.
+
+Um editor que servisse aos dois teria de explicar essa diferença antes de servir
+para alguma coisa, e todo perfil passaria a carregar uma sequência que talvez não
+queira ter. Duas seções na mesma tela, dois editores parecidos: a pessoa vê a
+semelhança sem precisar entender a distinção.
+
+### Antes de tudo isso, um atalho quase de graça
+
+Um perfil personalizado já guarda "Outlook, Teams, navegador, Spotify". Um botão
+**"abrir todos"** nesse perfil entrega o "Modo Trabalho" do documento sem
+nenhuma automação existir — sem modelo novo, sem editor novo, sem protocolo novo.
+
+Vale fazer isso **primeiro**, e não por economia: é um teste barato da hipótese
+inteira. Se abrir todos resolver o que você queria, a automação passa a valer só
+pelo que ela acrescenta de verdade — ordem, espera e passos que não são
+programas (brilho, mídia, teclas, energia). Pode ser que seja bem menos recurso
+do que parece agora, e é melhor descobrir isso com um botão do que com um editor
+pronto.
 
 ### Como fica verificado
 
@@ -107,64 +151,60 @@ possível e vale mais:
   ao computador), posse (automação de outra conta é 404) e o repasse.
 - **App:** editor e lista, sem compilar aqui — o que dá para testar é o modelo.
 
-## Fase 2 — Integração com IA
+## Fase 2 — Integração com IA — **cortada**
 
 "Abra o Photoshop e coloque uma música." O sistema interpreta, converte em passos
 e executa.
 
-### O modelo roda na nuvem, e a chamada sai do backend
+O plano estava inteiro escrito — modelo na nuvem chamado pelo backend, cardápio
+fechado de ações, plano mostrado antes de rodar, opt-in de privacidade. Nada
+disso era o problema. **A conta de uso é que não fecha.**
 
-**Na nuvem** porque um modelo capaz disto não roda num telefone.
+### A conta
 
-**Do backend, e não do app**, por três razões:
+Automação existe para o que se faz **de novo**. E para o repetido:
 
-1. A chave da API não pode viajar dentro de um `.ipa` — de um aplicativo
-   instalado por sideload ela sai em minutos.
-2. Custo e limite por conta precisam de um ponto central. Cada frase custa
-   dinheiro, e sem cobrança montada isso é despesa aberta por usuário.
-3. Trocar de modelo passa a não exigir uma versão nova do app.
+| | Automação | IA |
+|---|---|---|
+| Toques | 1 | abrir o campo, digitar a frase, confirmar o plano |
+| Espera | nenhuma | 2 a 5 segundos pelo modelo |
+| Custo | zero | dinheiro por frase |
+| Acerta | sempre | quase sempre |
 
-### A IA escolhe de um cardápio fechado
+Não há cenário em que digitar "abre o Outlook, o Teams e o Spotify" ganhe de um
+botão que já faz isso. E se a coisa é rara o bastante para não valer um botão,
+costuma ser rara o bastante para se fazer à mão.
 
-Ela recebe: a frase, a lista de programas instalados naquele computador e a lista
-de ações possíveis. Devolve: uma automação — os mesmos passos da Fase 1, nada
-além.
+Como executor de comandos, a IA aqui seria enfeite: impressiona numa
+demonstração, é usada duas vezes por curiosidade, e continua custando por chamada
+enquanto é a maior superfície de risco do produto — a única parte que decide
+sozinha o que fazer no computador de alguém.
 
-Isso não é conservadorismo. É a diferença entre um recurso e um risco: um modelo
-que pudesse emitir comando livre teria, na prática, acesso de terminal ao
-computador de outra pessoa. O **terminal remoto** (Etapa 13) está fora da 4.0 de
-propósito, e essa separação tem que continuar de pé.
+Vale registrar de onde vinha a pressão: o documento do projeto foi escrito quando
+"integração com IA" era item obrigatório em toda lista de recursos. Isso é
+contexto, não argumento.
 
-### A pessoa vê o plano antes de ele rodar
+### A porta que fica aberta: a IA que **escreve** a automação
 
-O app mostra os passos que a IA propôs e pede confirmação. Sempre, não só nos
-casos perigosos.
+Se ela voltar, volta com outro papel. Em vez de executar, ela monta o rascunho:
+"quero um botão que prepare o computador para uma reunião" → ela propõe os passos
+→ a pessoa ajusta e salva. Dali em diante é um toque, para sempre.
 
-Dois motivos. O óbvio: um modelo entende errado, e o erro aqui acontece no
-computador de alguém. O menos óbvio: **ver o plano ensina o produto**. Quem lê
-"abrir Spotify → esperar 2s → tocar" entende o que a ferramenta faz e começa a
-montar as próprias automações. O caminho da IA vira a porta de entrada do editor,
-em vez de um concorrente dele.
+Isso inverte a economia inteira:
 
-Passos destrutivos (desligar, reiniciar, fechar programa) confirmam de novo,
-destacados.
+- **O custo é pago uma vez, na criação**, e não a cada uso.
+- **A lentidão deixa de importar** — quem está montando não está com pressa.
+- **O erro deixa de ser perigoso**: é um rascunho revisado antes de salvar, não
+  um comando disparado.
+- E resolve o problema real do editor, que é a **página em branco**. Boa parte das
+  pessoas não abre um editor e monta uma sequência do zero, mas descreve o que
+  quer sem dificuldade.
 
-### Privacidade
+Nessa forma a IA vira a porta de entrada do recurso que importa, em vez de
+concorrer com ele.
 
-O que sai do computador na hora da consulta: o **nome dos programas instalados** e
-o nome da máquina. Nada mais — nunca o conteúdo da tela, nunca a área de
-transferência, nunca arquivo.
-
-Isso é opt-in explícito, com o texto dizendo o que vai. A área de transferência
-já estabeleceu o padrão neste projeto: sincronia automática nasce desligada
-porque o que passa por ali costuma incluir senha, e o interruptor diz isso com
-todas as letras em vez de esconder atrás de "sincronizar".
-
-### Quando ela não souber, ela diz
-
-Frase que não mapeia para as ações conhecidas devolve "não sei fazer isso" com o
-que ela entendeu — não um palpite executado. Um chute silencioso no computador de
-alguém é o pior desfecho possível deste recurso.
+**Quando decidir:** depois de as automações estarem no ar e em uso. Se a página
+em branco não incomodar ninguém, ela não precisa voltar.
 
 ## Fase 3 — Suporte completo aos sistemas operacionais
 
@@ -211,12 +251,14 @@ Linux", que é o que de fato dá para fazer.
 
 ## A ordem, e por quê
 
-1. **Automações.** Fundação da IA, reaproveita tudo o que existe, e é a parte
+1. **Automações.** Útil sozinha, reaproveita tudo o que existe, e é a parte
    inteiramente verificável daqui.
-2. **IA.** Depende do formato da Fase 1 e de decisões de custo e privacidade que
-   ficam melhores com o editor já no ar.
-3. **Sistemas operacionais.** Maior, mais incerto, e o único que depende de
+2. **Sistemas operacionais.** Maior, mais incerto, e o único que depende de
    comprar ou emprestar hardware.
+
+A IA saiu do meio. Se voltar, entra depois das automações estarem em uso — nunca
+antes, porque a pergunta que decide se ela vale a pena ("a página em branco
+incomoda?") só tem resposta com o editor no ar.
 
 ## O que não está aqui, e continua na frente
 
