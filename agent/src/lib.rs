@@ -23,6 +23,7 @@ pub mod instance;
 pub mod migracao;
 pub mod injector;
 pub mod input;
+pub mod janelas;
 pub mod lote;
 pub mod notify;
 pub mod pairing;

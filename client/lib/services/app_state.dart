@@ -14,6 +14,7 @@ import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/stream_quality.dart';
 import '../models/system_stats.dart';
+import '../models/window_zone.dart';
 import 'api_client.dart';
 import 'word_suggester.dart';
 
@@ -332,8 +333,12 @@ class AppState extends ChangeNotifier {
       api.mediaKey(device.deviceId, action);
 
   /// Abre vários programas de uma vez. Devolve o resultado de cada um.
-  Future<List<LaunchResult>> launchMany(Device device, List<String> apps) =>
-      api.launchMany(device.deviceId, apps);
+  Future<List<LaunchResult>> launchMany(
+    Device device,
+    List<String> apps, {
+    List<WindowZone?>? zones,
+  }) =>
+      api.launchMany(device.deviceId, apps, zones: zones);
 
   /// Ajusta o brilho da tela do computador. Devolve o nível resultante.
   Future<int> setBrightness(Device device, {int? level, int? delta}) =>

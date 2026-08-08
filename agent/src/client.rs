@@ -745,19 +745,20 @@ pub async fn run(
                                 let texto = serde_json::to_string(&estado)?;
                                 ws.send(Message::Text(texto)).await?;
                             }
-                            Some(Action::LaunchMany { request_id, apps }) => {
-                                // Fora do laço: abrir quatro programas com o
-                                // intervalo entre eles leva alguns segundos, e
-                                // segurar o laço por esse tempo pararia a
-                                // captura de tela junto - justamente enquanto a
-                                // pessoa está olhando o ambiente ser montado.
-                                let quantos = apps.len();
+                            Some(Action::LaunchMany { request_id, itens }) => {
+                                // Fora do laço: abrir quatro programas, com o
+                                // intervalo entre eles e a espera pela janela de
+                                // cada um, leva vários segundos. Segurar o laço
+                                // por esse tempo pararia a captura de tela
+                                // junto - justamente enquanto a pessoa está
+                                // olhando o ambiente ser montado.
+                                let quantos = itens.len();
                                 println!("Abrindo {quantos} programa(s) do perfil");
                                 let results = tokio::task::spawn_blocking(move || {
                                     crate::lote::abrir_todos(
-                                        &apps,
+                                        &itens,
                                         crate::lote::ESPERA_PADRAO,
-                                        |id| crate::apps::launch(id),
+                                        abrir_e_posicionar,
                                     )
                                 })
                                 .await
@@ -1280,6 +1281,38 @@ impl AudioStats {
     }
 }
 
+/// Abre um programa e, se houver zona, põe a janela dele no lugar.
+///
+/// **A fotografia das janelas é tirada antes de abrir.** É o que dispensa
+/// descobrir de qual processo a janela é - e é por isso que funciona com
+/// navegador, Office e Electron, em que quem abre a janela não é o processo que
+/// foi lançado. A pergunta deixa de ser "de quem é esta janela" e passa a ser
+/// "qual janela não existia agora há pouco".
+///
+/// Falhar em posicionar **não** é falhar em abrir: o programa está lá. Vira
+/// aviso, e o app diz que a janela não foi para o lugar sem afirmar que o
+/// programa não abriu.
+fn abrir_e_posicionar(item: &crate::lote::Item) -> crate::lote::Passo {
+    let antes = item
+        .zone
+        .as_ref()
+        .map(|_| crate::janelas::janelas_visiveis());
+
+    if let Err(motivo) = crate::apps::launch(&item.id) {
+        return crate::lote::Passo::Falhou(motivo);
+    }
+
+    match (item.zone.as_ref(), antes) {
+        (Some(zona), Some(antes)) => {
+            match crate::janelas::posicionar_nova_janela(&antes, zona) {
+                Ok(()) => crate::lote::Passo::Ok,
+                Err(motivo) => crate::lote::Passo::ComAviso(motivo),
+            }
+        }
+        _ => crate::lote::Passo::Ok,
+    }
+}
+
 /// Algo que o laço principal precisa fazer depois de tratar uma mensagem —
 /// tarefas que exigem `await` (recriar o ticker, responder ao servidor).
 enum Action {
@@ -1308,7 +1341,7 @@ enum Action {
     /// Abrir vários programas e responder com o resultado de cada um.
     LaunchMany {
         request_id: String,
-        apps: Vec<String>,
+        itens: Vec<crate::lote::Item>,
     },
     /// Ajustar o brilho e responder com o resultado.
     Brightness {
@@ -1551,8 +1584,25 @@ fn handle_server_text(
                 eprintln!("Falha ao abrir aplicativo: {e}");
             }
         }
-        Ok(ServerMessage::LaunchMany { request_id, apps }) => {
-            return Some(Action::LaunchMany { request_id, apps });
+        Ok(ServerMessage::LaunchMany {
+            request_id,
+            apps,
+            zones,
+        }) => {
+            // Junta os dois vetores paralelos num item por programa. `zip` com
+            // o vetor de zonas preenchido de `None` quando ele não veio: assim
+            // o resto do caminho não precisa saber que houve compatibilidade
+            // com agente antigo no meio.
+            let zonas = zones.unwrap_or_default();
+            let itens = apps
+                .into_iter()
+                .enumerate()
+                .map(|(i, id)| crate::lote::Item {
+                    id,
+                    zone: zonas.get(i).copied().flatten(),
+                })
+                .collect();
+            return Some(Action::LaunchMany { request_id, itens });
         }
         Ok(ServerMessage::CloseApp { id }) => {
             println!("Encerrando aplicativo (PID {id})");

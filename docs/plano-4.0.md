@@ -140,11 +140,16 @@ programas (brilho, mídia, teclas, energia). Pode ser que seja bem menos recurso
 do que parece agora, e é melhor descobrir isso com um botão do que com um editor
 pronto.
 
-## Posicionar as janelas: o que faz "abrir todos" valer a pena
+## Posicionar as janelas: o que faz "abrir todos" valer a pena — **feito**
 
 Abrir quatro programas empilhados um sobre o outro não é um "Modo Trabalho" — é
 a mesma bagunça em quatro toques a menos. O que transforma isso em ambiente
 montado é **cada programa abrir no lugar certo**.
+
+Feito. O detalhe de como ficou está em
+[`perfis-de-controle.md`](perfis-de-controle.md); o que segue é o plano, mantido
+porque as decisões continuam valendo. **Uma coisa ficou de fora:** escolher o
+monitor — hoje o encaixe usa sempre a tela principal.
 
 A ideia são os layouts do Windows 11 (metades, três colunas, 2×2, 2/3+1/3), e a
 escolha é feita duas vezes:

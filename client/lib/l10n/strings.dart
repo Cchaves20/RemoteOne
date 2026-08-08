@@ -593,6 +593,29 @@ class Strings {
       'Ancrer à droite', 'Ajustar a la derecha');
   String get actionCloseWindow => _t('Fechar a janela', 'Close window', '关闭窗口',
       'Fermer la fenêtre', 'Cerrar la ventana');
+  /// Seletor de layout de janelas, no editor de perfis.
+  String get layoutTitle => _t('Como as janelas se dividem',
+      'How the windows split', '窗口如何分布', 'Répartition des fenêtres',
+      'Cómo se dividen las ventanas');
+  String get layoutHint => _t(
+      'Ao abrir todos, cada programa vai para o seu lugar na tela.',
+      'When opening all, each program goes to its place on screen.',
+      '一次打开时，每个程序会移动到各自的位置。',
+      "À l'ouverture groupée, chaque programme va à sa place.",
+      'Al abrir todos, cada programa va a su lugar en la pantalla.');
+  String get zoneChoose =>
+      _t('Onde esta janela fica', 'Where this window goes', '该窗口的位置',
+          'Où va cette fenêtre', 'Dónde va esta ventana');
+  String get zoneNone => _t('Sem lugar fixo', 'No fixed place', '不固定位置',
+      'Sans place fixe', 'Sin lugar fijo');
+  /// Abriu, mas a janela não foi para o lugar. Não é falha de abertura - o
+  /// programa está lá -, e por isso tem texto próprio.
+  String openAllNotPlaced(String nomes) => _t(
+      'Abriu tudo. Não consegui posicionar: $nomes',
+      'All opened. Could not place: $nomes',
+      '全部已打开。无法定位：$nomes',
+      "Tout est ouvert. Impossible de placer : $nomes",
+      'Todo abierto. No se pudo colocar: $nomes');
   String get actionOpenAll => _t('Abrir todos os programas',
       'Open all programs', '打开全部程序', 'Ouvrir tous les programmes',
       'Abrir todos los programas');

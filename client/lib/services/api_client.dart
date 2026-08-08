@@ -11,6 +11,7 @@ import '../models/keep_awake.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
+import '../models/window_zone.dart';
 import 'token_store.dart';
 
 /// Erro de API com o código HTTP e uma mensagem amigável.
@@ -511,11 +512,24 @@ class ApiClient {
   ///
   /// A resposta vem na mesma ordem do pedido, com o identificador de cada um —
   /// é o que permite dizer *qual* não abriu.
-  Future<List<LaunchResult>> launchMany(String deviceId, List<String> apps) async {
+  ///
+  /// `zones` é **paralelo** a `apps`, e a escolha é deliberada: um agente que
+  /// ainda não atualizou não conhece o campo, ignora e abre os programas como
+  /// sempre. A degradação certa — "abriu sem posicionar" é exatamente o
+  /// comportamento anterior. Vai só quando alguém escolheu alguma zona.
+  Future<List<LaunchResult>> launchMany(
+    String deviceId,
+    List<String> apps, {
+    List<WindowZone?>? zones,
+  }) async {
+    final temZona = zones != null && zones.any((z) => z != null);
     final res = await _http.post(
       _uri('/api/v1/devices/$deviceId/apps/launch-many'),
       headers: _authHeaders,
-      body: jsonEncode({'apps': apps}),
+      body: jsonEncode({
+        'apps': apps,
+        if (temZona) 'zones': [for (final z in zones) z?.toJson()],
+      }),
     );
     if (res.statusCode != 200) {
       throw _error(res);

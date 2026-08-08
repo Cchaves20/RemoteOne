@@ -70,13 +70,98 @@ Vale registrar que isso contraria em parte o que se diz acima sobre os perfis: a
 ordem não importa para quem toca botão a botão, mas importa para quem toca
 "abrir todos".
 
-### O que ainda falta
+## O ambiente montado: cada janela no seu lugar
 
-Abrir quatro programas empilhados ainda não é um ambiente montado; é a mesma
-bagunça em três toques a menos. O que falta é cada um abrir **no seu lugar**, com
-os layouts de janela do Windows. Está planejado em
-[`plano-4.0.md`](plano-4.0.md), e este botão é de propósito o passo anterior:
-serve para descobrir, usando, o quanto o resto ainda acrescenta.
+Abrir quatro programas empilhados um sobre o outro não era um ambiente montado —
+era a mesma bagunça em três toques a menos. O que fecha o recurso é cada
+programa abrir **no lugar certo**.
+
+A escolha é feita **duas vezes**, e as duas ficam no editor do perfil:
+
+1. **O perfil escolhe o layout** — a grade, uma vez. São os cinco desenhos do
+   menu de encaixe do Windows 11: metades, 2/3+1/3, três colunas, quadrantes, e
+   uma principal com duas empilhadas.
+2. **Cada programa escolhe a sua zona** dentro dela. Navegador à esquerda,
+   terminal à direita.
+
+### Células, e não frações
+
+Uma zona é `{cols, rows, col, row, colspan, rowspan}`: em que grade, e qual
+célula.
+
+Frações pareceriam mais simples e estariam erradas. Três colunas seriam 0,333
+cada, e três vezes 0,333 não fecha 1 — sobraria uma fresta de um ou dois pixels
+entre as janelas, ou elas se sobreporiam. Com a grade, a borda direita de uma
+zona sai da **mesma conta** que a borda esquerda da seguinte, e o encaixe é
+exato por construção, em qualquer resolução.
+
+### Quem sabe o quê
+
+- **O app** tem o catálogo de layouts, porque é ele que desenha o seletor.
+- **O backend** valida a célula contra a grade que ela declara, e nada mais.
+- **O agente** transforma célula em pixels e não conhece layout nenhum.
+
+Uma cópia do catálogo no agente seria uma segunda fonte de verdade para a mesma
+coisa. E é por isso que a grade viaja **dentro** de cada zona: assim o layout
+escolhido é dedutível do que está guardado, sem um campo à parte que pudesse
+discordar das zonas.
+
+### Onde isso fica guardado
+
+Nos programas do perfil, que já eram um JSON no banco. **Não há coluna nova** —
+num projeto sem Alembic, evitar uma migração é evitar um remendo à mão em
+`db.py`.
+
+### Como o agente posiciona
+
+`SetWindowPos`, na área de trabalho do monitor — não na resolução, senão a
+janela de baixo fica atrás da barra de tarefas. É o mesmo caminho do FancyZones,
+do PowerToys; não existe API pública para *invocar* o menu de layouts do
+Windows.
+
+Antes de mover, restaura a janela se ela estiver maximizada: uma janela
+maximizada ignora o tamanho pedido e volta a ocupar a tela inteira no próximo
+desenho. É a diferença entre "não funcionou" e "funcionou em alguns programas".
+
+E não mexe na ordem de empilhamento nem no foco: quem decide quem fica por cima
+é a ordem de abertura.
+
+### A parte difícil é achar a janela
+
+Posicionar é uma chamada. Descobrir **qual** janela pertence ao programa que
+acabou de abrir é onde mora o trabalho:
+
+- o programa mostra uma tela de carregamento antes da janela de verdade;
+- o processo lançado termina e quem abre a janela é outro — navegadores, Office,
+  qualquer coisa em Electron;
+- a janela pode aparecer três segundos depois, e até lá não há o que mover.
+
+A saída é **não depender do processo**: o agente fotografa quais janelas existem
+antes de abrir e espera aparecer uma nova (até cinco segundos, olhando a cada
+150 ms). A pergunta deixa de ser "de quem é esta janela" e passa a ser "qual
+janela não existia agora há pouco" — o que funciona igual nos três casos acima.
+
+Três filtros descartam o que não é janela de programa: invisível (toda aplicação
+tem janelas internas), sem título, e "tool window" (paletas, dicas, bandeja).
+
+### Abriu mas não posicionou não é falha
+
+É o **terceiro** desfecho, e por isso o agente tem três e não dois. O programa
+está lá; a tela é que não ficou como a pessoa montou. Dizer que falhou seria
+mentira com o programa à vista, e ficar calado deixaria o layout errado sem
+explicação. O app diz "Abriu tudo. Não consegui posicionar: Teams".
+
+### O que vai resistir
+
+Janelas com tamanho mínimo maior que a zona não encolhem, e alguns aplicativos
+da Microsoft Store ignoram o reposicionamento. Outlook, Teams, navegadores e VS
+Code obedecem — que é a maior parte do que interessa aqui.
+
+### O que ainda não tem
+
+**Escolher o monitor.** Hoje o encaixe usa sempre a tela principal. Numa máquina
+com duas telas, o layout se aplica àquela — e o plano previa a escolha ser do
+perfil. Fica para quando houver uma segunda tela para testar.
 
 ## Brilho
 

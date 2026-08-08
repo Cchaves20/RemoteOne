@@ -5,8 +5,10 @@ import '../l10n/strings.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/remote_app.dart';
+import '../models/window_zone.dart';
 import '../services/app_state.dart';
 import '../theme.dart';
+import '../widgets/layout_picker.dart';
 
 /// Editor de perfis: criar, editar, reordenar e apagar.
 ///
@@ -210,10 +212,21 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       widget.profile == null ? 'tune' : profileIconKey(widget.profile!.icon);
 
   /// Os programas escolhidos, na ordem em que virarão botões.
-  late List<({String name, String path})> _apps = [
+  ///
+  /// A ordem tem duas leituras, e as duas valem: é a ordem dos botões na barra,
+  /// e é a ordem de abertura no "abrir todos" — onde o último a abrir fica por
+  /// cima e em foco.
+  late List<({String name, String path, WindowZone? zone})> _apps = [
     for (final a in widget.profile?.actions ?? const <ProfileAction>[])
-      (name: a.appName, path: a.appPath ?? ''),
+      (name: a.appName, path: a.appPath ?? '', zone: a.zone),
   ];
+
+  /// Como a tela é dividida quando se abre todos de uma vez.
+  ///
+  /// Deduzido das zonas guardadas em vez de gravado à parte: um campo separado
+  /// poderia discordar delas, e ninguém saberia em qual acreditar.
+  late WindowLayout? _layout =
+      WindowLayout.ofZones(_apps.map((a) => a.zone));
 
   late final Set<String> _devices = {...?widget.profile?.devices};
   bool _salvando = false;
@@ -247,7 +260,11 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       devices: _devices.toList(),
       actions: [
         for (final a in _apps)
-          ProfileAction.launch(appName: a.name, appPath: a.path),
+          ProfileAction.launch(
+            appName: a.name,
+            appPath: a.path,
+            zone: a.zone,
+          ),
       ],
     );
     try {
@@ -294,7 +311,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       for (final a in escolhidos) {
         // Mesmo programa duas vezes viraria dois botões idênticos.
         if (_apps.any((x) => x.path == a.id)) continue;
-        _apps = [..._apps, (name: a.name, path: a.id)];
+        _apps = [..._apps, (name: a.name, path: a.id, zone: null)];
       }
     });
   }
@@ -409,12 +426,55 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white38, fontSize: 11),
               ),
-              trailing: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white38),
-                onPressed: () =>
-                    setState(() => _apps = _apps.where((x) => x != a).toList()),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // O seletor de zona só existe com um layout escolhido: sem
+                  // ele não há grade onde encaixar, e um botão que não leva a
+                  // lugar nenhum é pior que botão nenhum.
+                  if (_layout != null)
+                    ZoneChooser(
+                      layout: _layout!,
+                      zone: a.zone,
+                      strings: widget.state.t,
+                      onPick: (nova) => setState(() {
+                        _apps = [
+                          for (final x in _apps)
+                            if (identical(x, a))
+                              (name: x.name, path: x.path, zone: nova)
+                            else
+                              x,
+                        ];
+                      }),
+                    ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white38),
+                    onPressed: () => setState(
+                        () => _apps = _apps.where((x) => x != a).toList()),
+                  ),
+                ],
               ),
             ),
+          // O seletor de layout fica **depois** da lista de propósito: ele só
+          // faz sentido com programas escolhidos, e num perfil vazio seria a
+          // primeira coisa a aparecer sem ter o que dividir.
+          if (_apps.length >= 2) ...[
+            const SizedBox(height: 8),
+            LayoutPicker(
+              selected: _layout,
+              strings: widget.state.t,
+              onSelect: (l) => setState(() {
+                _layout = l;
+                // Trocar de layout invalida as zonas antigas: uma célula da
+                // grade de dois não é uma célula da grade de três. Limpar é
+                // mais honesto que traduzir por aproximação e pôr as janelas
+                // em lugares que ninguém escolheu.
+                _apps = [
+                  for (final x in _apps) (name: x.name, path: x.path, zone: null),
+                ];
+              }),
+            ),
+          ],
           const Divider(height: 32, color: Colors.white12),
           Text(t.profileComputers,
               style: const TextStyle(color: Colors.white, fontSize: 15)),

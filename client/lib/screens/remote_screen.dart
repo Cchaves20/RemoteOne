@@ -323,26 +323,45 @@ class _RemoteScreenState extends State<RemoteScreen>
       final r = await widget.state.launchMany(
         widget.device,
         [for (final p in programas) p.appPath!],
+        zones: [for (final p in programas) p.zone],
       );
       final falharam = r.where((x) => !x.ok).toList();
       if (falharam.isEmpty) {
-        _avisar(t.openAllDone(r.length));
+        // `ok` **com** motivo é o desfecho do meio: o programa abriu e a janela
+        // não foi para o lugar. Dizer que falhou seria mentira - ele está lá -,
+        // e ficar calado deixaria a tela fora do lugar sem explicação.
+        final semLugar = r.where((x) => x.error != null).toList();
+        _avisar(semLugar.isEmpty
+            ? t.openAllDone(r.length)
+            : t.openAllNotPlaced(_nomesDe(semLugar, programas)));
         return;
       }
-      // O nome, e não o caminho: `C:\Users\...\Teams.lnk` não diz nada a
-      // quem está olhando o celular.
-      final nomes = falharam
-          .map((x) => programas
-              .firstWhere(
-                (p) => p.appPath == x.id,
-                orElse: () => programas.first,
-              )
-              .appName)
-          .join(', ');
-      _avisar(t.openAllPartial(r.length - falharam.length, r.length, nomes));
+      _avisar(t.openAllPartial(
+        r.length - falharam.length,
+        r.length,
+        _nomesDe(falharam, programas),
+      ));
     } catch (e) {
       _avisar(e.toString());
     }
+  }
+
+  /// Os nomes dos programas de uma lista de resultados.
+  ///
+  /// O nome, e não o caminho: `C:\Users\...\Teams.lnk` não diz nada a quem
+  /// está olhando o celular.
+  static String _nomesDe(
+    List<LaunchResult> quais,
+    List<ProfileAction> programas,
+  ) {
+    return quais
+        .map((x) => programas
+            .firstWhere(
+              (p) => p.appPath == x.id,
+              orElse: () => programas.first,
+            )
+            .appName)
+        .join(', ');
   }
 
   /// Ajusta o brilho da tela do computador em passos.

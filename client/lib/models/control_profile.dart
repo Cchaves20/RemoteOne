@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/strings.dart';
+import 'window_zone.dart';
 
 /// Um botão de perfil: o atalho que ele dispara no computador.
 ///
@@ -22,6 +23,7 @@ class ProfileAction {
     this.appName = '',
     this.brightnessDelta,
     this.openAll = false,
+    this.zone,
   });
 
   /// Atalho com modificadores: `Ctrl+S`, `Alt+Tab`, `Win+E`.
@@ -105,8 +107,11 @@ class ProfileAction {
   ///
   /// `appPath` é o caminho de onde o programa foi escolhido. Pode não existir
   /// em outro computador do mesmo perfil; o agente então procura pelo nome.
-  ProfileAction.launch({required String appName, required String appPath})
-      : this._(
+  ProfileAction.launch({
+    required String appName,
+    required String appPath,
+    WindowZone? zone,
+  }) : this._(
           icon: Icons.launch,
           // O nome do programa é o nome do programa em qualquer país: não
           // passa pelo sistema de idiomas.
@@ -114,6 +119,7 @@ class ProfileAction {
           label: _fixo(appName),
           appName: appName,
           appPath: appPath,
+          zone: zone,
         );
 
   static String Function(Strings) _fixo(String valor) => (_) => valor;
@@ -151,6 +157,18 @@ class ProfileAction {
 
   /// Se esta ação abre todos os programas do perfil.
   bool get isOpenAll => openAll;
+
+  /// Onde a janela deste programa fica quando se abre todos de uma vez.
+  /// `null` = abre onde o Windows quiser, que é o comportamento de sempre.
+  final WindowZone? zone;
+
+  /// O mesmo programa, noutra zona. Usado pelo editor, que troca a escolha sem
+  /// mexer no resto.
+  ProfileAction comZona(WindowZone? nova) => ProfileAction.launch(
+        appName: appName,
+        appPath: appPath ?? '',
+        zone: nova,
+      );
 
   /// A mensagem que vai para o computador, no mesmo formato do teclado remoto.
   Map<String, dynamic> get input {
@@ -237,6 +255,9 @@ class ControlProfile {
           ProfileAction.launch(
             appName: (a['name'] as String?) ?? '',
             appPath: (a['path'] as String?) ?? '',
+            zone: a['zone'] == null
+                ? null
+                : WindowZone.fromJson(a['zone'] as Map<String, dynamic>),
           ),
       ],
     );
@@ -252,7 +273,13 @@ class ControlProfile {
         'icon': profileIconKey(icon),
         'apps': [
           for (final a in actions)
-            {'name': a.appName, 'path': a.appPath ?? ''},
+            {
+              'name': a.appName,
+              'path': a.appPath ?? '',
+              // Só vai quando há escolha: um `null` por programa em todo perfil
+              // seria peso sem informação.
+              if (a.zone != null) 'zone': a.zone!.toJson(),
+            },
         ],
         'devices': devices,
       };

@@ -788,6 +788,12 @@ async def launch_many(
         "request_id": request_id,
         "apps": body.apps,
     }
+    # Só vai quando há alguma zona: sem isso, todo "abrir todos" carregaria uma
+    # lista de nulos do tamanho da outra, sem informação nenhuma.
+    if body.zones is not None:
+        message["zones"] = [
+            z.model_dump() if z is not None else None for z in body.zones
+        ]
     if not await manager.send_to_agent(device_id, message):
         pending.cancel(request_id)
         raise HTTPException(

@@ -373,9 +373,22 @@ pub enum ServerMessage {
     /// Tem `request_id` porque **tem resposta**: o resultado de cada programa
     /// volta em `launch_many_result`. Abrir quatro e não dizer que um falhou é
     /// o defeito que este projeto já corrigiu meia dúzia de vezes.
+    /// A lista de programas em `apps`, e as zonas em `zones` **em paralelo**.
+    ///
+    /// Dois vetores paralelos são normalmente um cheiro ruim, e aqui são
+    /// deliberados: é o que faz um agente antigo continuar funcionando. Ele não
+    /// conhece `zones`, ignora o campo e abre os programas como sempre - a
+    /// degradação certa, porque "abriu sem posicionar" é exatamente o
+    /// comportamento anterior. Trocar `apps` por uma lista de objetos quebraria
+    /// o "abrir todos" em todo computador que ainda não tivesse atualizado.
+    ///
+    /// Quando `zones` vem, tem o mesmo tamanho de `apps`; quem garante isso é o
+    /// backend, antes de a mensagem sair.
     LaunchMany {
         request_id: String,
         apps: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zones: Option<Vec<Option<crate::janelas::Zona>>>,
     },
     /// Oferta SDP de um app querendo receber a tela por WebRTC. O `session_id`
     /// identifica o app: o mesmo agente pode negociar com vários ao mesmo

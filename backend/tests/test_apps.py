@@ -296,3 +296,100 @@ def test_abrir_todos_de_outra_conta_404():
         headers=intruso,
     )
     assert resp.status_code == 404
+
+
+def test_abrir_todos_leva_as_zonas_ao_computador():
+    """As zonas atravessam intactas, e emparelhadas com o programa certo.
+
+    O defeito que isto pega é silencioso: zonas trocadas de lugar abrem tudo,
+    posicionam tudo, e deixam o navegador onde deveria estar o terminal.
+    """
+    headers, uid = _auth_headers("many6@example.com")
+    _add_device(uid, "dev-many-6")
+    esquerda = {"cols": 2, "rows": 1, "col": 0, "row": 0, "colspan": 1, "rowspan": 1}
+    direita = {"cols": 2, "rows": 1, "col": 1, "row": 0, "colspan": 1, "rowspan": 1}
+    agent = LaunchManyAgent(
+        [
+            {"id": "navegador.lnk", "ok": True, "error": None},
+            {"id": "terminal.lnk", "ok": True, "error": None},
+        ]
+    )
+    manager.register("dev-many-6", agent)
+    try:
+        resp = client.post(
+            "/api/v1/devices/dev-many-6/apps/launch-many",
+            json={
+                "apps": ["navegador.lnk", "terminal.lnk"],
+                "zones": [esquerda, direita],
+            },
+            headers=headers,
+        )
+    finally:
+        manager.unregister("dev-many-6")
+    assert resp.status_code == 200
+    pedido = agent.of_type("launch_many")[0]
+    assert pedido["apps"] == ["navegador.lnk", "terminal.lnk"]
+    assert pedido["zones"] == [esquerda, direita]
+
+
+def test_abrir_todos_sem_zonas_nao_manda_o_campo():
+    """Sem posicionamento, a mensagem é a de antes - byte por byte.
+
+    É o que faz um agente que ainda não atualizou continuar funcionando: ele
+    recebe exatamente o que já sabia receber.
+    """
+    headers, uid = _auth_headers("many7@example.com")
+    _add_device(uid, "dev-many-7")
+    agent = LaunchManyAgent([{"id": "a.lnk", "ok": True, "error": None}])
+    manager.register("dev-many-7", agent)
+    try:
+        client.post(
+            "/api/v1/devices/dev-many-7/apps/launch-many",
+            json={"apps": ["a.lnk"]},
+            headers=headers,
+        )
+    finally:
+        manager.unregister("dev-many-7")
+    assert "zones" not in agent.of_type("launch_many")[0]
+
+
+def test_abrir_todos_recusa_zona_desemparelhada_ou_fora_da_grade():
+    """Duas validações, e as duas evitam um defeito que não deixa rastro."""
+    headers, uid = _auth_headers("many8@example.com")
+    _add_device(uid, "dev-many-8")
+    boa = {"cols": 2, "rows": 1, "col": 0, "row": 0}
+    corpos = [
+        # Uma zona para dois programas: emparelharia errado.
+        {"apps": ["a.lnk", "b.lnk"], "zones": [boa]},
+        # Coluna 5 numa grade de 2: não existe.
+        {"apps": ["a.lnk"], "zones": [{"cols": 2, "rows": 1, "col": 5, "row": 0}]},
+        # Zona que transborda pela largura.
+        {
+            "apps": ["a.lnk"],
+            "zones": [{"cols": 2, "rows": 1, "col": 1, "row": 0, "colspan": 2}],
+        },
+    ]
+    for corpo in corpos:
+        resp = client.post(
+            "/api/v1/devices/dev-many-8/apps/launch-many", json=corpo, headers=headers
+        )
+        assert resp.status_code == 422, corpo
+
+
+def test_abrir_todos_aceita_programa_sem_zona_no_meio():
+    """Posicionar é opcional por programa: três encaixados e um solto."""
+    headers, uid = _auth_headers("many9@example.com")
+    _add_device(uid, "dev-many-9")
+    zona = {"cols": 2, "rows": 1, "col": 0, "row": 0, "colspan": 1, "rowspan": 1}
+    agent = LaunchManyAgent([{"id": "a.lnk", "ok": True, "error": None}] * 2)
+    manager.register("dev-many-9", agent)
+    try:
+        resp = client.post(
+            "/api/v1/devices/dev-many-9/apps/launch-many",
+            json={"apps": ["a.lnk", "b.lnk"], "zones": [zona, None]},
+            headers=headers,
+        )
+    finally:
+        manager.unregister("dev-many-9")
+    assert resp.status_code == 200
+    assert agent.of_type("launch_many")[0]["zones"] == [zona, None]

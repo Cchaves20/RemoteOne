@@ -137,15 +137,60 @@ class SystemStatsOut(BaseModel):
     on_battery: bool | None = None
 
 
+class ZoneIn(BaseModel):
+    """Onde a janela de um programa deve ficar, em células de uma grade.
+
+    Células, e não frações: um layout de três colunas em frações seria 0,333
+    cada, e três vezes 0,333 não fecha 1 - sobraria uma fresta entre as janelas
+    ou elas se sobreporiam. Com a grade, a borda direita de uma zona sai da
+    mesma conta que a borda esquerda da seguinte.
+
+    O backend **não** conhece os layouts (metades, três colunas, 2x2): quem tem
+    o catálogo é o app, que precisa dele para desenhar o seletor. Aqui só chega
+    a grade e a célula.
+    """
+
+    cols: int = Field(ge=1, le=6)
+    rows: int = Field(ge=1, le=6)
+    col: int = Field(ge=0, le=5)
+    row: int = Field(ge=0, le=5)
+    colspan: int = Field(default=1, ge=1, le=6)
+    rowspan: int = Field(default=1, ge=1, le=6)
+
+    @model_validator(mode="after")
+    def cabe_na_grade(self) -> "ZoneIn":
+        if self.col + self.colspan > self.cols or self.row + self.rowspan > self.rows:
+            raise ValueError("a zona não cabe na grade que ela declara")
+        return self
+
+
 class LaunchManyRequest(BaseModel):
     """Os programas a abrir de uma vez - o "abrir todos" de um perfil.
 
     O teto de 16 é o mesmo do agente. Ele não está aqui para a interface: um
     perfil com dezesseis programas já é exagero, e o limite existe para o caso
     de uma mensagem adulterada mandar o computador abrir mil janelas.
+
+    `zones` é **paralelo** a `apps`, e essa escolha é deliberada: um agente
+    antigo não conhece o campo, ignora e abre os programas como sempre - a
+    degradação certa, porque "abriu sem posicionar" é exatamente o comportamento
+    anterior. Uma lista de objetos no lugar de `apps` quebraria o "abrir todos"
+    em todo computador que ainda não tivesse atualizado.
     """
 
     apps: list[str] = Field(min_length=1, max_length=16)
+    #: Uma entrada por programa, ou nada. `None` numa posição = aquele programa
+    #: abre onde o Windows quiser.
+    zones: list[ZoneIn | None] | None = None
+
+    @model_validator(mode="after")
+    def uma_zona_por_programa(self) -> "LaunchManyRequest":
+        # Listas de tamanhos diferentes emparelhariam a zona do navegador com o
+        # terminal. Nada falha, tudo abre, e a tela fica errada - o tipo de
+        # defeito que não deixa rastro.
+        if self.zones is not None and len(self.zones) != len(self.apps):
+            raise ValueError("zones precisa ter uma entrada por programa")
+        return self
 
 
 class LaunchResultOut(BaseModel):
@@ -352,6 +397,17 @@ class ProfileAppIn(BaseModel):
 
     name: str = Field(min_length=1, max_length=120)
     path: str = Field(min_length=1, max_length=1024)
+    #: Onde a janela deste programa fica quando se abre todos de uma vez.
+    #: `None` = abre onde o Windows quiser, que é o comportamento de sempre.
+    #:
+    #: Não há coluna nova no banco: os programas de um perfil já são guardados
+    #: como JSON, então a zona entra junto. Num projeto sem Alembic, evitar uma
+    #: migração é evitar um remendo à mão em `db.py`.
+    #:
+    #: A grade (`cols`/`rows`) viaja dentro de cada zona, e não no perfil: assim
+    #: o layout escolhido é dedutível do que está guardado, sem um campo a mais
+    #: que pudesse discordar das zonas.
+    zone: ZoneIn | None = None
 
 
 class ProfileIn(BaseModel):

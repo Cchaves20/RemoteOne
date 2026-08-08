@@ -59,7 +59,12 @@ def test_cria_lista_e_edita_um_perfil():
     )
     assert criado.status_code == 201
     pid = criado.json()["id"]
-    assert criado.json()["apps"] == [SPOTIFY, CHROME]
+    # Sem posicionamento escolhido, `zone` volta nulo - o programa abre onde o
+    # Windows quiser, que é o comportamento de sempre.
+    assert criado.json()["apps"] == [
+        {**SPOTIFY, "zone": None},
+        {**CHROME, "zone": None},
+    ]
 
     listados = client.get("/api/v1/profiles", headers=headers).json()
     assert [p["id"] for p in listados["profiles"]] == [pid]
@@ -74,7 +79,7 @@ def test_cria_lista_e_edita_um_perfil():
     # O identificador **não** muda ao editar: é ele que o telefone guardou como
     # "o perfil aberto da última vez".
     assert editado.json()["id"] == pid
-    assert editado.json()["apps"] == [SPOTIFY]
+    assert editado.json()["apps"] == [{**SPOTIFY, "zone": None}]
 
 
 def test_o_programa_guarda_nome_e_caminho():
@@ -208,3 +213,53 @@ def test_lista_de_programas_tem_teto():
 
 def test_health_anuncia_o_recurso():
     assert "control-profiles" in client.get("/health").json()["features"]
+
+
+def test_o_perfil_guarda_onde_cada_janela_fica():
+    """A zona sobrevive ao salvar e ao reler.
+
+    Não há coluna nova no banco: os programas já eram guardados como JSON, e a
+    zona entra junto. Num projeto sem Alembic, evitar uma migração é evitar um
+    remendo à mão em `db.py`.
+    """
+    headers, _ = _auth("zona1@example.com")
+    esquerda = {"cols": 2, "rows": 1, "col": 0, "row": 0, "colspan": 1, "rowspan": 1}
+    direita = {"cols": 2, "rows": 1, "col": 1, "row": 0, "colspan": 1, "rowspan": 1}
+    criado = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "Trabalho",
+            "icon": "work",
+            "apps": [
+                {"name": "Chrome", "path": "C:\\chrome.lnk", "zone": esquerda},
+                {"name": "Terminal", "path": "C:\\wt.lnk", "zone": direita},
+            ],
+        },
+        headers=headers,
+    )
+    assert criado.status_code == 201
+
+    lidos = client.get("/api/v1/profiles", headers=headers).json()["profiles"]
+    perfil = next(p for p in lidos if p["name"] == "Trabalho")
+    assert perfil["apps"][0]["zone"] == esquerda
+    assert perfil["apps"][1]["zone"] == direita
+
+
+def test_perfil_recusa_zona_fora_da_grade():
+    """Coluna 5 numa grade de 2 não é erro de digitação a corrigir em silêncio."""
+    headers, _ = _auth("zona2@example.com")
+    resp = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "Ruim",
+            "apps": [
+                {
+                    "name": "X",
+                    "path": "C:\\x.lnk",
+                    "zone": {"cols": 2, "rows": 1, "col": 5, "row": 0},
+                }
+            ],
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 422
