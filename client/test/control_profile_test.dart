@@ -494,7 +494,7 @@ void main() {
 
 
 void _abrirTodosTests() {
-  final t = Strings(AppLanguage.ptBr);
+  const t = Strings(AppLanguage.ptBr);
 
   group('abrir todos', () {
     ControlProfile comProgramas(int quantos) => ControlProfile(
