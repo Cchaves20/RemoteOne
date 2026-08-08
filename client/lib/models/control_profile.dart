@@ -21,6 +21,7 @@ class ProfileAction {
     this.appPath,
     this.appName = '',
     this.brightnessDelta,
+    this.openAll = false,
   });
 
   /// Atalho com modificadores: `Ctrl+S`, `Alt+Tab`, `Win+E`.
@@ -54,6 +55,25 @@ class ProfileAction {
     required String Function(Strings) label,
     required String text,
   }) : this._(icon: icon, shortcut: shortcut, label: label, text: text);
+
+  /// Abrir de uma vez todos os programas do perfil.
+  ///
+  /// Não é uma ação guardada: é **derivada** do perfil, e por isso não vem do
+  /// servidor. Um perfil com quatro programas ganha este botão sozinho; um com
+  /// um programa só, não — ali "abrir todos" seria o mesmo botão duas vezes.
+  ///
+  /// Abrir quatro programas empilhados ainda não é um ambiente montado; é a
+  /// mesma bagunça em três toques a menos. O que falta para valer de verdade é
+  /// cada um abrir no seu lugar, e isso vem depois (ver `docs/plano-4.0.md`).
+  const ProfileAction.openAll()
+      : this._(
+          icon: Icons.dashboard_customize,
+          shortcut: 'Todos',
+          label: _abrirTodos,
+          openAll: true,
+        );
+
+  static String _abrirTodos(Strings t) => t.actionOpenAll;
 
   /// Ajustar o brilho da tela do computador, em passos.
   ///
@@ -120,11 +140,17 @@ class ProfileAction {
   /// Quanto somar ao brilho. `null` em toda ação que não é de brilho.
   final int? brightnessDelta;
 
+  /// Se esta ação abre todos os programas do perfil de uma vez.
+  final bool openAll;
+
   /// Se esta ação abre um programa em vez de mandar teclas.
   bool get isLaunch => appPath != null;
 
   /// Se esta ação ajusta o brilho em vez de mandar teclas.
   bool get isBrightness => brightnessDelta != null;
+
+  /// Se esta ação abre todos os programas do perfil.
+  bool get isOpenAll => openAll;
 
   /// A mensagem que vai para o computador, no mesmo formato do teclado remoto.
   Map<String, dynamic> get input {
@@ -238,6 +264,28 @@ class ControlProfile {
   final IconData icon;
   final String Function(Strings) name;
   final List<ProfileAction> actions;
+
+  /// Os programas que este perfil abre, na ordem em que foram escolhidos.
+  ///
+  /// A ordem importa quando se abre todos de uma vez: o último a abrir fica por
+  /// cima e em foco. É o único sentido em que a ordem de um perfil significa
+  /// alguma coisa — para quem toca botão a botão, ela é indiferente.
+  List<ProfileAction> get launches =>
+      actions.where((a) => a.isLaunch).toList(growable: false);
+
+  /// As ações a mostrar na barra: as do perfil, com "abrir todos" na frente
+  /// quando vale a pena.
+  ///
+  /// **Dois programas é o mínimo.** Com um só, "abrir todos" seria o mesmo
+  /// botão duas vezes, ocupando espaço numa barra que fica em cima da tela do
+  /// computador.
+  ///
+  /// Na frente, e não no fim, porque é o botão que se usa primeiro: monta o
+  /// ambiente e depois se mexe em cada programa.
+  List<ProfileAction> get barActions {
+    if (launches.length < 2) return actions;
+    return [const ProfileAction.openAll(), ...actions];
+  }
 
   /// Executáveis que este perfil atende, em minúsculas e com extensão.
   ///

@@ -502,6 +502,30 @@ class ApiClient {
     }
   }
 
+  /// Abre vários programas de uma vez e devolve o resultado de cada um.
+  ///
+  /// Uma chamada, e não uma por programa, por causa do iOS: quem aperta o botão
+  /// e bloqueia a tela teria a lista interrompida no meio, com o primeiro
+  /// programa aberto e o resto não. O computador recebe a lista inteira e o
+  /// telefone pode sair da frente no instante seguinte.
+  ///
+  /// A resposta vem na mesma ordem do pedido, com o identificador de cada um —
+  /// é o que permite dizer *qual* não abriu.
+  Future<List<LaunchResult>> launchMany(String deviceId, List<String> apps) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/apps/launch-many'),
+      headers: _authHeaders,
+      body: jsonEncode({'apps': apps}),
+    );
+    if (res.statusCode != 200) {
+      throw _error(res);
+    }
+    final corpo = jsonDecode(res.body) as Map<String, dynamic>;
+    return ((corpo['results'] as List?) ?? [])
+        .map((e) => LaunchResult.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Ajusta o brilho da tela do computador e devolve o nível resultante.
   ///
   /// `delta` é um passo relativo (+10, −10) e `level` um valor absoluto; manda-se

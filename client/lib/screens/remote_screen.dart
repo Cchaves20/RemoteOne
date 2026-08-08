@@ -302,6 +302,49 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  /// Abre todos os programas do perfil aberto, de uma vez.
+  ///
+  /// Manda a lista inteira numa chamada só. Não é economia de rede: se fosse
+  /// uma chamada por programa, bastaria a pessoa bloquear a tela depois do
+  /// toque para o iOS suspender o app e a lista parar no meio — com o primeiro
+  /// programa aberto e o resto não.
+  ///
+  /// O resultado é anunciado sempre, e nomeia quem falhou. O efeito acontece
+  /// **no computador**, e de longe não se vê nada: sem o aviso, um toque que
+  /// funcionou e um que não fez nada seriam idênticos.
+  Future<void> _abrirTodos() async {
+    final perfil = _profile;
+    if (perfil == null) return;
+    final programas = perfil.launches;
+    if (programas.isEmpty) return;
+    final t = widget.state.t;
+    _avisar(t.appOpening(perfil.name(t)));
+    try {
+      final r = await widget.state.launchMany(
+        widget.device,
+        [for (final p in programas) p.appPath!],
+      );
+      final falharam = r.where((x) => !x.ok).toList();
+      if (falharam.isEmpty) {
+        _avisar(t.openAllDone(r.length));
+        return;
+      }
+      // O nome, e não o caminho: `C:\Users\...\Teams.lnk` não diz nada a
+      // quem está olhando o celular.
+      final nomes = falharam
+          .map((x) => programas
+              .firstWhere(
+                (p) => p.appPath == x.id,
+                orElse: () => programas.first,
+              )
+              .appName)
+          .join(', ');
+      _avisar(t.openAllPartial(r.length - falharam.length, r.length, nomes));
+    } catch (e) {
+      _avisar(e.toString());
+    }
+  }
+
   /// Ajusta o brilho da tela do computador em passos.
   ///
   /// Confirma com um aviso curto — e isso não é enfeite. O resultado do comando
@@ -2080,6 +2123,10 @@ class _RemoteScreenState extends State<RemoteScreen>
                   }
                   if (a.isBrightness) {
                     _ajustarBrilho(a.brightnessDelta!);
+                    return;
+                  }
+                  if (a.isOpenAll) {
+                    _abrirTodos();
                     return;
                   }
                   _send(a.input, avisarFalha: true);

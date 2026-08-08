@@ -139,6 +139,28 @@ class KeepAwakeState(BaseModel):
     source: Literal["ac", "battery", "unknown"]
 
 
+class LaunchResult(BaseModel):
+    """O que aconteceu com um programa do "abrir todos"."""
+
+    id: str
+    ok: bool
+    #: Por que não abriu. Ausente quando abriu.
+    error: str | None = None
+
+
+class LaunchManyResult(BaseModel):
+    """Resposta do agente a um `launch_many`.
+
+    A lista volta na **mesma ordem** do pedido, e cada item carrega o
+    identificador que veio - é o que permite ao app dizer *qual* dos quatro não
+    abriu, em vez de "algo falhou".
+    """
+
+    type: Literal["launch_many_result"] = "launch_many_result"
+    request_id: str
+    results: list[LaunchResult] = []
+
+
 class BrightnessState(BaseModel):
     """Resposta do agente a um `brightness`: o brilho depois do ajuste.
 
@@ -281,6 +303,7 @@ ClientMessage = Annotated[
     | ClipboardChanged
     | KeepAwakeState
     | BrightnessState
+    | LaunchManyResult
     | FileList
     | FileChunk
     | FileDone

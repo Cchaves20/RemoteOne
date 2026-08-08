@@ -593,6 +593,26 @@ class Strings {
       'Ancrer à droite', 'Ajustar a la derecha');
   String get actionCloseWindow => _t('Fechar a janela', 'Close window', '关闭窗口',
       'Fermer la fenêtre', 'Cerrar la ventana');
+  String get actionOpenAll => _t('Abrir todos os programas',
+      'Open all programs', '打开全部程序', 'Ouvrir tous les programmes',
+      'Abrir todos los programas');
+  /// Todos abriram. Diz o número porque o resultado acontece **no computador**,
+  /// e de longe não se vê nada — sem isto, um toque que funcionou e um que não
+  /// fez nada seriam idênticos.
+  String openAllDone(int n) => _t(
+      n == 1 ? '1 programa aberto' : '$n programas abertos',
+      n == 1 ? '1 program opened' : '$n programs opened',
+      '已打开 $n 个程序',
+      n == 1 ? '1 programme ouvert' : '$n programmes ouverts',
+      n == 1 ? '1 programa abierto' : '$n programas abiertos');
+  /// Parte abriu. Nomeia quem faltou: "algo falhou" mandaria a pessoa conferir
+  /// os quatro para descobrir qual.
+  String openAllPartial(int abertos, int total, String faltaram) => _t(
+      '$abertos de $total abertos. Não abriu: $faltaram',
+      '$abertos of $total opened. Failed: $faltaram',
+      '已打开 $abertos/$total。未打开：$faltaram',
+      '$abertos sur $total ouverts. Échec : $faltaram',
+      '$abertos de $total abiertos. No abrió: $faltaram');
   String get actionBrightnessDown => _t('Diminuir o brilho', 'Dim screen',
       '降低亮度', "Baisser la luminosité", 'Bajar el brillo');
   String get actionBrightnessUp => _t('Aumentar o brilho', 'Brighten screen',

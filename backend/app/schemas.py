@@ -137,6 +137,35 @@ class SystemStatsOut(BaseModel):
     on_battery: bool | None = None
 
 
+class LaunchManyRequest(BaseModel):
+    """Os programas a abrir de uma vez - o "abrir todos" de um perfil.
+
+    O teto de 16 é o mesmo do agente. Ele não está aqui para a interface: um
+    perfil com dezesseis programas já é exagero, e o limite existe para o caso
+    de uma mensagem adulterada mandar o computador abrir mil janelas.
+    """
+
+    apps: list[str] = Field(min_length=1, max_length=16)
+
+
+class LaunchResultOut(BaseModel):
+    """O que aconteceu com um programa da lista."""
+
+    id: str
+    ok: bool
+    error: str | None = None
+
+
+class LaunchManyOut(BaseModel):
+    """O resultado de cada programa, na ordem em que foram pedidos.
+
+    Devolve a lista inteira, e não um "deu certo": abrir quatro e não dizer que
+    um falhou é o mesmo que falhar em silêncio. O app mostra *qual* não abriu.
+    """
+
+    results: list[LaunchResultOut] = []
+
+
 class BrightnessRequest(BaseModel):
     """Ajuste de brilho: um valor absoluto **ou** um passo relativo.
 

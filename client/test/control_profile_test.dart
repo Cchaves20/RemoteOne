@@ -488,4 +488,66 @@ void main() {
       expect(ControlProfile.byId('u-apagado', const []), isNull);
     });
   });
+
+  _abrirTodosTests();
+}
+
+
+void _abrirTodosTests() {
+  final t = Strings(AppLanguage.ptBr);
+
+  group('abrir todos', () {
+    ControlProfile comProgramas(int quantos) => ControlProfile(
+          id: 'meu',
+          icon: Icons.work,
+          name: (_) => 'Trabalho',
+          custom: true,
+          actions: [
+            for (var i = 0; i < quantos; i++)
+              ProfileAction.launch(appName: 'App$i', appPath: 'C:\\app$i.lnk'),
+          ],
+        );
+
+    test('o botão aparece a partir de dois programas', () {
+      // Com um só, "abrir todos" seria o mesmo botão duas vezes, ocupando
+      // espaço numa barra que fica em cima da tela do computador.
+      expect(comProgramas(1).barActions.any((a) => a.isOpenAll), isFalse);
+      expect(comProgramas(2).barActions.any((a) => a.isOpenAll), isTrue);
+      expect(comProgramas(4).barActions.any((a) => a.isOpenAll), isTrue);
+    });
+
+    test('o botão vem na frente, e é o primeiro que se usa', () {
+      final acoes = comProgramas(3).barActions;
+      expect(acoes.first.isOpenAll, isTrue);
+      // E os programas continuam todos ali, na ordem.
+      expect(acoes.length, 4);
+      expect(acoes[1].appName, 'App0');
+      expect(acoes[3].appName, 'App2');
+    });
+
+    test('perfil de teclas não ganha o botão', () {
+      // Os perfis de fábrica mandam atalhos; não há programa nenhum para abrir.
+      final sistema =
+          ControlProfile.builtIn.firstWhere((p) => p.id == 'sistema');
+      expect(sistema.launches, isEmpty);
+      expect(sistema.barActions.any((a) => a.isOpenAll), isFalse);
+      // E `barActions` devolve exatamente o que já havia.
+      expect(sistema.barActions.length, sistema.actions.length);
+    });
+
+    test('launches traz só os programas, na ordem escolhida', () {
+      // A ordem importa: o último a abrir fica por cima e em foco.
+      final p = comProgramas(3);
+      expect(p.launches.map((a) => a.appPath),
+          ['C:\\app0.lnk', 'C:\\app1.lnk', 'C:\\app2.lnk']);
+    });
+
+    test('não se confunde com as outras naturezas', () {
+      const abrirTodos = ProfileAction.openAll();
+      expect(abrirTodos.isOpenAll, isTrue);
+      expect(abrirTodos.isLaunch, isFalse);
+      expect(abrirTodos.isBrightness, isFalse);
+      expect(abrirTodos.label(t), isNotEmpty);
+    });
+  });
 }

@@ -24,6 +24,8 @@ from app.schemas import (
     BrightnessOut,
     BrightnessRequest,
     ClipboardIn,
+    LaunchManyOut,
+    LaunchManyRequest,
     ClipboardOut,
     ClipboardSyncRequest,
     DeviceOut,
@@ -60,6 +62,10 @@ _SYSTEM_TIMEOUT_SECONDS = 5
 #: Mais folgado que as métricas: o ajuste de brilho custa um processo do
 #: PowerShell no computador, e numa máquina ocupada isso passa de um segundo.
 _BRIGHTNESS_TIMEOUT_SECONDS = 15
+#: O mais folgado de todos, e com razão: são até 16 programas com intervalo de
+#: 400 ms entre eles, e cada abertura pode custar um segundo numa máquina
+#: ocupada. Curto demais aqui daria 504 numa lista que estava funcionando.
+_LAUNCH_MANY_TIMEOUT_SECONDS = 60
 # Listar uma pasta é ida e volta ao computador, como a lista de aplicativos.
 _FILES_TIMEOUT_SECONDS = 20
 # Quanto esperar por *cada* pedaço de um arquivo. Generoso: o computador pode
@@ -756,6 +762,46 @@ async def launch_app(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
         )
+
+
+@router.post("/devices/{device_id}/apps/launch-many", response_model=LaunchManyOut)
+async def launch_many(
+    device_id: str,
+    body: LaunchManyRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LaunchManyOut:
+    """Abre vários programas de uma vez - o "abrir todos" de um perfil.
+
+    Uma mensagem só, e não N chamadas de `/apps/launch`, por causa do iOS: quem
+    aperta o botão e bloqueia a tela teria a lista interrompida no meio, com o
+    primeiro programa aberto e o resto não.
+
+    Devolve o resultado de **cada** programa, e não um "deu certo": abrir quatro
+    e não dizer que um falhou é o mesmo que falhar em silêncio.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    request_id, future = pending.create()
+    message = {
+        "type": "launch_many",
+        "request_id": request_id,
+        "apps": body.apps,
+    }
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_LAUNCH_MANY_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return LaunchManyOut(**reply)
 
 
 @router.post("/devices/{device_id}/apps/close", status_code=status.HTTP_204_NO_CONTENT)

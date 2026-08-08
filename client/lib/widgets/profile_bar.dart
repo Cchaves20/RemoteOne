@@ -115,7 +115,7 @@ class _ProfileBarState extends State<ProfileBar>
           // uma linha, e o que se fixa é a altura - que pode ser menor.
           thickness: vertical ? _actionTile : _actionHeight,
           vertical: vertical,
-          children: [for (final a in selected.actions) _actionButton(a)],
+          children: [for (final a in selected.barActions) _actionButton(a)],
         ),
       ],
     ];

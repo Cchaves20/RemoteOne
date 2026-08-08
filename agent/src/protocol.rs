@@ -124,6 +124,15 @@ pub enum ClientMessage {
         /// Por que não está, quando não está.
         source: crate::awake::PowerSource,
     },
+    /// Resposta a um `launch_many`: o que aconteceu com cada programa.
+    ///
+    /// A lista volta na **mesma ordem** do pedido, e cada item carrega o
+    /// identificador que veio — é o que permite ao app dizer *qual* dos quatro
+    /// não abriu, em vez de "algo falhou".
+    LaunchManyResult {
+        request_id: String,
+        results: Vec<crate::lote::Resultado>,
+    },
     /// Resposta a um `brightness`: o brilho depois do ajuste.
     ///
     /// Tem resposta, e as teclas de mídia não têm, porque as duas coisas falham
@@ -353,6 +362,20 @@ pub enum ServerMessage {
     /// Encerra um aplicativo em execução (id = PID).
     CloseApp {
         id: String,
+    },
+    /// Abre vários aplicativos de uma vez — o "abrir todos" de um perfil.
+    ///
+    /// Uma mensagem só, e não N pedidos de `launch_app`, por causa do iOS: quem
+    /// aperta o botão e bloqueia a tela teria a lista interrompida no meio, com
+    /// o primeiro programa aberto e o resto não. Com a lista inteira aqui, o
+    /// telefone pode sair da frente no instante seguinte ao toque.
+    ///
+    /// Tem `request_id` porque **tem resposta**: o resultado de cada programa
+    /// volta em `launch_many_result`. Abrir quatro e não dizer que um falhou é
+    /// o defeito que este projeto já corrigiu meia dúzia de vezes.
+    LaunchMany {
+        request_id: String,
+        apps: Vec<String>,
     },
     /// Oferta SDP de um app querendo receber a tela por WebRTC. O `session_id`
     /// identifica o app: o mesmo agente pode negociar com vários ao mesmo

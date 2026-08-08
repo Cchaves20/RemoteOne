@@ -28,6 +28,7 @@ from app.protocol import (
     Hello,
     KeepAwakeState,
     BrightnessState,
+    LaunchManyResult,
     MonitorList,
     PairCode,
     Paired,
@@ -316,6 +317,11 @@ async def agent_ws(websocket: WebSocket) -> None:
                         "holding": message.holding,
                         "source": message.source,
                     },
+                )
+            elif isinstance(message, LaunchManyResult):
+                pending.resolve(
+                    message.request_id,
+                    {"results": [r.model_dump() for r in message.results]},
                 )
             elif isinstance(message, BrightnessState):
                 # O erro vai junto em vez de virar exceção: quem pediu precisa

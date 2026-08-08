@@ -745,6 +745,31 @@ pub async fn run(
                                 let texto = serde_json::to_string(&estado)?;
                                 ws.send(Message::Text(texto)).await?;
                             }
+                            Some(Action::LaunchMany { request_id, apps }) => {
+                                // Fora do laço: abrir quatro programas com o
+                                // intervalo entre eles leva alguns segundos, e
+                                // segurar o laço por esse tempo pararia a
+                                // captura de tela junto - justamente enquanto a
+                                // pessoa está olhando o ambiente ser montado.
+                                let quantos = apps.len();
+                                println!("Abrindo {quantos} programa(s) do perfil");
+                                let results = tokio::task::spawn_blocking(move || {
+                                    crate::lote::abrir_todos(
+                                        &apps,
+                                        crate::lote::ESPERA_PADRAO,
+                                        |id| crate::apps::launch(id),
+                                    )
+                                })
+                                .await
+                                .unwrap_or_default();
+                                let reply = serde_json::to_string(
+                                    &ClientMessage::LaunchManyResult {
+                                        request_id,
+                                        results,
+                                    },
+                                )?;
+                                ws.send(Message::Text(reply)).await?;
+                            }
                             Some(Action::Brightness {
                                 request_id,
                                 level,
@@ -1280,6 +1305,11 @@ enum Action {
     KeepAwake { enabled: bool },
     /// Responder ao backend se o computador está sendo mantido pronto.
     KeepAwakeInfo { request_id: String },
+    /// Abrir vários programas e responder com o resultado de cada um.
+    LaunchMany {
+        request_id: String,
+        apps: Vec<String>,
+    },
     /// Ajustar o brilho e responder com o resultado.
     Brightness {
         request_id: String,
@@ -1520,6 +1550,9 @@ fn handle_server_text(
             if let Err(e) = crate::apps::launch(&id) {
                 eprintln!("Falha ao abrir aplicativo: {e}");
             }
+        }
+        Ok(ServerMessage::LaunchMany { request_id, apps }) => {
+            return Some(Action::LaunchMany { request_id, apps });
         }
         Ok(ServerMessage::CloseApp { id }) => {
             println!("Encerrando aplicativo (PID {id})");

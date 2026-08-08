@@ -21,6 +21,63 @@ Sistema. Não é tecla nem programa — vai por um endpoint próprio
 nada para ele. É esse detalhe que faz a barra ter três caminhos a partir do
 mesmo toque, e confundi-los mandaria um `input` sem tecla nenhuma ao computador.
 
+## Abrir todos
+
+Um perfil com dois ou mais programas ganha, sozinho, um botão a mais **na
+frente** dos outros: abre todos de uma vez.
+
+O botão é **derivado**, não guardado — não vem do servidor e não aparece no
+editor. Com um programa só ele não aparece: seria o mesmo botão duas vezes,
+ocupando espaço numa barra que fica em cima da tela do computador.
+
+### A lista vai numa mensagem só
+
+O caminho fácil seria o app chamar `/apps/launch` uma vez por programa. Três
+problemas, e o terceiro decide:
+
+1. Quatro programas seriam quatro idas e voltas `celular → servidor → agente`.
+2. A espera entre uma abertura e a seguinte teria de ser contada do outro lado
+   do mundo.
+3. **O iOS suspende aplicativos.** Quem aperta o botão e bloqueia a tela veria a
+   lista parar no meio, com o primeiro programa aberto e o resto não. Um "Modo
+   Trabalho" que às vezes faz metade do trabalho é pior que não ter.
+
+Então o app manda `POST /devices/{id}/apps/launch-many` com a lista inteira, e
+quem executa em ordem é o agente. O telefone pode sair da frente no instante
+seguinte ao toque.
+
+### Uma falha não interrompe as outras
+
+Se o Teams não está instalado naquele computador, os outros três ainda abrem —
+quem pediu o ambiente montado não pediu uma verificação de integridade.
+
+Mas o resultado de **cada** programa volta, com o identificador que foi pedido, e
+o app diz *qual* não abriu: "3 de 4 abertos. Não abriu: Teams". Um "algo falhou"
+mandaria a pessoa conferir os quatro para descobrir qual.
+
+O aviso de sucesso existe pela mesma razão do brilho: o efeito acontece **no
+computador**, e de longe não se vê nada. Sem ele, um toque que funcionou e um que
+não fez nada seriam idênticos.
+
+### O intervalo de 400 ms entre um e outro
+
+Não é medo. Abrir quatro programas pesados no mesmo instante faz os quatro
+demorarem mais, e o Windows empilha as janelas numa ordem que depende de quem
+terminou de carregar primeiro. Com o intervalo, **o último da lista fica por
+cima** — e é a única forma de a ordem do perfil significar alguma coisa.
+
+Vale registrar que isso contraria em parte o que se diz acima sobre os perfis: a
+ordem não importa para quem toca botão a botão, mas importa para quem toca
+"abrir todos".
+
+### O que ainda falta
+
+Abrir quatro programas empilhados ainda não é um ambiente montado; é a mesma
+bagunça em três toques a menos. O que falta é cada um abrir **no seu lugar**, com
+os layouts de janela do Windows. Está planejado em
+[`plano-4.0.md`](plano-4.0.md), e este botão é de propósito o passo anterior:
+serve para descobrir, usando, o quanto o resto ainda acrescenta.
+
 ## Brilho
 
 O documento do projeto pede volume **e** brilho no "controle de recursos do

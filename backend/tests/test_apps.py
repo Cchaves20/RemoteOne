@@ -9,7 +9,7 @@ from app.connections import manager
 from app.db import SessionLocal
 from app.main import app
 from app.models import Device, User
-from app.rpc import PendingRequests
+from app.rpc import PendingRequests, pending
 
 client = TestClient(app)
 
@@ -210,3 +210,89 @@ def test_apps_of_another_user_is_404():
         json={"id": "x"},
         headers=headers_b,
     ).status_code == 404
+
+
+# --- abrir todos --------------------------------------------------------------
+
+
+class LaunchManyAgent:
+    """Agente que responde a um `launch_many` com o resultado combinado."""
+
+    def __init__(self, results: list[dict] | None = None):
+        self.results = results
+        self.sent: list[dict] = []
+
+    async def send_json(self, message: dict) -> None:
+        self.sent.append(message)
+        if message.get("type") == "launch_many" and self.results is not None:
+            pending.resolve(message["request_id"], {"results": self.results})
+
+    def of_type(self, kind: str) -> list[dict]:
+        return [m for m in self.sent if m.get("type") == kind]
+
+
+def test_abrir_todos_devolve_o_resultado_de_cada_um():
+    """Devolve a lista inteira, e não um "deu certo".
+
+    Abrir quatro programas e não dizer que um falhou é o mesmo que falhar em
+    silêncio - o app precisa poder dizer *qual* não abriu.
+    """
+    headers, uid = _auth_headers("many1@example.com")
+    _add_device(uid, "dev-many-1")
+    resultados = [
+        {"id": "a.lnk", "ok": True, "error": None},
+        {"id": "b.lnk", "ok": False, "error": "não encontrei o programa"},
+        {"id": "c.lnk", "ok": True, "error": None},
+    ]
+    agent = LaunchManyAgent(resultados)
+    manager.register("dev-many-1", agent)
+    try:
+        resp = client.post(
+            "/api/v1/devices/dev-many-1/apps/launch-many",
+            json={"apps": ["a.lnk", "b.lnk", "c.lnk"]},
+            headers=headers,
+        )
+    finally:
+        manager.unregister("dev-many-1")
+    assert resp.status_code == 200
+    assert resp.json() == {"results": resultados}
+    # A lista inteira foi numa mensagem só - é o que faz a automação sobreviver
+    # ao iOS suspender o aplicativo logo depois do toque.
+    pedidos = agent.of_type("launch_many")
+    assert len(pedidos) == 1
+    assert pedidos[0]["apps"] == ["a.lnk", "b.lnk", "c.lnk"]
+
+
+def test_abrir_todos_recusa_lista_vazia_e_lista_gigante():
+    """Nenhum programa não é pedido; mil programas é mensagem adulterada."""
+    headers, uid = _auth_headers("many2@example.com")
+    _add_device(uid, "dev-many-2")
+    for corpo in ({"apps": []}, {"apps": [f"{i}.lnk" for i in range(17)]}):
+        resp = client.post(
+            "/api/v1/devices/dev-many-2/apps/launch-many", json=corpo, headers=headers
+        )
+        assert resp.status_code == 422, corpo
+
+
+def test_abrir_todos_com_agente_offline_503():
+    headers, uid = _auth_headers("many3@example.com")
+    _add_device(uid, "dev-many-3")
+    resp = client.post(
+        "/api/v1/devices/dev-many-3/apps/launch-many",
+        json={"apps": ["a.lnk"]},
+        headers=headers,
+    )
+    assert resp.status_code == 503
+
+
+def test_abrir_todos_de_outra_conta_404():
+    """Abrir programas no computador de outra pessoa: nem ver que ele existe."""
+    _, dono = _auth_headers("many4@example.com")
+    _add_device(dono, "dev-many-4")
+    intruso, _ = _auth_headers("many5@example.com")
+    resp = client.post(
+        "/api/v1/devices/dev-many-4/apps/launch-many",
+        json={"apps": ["a.lnk"]},
+        headers=intruso,
+    )
+    assert resp.status_code == 404
