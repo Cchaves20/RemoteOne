@@ -43,10 +43,89 @@ O que aparece:
 - **CPU** — uso somando todos os núcleos;
 - **Memória** — usada / total;
 - **Disco** — usado / total do disco do sistema (`C:` no Windows, `/` no resto);
+- **GPU** — uso dos motores de renderização, com o nome da placa;
+- **Temperatura** — o sensor mais quente;
+- **Rede** — bytes por segundo entrando e saindo;
+- **Bateria** — carga, e se está na tomada ou drenando;
 - **Ligado há** — tempo desde que o computador iniciou.
 
 As barras mudam de cor a partir de 70% (laranja) e 90% (vermelho). A cor é o que
 se lê de longe, antes de ler o número.
+
+### Ausente não é zero
+
+GPU, temperatura e bateria **somem do painel** quando o computador não as tem —
+não aparecem zeradas. A distinção não é cosmética: um desktop mostrando "Bateria
+0%" parece um notebook prestes a desligar, e "GPU 0%" parece uma placa parada
+quando na verdade não há placa dedicada nenhuma.
+
+No fio isso é `null`, e os campos nem viajam quando ausentes (`skip_serializing_if`
+no agente). Rede é a exceção que confirma a regra: toda máquina tem rede, então
+zero ali é uma medida legítima de "nada passando agora" e o campo vai sempre.
+
+Quem falta mais vezes é a **temperatura**. No Linux o `sysinfo` lê os sensores
+direto; no Windows a leitura vem do WMI (`MSAcpi_ThermalZoneTemperature`), que
+na maioria das máquinas exige driver do fabricante e simplesmente não responde.
+A linha some, e isso é o comportamento correto — não há número honesto a mostrar.
+
+### Por que a GPU sai de um processo separado
+
+CPU, memória e disco saem de chamadas diretas do sistema e custam
+microssegundos. GPU sai de uma consulta ao WMI, que abre um `powershell.exe` e
+leva de meio segundo a dois — mais do que o intervalo entre dois pedidos do
+painel.
+
+Por isso a sonda é **assíncrona e preguiçosa**: a leitura devolve na hora o
+último valor conhecido e, se ele estiver velho (mais de 5 s), dispara uma medição
+nova em segundo plano para a próxima vez. Duas consequências assumidas: o
+primeiro pedido depois de abrir o painel vem sem GPU (aparece no seguinte), e com
+o painel fechado nenhum processo roda — o custo existe só enquanto alguém olha.
+
+**A consulta usa classes do WMI, não `Get-Counter`.** Não é estilo: os nomes dos
+contadores de desempenho são **traduzidos**, e `'\GPU Engine(*)\Utilization
+Percentage'` não existe num Windows em português. Nome de classe do WMI
+(`Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine`) é igual em qualquer
+idioma. Pela mesma razão o número volta com vírgula decimal em português, e o
+agente troca por ponto antes de converter.
+
+Só os motores `engtype_3D` entram na soma: a lista traz um contador por motor
+(cópia, decodificação de vídeo, computação), e somar todos passaria de 100%.
+
+### A rede é uma taxa, e o agente entrega um acumulado
+
+O `sysinfo` dá **bytes desde a leitura anterior**, não uma velocidade. O agente
+divide pelo intervalo real medido, e não pelos 2 s que o app costuma usar — se um
+pedido atrasa, o número continua honesto em vez de inflar.
+
+A soma é de **todas as interfaces**, e isso é deliberado: escolher "a principal"
+exige adivinhar, e num notebook com Wi-Fi, cabo, VPN e o adaptador virtual do
+WSL qualquer critério erra em alguma máquina. A soma responde à pergunta que a
+pessoa está de fato fazendo — "está passando tráfego?".
+
+A formatação usa **base 1000**, ao contrário dos tamanhos de disco e memória, que
+usam 1024. Não é inconsistência: velocidade de rede se conta em potências de dez
+no mundo inteiro (é assim que o provedor vende e que o Windows mostra), enquanto
+capacidade se conta em 1024. Usar a mesma base para os dois deixaria um dos
+números errado.
+
+### A bateria reaproveita o "manter pronto"
+
+A carga vem do mesmo `GetSystemPowerStatus` que o "manter pronto" já consultava
+para saber se o notebook está na tomada (ver [`pc-sempre-pronto.md`](pc-sempre-pronto.md)).
+Uma segunda declaração da mesma estrutura do Windows noutro arquivo é o tipo de
+duplicação que só se descobre errada no dia em que uma das duas muda.
+
+O sufixo ("na bateria" / "na tomada") importa mais que o número: 68% drenando e
+68% carregando são situações opostas para quem depende de o computador continuar
+alcançável.
+
+### O painel virou rolável
+
+Com até oito medidas, a coluna não cabe mais na altura de um celular deitado. Sem
+rolagem o Flutter resolveria isso com a faixa amarela de estouro por cima da
+imagem do computador; com ela, nenhuma medida some e o painel continua ocupando
+só o espaço que tem. Em pé há um teto de altura pelo mesmo motivo: oito medidas
+não podem empurrar a tela do computador para um quarto do celular.
 
 ### Detalhes que não são óbvios
 

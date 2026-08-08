@@ -17,6 +17,9 @@ from app.rpc import pending
 
 client = TestClient(app)
 
+#: O que um agente **antigo** manda: só as quatro medidas originais. Continua
+#: aqui de propósito - é a versão que está instalada nos computadores enquanto
+#: a atualização não chega a todos, e ela não pode virar erro de validação.
 STATS = {
     "cpu_percent": 37.4,
     "memory_used": 8_000_000_000,
@@ -25,6 +28,31 @@ STATS = {
     "disk_total": 500_000_000_000,
     "disk_name": "C:",
     "uptime_seconds": 3600,
+}
+
+#: O que os campos opcionais valem quando o agente não os manda. `None` e não
+#: zero: desktop não tem bateria e máquina virtual não tem GPU dedicada, e o
+#: app esconde a medida ausente em vez de mostrar 0.
+AUSENTES = {
+    "gpu_percent": None,
+    "gpu_name": None,
+    "temperature_celsius": None,
+    "network_rx_bps": 0,
+    "network_tx_bps": 0,
+    "battery_percent": None,
+    "on_battery": None,
+}
+
+#: O que um agente atualizado manda num notebook com GPU, sensor e bateria.
+STATS_COMPLETO = {
+    **STATS,
+    "gpu_percent": 42.5,
+    "gpu_name": "NVIDIA GeForce RTX 3060",
+    "temperature_celsius": 51.2,
+    "network_rx_bps": 1_500_000,
+    "network_tx_bps": 2048,
+    "battery_percent": 87,
+    "on_battery": True,
 }
 
 
@@ -135,10 +163,31 @@ def test_system_devolve_as_metricas_do_agente():
     finally:
         manager.unregister("dev-sys-1")
     assert resp.status_code == 200
-    assert resp.json() == STATS
+    # Um agente antigo não manda as medidas novas, e o backend preenche a
+    # ausência em vez de recusar a resposta.
+    assert resp.json() == {**STATS, **AUSENTES}
     # O agente recebeu um pedido com request_id (é o que casa a resposta).
     pedido = agent.of_type("system_info")[0]
     assert pedido["request_id"]
+
+
+def test_system_leva_as_medidas_novas_quando_o_agente_manda():
+    """GPU, temperatura, rede e bateria atravessam o backend intactas.
+
+    O caminho é só repasse, mas o `response_model` do FastAPI **descarta** o que
+    não estiver declarado no schema: sem um teste aqui, esquecer um campo no
+    `SystemStatsOut` some com a medida sem erro nenhum aparecer.
+    """
+    headers, uid = _auth_headers("sys6@example.com")
+    _add_device(uid, "dev-sys-6")
+    agent = InstantAgent(STATS_COMPLETO)
+    manager.register("dev-sys-6", agent)
+    try:
+        resp = client.get("/api/v1/devices/dev-sys-6/system", headers=headers)
+    finally:
+        manager.unregister("dev-sys-6")
+    assert resp.status_code == 200
+    assert resp.json() == STATS_COMPLETO
 
 
 def test_system_com_agente_offline_503():

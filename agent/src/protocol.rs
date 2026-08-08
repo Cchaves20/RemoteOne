@@ -711,12 +711,58 @@ mod tests {
                 disk_total: 500_000_000_000,
                 disk_name: "C:".into(),
                 uptime_seconds: 3600,
+                // Um computador de mesa sem GPU dedicada e sem sensor: as
+                // medidas opcionais não aparecem no JSON, e é isso que este
+                // teste fixa - elas viajam a cada 2 segundos, e cinco campos
+                // nulos por leitura seriam peso puro.
+                gpu_percent: None,
+                gpu_name: None,
+                temperature_celsius: None,
+                network_rx_bps: 1_024,
+                network_tx_bps: 512,
+                battery_percent: None,
+                on_battery: None,
             },
         })
         .unwrap();
         assert_eq!(
             json,
-            r#"{"type":"system_stats","request_id":"r1","stats":{"cpu_percent":37.4,"memory_used":8000000000,"memory_total":16000000000,"disk_used":300000000000,"disk_total":500000000000,"disk_name":"C:","uptime_seconds":3600}}"#
+            r#"{"type":"system_stats","request_id":"r1","stats":{"cpu_percent":37.4,"memory_used":8000000000,"memory_total":16000000000,"disk_used":300000000000,"disk_total":500000000000,"disk_name":"C:","uptime_seconds":3600,"network_rx_bps":1024,"network_tx_bps":512}}"#
         );
+    }
+
+    #[test]
+    fn system_stats_leva_as_medidas_novas_quando_existem() {
+        // O outro lado do teste acima: num notebook com GPU, sensor e bateria,
+        // os cinco campos precisam chegar ao app com o nome que ele espera.
+        let json = serde_json::to_string(&ClientMessage::SystemStats {
+            request_id: "r1".into(),
+            stats: SystemSnapshot {
+                cpu_percent: 10.0,
+                memory_used: 1,
+                memory_total: 2,
+                disk_used: 1,
+                disk_total: 2,
+                disk_name: "C:".into(),
+                uptime_seconds: 1,
+                gpu_percent: Some(42.5),
+                gpu_name: Some("Intel Iris Xe".into()),
+                temperature_celsius: Some(51.2),
+                network_rx_bps: 0,
+                network_tx_bps: 0,
+                battery_percent: Some(87),
+                on_battery: Some(true),
+            },
+        })
+        .unwrap();
+        for campo in [
+            r#""gpu_percent":42.5"#,
+            r#""gpu_name":"Intel Iris Xe""#,
+            r#""temperature_celsius":51.2"#,
+            r#""battery_percent":87"#,
+            r#""on_battery":true"#,
+        ] {
+            assert!(json.contains(campo), "faltou {campo} em {json}");
+        }
     }
 }

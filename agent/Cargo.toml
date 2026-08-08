@@ -25,11 +25,18 @@ base64 = "0.22"
 # Codificação JPEG dos frames (multiplataforma; usada também pelo stub).
 # `png` entra porque o icone da bandeja e da janela e um PNG embutido no
 # binario (assets/tray.png), decodificado em tempo de execucao.
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# `bmp` entra por causa da imagem copiada: o Windows entrega a área de
+# transferência em DIB, que é um BMP sem o cabeçalho de arquivo - decodificar
+# é o primeiro passo antes de reencodar em PNG para o telefone.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp"] }
 # Codificação H.264 do vídeo por WebRTC (medido no spike S2 do plano).
 openh264 = "0.9.7"
 webrtc = "0.17.2"
-sysinfo = { version = "0.38.4", default-features = false, features = ["system", "disk"] }
+# `network` e `component` entram com o painel completo de monitoramento: taxa
+# de rede e temperatura. A temperatura vem vazia na maioria dos Windows (a
+# leitura exige driver do fabricante), e por isso o campo é opcional dos dois
+# lados - ver `system_info.rs`.
+sysinfo = { version = "0.38.4", default-features = false, features = ["system", "disk", "network", "component"] }
 fast_image_resize = "6.1.0"
 
 # Só no Windows (única plataforma testável aqui). Linux/macOS usam os stubs

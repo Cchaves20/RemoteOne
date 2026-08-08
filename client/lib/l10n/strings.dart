@@ -315,6 +315,19 @@ class Strings {
   String get systemDisk => _t('Disco', 'Disk', '磁盘', 'Disque', 'Disco');
   String get systemUptime =>
       _t('Ligado há', 'Powered on for', '已开机', 'Allumé depuis', 'Encendido hace');
+  String get systemGpu => _t('GPU', 'GPU', '显卡', 'GPU', 'GPU');
+  String get systemTemperature =>
+      _t('Temperatura', 'Temperature', '温度', 'Température', 'Temperatura');
+  String get systemNetwork => _t('Rede', 'Network', '网络', 'Réseau', 'Red');
+  String get systemBattery =>
+      _t('Bateria', 'Battery', '电池', 'Batterie', 'Batería');
+  /// Sufixos da bateria: dizem se ela está drenando ou carregando. Sem isto,
+  /// "68%" não distingue um notebook que vai durar horas de um que vai
+  /// desaparecer do app em vinte minutos.
+  String get batteryOnBattery =>
+      _t('na bateria', 'on battery', '使用电池', 'sur batterie', 'con batería');
+  String get batteryPluggedIn =>
+      _t('na tomada', 'plugged in', '已接电源', 'sur secteur', 'enchufado');
   /// Abreviações de tempo. Curtas de propósito: cabem no painel retraído.
   String get unitDay => _t('d', 'd', '天', 'j', 'd');
   String get unitHour => _t('h', 'h', '时', 'h', 'h');

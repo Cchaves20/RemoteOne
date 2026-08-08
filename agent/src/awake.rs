@@ -46,6 +46,16 @@ pub fn power_source() -> PowerSource {
     imp::power_source()
 }
 
+/// Carga da bateria em porcentagem, ou nada quando não há bateria.
+///
+/// Mora aqui, e não no `system_info`, porque a chamada do sistema é a mesma que
+/// o "manter pronto" já faz para saber se está na tomada — e duas declarações
+/// da mesma estrutura do Windows em arquivos diferentes é o tipo de duplicação
+/// que só se descobre errada no dia em que uma das duas muda.
+pub fn battery_percent() -> Option<u8> {
+    imp::battery_percent()
+}
+
 /// Segura o computador acordado enquanto existir.
 ///
 /// O pedido vive numa **thread própria**, e não é capricho: no Windows o
@@ -180,6 +190,27 @@ mod imp {
             _ => PowerSource::Unknown,
         }
     }
+
+    pub fn battery_percent() -> Option<u8> {
+        let mut status = SystemPowerStatus {
+            ac_line_status: 255,
+            battery_flag: 0,
+            battery_life_percent: 255,
+            system_status_flag: 0,
+            battery_life_time: 0,
+            battery_full_life_time: 0,
+        };
+        if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
+            return None;
+        }
+        // 255 = desconhecido, e o bit 128 do `battery_flag` diz "não há
+        // bateria" - o caso do computador de mesa. Nos dois, mostrar 0% seria
+        // pior que não mostrar nada: parece bateria acabando.
+        if status.battery_life_percent > 100 || status.battery_flag & 128 != 0 {
+            return None;
+        }
+        Some(status.battery_life_percent)
+    }
 }
 
 #[cfg(not(windows))]
@@ -192,6 +223,10 @@ mod imp {
 
     pub fn power_source() -> PowerSource {
         PowerSource::Unknown
+    }
+
+    pub fn battery_percent() -> Option<u8> {
+        None
     }
 }
 

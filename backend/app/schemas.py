@@ -108,7 +108,17 @@ class MediaRequest(BaseModel):
 
 
 class SystemStatsOut(BaseModel):
-    """Métricas do computador: CPU em %, o resto em bytes."""
+    """Métricas do computador: CPU em %, o resto em bytes.
+
+    Os campos opcionais são as medidas que **não existem em toda máquina**:
+    desktop não tem bateria, máquina virtual não tem GPU dedicada e, no Windows,
+    a temperatura em geral só sai com driver do fabricante. `None` é resposta
+    legítima e diferente de zero — o app esconde a medida ausente em vez de
+    mostrar 0, que se leria como "GPU parada" ou "bateria acabando".
+
+    Todos têm padrão para que um agente antigo, que ainda não manda estes
+    campos, continue funcionando sem erro de validação.
+    """
 
     cpu_percent: float
     memory_used: int
@@ -117,6 +127,14 @@ class SystemStatsOut(BaseModel):
     disk_total: int
     disk_name: str
     uptime_seconds: int
+    gpu_percent: float | None = None
+    gpu_name: str | None = None
+    temperature_celsius: float | None = None
+    #: Bytes por segundo, somando todas as interfaces de rede.
+    network_rx_bps: int = 0
+    network_tx_bps: int = 0
+    battery_percent: int | None = None
+    on_battery: bool | None = None
 
 
 class AudioRequest(BaseModel):

@@ -700,6 +700,28 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  /// Nome de placa de vídeo encurtado para caber no rótulo da medida.
+  ///
+  /// Tira o fabricante, que é a parte que não distingue nada: num notebook com
+  /// duas placas, o que importa é "Iris Xe" contra "RTX 3060", e num rótulo de
+  /// 150 px o nome inteiro seria cortado justamente antes disso.
+  static String _curto(String nome) {
+    var n = nome.trim();
+    for (final prefixo in const [
+      'NVIDIA ',
+      'AMD ',
+      'Intel(R) ',
+      'Intel ',
+      'Microsoft ',
+    ]) {
+      if (n.startsWith(prefixo)) {
+        n = n.substring(prefixo.length);
+        break;
+      }
+    }
+    return n;
+  }
+
   /// Compara dois ícones. O tamanho já separa quase todos os casos; o resto é
   /// uma varredura curta, e ela vale a pena para evitar redesenhar a tela.
   static bool _sameBytes(Uint8List a, Uint8List b) {
@@ -1392,6 +1414,16 @@ class _RemoteScreenState extends State<RemoteScreen>
       );
     }
 
+    // Se está drenando ou carregando. Importa mais que o número em si: 68%
+    // na bateria e 68% na tomada são situações opostas para quem depende de o
+    // computador continuar alcançável. Vazio quando o sistema não sabe
+    // responder — máquina virtual, por exemplo.
+    final String fonteDeEnergia = switch (stats.onBattery) {
+      true => ' · ${t.batteryOnBattery}',
+      false => ' · ${t.batteryPluggedIn}',
+      null => '',
+    };
+
     final tiles = <Widget>[
       _metric(
         label: t.systemCpu,
@@ -1415,6 +1447,49 @@ class _RemoteScreenState extends State<RemoteScreen>
         fraction: stats.diskFraction,
         vertical: vertical,
       ),
+      // As quatro que faltavam. Cada uma só entra na lista quando o computador
+      // respondeu com ela: um desktop não tem bateria, uma máquina virtual não
+      // tem GPU dedicada, e temperatura no Windows quase sempre depende de
+      // driver do fabricante. Uma medida vazia na tela não informa nada e ainda
+      // faz parecer que o app quebrou.
+      if (stats.gpuPercent != null)
+        _metric(
+          // O nome da placa entra no rótulo quando veio: "GPU" sozinho não
+          // diz se está sendo medida a integrada ou a dedicada, e num
+          // notebook com as duas essa é a primeira pergunta.
+          label: stats.gpuName == null
+              ? t.systemGpu
+              : '${t.systemGpu} · ${_curto(stats.gpuName!)}',
+          value: '${stats.gpuPercent!.round()}%',
+          fraction: stats.gpuPercent! / 100,
+          vertical: vertical,
+        ),
+      if (stats.temperatureCelsius != null)
+        _metric(
+          label: t.systemTemperature,
+          value: '${stats.temperatureCelsius!.round()} °C',
+          // Escala de 30 a 100 °C: a barra cheia é o ponto em que a máquina
+          // começa a se proteger, não um limite teórico. Uma escala de 0 a 100
+          // deixaria toda temperatura normal parecendo "quase nada".
+          fraction: ((stats.temperatureCelsius! - 30) / 70).clamp(0.0, 1.0),
+          vertical: vertical,
+        ),
+      _metric(
+        label: t.systemNetwork,
+        // Seta para baixo é o que desce para o computador; para cima, o que
+        // sobe. É a convenção de todo medidor de rede.
+        value: '↓ ${SystemStats.formatRate(stats.networkRxBps)}'
+            '   ↑ ${SystemStats.formatRate(stats.networkTxBps)}',
+        fraction: null,
+        vertical: vertical,
+      ),
+      if (stats.batteryPercent != null)
+        _metric(
+          label: t.systemBattery,
+          value: '${stats.batteryPercent}%$fonteDeEnergia',
+          fraction: stats.batteryPercent! / 100,
+          vertical: vertical,
+        ),
       _metric(
         label: t.systemUptime,
         value: stats.uptimeLabel(
@@ -1427,23 +1502,37 @@ class _RemoteScreenState extends State<RemoteScreen>
       ),
     ];
 
+    // Rolável desde que o painel passou de quatro medidas para até oito. Num
+    // celular deitado a coluna não cabe mais na altura da tela, e o Flutter
+    // resolveria isso com a faixa amarela de estouro por cima da imagem do
+    // computador. Rolar é a resposta certa: nenhuma medida some, e o painel
+    // continua ocupando só o espaço que tem.
     final Widget medidas = vertical
         ? SizedBox(
             width: _metricWidth,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: tiles,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: tiles,
+              ),
             ),
           )
-        : Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 16,
-            runSpacing: 10,
-            children: [
-              for (final tile in tiles)
-                SizedBox(width: _metricWidth, child: tile),
-            ],
+        : ConstrainedBox(
+            // Em pé sobra altura, mas não a ponto de deixar oito medidas
+            // empurrarem a tela do computador para um quarto do celular.
+            constraints: const BoxConstraints(maxHeight: 200),
+            child: SingleChildScrollView(
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 16,
+                runSpacing: 10,
+                children: [
+                  for (final tile in tiles)
+                    SizedBox(width: _metricWidth, child: tile),
+                ],
+              ),
+            ),
           );
 
     // Uma medida que falhou não apaga a última leitura boa: o painel segue
