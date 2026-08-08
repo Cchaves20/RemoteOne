@@ -87,14 +87,19 @@ class InstantAgent:
     o resolve, então o teste passa pelo mesmo código que a produção usa.
     """
 
-    def __init__(self, stats: dict | None = None):
+    def __init__(self, stats: dict | None = None, brightness: dict | None = None):
         self.stats = stats
+        #: Resposta ao pedido de brilho. `None` = agente mudo, que é o caso do
+        #: teste de tempo esgotado.
+        self.brightness = brightness
         self.sent: list[dict] = []
 
     async def send_json(self, message: dict) -> None:
         self.sent.append(message)
         if message.get("type") == "system_info" and self.stats is not None:
             pending.resolve(message["request_id"], self.stats)
+        if message.get("type") == "brightness" and self.brightness is not None:
+            pending.resolve(message["request_id"], self.brightness)
 
     def of_type(self, kind: str) -> list[dict]:
         return [m for m in self.sent if m.get("type") == kind]
@@ -303,3 +308,70 @@ def test_health_anuncia_os_recursos_novos():
     features = client.get("/health").json()["features"]
     assert "system-stats" in features
     assert "media-keys" in features
+
+
+def test_brilho_devolve_o_nivel_resultante():
+    """O caminho feliz: o agente ajusta e responde com o nível."""
+    headers, uid = _auth_headers("bri1@example.com")
+    _add_device(uid, "dev-bri-1")
+    agent = InstantAgent(brightness={"level": 60, "error": None})
+    manager.register("dev-bri-1", agent)
+    try:
+        resp = client.post(
+            "/api/v1/devices/dev-bri-1/brightness",
+            json={"delta": 10},
+            headers=headers,
+        )
+    finally:
+        manager.unregister("dev-bri-1")
+    assert resp.status_code == 200
+    assert resp.json() == {"level": 60}
+    # O passo relativo vai para o computador como passo, e não resolvido aqui:
+    # é lá que ele é somado ao valor atual.
+    pedido = agent.of_type("brightness")[0]
+    assert pedido["delta"] == 10
+    assert pedido["level"] is None
+
+
+def test_brilho_recusado_explica_o_motivo():
+    """Computador de mesa: a recusa sobe com a explicação, não como 500.
+
+    O motivo é a única informação útil que existe aqui - "seu monitor não
+    permite" e "deu problema" levam a pessoa a fazer coisas diferentes.
+    """
+    headers, uid = _auth_headers("bri2@example.com")
+    _add_device(uid, "dev-bri-2")
+    agent = InstantAgent(
+        brightness={"level": None, "error": "só painel embutido de notebook"}
+    )
+    manager.register("dev-bri-2", agent)
+    try:
+        resp = client.post(
+            "/api/v1/devices/dev-bri-2/brightness",
+            json={"level": 50},
+            headers=headers,
+        )
+    finally:
+        manager.unregister("dev-bri-2")
+    assert resp.status_code == 409
+    assert "notebook" in resp.json()["detail"]
+
+
+def test_brilho_exige_level_ou_delta_e_nao_os_dois():
+    """Os dois juntos seriam ambíguos, e nenhum dos dois não é pedido nenhum."""
+    headers, uid = _auth_headers("bri3@example.com")
+    _add_device(uid, "dev-bri-3")
+    for corpo in ({}, {"level": 50, "delta": 10}):
+        resp = client.post(
+            "/api/v1/devices/dev-bri-3/brightness", json=corpo, headers=headers
+        )
+        assert resp.status_code == 422, corpo
+
+
+def test_brilho_com_agente_offline_503():
+    headers, uid = _auth_headers("bri4@example.com")
+    _add_device(uid, "dev-bri-4")
+    resp = client.post(
+        "/api/v1/devices/dev-bri-4/brightness", json={"delta": -10}, headers=headers
+    )
+    assert resp.status_code == 503

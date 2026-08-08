@@ -21,6 +21,8 @@ from app.schemas import (
     AppOut,
     AudioRequest,
     ClaimRequest,
+    BrightnessOut,
+    BrightnessRequest,
     ClipboardIn,
     ClipboardOut,
     ClipboardSyncRequest,
@@ -55,6 +57,9 @@ _APPS_TIMEOUT_SECONDS = 15
 # do app pergunta de novo a cada poucos segundos: uma espera curta evita que
 # pedidos velhos se acumulem quando a rede engasga.
 _SYSTEM_TIMEOUT_SECONDS = 5
+#: Mais folgado que as métricas: o ajuste de brilho custa um processo do
+#: PowerShell no computador, e numa máquina ocupada isso passa de um segundo.
+_BRIGHTNESS_TIMEOUT_SECONDS = 15
 # Listar uma pasta é ida e volta ao computador, como a lista de aplicativos.
 _FILES_TIMEOUT_SECONDS = 20
 # Quanto esperar por *cada* pedaço de um arquivo. Generoso: o computador pode
@@ -205,6 +210,54 @@ async def system_stats(
             detail="o computador demorou para responder",
         ) from exc
     return SystemStatsOut(**stats)
+
+
+@router.post("/devices/{device_id}/brightness", response_model=BrightnessOut)
+async def set_brightness(
+    device_id: str,
+    body: BrightnessRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BrightnessOut:
+    """Ajusta o brilho da tela do computador e devolve o nível resultante.
+
+    Tem resposta - ao contrário das teclas de mídia, que são mão única. Volume
+    mexe no sistema e funciona em qualquer máquina; brilho por software só
+    alcança o painel embutido de um notebook. Num computador de mesa com monitor
+    externo não há o que ajustar, e sem resposta o toque simplesmente não faria
+    nada, que é o pior tipo de falha: a que não deixa rastro.
+
+    O motivo da recusa vem do agente e sobe como `detail` de um 409, porque é a
+    única explicação que existe - um 500 genérico a jogaria fora.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    request_id, future = pending.create()
+    message = {
+        "type": "brightness",
+        "request_id": request_id,
+        "level": body.level,
+        "delta": body.delta,
+    }
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_BRIGHTNESS_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    if reply.get("level") is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=reply.get("error") or "não consegui ajustar o brilho",
+        )
+    return BrightnessOut(level=reply["level"])
 
 
 @router.get("/devices/{device_id}/clipboard", response_model=ClipboardOut)

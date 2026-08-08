@@ -139,6 +139,27 @@ class KeepAwakeState(BaseModel):
     source: Literal["ac", "battery", "unknown"]
 
 
+class BrightnessState(BaseModel):
+    """Resposta do agente a um `brightness`: o brilho depois do ajuste.
+
+    Tem resposta, e as teclas de mídia não têm, porque as duas falham de jeitos
+    diferentes. Volume mexe no sistema e funciona em qualquer máquina; brilho
+    por software só alcança o **painel embutido** de um notebook. Num
+    computador de mesa com monitor externo não há o que ajustar, e sem resposta
+    o toque simplesmente não faria nada - o pior tipo de falha, a que não deixa
+    rastro.
+
+    Exatamente um dos dois vem preenchido.
+    """
+
+    type: Literal["brightness_state"] = "brightness_state"
+    request_id: str
+    #: Nível resultante, de 0 a 100. Ausente quando não deu.
+    level: int | None = None
+    #: Por que não deu, quando não deu.
+    error: str | None = None
+
+
 class ClipboardChanged(BaseModel):
     """Aviso de que alguém copiou algo novo no computador.
 
@@ -250,6 +271,7 @@ ClientMessage = Annotated[
     | Clipboard
     | ClipboardChanged
     | KeepAwakeState
+    | BrightnessState
     | FileList
     | FileChunk
     | FileDone

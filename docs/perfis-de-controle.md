@@ -15,6 +15,44 @@ virar um editor de atalhos, que é outro recurso.
 **Os seus** abrem **programas**. Você escolhe o nome, o ícone, quais programas e
 em quais computadores; cada programa vira um botão. Ficam no servidor.
 
+**E há uma terceira natureza, com dois botões só:** o brilho da tela, no perfil
+Sistema. Não é tecla nem programa — vai por um endpoint próprio
+(`POST /devices/{id}/brightness`) e por isso `ProfileAction.input` não significa
+nada para ele. É esse detalhe que faz a barra ter três caminhos a partir do
+mesmo toque, e confundi-los mandaria um `input` sem tecla nenhuma ao computador.
+
+## Brilho
+
+O documento do projeto pede volume **e** brilho no "controle de recursos do
+sistema". O volume já morava na faixa de mídia; o brilho veio para a barra de
+perfis, que é a área de atalhos — e brilho é exatamente isso: um ajuste de um
+toque, no meio de outra coisa.
+
+**Passos de 10%, não um controle deslizante.** Um deslizante não caberia numa
+barra de ícones de 42 px, e cada arrasto viraria dezenas de pedidos ao
+computador. Cinco toques atravessam a faixa inteira.
+
+**O passo é somado no computador, não no telefone.** Fazer o app ler, somar e
+escrever custaria duas idas e voltas por toque — e dois toques rápidos se
+atropelariam, porque os dois leriam o mesmo valor antigo e o segundo desfaria o
+primeiro. O agente recebe `delta` e resolve lá.
+
+**O piso é 5%, não 0.** Um notebook com o brilho no zero parece desligado, e
+quem está do outro lado de um controle remoto não tem como perceber que o que
+aconteceu foi um toque a mais no botão de diminuir.
+
+**Tem resposta, ao contrário das teclas de mídia.** Volume mexe no sistema e
+funciona em qualquer máquina; brilho por software só alcança o **painel
+embutido de um notebook**. Monitor externo se ajusta por DDC/CI, pelo cabo, e
+muitos fabricantes não implementam — este agente não tenta esse caminho. Então
+num computador de mesa o pedido é recusado com a explicação, que sobe como
+`detail` de um 409 e aparece no aviso do app. Sem isso o toque simplesmente não
+faria nada: o pior tipo de falha, a que não deixa rastro.
+
+O aviso de sucesso ("Brilho: 60%") também não é enfeite — a tela que muda é a do
+computador, do outro lado, e quem está olhando o celular não veria diferença
+nenhuma entre um toque que funcionou e um que não fez nada.
+
 ## Por que no servidor
 
 Duas razões concretas, e as duas doem se ignoradas:

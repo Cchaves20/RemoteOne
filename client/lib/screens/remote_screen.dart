@@ -302,6 +302,26 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  /// Ajusta o brilho da tela do computador em passos.
+  ///
+  /// Confirma com um aviso curto — e isso não é enfeite. O resultado do comando
+  /// acontece **na outra ponta**: a tela que muda é a do computador, e quem
+  /// está olhando o celular não veria diferença nenhuma. Sem confirmação, um
+  /// toque que funcionou e um toque que não fez nada seriam idênticos.
+  ///
+  /// O erro aparece pelo mesmo caminho, e com o motivo que o computador deu:
+  /// num computador de mesa com monitor externo não há brilho a ajustar por
+  /// software, e a pessoa precisa saber que o problema não é o app.
+  Future<void> _ajustarBrilho(int delta) async {
+    final t = widget.state.t;
+    try {
+      final nivel = await widget.state.setBrightness(widget.device, delta: delta);
+      _avisar(t.brightnessSet(nivel));
+    } catch (e) {
+      _avisar(e.toString());
+    }
+  }
+
   /// Descobre as telas do computador, uma vez.
   ///
   /// Falha em silêncio de propósito: um computador com um monitor só, ou um
@@ -2050,11 +2070,16 @@ class _RemoteScreenState extends State<RemoteScreen>
                 // se falhar, ficar calado faria parecer que o app ignorou.
                 onAction: (a) {
                   HapticFeedback.selectionClick();
-                  // Duas naturezas na mesma barra: os perfis de fábrica mandam
-                  // teclas, os do usuário abrem programas. Só o segundo caso
-                  // precisa saber em qual computador está.
+                  // Três naturezas na mesma barra: os perfis de fábrica mandam
+                  // teclas, os do usuário abrem programas, e o brilho ajusta o
+                  // sistema. Só os dois últimos precisam saber em qual
+                  // computador estão.
                   if (a.isLaunch) {
                     _abrirPrograma(a);
+                    return;
+                  }
+                  if (a.isBrightness) {
+                    _ajustarBrilho(a.brightnessDelta!);
                     return;
                   }
                   _send(a.input, avisarFalha: true);

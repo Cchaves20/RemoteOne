@@ -502,6 +502,29 @@ class ApiClient {
     }
   }
 
+  /// Ajusta o brilho da tela do computador e devolve o nível resultante.
+  ///
+  /// `delta` é um passo relativo (+10, −10) e `level` um valor absoluto; manda-se
+  /// um ou outro, nunca os dois. O passo é somado **no computador**: fazer o
+  /// telefone ler, somar e escrever custaria duas idas e voltas por toque, e
+  /// dois toques rápidos se atropelariam — os dois leriam o mesmo valor antigo e
+  /// o segundo desfaria o primeiro.
+  ///
+  /// Lança `ApiException(409)` com o motivo quando o computador não permite
+  /// (monitor externo, por exemplo). Isso é resposta, não falha de rede: o
+  /// motivo é a única informação útil que existe aqui.
+  Future<int> setBrightness(String deviceId, {int? level, int? delta}) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/brightness'),
+      headers: _authHeaders,
+      body: jsonEncode(level != null ? {'level': level} : {'delta': delta}),
+    );
+    if (res.statusCode != 200) {
+      throw _error(res);
+    }
+    return (jsonDecode(res.body) as Map<String, dynamic>)['level'] as int;
+  }
+
   // --- arquivos ---------------------------------------------------------------
 
   /// Lista uma pasta do computador. Caminho vazio = a pasta do usuário.

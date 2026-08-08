@@ -20,6 +20,7 @@ class ProfileAction {
     this.text,
     this.appPath,
     this.appName = '',
+    this.brightnessDelta,
   });
 
   /// Atalho com modificadores: `Ctrl+S`, `Alt+Tab`, `Win+E`.
@@ -53,6 +54,28 @@ class ProfileAction {
     required String Function(Strings) label,
     required String text,
   }) : this._(icon: icon, shortcut: shortcut, label: label, text: text);
+
+  /// Ajustar o brilho da tela do computador, em passos.
+  ///
+  /// Mora na barra de perfis porque ela é a área de atalhos — e brilho é
+  /// exatamente isso: um ajuste de um toque, no meio de outra coisa. Não é
+  /// tecla nem programa; é o **terceiro** tipo de ação, e por isso não tem
+  /// `input`: quem trata é a tela, que sabe em qual computador ajustar.
+  ///
+  /// Passo relativo, e não um controle deslizante: um deslizante numa barra de
+  /// ícones de 42 px não teria onde caber, e cada arrasto viraria dezenas de
+  /// pedidos ao computador.
+  const ProfileAction.brightness({
+    required IconData icon,
+    required String shortcut,
+    required String Function(Strings) label,
+    required int delta,
+  }) : this._(
+          icon: icon,
+          shortcut: shortcut,
+          label: label,
+          brightnessDelta: delta,
+        );
 
   /// Abrir um programa no computador.
   ///
@@ -94,8 +117,14 @@ class ProfileAction {
   /// Nome do programa. Vazio nas ações de teclado.
   final String appName;
 
+  /// Quanto somar ao brilho. `null` em toda ação que não é de brilho.
+  final int? brightnessDelta;
+
   /// Se esta ação abre um programa em vez de mandar teclas.
   bool get isLaunch => appPath != null;
+
+  /// Se esta ação ajusta o brilho em vez de mandar teclas.
+  bool get isBrightness => brightnessDelta != null;
 
   /// A mensagem que vai para o computador, no mesmo formato do teclado remoto.
   Map<String, dynamic> get input {
@@ -351,6 +380,24 @@ class ControlProfile {
           label: (t) => t.actionCloseWindow,
           modifiers: ['alt'],
           key: 'f4',
+        ),
+        // Brilho fecha o par que o documento do projeto pede junto com o
+        // volume ("controle de recursos do sistema"). O volume já mora na
+        // faixa de mídia; o brilho vem para cá, que é a área de atalhos.
+        //
+        // Passos de 10: cinco toques atravessam a faixa inteira, e é grosso o
+        // bastante para a diferença ser visível num toque só.
+        ProfileAction.brightness(
+          icon: Icons.brightness_low,
+          shortcut: '−10%',
+          label: (t) => t.actionBrightnessDown,
+          delta: -10,
+        ),
+        ProfileAction.brightness(
+          icon: Icons.brightness_high,
+          shortcut: '+10%',
+          label: (t) => t.actionBrightnessUp,
+          delta: 10,
         ),
       ],
     ),

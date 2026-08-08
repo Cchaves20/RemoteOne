@@ -331,6 +331,10 @@ class AppState extends ChangeNotifier {
   Future<void> mediaKey(Device device, String action) =>
       api.mediaKey(device.deviceId, action);
 
+  /// Ajusta o brilho da tela do computador. Devolve o nível resultante.
+  Future<int> setBrightness(Device device, {int? level, int? delta}) =>
+      api.setBrightness(device.deviceId, level: level, delta: delta);
+
   /// Área de transferência do computador (texto e arquivos copiados).
   Future<RemoteClipboard> clipboard(Device device) =>
       api.clipboard(device.deviceId);

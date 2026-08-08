@@ -27,6 +27,7 @@ from app.protocol import (
     Foreground,
     Hello,
     KeepAwakeState,
+    BrightnessState,
     MonitorList,
     PairCode,
     Paired,
@@ -311,6 +312,14 @@ async def agent_ws(websocket: WebSocket) -> None:
                         "holding": message.holding,
                         "source": message.source,
                     },
+                )
+            elif isinstance(message, BrightnessState):
+                # O erro vai junto em vez de virar exceção: quem pediu precisa
+                # saber *por que* não deu (monitor externo, por exemplo), e um
+                # 500 genérico jogaria fora a única explicação que existe.
+                pending.resolve(
+                    message.request_id,
+                    {"level": message.level, "error": message.error},
                 )
             elif isinstance(message, SystemStats):
                 # Métricas medidas: entrega a quem pediu (o endpoint HTTP).

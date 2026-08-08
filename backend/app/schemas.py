@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class Credentials(BaseModel):
@@ -135,6 +135,33 @@ class SystemStatsOut(BaseModel):
     network_tx_bps: int = 0
     battery_percent: int | None = None
     on_battery: bool | None = None
+
+
+class BrightnessRequest(BaseModel):
+    """Ajuste de brilho: um valor absoluto **ou** um passo relativo.
+
+    O passo existe para a barra de perfis, que tem botões de mais e menos, e é
+    resolvido no computador. Fazer o telefone ler, somar e escrever custaria
+    duas idas e voltas por toque - e dois toques rápidos se atropelariam,
+    porque os dois leriam o mesmo valor antigo e o segundo desfaria o primeiro.
+    """
+
+    level: int | None = Field(default=None, ge=0, le=100)
+    #: Teto de 100 nos dois sentidos: é a faixa inteira, e nada além disso faz
+    #: sentido num ajuste relativo.
+    delta: int | None = Field(default=None, ge=-100, le=100)
+
+    @model_validator(mode="after")
+    def exatamente_um(self) -> "BrightnessRequest":
+        if (self.level is None) == (self.delta is None):
+            raise ValueError("mande level ou delta, e apenas um dos dois")
+        return self
+
+
+class BrightnessOut(BaseModel):
+    """O brilho depois do ajuste, de 0 a 100."""
+
+    level: int
 
 
 class AudioRequest(BaseModel):

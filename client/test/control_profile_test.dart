@@ -78,6 +78,10 @@ void main() {
     test('toda tecla mandada existe do outro lado', () {
       for (final p in ControlProfile.builtIn) {
         for (final a in p.actions) {
+          // Brilho não é tecla: vai por um endpoint próprio, e `input` não
+          // significa nada para ele. Sem esta linha o teste leria uma tecla
+          // nula e acusaria um problema que não existe.
+          if (a.isBrightness) continue;
           final input = a.input;
           final onde = '${p.id}/${a.shortcut}';
           expect(a.label(t), isNotEmpty, reason: onde);
@@ -328,6 +332,44 @@ void main() {
       expect(abrir.isLaunch, isTrue);
       expect(tecla.isLaunch, isFalse);
       expect(tecla.appPath, isNull);
+    });
+
+    test('brilho é a terceira natureza, e não se confunde com as outras', () {
+      // São três caminhos diferentes a partir do mesmo botão: teclas vão pelo
+      // `/input`, programas pelo `/apps/launch` e brilho pelo `/brightness`.
+      // Confundir um com o outro manda um `input` sem tecla nenhuma.
+      final brilho = ProfileAction.brightness(
+        icon: Icons.brightness_high,
+        shortcut: '+10%',
+        label: (t) => t.actionBrightnessUp,
+        delta: 10,
+      );
+      expect(brilho.isBrightness, isTrue);
+      expect(brilho.isLaunch, isFalse);
+      expect(brilho.brightnessDelta, 10);
+
+      final tecla = ProfileAction.special(
+        icon: Icons.play_arrow,
+        shortcut: 'Espaço',
+        label: (t) => t.mediaPlayPause,
+        key: 'space',
+      );
+      expect(tecla.isBrightness, isFalse);
+      expect(
+        ProfileAction.launch(appName: 'x', appPath: 'x.lnk').isBrightness,
+        isFalse,
+      );
+    });
+
+    test('o perfil de sistema traz os dois passos de brilho', () {
+      // O documento do projeto pede volume **e** brilho no controle de
+      // recursos do sistema. O volume mora na faixa de mídia; o brilho, aqui.
+      final sistema = ControlProfile.builtIn.firstWhere((p) => p.id == 'sistema');
+      final passos = sistema.actions
+          .where((a) => a.isBrightness)
+          .map((a) => a.brightnessDelta)
+          .toList();
+      expect(passos, containsAll([10, -10]));
     });
 
     test('perfil sem programa nenhum continua válido', () {

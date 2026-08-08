@@ -575,6 +575,14 @@ class Strings {
       'Ancrer à droite', 'Ajustar a la derecha');
   String get actionCloseWindow => _t('Fechar a janela', 'Close window', '关闭窗口',
       'Fermer la fenêtre', 'Cerrar la ventana');
+  String get actionBrightnessDown => _t('Diminuir o brilho', 'Dim screen',
+      '降低亮度', "Baisser la luminosité", 'Bajar el brillo');
+  String get actionBrightnessUp => _t('Aumentar o brilho', 'Brighten screen',
+      '提高亮度', 'Augmenter la luminosité', 'Subir el brillo');
+  /// Confirmação do ajuste. Existe porque brilho não é um comando que se vê
+  /// pelo app: a tela que muda é a do computador, do outro lado.
+  String brightnessSet(int level) => _t('Brilho: $level%', 'Brightness: $level%',
+      '亮度：$level%', 'Luminosité : $level%', 'Brillo: $level%');
   String get actionRewind =>
       _t('Voltar um pouco', 'Rewind', '快退', 'Reculer', 'Retroceder');
   String get actionForward =>

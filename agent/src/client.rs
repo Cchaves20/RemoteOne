@@ -731,6 +731,36 @@ pub async fn run(
                                 let texto = serde_json::to_string(&estado)?;
                                 ws.send(Message::Text(texto)).await?;
                             }
+                            Some(Action::Brightness {
+                                request_id,
+                                level,
+                                delta,
+                            }) => {
+                                // Fica no laço porque a resposta sai pelo
+                                // socket. O ajuste em si custa um processo do
+                                // PowerShell, então vai para uma thread de
+                                // bloqueio: segurar o laço por um segundo
+                                // pararia a captura de tela junto.
+                                let resultado = tokio::task::spawn_blocking(move || {
+                                    crate::brightness::ajustar(level, delta)
+                                })
+                                .await
+                                .unwrap_or_else(|e| Err(format!("o ajuste não terminou: {e}")));
+                                let estado = match resultado {
+                                    Ok(nivel) => ClientMessage::BrightnessState {
+                                        request_id,
+                                        level: Some(nivel),
+                                        error: None,
+                                    },
+                                    Err(motivo) => ClientMessage::BrightnessState {
+                                        request_id,
+                                        level: None,
+                                        error: Some(motivo),
+                                    },
+                                };
+                                let texto = serde_json::to_string(&estado)?;
+                                ws.send(Message::Text(texto)).await?;
+                            }
                             Some(Action::SetIceServers { servers }) => {
                                 video.set_ice_servers(servers);
                             }
@@ -1236,6 +1266,12 @@ enum Action {
     KeepAwake { enabled: bool },
     /// Responder ao backend se o computador está sendo mantido pronto.
     KeepAwakeInfo { request_id: String },
+    /// Ajustar o brilho e responder com o resultado.
+    Brightness {
+        request_id: String,
+        level: Option<u8>,
+        delta: Option<i16>,
+    },
     /// Usar os servidores ICE que o backend mandou (STUN e TURN).
     SetIceServers {
         servers: Vec<crate::protocol::IceServer>,
@@ -1409,6 +1445,17 @@ fn handle_server_text(
         }
         Ok(ServerMessage::KeepAwakeInfo { request_id }) => {
             return Some(Action::KeepAwakeInfo { request_id });
+        }
+        Ok(ServerMessage::Brightness {
+            request_id,
+            level,
+            delta,
+        }) => {
+            return Some(Action::Brightness {
+                request_id,
+                level,
+                delta,
+            });
         }
         Ok(ServerMessage::Audio { enabled, gain }) => {
             return Some(Action::SetAudio { enabled, gain });

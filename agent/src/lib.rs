@@ -8,6 +8,7 @@ pub mod adaptive;
 pub mod apps;
 pub mod audio;
 pub mod awake;
+pub mod brightness;
 pub mod capture;
 pub mod client;
 pub mod clipboard;

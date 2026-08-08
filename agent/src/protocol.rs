@@ -108,6 +108,23 @@ pub enum ClientMessage {
         /// Por que não está, quando não está.
         source: crate::awake::PowerSource,
     },
+    /// Resposta a um `brightness`: o brilho depois do ajuste.
+    ///
+    /// Tem resposta, e as teclas de mídia não têm, porque as duas coisas falham
+    /// de maneiras diferentes. Volume mexe no sistema e funciona em qualquer
+    /// máquina; brilho por software só funciona no **painel embutido** de um
+    /// notebook. Num computador de mesa com monitor externo não há o que
+    /// ajustar, e sem resposta o toque simplesmente não faria nada - o pior
+    /// tipo de falha, a que não deixa rastro.
+    BrightnessState {
+        request_id: String,
+        /// O nível resultante, de 0 a 100. Ausente quando não deu.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        level: Option<u8>,
+        /// Por que não deu, quando não deu.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     /// Resposta a um `list_files`: o conteúdo da pasta, **ou** o motivo de não
     /// ter conseguido. Uma pasta sem permissão não pode chegar ao app como
     /// pasta vazia — são coisas diferentes para quem procura um arquivo.
@@ -250,6 +267,22 @@ pub enum ServerMessage {
     /// com `keep_awake_state` carregando o mesmo `request_id`.
     KeepAwakeInfo {
         request_id: String,
+    },
+    /// Ajusta o brilho da tela do computador.
+    ///
+    /// Duas formas na mesma mensagem, e nunca as duas juntas: `level` põe num
+    /// valor absoluto (0–100), `delta` anda um passo a partir do que está.
+    ///
+    /// O passo relativo existe para a barra de perfis, e ele é resolvido **no
+    /// computador**. Fazer o telefone ler, somar e escrever custaria duas idas
+    /// e voltas por toque, e dois toques rápidos se atropelariam: os dois
+    /// leriam o mesmo valor antigo e o segundo desfaria o primeiro.
+    Brightness {
+        request_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        level: Option<u8>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        delta: Option<i16>,
     },
     /// Liga ou desliga o envio do som do computador. Mão única: o resultado
     /// aparece (ou não) no telefone, e um erro aqui não tem o que responder.
