@@ -127,7 +127,7 @@ para alguma coisa, e todo perfil passaria a carregar uma sequência que talvez n
 queira ter. Duas seções na mesma tela, dois editores parecidos: a pessoa vê a
 semelhança sem precisar entender a distinção.
 
-### Antes de tudo isso, um atalho quase de graça
+### Antes de tudo isso: "abrir todos", e depois "montar o ambiente"
 
 Um perfil personalizado já guarda "Outlook, Teams, navegador, Spotify". Um botão
 **"abrir todos"** nesse perfil entrega o "Modo Trabalho" do documento sem
@@ -139,6 +139,87 @@ pelo que ela acrescenta de verdade — ordem, espera e passos que não são
 programas (brilho, mídia, teclas, energia). Pode ser que seja bem menos recurso
 do que parece agora, e é melhor descobrir isso com um botão do que com um editor
 pronto.
+
+## Posicionar as janelas: o que faz "abrir todos" valer a pena
+
+Abrir quatro programas empilhados um sobre o outro não é um "Modo Trabalho" — é
+a mesma bagunça em quatro toques a menos. O que transforma isso em ambiente
+montado é **cada programa abrir no lugar certo**.
+
+A ideia são os layouts do Windows 11 (metades, três colunas, 2×2, 2/3+1/3), e a
+escolha é feita duas vezes:
+
+1. **O perfil escolhe o layout** — a grade, uma vez.
+2. **Cada programa da lista escolhe a sua zona** dentro dela. Navegador à
+   esquerda, terminal à direita.
+
+O atributo é do **programa dentro do perfil**, e não de um passo de automação.
+Isso importa: o perfil já tem a lista de programas, então a zona é uma coluna a
+mais numa estrutura que existe — e o "abrir todos" passa a montar o ambiente sem
+que nenhum objeto de automação precise existir.
+
+### Como o agente posiciona
+
+Não há API pública para *invocar* o menu de layouts do Windows 11. Mas há o que
+está por trás dele: `SetWindowPos`, que põe uma janela em qualquer retângulo. É o
+que o FancyZones do PowerToys faz.
+
+O agente já tem metade da máquina: `gui.rs` usa `FindWindowExW`,
+`GetWindowThreadProcessId` e `ShowWindow` para achar e mostrar a própria janela.
+É a mesma família de chamadas, sem permissão especial — processos do mesmo
+usuário podem posicionar as janelas uns dos outros.
+
+O retângulo sai da **área de trabalho** do monitor (`SPI_GETWORKAREA`), não da
+resolução: senão a janela de baixo fica atrás da barra de tarefas.
+
+### O que **não** é o caminho: os atalhos de encaixe
+
+Mandar `Win+Esquerda` depois de abrir seria mais fácil — o agente já sabe, e o
+perfil Sistema até tem esse botão. Resolve mal:
+
+- só faz metades e quartos, nada das três colunas ou do 2/3+1/3;
+- age sobre a **janela em foco**, e logo depois de abrir um programa o foco é a
+  coisa mais imprevisível que existe;
+- meio segundo de atraso na abertura e o atalho encaixa a janela errada.
+
+Trocar empilhamento por "às vezes encaixa a janela errada" não é progresso.
+
+### A parte difícil não é posicionar, é achar a janela
+
+Posicionar é uma chamada. Descobrir **qual** janela pertence ao programa que
+acabou de ser aberto é onde mora o trabalho:
+
+- o programa mostra uma tela de carregamento antes da janela de verdade;
+- o processo lançado termina e quem abre a janela é outro — navegadores, Office,
+  qualquer coisa em Electron;
+- a janela pode aparecer três segundos depois, e até lá não há o que mover.
+
+O caminho: depois de lançar, o agente observa por alguns segundos até aparecer
+uma janela nova, visível, de nível superior, cujo processo corresponda — e só
+então posiciona. Com tempo limite, e **falhando de forma explícita** ("abriu, mas
+não consegui posicionar") em vez de em silêncio.
+
+### As regras que faltam decidir cedo
+
+- **Sem zona escolhida, abre como abre hoje.** Posicionar é opcional por
+  programa; um perfil pode ter três posicionados e um solto.
+- **Duas janelas na mesma zona é permitido.** Duas janelas de navegador lado a
+  lado num quadrante é uso legítimo, e inventar uma regra que proíbe isso
+  atrapalharia mais do que ajudaria.
+- **A ordem da lista decide o foco.** O último a ser posicionado fica por cima e
+  em foco. É o único sentido em que a ordem importa num perfil — e vale
+  registrar, porque contradiz em parte o argumento de que num perfil a ordem não
+  significa nada. Ela não significa para quem toca botão a botão; significa para
+  quem toca "abrir todos".
+- **O monitor é do perfil.** Numa máquina com duas telas, o layout precisa saber
+  em qual delas se aplica. Padrão: a principal.
+
+### O que vai resistir
+
+Vale escrever antes de virar surpresa: janelas com tamanho mínimo maior que a
+zona não encolhem, e alguns aplicativos da Microsoft Store ignoram o
+reposicionamento. Outlook, Teams, navegadores e VS Code obedecem — que é a maior
+parte do que interessa aqui.
 
 ### Como fica verificado
 
