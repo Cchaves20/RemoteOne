@@ -275,6 +275,94 @@ Do celular, na tela de controle: quando a barra de cima disser **vídeo** ou
 para ver o resumo do ICE - `relay` na lista de candidatos significa que o TURN
 respondeu.
 
+## Cópia de segurança do banco
+
+O banco guarda a única coisa que **não** dá para refazer: as contas e os
+pareamentos. O código está no Git, a configuração está no `.env`, os
+computadores reinstalam o agente em dois minutos — mas se o banco sumir, cada
+pessoa perde a conta e cada computador precisa ser pareado de novo.
+
+A VM é gratuita e não tem garantia nenhuma. Isto leva meia hora e é o item de
+qualquer lista que pode custar tudo de uma vez.
+
+### 1. Instalar a tarefa diária (uma vez, na VM)
+
+```bash
+cd ~/Deskside && git pull
+chmod +x deploy/backup.sh
+( crontab -l 2>/dev/null; echo "17 3 * * * ~/Deskside/deploy/backup.sh >> ~/backup.log 2>&1" ) | crontab -
+```
+
+3h17 e não 3h00 de propósito: a madrugada em ponto é quando todo mundo agenda
+tarefa, e numa VM de 1 GB duas coisas pesadas ao mesmo tempo bastam para
+derrubar o servidor.
+
+Faça uma agora, para não esperar até amanhã para saber se funciona:
+
+```bash
+~/Deskside/deploy/backup.sh
+ls -lh ~/Deskside/deploy/backups/
+```
+
+### 2. Trazer as cópias para fora da VM
+
+Uma cópia que mora na mesma máquina que o banco **não protege contra a máquina
+morrer**. Ela protege contra o que é mais comum — uma migração de esquema que dá
+errado, um contêiner recriado com o volume errado —, mas não contra o disco.
+
+A outra metade sai do computador de casa, pela mesma chave SSH do deploy:
+
+```powershell
+.\scripts\atualizar.cmd -Backup
+```
+
+Baixa a mais recente para `%USERPROFILE%\Deskside-backups`, **confere que o
+arquivo é mesmo um banco SQLite** e diz o tamanho. A conferência não é zelo
+excessivo: um arquivo de zero byte ou uma mensagem de erro gravada no lugar do
+banco sairiam de um `scp` como sucesso, e só se descobririam no dia da
+restauração.
+
+Vale rodar depois de qualquer mudança grande, e de vez em quando sem motivo.
+
+### Como restaurar
+
+O que ninguém testa até precisar. Faça uma vez, agora, para saber que funciona:
+
+```bash
+cd ~/Deskside/deploy
+sudo docker compose -f docker-compose.lite.yml stop api
+# O banco fica num volume do Docker; o `cp` entra por um contêiner de uma vez só.
+sudo docker run --rm -v deploy_apidata:/data -v ~/Deskside/deploy/backups:/b \
+  alpine cp /b/deskside-AAAAMMDD-HHMMSS.db /data/deskside.db
+sudo docker compose -f docker-compose.lite.yml start api
+```
+
+Troque o nome do arquivo pelo da cópia que você quer. Confira depois:
+
+```bash
+curl -s https://caio-remoteone.duckdns.org/health
+```
+
+### O que o backup faz por dentro, e por que não é `cp`
+
+Copiar o arquivo do banco com o servidor rodando pode produzir um arquivo
+**corrompido**: o SQLite escreve em páginas, e uma cópia feita no meio de uma
+transação pega metade do antes e metade do depois. O pior é que ela parece boa —
+o defeito só aparece na restauração.
+
+O agendador chama `python -m app.backup`, que usa a API de backup do próprio
+SQLite: ela copia página a página, percebe quando uma página muda no caminho e
+refaz essa parte. O resultado é um banco consistente **sem parar o servidor**.
+
+Ficam catorze cópias na VM. Catorze porque o erro que isto mais protege — um
+esquema quebrado, um apagamento acidental — costuma ser notado em dias, não em
+horas: guardar só a de ontem deixaria de fora quem percebe na segunda-feira algo
+que aconteceu na sexta. E o banco tem kilobytes.
+
+As cópias saem numa pasta montada do disco (`deploy/backups`), e não num volume
+do Docker, justamente para o `scp` alcançá-las de fora. A pasta está no
+`.gitignore`: são dados de usuário, e o repositório é público.
+
 ## Manutenção
 
 - **Atualizar o backend** (após um `git pull`):

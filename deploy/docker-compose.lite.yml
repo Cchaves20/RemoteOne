@@ -43,6 +43,14 @@ services:
       DESKSIDE_TURN_SECRET: ${DESKSIDE_TURN_SECRET:?renomeie REMOTEONE_TURN_SECRET para DESKSIDE_TURN_SECRET no deploy/.env}
     volumes:
       - apidata:/data
+      # As cópias de segurança saem num **bind mount**, e não num volume do
+      # Docker, de propósito: elas precisam estar num caminho que dê para
+      # copiar por `scp` de fora. Um volume nomeado fica escondido em
+      # /var/lib/docker e só sai de lá com mais um comando.
+      #
+      # Fica dentro do clone do Git, e isso é seguro: a pasta está no
+      # .gitignore, e `git reset --hard` não apaga arquivo não versionado.
+      - ./backups:/backups
     # Sem `ports:` — só o Caddy alcança a API (rede interna).
 
   # Servidor de relay (TURN). Sem ele, celular no 5G + computador atrás do

@@ -38,3 +38,7 @@ client/pubspec.lock
 *.iml
 .DS_Store
 Thumbs.db
+
+# Cópias de segurança do banco, feitas na VM. Nunca versionadas: são dados
+# de usuário, e o repositório é público.
+deploy/backups/

@@ -39,7 +39,8 @@
 # o script com "não é possível converter System.String no tipo
 # SwitchParameter" - um erro que aponta para o próprio arquivo e não diz qual
 # linha. Custou quatro rodadas de depuração. Os nomes tomados hoje são:
-# Agente, App, Vps, Rodar, Ocultar, Branch, Dominio, Servidor, ChaveSsh, NoPull.
+# Agente, App, Vps, Rodar, Ocultar, Branch, Dominio, Servidor, ChaveSsh, NoPull,
+# Backup.
 #
 # O PowerShell 5.1 lê .ps1 sem BOM como ANSI. Nessa leitura, o travessão vira
 # a aspa curva ", que ele aceita como delimitador de string - e uma aspa solta
@@ -51,6 +52,10 @@ param(
     [switch]$Agente,
     [switch]$App,
     [switch]$Vps,
+
+    # Baixa a cópia de segurança mais recente do banco para este computador.
+    # Sozinha, faz **só** isso - nada de git, compilação ou deploy.
+    [switch]$Backup,
 
     # Deixa o agente rodando à vista no fim, para acompanhar as mensagens.
     [switch]$Rodar,
@@ -75,8 +80,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Nenhuma etapa escolhida = todas.
-if (-not ($Agente -or $App -or $Vps)) {
+# Nenhuma etapa escolhida = todas. O -Backup fica de fora desta conta de
+# propósito: baixar o banco é uma tarefa separada, e não faria sentido ela
+# acontecer toda vez que alguém compila o agente.
+if (-not ($Agente -or $App -or $Vps -or $Backup)) {
     $Agente = $true; $App = $true; $Vps = $true
 }
 
@@ -327,14 +334,23 @@ if ($App) {
 
 # --- vps ---------------------------------------------------------------------
 
+# Acha a chave SSH, se ela não veio por parâmetro.
+#
+# Vive numa função porque agora há dois usuários dela: o deploy e o download da
+# cópia de segurança. Duas cópias da mesma busca acabariam divergindo no dia em
+# que a chave mudasse de lugar.
+function AcharChave($caminho) {
+    if ($caminho -ne "") { return $caminho }
+    # A chave da Oracle costuma estar em Downloads; pega a mais recente.
+    $chaves = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "*.key" -ErrorAction SilentlyContinue
+    $achada = $chaves | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($achada) { return $achada.FullName }
+    return ""
+}
+
 if ($Vps) {
     Titulo "Backend (VPS)"
-    if ($ChaveSsh -eq "") {
-        # A chave da Oracle costuma estar em Downloads; pega a mais recente.
-        $chaves = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "*.key" -ErrorAction SilentlyContinue
-        $achada = $chaves | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        if ($achada) { $ChaveSsh = $achada.FullName }
-    }
+    $ChaveSsh = AcharChave $ChaveSsh
 
     if ($ChaveSsh -eq "" -or -not (Test-Path $ChaveSsh)) {
         $falhas += "vps (chave SSH não encontrada)"
@@ -385,6 +401,63 @@ if ($Vps) {
         # VM não alcança o próprio IP público porque o NAT da nuvem não faz
         # hairpin; a segunda aqui, sem paciência. Verificação é uma só, e é a
         # que sabe esperar.
+    }
+}
+
+# --- cópia de segurança ------------------------------------------------------
+
+if ($Backup) {
+    Titulo "Cópia de segurança do banco"
+    $ChaveSsh = AcharChave $ChaveSsh
+
+    if ($ChaveSsh -eq "" -or -not (Test-Path $ChaveSsh)) {
+        $falhas += "backup (chave SSH não encontrada)"
+        Write-Host "  Não achei a chave SSH. Rode com -ChaveSsh C:\caminho\sua-chave.key" -ForegroundColor Red
+    } else {
+        # Aspas simples no PowerShell: dentro há `$PWD`, que é uma variável do
+        # **shell do Linux** e não daqui. Com aspas duplas o PowerShell a
+        # substituiria antes de mandar, e o servidor receberia o caminho do
+        # Windows - um erro que não parece erro de citação.
+        $achar = 'cd ~/Deskside/deploy 2>/dev/null || cd ~/RemoteOne/deploy; ls -1d "$PWD"/backups/deskside-*.db 2>/dev/null | tail -1'
+        Passo "procurando a cópia mais recente no servidor"
+        $remoto = (& ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $achar | Select-Object -Last 1)
+
+        if (-not $remoto) {
+            $falhas += "backup (nenhuma cópia no servidor)"
+            Write-Host "  O servidor não tem cópia nenhuma ainda." -ForegroundColor Red
+            Write-Host "  Instale a tarefa diária: veja docs/deploy-vps-oracle.md" -ForegroundColor Red
+            Write-Host "  Ou faça uma agora, por SSH:" -ForegroundColor DarkGray
+            Write-Host "    ~/Deskside/deploy/backup.sh" -ForegroundColor DarkGray
+        } else {
+            $pasta = Join-Path $env:USERPROFILE "Deskside-backups"
+            New-Item -ItemType Directory -Force -Path $pasta | Out-Null
+            $nome = Split-Path $remoto -Leaf
+            $local = Join-Path $pasta $nome
+
+            Passo "baixando $nome"
+            & scp -i $ChaveSsh -o StrictHostKeyChecking=accept-new "${Servidor}:${remoto}" $local
+
+            # Conferir o que chegou, e não só o código de saída. Um arquivo de
+            # zero byte, ou uma mensagem de erro gravada no lugar do banco,
+            # sairiam daqui como sucesso - e só se descobririam no dia da
+            # restauração, que é o pior dia possível para descobrir.
+            if (-not (Test-Path $local)) {
+                $falhas += "backup (não baixou)"
+                Write-Host "  O arquivo não chegou." -ForegroundColor Red
+            } else {
+                $tamanho = (Get-Item $local).Length
+                # Todo banco SQLite começa com "SQLite format 3" e um zero.
+                $cabecalho = [System.IO.File]::ReadAllBytes($local) | Select-Object -First 15
+                $texto = -join ($cabecalho | ForEach-Object { [char]$_ })
+                if ($texto -ne "SQLite format 3") {
+                    $falhas += "backup (arquivo não é um banco)"
+                    Write-Host "  Baixou $tamanho bytes, mas não é um banco SQLite." -ForegroundColor Red
+                    Write-Host "  Comeco do arquivo: $texto" -ForegroundColor Red
+                } else {
+                    Write-Host "  Copia salva em $local ($tamanho bytes)." -ForegroundColor Green
+                }
+            }
+        }
     }
 }
 
