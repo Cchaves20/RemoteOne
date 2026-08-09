@@ -7,8 +7,15 @@
 #
 # Instalar (uma vez, na VM):
 #
-#   chmod +x ~/Deskside/deploy/backup.sh
-#   ( crontab -l 2>/dev/null; echo "17 3 * * * ~/Deskside/deploy/backup.sh >> ~/backup.log 2>&1" ) | crontab -
+#   cd ~/Deskside 2>/dev/null || cd ~/RemoteOne
+#   chmod +x deploy/backup.sh
+#   ( crontab -l 2>/dev/null | grep -v 'deploy/backup.sh'; \
+#     echo "17 3 * * * sh -c 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; ./deploy/backup.sh' >> ~/backup.log 2>&1" ) | crontab -
+#
+# O caminho na linha do cron aceita os **dois** nomes de pasta pelo mesmo motivo
+# que o `cd` aqui embaixo: o clone pode se chamar RemoteOne ou Deskside. Uma
+# linha de cron com o caminho errado falha todos os dias em silêncio, num log
+# que ninguém lê até precisar restaurar. Já aconteceu aqui.
 #
 # 3h17 e não 3h00: a madrugada em ponto é quando todo mundo agenda tarefa, e
 # numa VM de 1 GB duas coisas pesadas ao mesmo tempo é o suficiente para

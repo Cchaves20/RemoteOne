@@ -288,10 +288,22 @@ qualquer lista que pode custar tudo de uma vez.
 ### 1. Instalar a tarefa diária (uma vez, na VM)
 
 ```bash
-cd ~/Deskside && git pull
+cd ~/Deskside 2>/dev/null || cd ~/RemoteOne
+git pull
 chmod +x deploy/backup.sh
-( crontab -l 2>/dev/null; echo "17 3 * * * ~/Deskside/deploy/backup.sh >> ~/backup.log 2>&1" ) | crontab -
+( crontab -l 2>/dev/null | grep -v 'deploy/backup.sh'; \
+  echo "17 3 * * * sh -c 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; ./deploy/backup.sh' >> ~/backup.log 2>&1" ) | crontab -
+crontab -l
 ```
+
+**O `cd` com os dois nomes não é preciosismo.** O clone na VM pode se chamar
+`~/RemoteOne` ou `~/Deskside`, dependendo de quando foi feito — o projeto mudou
+de nome depois de o servidor existir, e a pasta não foi renomeada. Uma linha de
+cron com o caminho errado **falha todos os dias em silêncio**, num log que
+ninguém lê até precisar restaurar. Já aconteceu aqui.
+
+O `grep -v` tira uma linha anterior antes de pôr a nova; sem ele, cada
+instalação acrescentaria mais uma.
 
 3h17 e não 3h00 de propósito: a madrugada em ponto é quando todo mundo agenda
 tarefa, e numa VM de 1 GB duas coisas pesadas ao mesmo tempo bastam para
@@ -300,9 +312,12 @@ derrubar o servidor.
 Faça uma agora, para não esperar até amanhã para saber se funciona:
 
 ```bash
-~/Deskside/deploy/backup.sh
-ls -lh ~/Deskside/deploy/backups/
+./deploy/backup.sh
+ls -lh deploy/backups/
 ```
+
+Confira o **tamanho**. Um arquivo de poucos bytes significa banco vazio — o
+contêiner está olhando outro lugar, e o backup não está protegendo nada.
 
 ### 2. Trazer as cópias para fora da VM
 
@@ -329,7 +344,7 @@ Vale rodar depois de qualquer mudança grande, e de vez em quando sem motivo.
 O que ninguém testa até precisar. Faça uma vez, agora, para saber que funciona:
 
 ```bash
-cd ~/Deskside/deploy
+cd ~/Deskside/deploy 2>/dev/null || cd ~/RemoteOne/deploy
 sudo docker compose -f docker-compose.lite.yml stop api
 # O banco fica num volume do Docker; o `cp` entra por um contêiner de uma vez só.
 sudo docker run --rm -v deploy_apidata:/data -v ~/Deskside/deploy/backups:/b \
