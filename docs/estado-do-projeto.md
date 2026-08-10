@@ -130,8 +130,10 @@ falta para o Deskside poder ser vendido:
 - ~~**Backup do banco.**~~ **Feito.** Cópia diária na VM pela API de backup do
   SQLite (consistente com o servidor no ar), catorze cópias mantidas, e
   `atualizar.cmd -Backup` traz a mais recente para fora da máquina — conferindo
-  que o arquivo é mesmo um banco. Falta **testar a restauração uma vez**: é o
-  passo que ninguém faz até precisar. Ver
+  que o arquivo é mesmo um banco. **A restauração foi ensaiada de verdade** em
+  agosto de 2026, com o servidor de produção: parar a API, copiar a cópia por
+  cima do volume, subir, e confirmar no app que os pareamentos sobreviveram. Um
+  backup nunca restaurado é hipótese, não garantia. Ver
   [`deploy-vps-oracle.md`](deploy-vps-oracle.md).
 - **Limite de tentativas** em `/login` e `/register`.
 - **App Store.** Hoje é sideload que expira em sete dias por aparelho.

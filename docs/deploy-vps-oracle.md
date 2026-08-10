@@ -341,7 +341,9 @@ Vale rodar depois de qualquer mudança grande, e de vez em quando sem motivo.
 
 ### Como restaurar
 
-O que ninguém testa até precisar. Faça uma vez, agora, para saber que funciona:
+O que ninguém testa até precisar. **Este procedimento foi ensaiado em produção**
+(agosto de 2026) restaurando a cópia recém-tirada, que é a forma segura de fazer
+o teste: os dados são idênticos, então não há o que perder.
 
 ```bash
 cd ~/Deskside/deploy 2>/dev/null || cd ~/RemoteOne/deploy
@@ -352,11 +354,22 @@ sudo docker run --rm -v deploy_apidata:/data -v ~/Deskside/deploy/backups:/b \
 sudo docker compose -f docker-compose.lite.yml start api
 ```
 
-Troque o nome do arquivo pelo da cópia que você quer. Confira depois:
+Troque o nome do arquivo pelo da cópia que você quer.
 
-```bash
-curl -s https://caio-remoteone.duckdns.org/health
+Confira **do seu computador**, e não da VM:
+
+```powershell
+Invoke-WebRequest https://caio-remoteone.duckdns.org/health | Select-Object -ExpandProperty Content
 ```
+
+Daqui e não de lá por dois motivos que se somam: o contêiner da API **não
+publica porta nenhuma** (só o Caddy fala com ele), e a VM da Oracle **não
+alcança o próprio IP público** — não há NAT de retorno. Um `curl` lá dentro
+falharia sem haver problema nenhum, e mandaria a investigação para o lado
+errado.
+
+E o teste que vale de verdade: abra o app, entre na conta e veja se os
+computadores continuam pareados.
 
 ### O que o backup faz por dentro, e por que não é `cp`
 
