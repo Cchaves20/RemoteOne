@@ -11,6 +11,7 @@ na memória do backend.
 import asyncio
 import base64
 
+from conftest import criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -21,7 +22,6 @@ from app.models import Device, User
 from app.protocol import parse_client_message
 from app.rpc import pending
 from app.transfers import QUEUE_LIMIT, Download, TransferError, transfers
-from conftest import criar_conta
 
 client = TestClient(app)
 

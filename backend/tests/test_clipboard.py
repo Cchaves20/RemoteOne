@@ -6,6 +6,7 @@ sempre a pedido, porque o iOS mostra um aviso na tela toda vez que um app lê a
 área de transferência.
 """
 
+from conftest import criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -15,7 +16,6 @@ from app.main import app
 from app.models import Device, User
 from app.protocol import parse_client_message
 from app.rpc import pending
-from conftest import criar_conta
 
 client = TestClient(app)
 

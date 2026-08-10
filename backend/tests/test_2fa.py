@@ -1,10 +1,10 @@
 """Testes da verificação em duas etapas (TOTP)."""
 
 import pyotp
+from conftest import SENHA, criar_conta
 from fastapi.testclient import TestClient
 
 from app.main import app
-from conftest import SENHA, criar_conta
 
 client = TestClient(app)
 

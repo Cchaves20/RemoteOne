@@ -124,6 +124,41 @@ DESKSIDE_TWILIO_FROM=+15551234567
 
 Vão no `deploy/.env` da VPS, que é gitignorado e nunca versionado.
 
+## Trocar o contato depois
+
+A tela de conta mostra **"Alterar e-mail" ou "Alterar telefone"**, conforme o
+que identifica a conta — quem entrou pelo número não tem e-mail nenhum para
+trocar, e o botão errado ali não levava a lugar nenhum. É o `/auth/me` que
+responde a pergunta: ele devolve os dois campos, e um deles vem nulo.
+
+O número novo passa pela **mesma normalização** do cadastro. Sem isso, gravar
+"(11) 98765-4321" produziria uma forma que o login — que normaliza — nunca
+encontraria: a pessoa trocaria o telefone e ficaria fora da própria conta.
+
+**O que ainda falta aqui:** a troca não verifica o contato novo. É possível
+apontar a conta para um e-mail ou número que não é seu — o que, além de perder
+a conta, **ocupa aquele contato** e impede que o dono real se cadastre. É o
+mesmo buraco que o cadastro em duas etapas fechou, e ele continua aberto neste
+caminho (já estava, para o e-mail, antes desta mudança). O conserto é rotear a
+troca pelo mesmo código de seis dígitos.
+
+## Excluir a conta leva tudo junto
+
+`DELETE /auth/me` apaga a conta **e** o que pertence a ela: computadores
+pareados, perfis, automações e a ordem da barra.
+
+Isso não é arrumação. O SQLite **reaproveita o identificador**: com uma coluna
+`INTEGER PRIMARY KEY`, apagar a conta 1 faz a próxima nascer como 1 de novo, e
+o que ficou para trás com `user_id = 1` passa a pertencer a outra pessoa sem
+nada avisar. Foi exatamente o que aconteceu em uso — perfis e computadores de
+uma conta excluída reapareceram numa conta recém-criada.
+
+A limpeza é feita pelas declarações de `cascade` no `User` (ver
+`app/models.py`), e **não** por chave estrangeira: o SQLite não as força por
+padrão. Quem apaga é o SQLAlchemy. Uma coleção nova que não seja declarada lá
+não vira uma linha esquecida e inofensiva no banco — vira a linha que aparece
+na conta seguinte.
+
 ## Tokens
 
 - **access token** — curta duração (padrão 15 min), enviado no header
@@ -151,6 +186,8 @@ consentimento dos pais).
 | POST | `/api/v1/auth/login` | `{email\|phone+country, password}` | `{access_token, refresh_token}` |
 | POST | `/api/v1/auth/refresh` | `{refresh_token}` | `{access_token}` |
 | GET | `/api/v1/auth/me` | — (Bearer) | `{id, email, phone, first_name, …}` |
+| PATCH | `/api/v1/auth/me/email` | `{current_password, new_email}` | a conta atualizada |
+| PATCH | `/api/v1/auth/me/phone` | `{current_password, new_phone, country}` | a conta atualizada |
 
 **`/api/v1/auth/register` não existe mais.** Enquanto existisse, o código de
 seis dígitos seria decoração: bastaria chamar a rota velha para ter conta sem

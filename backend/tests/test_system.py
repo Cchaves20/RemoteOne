@@ -5,6 +5,7 @@ espera o `system_stats` do agente. Aqui o agente é um dublê que responde dentr
 do próprio envio, o que exercita o caminho completo sem threads.
 """
 
+from conftest import criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -14,7 +15,6 @@ from app.main import app
 from app.models import Device, User
 from app.protocol import parse_client_message
 from app.rpc import pending
-from conftest import criar_conta
 
 client = TestClient(app)
 

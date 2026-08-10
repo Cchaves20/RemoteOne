@@ -135,6 +135,15 @@ class UpdateEmailRequest(BaseModel):
     new_email: EmailStr
 
 
+class UpdatePhoneRequest(BaseModel):
+    """Troca de telefone. O país vai junto, como em toda parte que aceita
+    número: `987654321` não identifica ninguém sem saber de onde é."""
+
+    current_password: str = Field(min_length=1, max_length=72)
+    new_phone: str = Field(min_length=1, max_length=32)
+    country: str = Field(min_length=2, max_length=2)
+
+
 class UpdatePasswordRequest(BaseModel):
     """Troca de senha: exige a senha atual e a nova (mesmo limite do bcrypt)."""
 

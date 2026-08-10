@@ -2,6 +2,7 @@
 
 import asyncio
 
+from conftest import criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -10,7 +11,6 @@ from app.db import SessionLocal
 from app.main import app
 from app.models import Device, User
 from app.rpc import PendingRequests, pending
-from conftest import criar_conta
 
 client = TestClient(app)
 

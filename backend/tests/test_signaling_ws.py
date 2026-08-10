@@ -8,6 +8,7 @@ Sem threads de propósito: o agente é um dublê registrado no `ConnectionManage
 então o `TestClient` só precisa cuidar do lado do espectador.
 """
 
+from conftest import criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -15,7 +16,6 @@ from app.connections import manager, viewers
 from app.db import SessionLocal
 from app.main import app
 from app.models import Device, User
-from conftest import criar_conta
 
 client = TestClient(app)
 

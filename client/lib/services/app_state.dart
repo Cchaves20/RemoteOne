@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/strings.dart';
 import '../models/automation.dart';
 import '../models/cadastro.dart';
+import '../models/conta.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
@@ -31,6 +32,11 @@ class AppState extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   bool appLockEnabled = false;
   bool twoFactorEnabled = false;
+
+  /// A conta de quem está logado. `null` enquanto o `/me` não respondeu — e a
+  /// tela de conta trata isso mostrando o contato vazio em vez de adivinhar se
+  /// a conta é de e-mail ou de telefone.
+  Conta? conta;
   bool gestureTutorialSeen = false;
   StreamQuality streamQuality = StreamQuality.equilibrado;
 
@@ -218,7 +224,8 @@ class AppState extends ChangeNotifier {
     if (restored) {
       try {
         await refreshDevices();
-        twoFactorEnabled = await api.fetchTwoFactorEnabled();
+        conta = await api.fetchAccount();
+        twoFactorEnabled = conta!.twoFactorEnabled;
       } catch (_) {
         // Sem rede agora: segue autenticado; a lista atualiza depois.
       }
@@ -263,7 +270,8 @@ class AppState extends ChangeNotifier {
     );
     await refreshDevices();
     try {
-      twoFactorEnabled = await api.fetchTwoFactorEnabled();
+      conta = await api.fetchAccount();
+      twoFactorEnabled = conta!.twoFactorEnabled;
     } catch (_) {
       // Status do 2FA é secundário; não deve derrubar o login.
     }
@@ -562,8 +570,35 @@ class AppState extends ChangeNotifier {
 
   // --- conta -----------------------------------------------------------------
 
-  Future<void> updateEmail(String currentPassword, String newEmail) =>
-      api.updateEmail(currentPassword, newEmail);
+  /// Troca o contato da conta e **relê o `/me`**.
+  ///
+  /// Reler não é zelo: a tela de conta mostra o contato atual, e sem isso ela
+  /// continuaria exibindo o antigo até o app ser reaberto — parecendo que a
+  /// troca não pegou.
+  Future<void> updateEmail(String currentPassword, String newEmail) async {
+    await api.updateEmail(currentPassword, newEmail);
+    await recarregarConta();
+  }
+
+  Future<void> updatePhone(
+    String currentPassword,
+    String newPhone,
+    String country,
+  ) async {
+    await api.updatePhone(currentPassword, newPhone, country);
+    await recarregarConta();
+  }
+
+  Future<void> recarregarConta() async {
+    try {
+      conta = await api.fetchAccount();
+      twoFactorEnabled = conta!.twoFactorEnabled;
+      notifyListeners();
+    } catch (_) {
+      // Rede fora: a tela segue com o que já tinha, que é melhor do que apagar
+      // o contato da conta por causa de um Wi-Fi instável.
+    }
+  }
 
   Future<void> updatePassword(String currentPassword, String newPassword) =>
       api.updatePassword(currentPassword, newPassword);

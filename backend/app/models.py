@@ -45,8 +45,29 @@ class User(Base):
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False)
 
+    # Tudo o que pertence à conta sai junto com ela. **Todas** as coleções
+    # precisam estar aqui, e a que faltar não vira uma linha esquecida e
+    # inofensiva no banco — vira a linha que aparece na conta seguinte.
+    #
+    # O SQLite reaproveita o identificador: com uma coluna `INTEGER PRIMARY
+    # KEY`, apagar a conta 1 faz a próxima nascer como 1 de novo. O que ficou
+    # para trás com `user_id = 1` passa a pertencer a outra pessoa, sem nada
+    # avisar. Foi assim que perfis e computadores pareados de uma conta
+    # excluída reapareceram numa conta recém-criada.
+    #
+    # Nada disso depende de chave estrangeira do banco: o SQLite não as força
+    # por padrão, e quem apaga é o SQLAlchemy, por causa destas declarações.
     devices: Mapped[list["Device"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    profiles: Mapped[list["ControlProfile"]] = relationship(
+        cascade="all, delete-orphan"
+    )
+    automations: Mapped[list["Automation"]] = relationship(
+        cascade="all, delete-orphan"
+    )
+    profile_layout: Mapped["ProfileLayout | None"] = relationship(
+        cascade="all, delete-orphan"
     )
 
 

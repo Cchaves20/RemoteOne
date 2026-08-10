@@ -1,3 +1,4 @@
+from conftest import criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -6,7 +7,6 @@ from app.db import SessionLocal
 from app.main import _start_stream_message, app
 from app.models import Device, User
 from app.screen import FrameStore, frame_store
-from conftest import criar_conta
 
 client = TestClient(app)
 

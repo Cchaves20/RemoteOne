@@ -6,7 +6,7 @@ porque a descoberta acontece no pior dia possível.
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -121,8 +121,8 @@ class TestNome:
     def test_leva_a_hora_e_nao_so_o_dia(self):
         """Um backup manual antes de mexer no servidor não pode sobrescrever o
         automático do mesmo dia - que é justamente o que se quer preservar."""
-        um = nome_do_arquivo(datetime(2026, 8, 9, 3, 0, 0, tzinfo=timezone.utc))
-        dois = nome_do_arquivo(datetime(2026, 8, 9, 14, 30, 0, tzinfo=timezone.utc))
+        um = nome_do_arquivo(datetime(2026, 8, 9, 3, 0, 0, tzinfo=UTC))
+        dois = nome_do_arquivo(datetime(2026, 8, 9, 14, 30, 0, tzinfo=UTC))
         assert um != dois
         assert um.startswith(PREFIXO)
         assert um.endswith(".db")
@@ -131,10 +131,10 @@ class TestNome:
         """A limpeza ordena por nome. Se o nome não crescer com o tempo, ela
         apagaria a cópia errada."""
         nomes = [
-            nome_do_arquivo(datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)),
-            nome_do_arquivo(datetime(2026, 1, 2, 3, 4, 6, tzinfo=timezone.utc)),
-            nome_do_arquivo(datetime(2026, 1, 10, 0, 0, 0, tzinfo=timezone.utc)),
-            nome_do_arquivo(datetime(2026, 2, 1, 0, 0, 0, tzinfo=timezone.utc)),
+            nome_do_arquivo(datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)),
+            nome_do_arquivo(datetime(2026, 1, 2, 3, 4, 6, tzinfo=UTC)),
+            nome_do_arquivo(datetime(2026, 1, 10, 0, 0, 0, tzinfo=UTC)),
+            nome_do_arquivo(datetime(2026, 2, 1, 0, 0, 0, tzinfo=UTC)),
         ]
         assert nomes == sorted(nomes)
 

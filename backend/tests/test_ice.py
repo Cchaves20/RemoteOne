@@ -11,12 +11,12 @@ import hashlib
 import hmac
 import time
 
+from conftest import criar_conta
 from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.ice import ice_servers
 from app.main import app
-from conftest import criar_conta
 
 client = TestClient(app)
 

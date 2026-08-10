@@ -931,6 +931,16 @@ class Strings {
       'Mot de passe actuel', 'Contraseña actual');
   String get emailUpdated => _t('E-mail atualizado.', 'Email updated.', '邮箱已更新。',
       'E-mail mis à jour.', 'Correo actualizado.');
+  // O par do e-mail, para a conta criada por telefone. `changePhone` sem
+  // prefixo, ao contrário do `verifyChangePhone`: aqui se **troca** o número da
+  // conta; lá se **corrige** o que foi digitado num cadastro que ainda nem
+  // virou conta.
+  String get changePhone => _t('Alterar telefone', 'Change phone', '修改手机号',
+      'Modifier le téléphone', 'Cambiar teléfono');
+  String get newPhone => _t('Novo telefone', 'New phone', '新手机号',
+      'Nouveau téléphone', 'Nuevo teléfono');
+  String get phoneUpdated => _t('Telefone atualizado.', 'Phone updated.',
+      '手机号已更新。', 'Téléphone mis à jour.', 'Teléfono actualizado.');
   String get newPasswordMin => _t('Nova senha (mín. 8 caracteres)',
       'New password (min. 8 characters)', '新密码（至少 8 个字符）',
       'Nouveau mot de passe (min. 8 caractères)', 'Nueva contraseña (mín. 8 caracteres)');

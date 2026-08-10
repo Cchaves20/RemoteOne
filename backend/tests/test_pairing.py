@@ -1,11 +1,11 @@
 from datetime import UTC, datetime, timedelta
 
+from conftest import SENHA, criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.main import app
-from conftest import SENHA, criar_conta
 from app.models import PairingRequest
 from app.pairing import _ALPHABET, _CODE_LEN, generate_pairing_code
 

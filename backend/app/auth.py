@@ -47,6 +47,7 @@ from app.schemas import (
     TwoFactorSetupOut,
     UpdateEmailRequest,
     UpdatePasswordRequest,
+    UpdatePhoneRequest,
     UserOut,
 )
 from app.security import (
@@ -412,6 +413,47 @@ def update_email(
                 status_code=status.HTTP_409_CONFLICT, detail="e-mail já cadastrado"
             )
         current_user.email = body.new_email
+        db.commit()
+        db.refresh(current_user)
+    return current_user
+
+
+@router.patch("/me/phone", response_model=UserOut)
+def update_phone(
+    body: UpdatePhoneRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Troca o telefone da conta (exige a senha atual).
+
+    Gêmeo do `/me/email`, e existe porque a conta pode ter sido criada por
+    telefone: quem entrou pelo número não tem e-mail nenhum para trocar, e a
+    tela de conta mostrava um botão que não servia para nada.
+
+    O número passa pela **mesma normalização** do cadastro. Sem isso, editar o
+    telefone para "(11) 98765-4321" gravaria uma forma que o login — que
+    normaliza — nunca encontraria: a pessoa trocaria o número e ficaria fora da
+    própria conta sem entender por quê.
+    """
+    if not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="senha atual incorreta"
+        )
+
+    pais = telefone.pais(body.country)
+    if pais is None:
+        raise _erro(status.HTTP_400_BAD_REQUEST, "país desconhecido")
+    numero = telefone.normalizar(body.new_phone, pais.iso)
+    if numero is None:
+        raise _erro(
+            status.HTTP_400_BAD_REQUEST,
+            f"número de telefone inválido para {pais.nome} "
+            f"(esperado {pais.minimo}–{pais.maximo} dígitos com DDD)",
+        )
+
+    if numero != current_user.phone:
+        _livre(db, numero, "phone")
+        current_user.phone = numero
         db.commit()
         db.refresh(current_user)
     return current_user

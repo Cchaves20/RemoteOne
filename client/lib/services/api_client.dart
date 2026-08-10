@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/automation.dart';
 import '../models/cadastro.dart';
+import '../models/conta.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
@@ -187,11 +188,15 @@ class ApiClient {
     }
   }
 
-  /// Consulta se a conta tem 2FA ativo (via /me).
-  Future<bool> fetchTwoFactorEnabled() async {
+  /// A conta de quem está logado.
+  ///
+  /// Substituiu o antigo `fetchTwoFactorEnabled`, que lia o `/me` inteiro para
+  /// devolver um `bool`: agora a tela de conta também precisa saber se a conta
+  /// se identifica por e-mail ou por telefone, e uma segunda chamada à mesma
+  /// rota para pegar outro campo dela seria duas viagens pelo mesmo dado.
+  Future<Conta> fetchAccount() async {
     final res = await _http.get(_uri('/api/v1/auth/me'), headers: _authHeaders);
-    final body = _decode(res) as Map<String, dynamic>;
-    return body['totp_enabled'] as bool? ?? false;
+    return Conta.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
   /// Restaura a sessão a partir dos tokens salvos. Renova o access token com o
@@ -249,6 +254,28 @@ class ApiClient {
       body: jsonEncode({
         'current_password': currentPassword,
         'new_email': newEmail,
+      }),
+    );
+    _decode(res); // 200 ou lança
+  }
+
+  /// Troca o telefone da conta (exige a senha atual).
+  ///
+  /// O país vai junto e o servidor normaliza: sem isso, gravar "(11)
+  /// 98765-4321" produziria uma forma que o login — que normaliza — nunca
+  /// encontraria, e a pessoa ficaria fora da própria conta.
+  Future<void> updatePhone(
+    String currentPassword,
+    String newPhone,
+    String country,
+  ) async {
+    final res = await _http.patch(
+      _uri('/api/v1/auth/me/phone'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        'current_password': currentPassword,
+        'new_phone': newPhone,
+        'country': country,
       }),
     );
     _decode(res); // 200 ou lança
