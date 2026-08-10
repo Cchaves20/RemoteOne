@@ -80,3 +80,77 @@ def _migrate() -> None:
             for coluna, tipo in colunas.items():
                 if coluna not in existing:
                     conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"))
+
+    _email_deixa_de_ser_obrigatorio()
+
+
+def _email_deixa_de_ser_obrigatorio() -> None:
+    """Afrouxa `users.email` em bancos criados antes do cadastro por telefone.
+
+    Este é o remendo que faltava, e a falha que ele conserta era invisível até o
+    último passo: `ADD COLUMN` resolve coluna que **falta**, e nada resolve
+    coluna que existe com a restrição errada. O banco de produção nasceu com
+    `email NOT NULL`, o `create_all` não mexe em tabela que já existe, e criar
+    conta por telefone morria no `INSERT` — depois de o formulário passar, de o
+    SMS sair e de o código certo ser digitado. O pior lugar possível.
+
+    Em Postgres é uma linha. No SQLite não existe "alterar coluna": a tabela
+    precisa ser reconstruída, e é isso que acontece aqui.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+    colunas = {c["name"]: c for c in inspector.get_columns("users")}
+    email = colunas.get("email")
+    if email is None or email["nullable"]:
+        return
+
+    if engine.dialect.name != "sqlite":
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ALTER COLUMN email DROP NOT NULL"))
+        return
+
+    from app.models import User
+
+    # Só as colunas que existem dos dois lados: o banco antigo pode não ter as
+    # que acabaram de ser adicionadas, e a tabela nova não tem nada que só
+    # existisse no antigo.
+    comuns = [c.name for c in User.__table__.columns if c.name in colunas]
+    lista = ", ".join(f'"{n}"' for n in comuns)
+    indices = [i["name"] for i in inspector.get_indexes("users")]
+
+    # `AUTOCOMMIT` porque um `PRAGMA` dentro de transação é ignorado em silêncio,
+    # e são os dois PRAGMAs que tornam esta reconstrução segura. A transação
+    # volta logo abaixo, escrita à mão: sem ela, uma falha no meio deixaria o
+    # banco com a tabela renomeada e nenhuma `users`.
+    bruta = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+    with bruta as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        # O detalhe que decide: desde o SQLite 3.25, um RENAME reescreve as
+        # cláusulas `REFERENCES` das **outras** tabelas — `devices` passaria a
+        # apontar para `users_antiga`, que some no fim. Ninguém veria nada
+        # quebrar (o SQLite não força chaves estrangeiras por padrão), e o banco
+        # ficaria com uma referência para o nada.
+        conn.exec_driver_sql("PRAGMA legacy_alter_table=ON")
+        conn.exec_driver_sql("BEGIN")
+        try:
+            # Os índices seguem a tabela renomeada com o nome que tinham, e
+            # `ix_users_email` colidiria ao ser criado de novo.
+            for nome in indices:
+                conn.execute(text(f'DROP INDEX IF EXISTS "{nome}"'))
+            conn.execute(text("ALTER TABLE users RENAME TO users_antiga"))
+            User.__table__.create(bind=conn)
+            conn.execute(
+                text(f"INSERT INTO users ({lista}) SELECT {lista} FROM users_antiga")
+            )
+            conn.execute(text("DROP TABLE users_antiga"))
+            conn.exec_driver_sql("COMMIT")
+        except Exception:
+            conn.exec_driver_sql("ROLLBACK")
+            raise
+        finally:
+            conn.exec_driver_sql("PRAGMA legacy_alter_table=OFF")
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+    print("migração: users.email passou a ser opcional (cadastro por telefone)")
