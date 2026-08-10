@@ -1,8 +1,8 @@
 """Modelos de dados (tabelas)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -16,8 +16,29 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    #: **Um dos dois** identifica a conta: e-mail ou telefone. Por isso os dois
+    #: são nulos no banco, e a regra "exatamente um" vive no cadastro em vez de
+    #: numa restrição da tabela — a alternativa seria um `CHECK` que o SQLite e
+    #: o Postgres escrevem diferente, para dizer o que o único caminho de
+    #: criação já garante.
+    #:
+    #: Únicos, e por um motivo que não é organização: são eles que se digita
+    #: para entrar. Dois cadastros com o mesmo e-mail seriam duas contas que a
+    #: mesma pessoa não conseguiria distinguir na hora de logar.
+    email: Mapped[str | None] = mapped_column(
+        String(320), unique=True, index=True, nullable=True
+    )
+    #: Guardado em E.164 (`+5511987654321`), nunca como foi digitado. Sem isso,
+    #: "(11) 98765-4321" e "11987654321" seriam duas contas.
+    phone: Mapped[str | None] = mapped_column(
+        String(20), unique=True, index=True, nullable=True
+    )
     hashed_password: Mapped[str] = mapped_column(String(255))
+    first_name: Mapped[str] = mapped_column(String(80), default="")
+    last_name: Mapped[str] = mapped_column(String(80), default="")
+    #: `Date` e não `DateTime`: uma data de nascimento não tem hora, e guardar
+    #: uma inventaria um fuso que faria a data mudar de dia conforme quem lê.
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     # Verificação em duas etapas (TOTP). O segredo fica pendente até o usuário
     # confirmar um código; só então `totp_enabled` vira verdadeiro.
@@ -27,6 +48,50 @@ class User(Base):
     devices: Mapped[list["Device"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class PendingSignup(Base):
+    """Um cadastro preenchido e ainda não confirmado pelo código.
+
+    **A conta só nasce depois do código**, e é por isso que esta tabela existe
+    em vez de um campo `verificado` no `User`. Duas razões, e a segunda decide:
+
+    - Um `User` não verificado ocuparia o e-mail na restrição de unicidade. Bastaria
+      alguém digitar o endereço de outra pessoa para **bloquear o cadastro dela**
+      — sem nunca provar que o endereço é seu.
+    - Uma conta pela metade é uma conta: apareceria em contagens, em consultas,
+      e um dia em algum lugar que não esperava o `None`.
+
+    A senha já vem com hash: entre o preenchimento e a confirmação passam
+    minutos, e guardar a senha em claro nesse intervalo seria guardar em claro.
+    """
+
+    __tablename__ = "pending_signups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    #: O que a pessoa recebe o código: e-mail ou E.164. É a chave do fluxo, e
+    #: por isso é único — dois cadastros pendentes para o mesmo destino
+    #: significariam dois códigos válidos, e o segundo confundiria quem esperava
+    #: o primeiro. Recomeçar substitui o anterior.
+    destino: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    #: "email" ou "phone". Diz por onde mandar e em qual coluna gravar no fim.
+    canal: Mapped[str] = mapped_column(String(8))
+    hashed_password: Mapped[str] = mapped_column(String(255))
+    first_name: Mapped[str] = mapped_column(String(80))
+    last_name: Mapped[str] = mapped_column(String(80))
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: O código também com hash. Contra quem lê o banco, um hash de seis
+    #: dígitos vale pouco — são um milhão de tentativas. Vale mesmo assim: o
+    #: custo é zero e tira o código de qualquer despejo acidental de tabela.
+    hashed_code: Mapped[str] = mapped_column(String(255))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    #: Tentativas erradas. Sem este contador, seis dígitos são adivinháveis por
+    #: força bruta em minutos.
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    #: Quando o último código saiu. Segura o "reenviar" apertado repetidamente,
+    #: que em SMS é dinheiro indo embora.
+    last_sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class Device(Base):

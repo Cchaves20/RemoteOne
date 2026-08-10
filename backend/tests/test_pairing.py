@@ -5,12 +5,13 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.main import app
+from conftest import SENHA, criar_conta
 from app.models import PairingRequest
 from app.pairing import _ALPHABET, _CODE_LEN, generate_pairing_code
 
 client = TestClient(app)
 
-CREDS = {"email": "dono@example.com", "password": "senhaSegura123"}
+CREDS = {"email": "dono@example.com", "password": SENHA}
 HELLO = {
     "type": "hello",
     "device_id": "dev-abc",
@@ -21,7 +22,7 @@ HELLO = {
 
 
 def _auth_headers(creds=CREDS) -> dict:
-    tokens = client.post("/api/v1/auth/register", json=creds).json()
+    tokens = criar_conta(client, email=creds["email"], password=creds["password"])
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
@@ -73,7 +74,7 @@ def test_full_pairing_flow():
 
 
 def test_already_paired_agent_receives_paired_on_connect():
-    headers = _auth_headers({"email": "outro@example.com", "password": "senhaSegura123"})
+    headers = _auth_headers({"email": "outro@example.com", "password": SENHA})
     # Primeiro pareia.
     with client.websocket_connect("/ws/agent") as ws:
         ws.send_json(HELLO)
@@ -143,8 +144,8 @@ def test_claim_twice_conflicts():
 
 
 def test_devices_are_scoped_per_user():
-    headers_a = _auth_headers({"email": "a@example.com", "password": "senhaSegura123"})
-    headers_b = _auth_headers({"email": "b@example.com", "password": "senhaSegura123"})
+    headers_a = _auth_headers({"email": "a@example.com", "password": SENHA})
+    headers_b = _auth_headers({"email": "b@example.com", "password": SENHA})
     with client.websocket_connect("/ws/agent") as ws:
         ws.send_json(HELLO)
         ws.receive_json()

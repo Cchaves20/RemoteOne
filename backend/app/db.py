@@ -60,6 +60,18 @@ def _migrate() -> None:
         "users": {
             "totp_secret": "VARCHAR(64)",
             "totp_enabled": "BOOLEAN DEFAULT 0 NOT NULL",
+            # Cadastro completo. Todas nulas ou com padrão: `ALTER TABLE ADD
+            # COLUMN` com `NOT NULL` e sem padrão é recusado numa tabela que já
+            # tem linhas, e o servidor não subiria.
+            #
+            # `phone` fica sem `UNIQUE` aqui de propósito: o SQLite não aceita
+            # adicionar coluna única a uma tabela existente. Em banco novo o
+            # `create_all` cria o índice; em banco antigo a unicidade fica por
+            # conta da checagem no cadastro. Some quando houver Alembic.
+            "phone": "VARCHAR(20)",
+            "first_name": "VARCHAR(80) DEFAULT '' NOT NULL",
+            "last_name": "VARCHAR(80) DEFAULT '' NOT NULL",
+            "birth_date": "DATE",
         },
     }
     with engine.begin() as conn:

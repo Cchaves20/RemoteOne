@@ -6,14 +6,13 @@ from app.db import SessionLocal
 from app.main import _start_stream_message, app
 from app.models import Device, User
 from app.screen import FrameStore, frame_store
+from conftest import criar_conta
 
 client = TestClient(app)
 
 
 def _register(email: str = "tela@example.com") -> tuple[dict, int]:
-    tokens = client.post(
-        "/api/v1/auth/register", json={"email": email, "password": "senhaSegura123"}
-    ).json()
+    tokens = criar_conta(client, email=email)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     with SessionLocal() as db:
         user_id = db.scalar(select(User.id).where(User.email == email))

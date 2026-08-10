@@ -1,40 +1,36 @@
+"""Login, tokens e gerenciamento de conta.
+
+O **cadastro** tem suíte própria (`test_cadastro.py`), porque virou um fluxo de
+duas etapas com validação, código e expiração. Aqui a conta é criada pelo
+helper e o que se exercita é o que vem depois dela.
+"""
+
 from fastapi.testclient import TestClient
 
 from app.main import app
+from conftest import SENHA, criar_conta
 
 client = TestClient(app)
 
-CREDS = {"email": "caio@example.com", "password": "senhaSegura123"}
+CREDS = {"email": "caio@example.com", "password": SENHA}
 
 
 def _register(creds=CREDS) -> dict:
-    return client.post("/api/v1/auth/register", json=creds).json()
+    return criar_conta(client, email=creds["email"], password=creds["password"])
 
 
-def test_register_returns_token_pair():
-    resp = client.post("/api/v1/auth/register", json=CREDS)
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["access_token"]
-    assert body["refresh_token"]
-    assert body["token_type"] == "bearer"
+def test_nao_existe_atalho_para_criar_conta_sem_verificar():
+    """O `/auth/register` antigo saiu, e isso é o recurso — não um resto.
 
-
-def test_register_duplicate_email_conflicts():
-    _register()
-    resp = client.post("/api/v1/auth/register", json=CREDS)
-    assert resp.status_code == 409
-
-
-def test_register_rejects_invalid_email_and_short_password():
-    assert client.post(
-        "/api/v1/auth/register",
-        json={"email": "não-é-email", "password": "senhaSegura123"},
-    ).status_code == 422
-    assert client.post(
-        "/api/v1/auth/register",
-        json={"email": "a@b.com", "password": "curta"},
-    ).status_code == 422
+    Enquanto ele existisse, o código de seis dígitos seria decoração: bastaria
+    chamar a rota velha para ter conta sem provar posse de e-mail nem de
+    telefone. Um teste guarda a porta fechada, porque reabri-la por engano
+    (copiando de um commit antigo, por exemplo) não quebraria mais nada.
+    """
+    resp = client.post(
+        "/api/v1/auth/register", json={"email": "atalho@example.com", "password": SENHA}
+    )
+    assert resp.status_code == 404
 
 
 def test_login_success_and_wrong_password():
@@ -53,7 +49,49 @@ def test_login_success_and_wrong_password():
 def test_login_unknown_email():
     resp = client.post(
         "/api/v1/auth/login",
-        json={"email": "ninguem@example.com", "password": "senhaSegura123"},
+        json={"email": "ninguem@example.com", "password": SENHA},
+    )
+    assert resp.status_code == 401
+
+
+def test_login_exige_um_identificador_e_apenas_um():
+    """Nem nenhum, nem os dois: `987654321` não identifica ninguém sem o país,
+    e mandar e-mail e telefone juntos não diz por qual deles entrar."""
+    assert client.post("/api/v1/auth/login", json={"password": SENHA}).status_code == 422
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"email": "a@b.com", "phone": "11987654321", "country": "BR", "password": SENHA},
+    ).status_code == 422
+    # Telefone sem país também não serve.
+    assert client.post(
+        "/api/v1/auth/login", json={"phone": "11987654321", "password": SENHA}
+    ).status_code == 422
+
+
+def test_login_por_telefone():
+    """Entrar pelo número, na conta criada pelo número."""
+    criar_conta(client, phone="(11) 98765-4321", country="BR")
+    ok = client.post(
+        "/api/v1/auth/login",
+        json={"phone": "11987654321", "country": "BR", "password": SENHA},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["access_token"]
+
+    # A mesma conta, digitada de outro jeito: a normalização é que faz as duas
+    # formas caírem no mesmo lugar em vez de virarem contas diferentes.
+    outro_jeito = client.post(
+        "/api/v1/auth/login",
+        json={"phone": "+55 11 98765 4321", "country": "BR", "password": SENHA},
+    )
+    assert outro_jeito.status_code == 200
+
+
+def test_login_por_telefone_com_senha_errada():
+    criar_conta(client, phone="11912345678", country="BR")
+    resp = client.post(
+        "/api/v1/auth/login",
+        json={"phone": "11912345678", "country": "BR", "password": "Outra1!senha"},
     )
     assert resp.status_code == 401
 
@@ -140,7 +178,7 @@ def test_update_email_wrong_password():
 
 
 def test_update_email_conflict():
-    _register({"email": "ocupado@example.com", "password": "senhaSegura123"})
+    _register({"email": "ocupado@example.com", "password": SENHA})
     headers = _register_headers()
     resp = client.patch(
         "/api/v1/auth/me/email",
@@ -154,14 +192,14 @@ def test_update_password_changes_login():
     headers = _register_headers()
     resp = client.patch(
         "/api/v1/auth/me/password",
-        json={"current_password": CREDS["password"], "new_password": "novaSenha456"},
+        json={"current_password": CREDS["password"], "new_password": "novaSenha456!"},
         headers=headers,
     )
     assert resp.status_code == 204
     assert client.post("/api/v1/auth/login", json=CREDS).status_code == 401
     assert client.post(
         "/api/v1/auth/login",
-        json={"email": CREDS["email"], "password": "novaSenha456"},
+        json={"email": CREDS["email"], "password": "novaSenha456!"},
     ).status_code == 200
 
 
@@ -169,7 +207,7 @@ def test_update_password_wrong_current():
     headers = _register_headers()
     resp = client.patch(
         "/api/v1/auth/me/password",
-        json={"current_password": "errada12345", "new_password": "novaSenha456"},
+        json={"current_password": "errada12345", "new_password": "novaSenha456!"},
         headers=headers,
     )
     assert resp.status_code == 401

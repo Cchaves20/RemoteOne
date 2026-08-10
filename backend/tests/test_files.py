@@ -21,6 +21,7 @@ from app.models import Device, User
 from app.protocol import parse_client_message
 from app.rpc import pending
 from app.transfers import QUEUE_LIMIT, Download, TransferError, transfers
+from conftest import criar_conta
 
 client = TestClient(app)
 
@@ -35,9 +36,7 @@ LISTING = {
 
 
 def _auth_headers(email: str) -> tuple[dict, int]:
-    tokens = client.post(
-        "/api/v1/auth/register", json={"email": email, "password": "senhaSegura123"}
-    ).json()
+    tokens = criar_conta(client, email=email)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     with SessionLocal() as db:
         user_id = db.scalar(select(User.id).where(User.email == email))

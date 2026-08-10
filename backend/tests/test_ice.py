@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.ice import ice_servers
 from app.main import app
+from conftest import criar_conta
 
 client = TestClient(app)
 
@@ -76,10 +77,7 @@ def test_endpoint_exige_login():
 
 
 def test_endpoint_devolve_a_lista():
-    tokens = client.post(
-        "/api/v1/auth/register",
-        json={"email": "ice1@example.com", "password": "senhaSegura123"},
-    ).json()
+    tokens = criar_conta(client, email="ice1@example.com")
     resp = client.get(
         "/api/v1/ice-servers",
         headers={"Authorization": f"Bearer {tokens['access_token']}"},

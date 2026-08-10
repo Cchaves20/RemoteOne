@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 import jwt
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from app import pairing
+from app import entrega, pairing
 from app.agents import AgentRegistry
 from app.auth import router as auth_router
 from app.automations import router as automations_router
@@ -101,6 +101,7 @@ FEATURES = [
     "launch-many",
     "window-zones",
     "automations",
+    "signup-verification",
 ]
 
 
@@ -114,6 +115,11 @@ def health() -> dict:
         "status": "ok",
         "version": settings.version,
         "features": FEATURES,
+        # Quais caminhos de verificação entregam de verdade. Sem isto, "o
+        # código não chegou" começaria por dedução: o binário no ar pode ser
+        # mais velho que o `.env`, o `.env` pode ter um nome de variável
+        # errado, e nada disso aparece de fora.
+        "delivery": entrega.configurado(),
     }
 
 
@@ -130,10 +136,17 @@ def list_agents() -> dict:
 
 
 def _paired_email(device_id: str) -> str | None:
-    """Retorna o e-mail da conta dona do dispositivo, ou None se não pareado."""
+    """Como a conta dona do dispositivo se identifica, ou None se não pareado.
+
+    E-mail **ou telefone**: desde que a conta possa ser criada por telefone, o
+    e-mail é opcional, e devolver `None` para uma conta que existe faria a
+    janela do agente dizer "não pareado" numa máquina pareada.
+    """
     with SessionLocal() as db:
         device = pairing.get_device(db, device_id)
-        return device.user.email if device is not None else None
+        if device is None:
+            return None
+        return device.user.email or device.user.phone or f"conta {device.user.id}"
 
 
 def _pairing_intro(hello: Hello) -> dict:

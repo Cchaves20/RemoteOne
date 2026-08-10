@@ -1,21 +1,112 @@
 """Schemas de entrada e saída da API de autenticação."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class Credentials(BaseModel):
-    """Dados de cadastro/login. A senha é limitada a 72 bytes (limite do bcrypt).
+    """Dados de login: e-mail **ou** telefone, mais a senha.
 
-    `totp_code` só é usado no login quando a conta tem 2FA ativo; no cadastro é
-    ignorado.
+    Um campo por forma, e não um campo só que aceita as duas, porque o telefone
+    precisa do país junto — `987654321` não identifica ninguém sem saber de onde
+    é. E um "identificador" que às vezes carrega um país e às vezes não é um
+    campo que significa duas coisas.
+
+    `totp_code` só é usado quando a conta tem 2FA ativo.
     """
 
-    email: EmailStr
-    password: str = Field(min_length=8, max_length=72)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=32)
+    #: ISO do país do telefone ("BR"). Ignorado quando se entra por e-mail.
+    country: str | None = Field(default=None, max_length=2)
+    #: Sem `min_length` aqui, ao contrário do cadastro: as senhas antigas
+    #: existem, e um login que recusasse a senha certa por ser curta trancaria
+    #: a pessoa fora da própria conta em nome de uma regra que só vale para
+    #: senhas novas.
+    password: str = Field(min_length=1, max_length=72)
     totp_code: str | None = Field(default=None, max_length=10)
+
+    @model_validator(mode="after")
+    def um_identificador(self) -> "Credentials":
+        if (self.email is None) == (self.phone is None):
+            raise ValueError("mande e-mail ou telefone, e apenas um dos dois")
+        if self.phone is not None and not self.country:
+            raise ValueError("telefone precisa do país")
+        return self
+
+
+class SignupStart(BaseModel):
+    """O formulário de criação de conta, antes da verificação.
+
+    Chega inteiro numa vez só, e a verificação vem depois, porque é isso que
+    permite recusar o que estiver errado **antes** de gastar um SMS: senha
+    fraca, telefone impossível, idade abaixo do mínimo. Verificar primeiro e
+    validar depois faria a pessoa receber um código para então descobrir que a
+    senha não serve.
+    """
+
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    birth_date: date
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=32)
+    country: str | None = Field(default=None, max_length=2)
+    #: A política das cinco regras é conferida no endpoint, e não aqui, para a
+    #: resposta poder listar **o que falta** em vez de um "senha inválida".
+    password: str = Field(min_length=1, max_length=72)
+    password_confirm: str = Field(min_length=1, max_length=72)
+
+    @model_validator(mode="after")
+    def coerente(self) -> "SignupStart":
+        if (self.email is None) == (self.phone is None):
+            raise ValueError("mande e-mail ou telefone, e apenas um dos dois")
+        if self.phone is not None and not self.country:
+            raise ValueError("telefone precisa do país")
+        if self.password != self.password_confirm:
+            raise ValueError("as senhas não conferem")
+        return self
+
+
+class SignupPending(BaseModel):
+    """Resposta do início do cadastro: para onde o código foi, e quando pode ir de novo.
+
+    `destination` volta **normalizado** — o telefone em E.164, o e-mail em
+    minúsculas. É o que a tela de verificação manda de volta, e devolvê-lo daqui
+    evita que o app tenha de repetir a normalização e errar de um jeito
+    diferente.
+    """
+
+    destination: str
+    channel: Literal["email", "phone"]
+    #: Quanto falta para o botão de reenviar valer. A tela mostra a contagem em
+    #: vez de deixar a pessoa tocar e receber um erro.
+    resend_in_seconds: int
+    #: Falso quando o servidor não tem provedor configurado e o código foi para
+    #: o diário. O app avisa em vez de deixar a pessoa esperando um SMS que
+    #: nunca vai chegar.
+    delivered: bool = True
+
+
+class SignupVerify(BaseModel):
+    """O código digitado, com o destino a que ele pertence."""
+
+    destination: str = Field(min_length=1, max_length=320)
+    code: str = Field(min_length=1, max_length=10)
+
+
+class SignupResend(BaseModel):
+    destination: str = Field(min_length=1, max_length=320)
+
+
+class CountryOut(BaseModel):
+    """Um país no seletor de telefone."""
+
+    iso: str
+    name: str
+    dial_code: str
+    flag: str
 
 
 class TwoFactorSetupOut(BaseModel):
@@ -74,7 +165,12 @@ class AccessToken(BaseModel):
 
 class UserOut(BaseModel):
     id: int
-    email: EmailStr
+    #: Um dos dois vem preenchido — é o que identifica a conta.
+    email: EmailStr | None = None
+    phone: str | None = None
+    first_name: str = ""
+    last_name: str = ""
+    birth_date: date | None = None
     created_at: datetime
     totp_enabled: bool = False
 

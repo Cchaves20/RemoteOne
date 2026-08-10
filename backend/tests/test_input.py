@@ -7,6 +7,7 @@ from app.db import SessionLocal
 from app.input import InputAction
 from app.main import app
 from app.models import Device, User
+from conftest import criar_conta
 
 client = TestClient(app)
 
@@ -14,9 +15,7 @@ MOVE = {"kind": "mouse_move", "dx": 10, "dy": -5}
 
 
 def _register(email: str = "dono@example.com") -> tuple[dict, int]:
-    tokens = client.post(
-        "/api/v1/auth/register", json={"email": email, "password": "senhaSegura123"}
-    ).json()
+    tokens = criar_conta(client, email=email)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     with SessionLocal() as db:
         user_id = db.scalar(select(User.id).where(User.email == email))

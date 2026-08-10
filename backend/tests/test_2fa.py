@@ -4,14 +4,15 @@ import pyotp
 from fastapi.testclient import TestClient
 
 from app.main import app
+from conftest import SENHA, criar_conta
 
 client = TestClient(app)
 
-CREDS = {"email": "2fa@example.com", "password": "senhaSegura123"}
+CREDS = {"email": "2fa@example.com", "password": SENHA}
 
 
 def _register_headers(creds=CREDS) -> dict:
-    tokens = client.post("/api/v1/auth/register", json=creds).json()
+    tokens = criar_conta(client, email=creds["email"], password=creds["password"])
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 

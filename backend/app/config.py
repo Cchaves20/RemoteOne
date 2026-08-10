@@ -64,5 +64,24 @@ class Settings(BaseSettings):
     # DESKSIDE_STREAM_FPS/QUALITY/MAX_WIDTH para ajuste fino).
     stream_fps: int = 60
 
+    # Entrega do código de verificação do cadastro. Sem nada configurado, o
+    # código vai para o diário do servidor — ver `app/entrega.py`.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    twilio_sid: str = ""
+    twilio_token: str = ""
+    twilio_from: str = ""
+
+    # Idade mínima para criar conta.
+    #
+    # Treze não é número escolhido a esmo: é o piso da LGPD para tratamento de
+    # dados sem consentimento dos pais, e o mesmo que a maioria dos serviços
+    # adota. Fica aqui, e não fixo no código, porque é decisão de produto e
+    # jurídica — não de programação.
+    idade_minima: int = 13
+
 
 settings = Settings()
