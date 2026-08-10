@@ -4,6 +4,7 @@ import '../models/pais.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../widgets/brand.dart';
+import 'forgot_password_screen.dart';
 import 'signup_screen.dart';
 
 /// Tela de login. Também permite ajustar a URL do servidor, para apontar o
@@ -57,6 +58,15 @@ class _LoginScreenState extends State<LoginScreen> {
     widget.state.serverUrl = _server.text.trim();
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => SignupScreen(state: widget.state)),
+    );
+  }
+
+  Future<void> _esqueciSenha() async {
+    // O servidor vale para os dois caminhos: quem digitou um endereço errado
+    // aqui vai errar lá também se o app apontar para outro lugar.
+    widget.state.serverUrl = _server.text.trim();
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ForgotPasswordScreen(state: widget.state)),
     );
   }
 
@@ -266,6 +276,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               )
                             : Text(t.signInButton),
                       ),
+                    ),
+                    TextButton(
+                      onPressed: _busy ? null : _esqueciSenha,
+                      child: Text(t.forgotLink),
                     ),
                     TextButton(
                       onPressed: _busy ? null : _criarConta,

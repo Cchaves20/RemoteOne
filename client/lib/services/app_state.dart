@@ -327,6 +327,29 @@ class AppState extends ChangeNotifier {
   Future<SignupPending> signupResend(String destination) =>
       api.signupResend(destination);
 
+  // --- esqueci minha senha ---------------------------------------------------
+
+  Future<SignupPending> forgotPassword({
+    String? email,
+    String? phone,
+    String? country,
+  }) =>
+      api.forgotPassword(email: email, phone: phone, country: country);
+
+  /// Troca a senha e entra. Carrega o que uma sessão nova precisa, como o
+  /// cadastro faz — quem chega aqui vai direto para a lista de computadores.
+  Future<void> resetPassword(
+    String destination,
+    String code,
+    String password,
+    String passwordConfirm,
+  ) async {
+    await api.resetPassword(destination, code, password, passwordConfirm);
+    await refreshDevices();
+    await recarregarConta();
+    notifyListeners();
+  }
+
   Future<void> refreshDevices() async {
     devices = await api.listDevices();
     notifyListeners();

@@ -30,13 +30,15 @@ from app import entrega, telefone, verificacao
 from app import senha as politica_de_senha
 from app.config import settings
 from app.db import get_db
-from app.models import PendingSignup, User
+from app.models import PasswordReset, PendingSignup, User
 from app.schemas import (
     AccessToken,
     CountryOut,
     Credentials,
     DeleteAccountRequest,
+    ForgotPasswordRequest,
     RefreshRequest,
+    ResetPasswordRequest,
     SignupPending,
     SignupResend,
     SignupStart,
@@ -120,7 +122,9 @@ def _idade(nascimento: date, hoje: date | None = None) -> int:
     )
 
 
-def _destino(body: SignupStart | Credentials) -> tuple[str, str]:
+def _destino(
+    body: SignupStart | Credentials | ForgotPasswordRequest,
+) -> tuple[str, str]:
     """O identificador normalizado e o canal, ou um 400 explicando o quê.
 
     Normalizar aqui, num lugar só, é o que impede `Caio@X.com` e `caio@x.com` de
@@ -344,6 +348,133 @@ def _pendente(db: Session, destino: str) -> PendingSignup:
             "não há cadastro em andamento para este contato",
         )
     return achado
+
+
+@router.post("/password/forgot", response_model=SignupPending)
+def forgot_password(
+    body: ForgotPasswordRequest, db: Session = Depends(get_db)
+) -> SignupPending:
+    """Manda um código para quem esqueceu a senha.
+
+    **Responde igual exista a conta ou não.** É a decisão que separa esta rota
+    do cadastro, onde dizer "e-mail já cadastrado" é necessário e esperado. Aqui
+    a diferença viraria um oráculo: um estranho digitaria endereços em sequência
+    e descobriria quais têm conta no Deskside. Como cada conta é um computador,
+    essa lista tem valor para quem a coletasse.
+
+    Por isso, quando o contato não existe: nada é criado, nada é enviado, e a
+    resposta é a mesma — inclusive o tempo até poder pedir de novo.
+    """
+    destino, canal = _destino(body)
+    coluna = User.email if canal == "email" else User.phone
+    user = db.scalar(select(User).where(coluna == destino))
+
+    resposta = SignupPending(
+        destination=destino,
+        channel=canal,
+        resend_in_seconds=int(verificacao.ESPERA_REENVIO.total_seconds()),
+        delivered=entrega.configurado()["email" if canal == "email" else "sms"],
+    )
+    if user is None:
+        return resposta
+
+    anterior = db.scalar(select(PasswordReset).where(PasswordReset.destino == destino))
+    agora = datetime.now(UTC)
+    if anterior is not None:
+        # Pedir de novo antes da hora não gasta envio. Sem isto, o botão de
+        # "reenviar" apertado dez vezes seriam dez SMS pagos.
+        if not verificacao.pode_reenviar(anterior.last_sent_at):
+            raise _erro(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                f"espere {verificacao.segundos_para_reenviar(anterior.last_sent_at)}s "
+                "para pedir outro código",
+            )
+        db.delete(anterior)
+        db.flush()
+
+    codigo = verificacao.gerar()
+    db.add(
+        PasswordReset(
+            user_id=user.id,
+            destino=destino,
+            canal=canal,
+            hashed_code=verificacao.resumo(codigo),
+            expires_at=verificacao.prazo(agora),
+            last_sent_at=agora,
+        )
+    )
+    db.commit()
+    _enviar(destino, canal, codigo)
+    return resposta
+
+
+@router.post("/password/reset", response_model=TokenPair)
+def reset_password(
+    body: ResetPasswordRequest, db: Session = Depends(get_db)
+) -> TokenPair:
+    """Confere o código e troca a senha, devolvendo a sessão já aberta.
+
+    Entrar direto, em vez de mandar de volta ao login, é deliberado: quem
+    acabou de provar posse do contato **e** escolher uma senha nova já fez tudo
+    o que o login pediria, e a senha recém-criada é a que mais se esquece se a
+    pessoa tiver de digitá-la de novo no minuto seguinte.
+    """
+    faltando = politica_de_senha.problemas(body.password)
+    if faltando:
+        raise _erro(
+            status.HTTP_400_BAD_REQUEST, "a senha precisa de: " + ", ".join(faltando)
+        )
+
+    pedido = db.scalar(
+        select(PasswordReset).where(
+            PasswordReset.destino == body.destination.strip().lower()
+        )
+    )
+    if pedido is None:
+        raise _erro(
+            status.HTTP_404_NOT_FOUND, "não há recuperação em andamento para este contato"
+        )
+
+    if verificacao.expirou(pedido.expires_at):
+        db.delete(pedido)
+        db.commit()
+        raise _erro(status.HTTP_410_GONE, "o código expirou; peça outro")
+
+    if not verificacao.confere(body.code.strip(), pedido.hashed_code):
+        pedido.attempts += 1
+        restantes = verificacao.MAX_TENTATIVAS - pedido.attempts
+        if restantes <= 0:
+            db.delete(pedido)
+            db.commit()
+            raise _erro(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "tentativas demais; peça a recuperação de novo",
+            )
+        db.commit()
+        raise _erro(
+            status.HTTP_401_UNAUTHORIZED,
+            f"código incorreto ({restantes} tentativa"
+            f"{'s' if restantes > 1 else ''} restante"
+            f"{'s' if restantes > 1 else ''})",
+        )
+
+    user = db.get(User, pedido.user_id)
+    if user is None:
+        # A conta foi excluída entre pedir e usar o código.
+        db.delete(pedido)
+        db.commit()
+        raise _erro(status.HTTP_404_NOT_FOUND, "conta não encontrada")
+
+    user.hashed_password = hash_password(body.password)
+    # Todo pedido em aberto dessa conta cai junto, e não só o que foi usado: se
+    # havia dois códigos válidos, o segundo continuaria trocando a senha depois.
+    for aberto in db.scalars(
+        select(PasswordReset).where(PasswordReset.user_id == user.id)
+    ).all():
+        db.delete(aberto)
+    db.commit()
+    db.refresh(user)
+    return _tokens_for(user)
 
 
 @router.post("/login", response_model=TokenPair)

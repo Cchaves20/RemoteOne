@@ -123,6 +123,53 @@ class ApiClient {
     return SignupPending.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
+  /// Pede o código de recuperação de senha.
+  ///
+  /// **Responde igual exista a conta ou não** — é o servidor que garante isso,
+  /// e o app não tem como (nem deve) saber a diferença: descobrir quais
+  /// endereços têm conta é justamente o que a resposta uniforme impede.
+  Future<SignupPending> forgotPassword({
+    String? email,
+    String? phone,
+    String? country,
+  }) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/password/forgot'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            if (email != null) 'email': email,
+            if (phone != null) 'phone': phone,
+            if (country != null) 'country': country,
+          }),
+        )
+        .timeout(_timeout);
+    return SignupPending.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Troca a senha com o código recebido e **já abre a sessão**.
+  Future<void> resetPassword(
+    String destination,
+    String code,
+    String password,
+    String passwordConfirm,
+  ) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/password/reset'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'destination': destination,
+            'code': code,
+            'password': password,
+            'password_confirm': passwordConfirm,
+          }),
+        )
+        .timeout(_timeout);
+    _storeTokens(_decode(res));
+    await _persist();
+  }
+
   /// Entra com e-mail **ou** telefone. O telefone vai com o país junto:
   /// `987654321` não identifica ninguém sem saber de onde é.
   Future<void> login(

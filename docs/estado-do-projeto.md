@@ -27,13 +27,13 @@ escolha — vai parecer dívida.
 | 10 | Controle multimídia | ✅ volume, apresentações e brilho |
 | 11 | Sistema de perfis | ⚠️ Steam/gamepad cortado (ver abaixo) |
 | 12 | Monitoramento | ✅ CPU, RAM, GPU, temperatura, SSD, rede e bateria |
-| 13 | Terminal remoto | ❌ não feito |
+| 13 | Terminal remoto | 🚫 cortado |
 | 14 | Gamepad e controles externos | 🚫 cortado (ver abaixo) |
 | 15 | Gerenciamento de energia | ✅ (+ "manter pronto", que não estava no plano) |
 | 16 | Áudio e vídeo | ⚠️ áudio ✅; microfone e webcam 🚫 cortados |
 | 17 | Automações | ✅ ver [`perfis-de-controle.md`](perfis-de-controle.md) |
 | 18 | Integração com IA | 🚫 cortada (ver [`plano-4.0.md`](plano-4.0.md)) |
-| 19 | Notificações | ❌ não feito |
+| 19 | Notificações | 🚫 cortado |
 | 20 | Segurança | ⚠️ falta criptografia de arquivos e permissões granulares |
 
 ## As versões que o documento define
@@ -116,6 +116,23 @@ para justificar driver, tela nova e instalador extra agora.
 É barato (mesmo padrão do teclado físico do iPad: detectar pelo evento, traduzir,
 encaminhar) e não tem obstáculo de plataforma. Mas só faz sentido depois do
 gamepad virtual, que é quem dá o outro lado do caminho.
+
+### Terminal remoto (Etapa 13) — cortado
+
+Executar comando arbitrário no computador é a maior superfície de risco que o
+produto poderia ter, e não é o que o Deskside faz: quem quer terminal já tem o
+próprio computador na tela, com o teclado remoto funcionando. O recurso
+duplicaria o que existe e traria um caminho de execução que nenhuma outra parte
+do sistema tem.
+
+### Notificações (Etapa 19) — cortado
+
+Notificação remota no iOS exige APNs, que exige conta paga de desenvolvedor e um
+app assinado — nada disso existe enquanto a distribuição for sideload com Apple
+ID gratuito. E o conteúdo que valeria notificar ("o download terminou", "o
+computador ficou online") é justamente o que se descobre abrindo o app.
+
+Volta junto com a App Store, se voltar.
 
 ### HarmonyOS (Etapas 1.1, 1.3 e 1.2 da implementação) — cortado
 

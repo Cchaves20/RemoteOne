@@ -100,6 +100,39 @@ class SignupResend(BaseModel):
     destination: str = Field(min_length=1, max_length=320)
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Quem esqueceu a senha, identificado como no login."""
+
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=32)
+    country: str | None = Field(default=None, max_length=2)
+
+    @model_validator(mode="after")
+    def um_identificador(self) -> "ForgotPasswordRequest":
+        if (self.email is None) == (self.phone is None):
+            raise ValueError("mande e-mail ou telefone, e apenas um dos dois")
+        if self.phone is not None and not self.country:
+            raise ValueError("telefone precisa do país")
+        return self
+
+
+class ResetPasswordRequest(BaseModel):
+    """O código recebido e a senha nova."""
+
+    destination: str = Field(min_length=1, max_length=320)
+    code: str = Field(min_length=1, max_length=10)
+    #: A política das cinco regras é conferida no endpoint, para a resposta
+    #: poder listar o que falta — igual ao cadastro.
+    password: str = Field(min_length=1, max_length=72)
+    password_confirm: str = Field(min_length=1, max_length=72)
+
+    @model_validator(mode="after")
+    def senhas_conferem(self) -> "ResetPasswordRequest":
+        if self.password != self.password_confirm:
+            raise ValueError("as senhas não conferem")
+        return self
+
+
 class CountryOut(BaseModel):
     """Um país no seletor de telefone."""
 

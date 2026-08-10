@@ -69,6 +69,9 @@ class User(Base):
     profile_layout: Mapped["ProfileLayout | None"] = relationship(
         cascade="all, delete-orphan"
     )
+    password_resets: Mapped[list["PasswordReset"]] = relationship(
+        cascade="all, delete-orphan"
+    )
 
 
 class PendingSignup(Base):
@@ -113,6 +116,34 @@ class PendingSignup(Base):
     #: Quando o último código saiu. Segura o "reenviar" apertado repetidamente,
     #: que em SMS é dinheiro indo embora.
     last_sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PasswordReset(Base):
+    """Um pedido de "esqueci minha senha" esperando o código.
+
+    Tabela própria, e não o `PendingSignup` reaproveitado, por um motivo
+    concreto: lá o `destino` é único, e uma pessoa que pede recuperação enquanto
+    existe um cadastro pendente para o mesmo endereço derrubaria o cadastro do
+    outro. São dois fluxos que podem coexistir no mesmo contato.
+
+    Aponta para o `user_id` e não para o contato: se a pessoa trocar o e-mail
+    entre pedir o código e usá-lo, o pedido continua valendo para **a conta**,
+    que é o que ela quis recuperar.
+    """
+
+    __tablename__ = "password_resets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    #: Para onde o código foi. Guardado para a tela poder mostrar e para o
+    #: `reset` achar o pedido sem expor o `user_id` ao app.
+    destino: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    canal: Mapped[str] = mapped_column(String(8))
+    hashed_code: Mapped[str] = mapped_column(String(255))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class Device(Base):

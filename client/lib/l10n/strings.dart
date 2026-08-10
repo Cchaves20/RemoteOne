@@ -941,6 +941,27 @@ class Strings {
       'Nouveau téléphone', 'Nuevo teléfono');
   String get phoneUpdated => _t('Telefone atualizado.', 'Phone updated.',
       '手机号已更新。', 'Téléphone mis à jour.', 'Teléfono actualizado.');
+  // Esqueci minha senha. Reaproveita `verifySentEmail`/`verifySentSms`,
+  // `resendCode` e as cinco regras: é o mesmo código, pelo mesmo caminho, com o
+  // mesmo prazo — duas redações para a mesma coisa fariam parecer dois
+  // mecanismos diferentes.
+  String get forgotLink => _t('Esqueci minha senha', 'Forgot my password',
+      '忘记密码', "J'ai oublié mon mot de passe", 'Olvidé mi contraseña');
+  String get forgotTitle => _t('Recuperar senha', 'Reset password', '重置密码',
+      'Réinitialiser le mot de passe', 'Recuperar contraseña');
+  String get forgotExplain => _t(
+      'Diga o e-mail ou o telefone da sua conta. Vamos mandar um código para você criar uma senha nova.',
+      "Tell us your account's email or phone. We'll send a code so you can create a new password.",
+      '请输入账户的邮箱或手机号。我们会发送验证码，让你设置新密码。',
+      "Indiquez l'e-mail ou le téléphone de votre compte. Nous enverrons un code pour créer un nouveau mot de passe.",
+      'Indica el correo o teléfono de tu cuenta. Enviaremos un código para crear una contraseña nueva.');
+  String get forgotSend => _t('Enviar código', 'Send code', '发送验证码',
+      'Envoyer le code', 'Enviar código');
+  String get forgotChange => _t('Trocar a senha', 'Change password', '修改密码',
+      'Changer le mot de passe', 'Cambiar la contraseña');
+  String get newPassword =>
+      _t('Nova senha', 'New password', '新密码', 'Nouveau mot de passe',
+          'Nueva contraseña');
   String get newPasswordMin => _t('Nova senha (mín. 8 caracteres)',
       'New password (min. 8 characters)', '新密码（至少 8 个字符）',
       'Nouveau mot de passe (min. 8 caractères)', 'Nueva contraseña (mín. 8 caracteres)');

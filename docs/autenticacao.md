@@ -124,6 +124,46 @@ DESKSIDE_TWILIO_FROM=+15551234567
 
 Vão no `deploy/.env` da VPS, que é gitignorado e nunca versionado.
 
+## Esqueci minha senha
+
+Um link na tela de login. Pede o e-mail ou o telefone, manda o **mesmo código de
+seis dígitos** do cadastro, e a senha nova passa pelas **mesmas cinco regras**.
+Ao acertar, a sessão já abre: quem acabou de provar posse do contato e escolher
+uma senha nova fez tudo o que o login pediria — e a senha recém-criada é a que
+mais se esquece se tiver de ser digitada de novo no minuto seguinte.
+
+### A resposta é idêntica para conta que existe e conta que não existe
+
+É a decisão que separa esta rota do cadastro, e ela inverte o critério de lá.
+
+No cadastro, dizer "e-mail já cadastrado" é **necessário**: sem isso a pessoa
+não sabe que deveria ir entrar em vez de tentar criar conta de novo. Aqui, a
+mesma franqueza viraria um oráculo — alguém digitaria endereços em sequência e
+montaria a lista de quem tem conta no Deskside. Como cada conta é um computador,
+essa lista tem valor para quem a coletasse.
+
+Então, quando o contato não existe: nada é criado, **nada é enviado** (um envio a
+mais vazaria a mesma informação por outro caminho) e a resposta é a mesma, campo
+a campo.
+
+### O resto do comportamento
+
+Prazo, tentativas e espera entre pedidos são os do cadastro. Dois detalhes
+próprios:
+
+- **Recusar a senha não gasta o código.** Se a senha nova não cumpre as cinco
+  regras, o pedido continua de pé — perder o código por escolher mal a senha
+  seria punir a pessoa por ler as regras depois.
+- **Trocar a senha derruba todos os pedidos em aberto daquela conta**, e não só
+  o que foi usado. Se havia dois códigos válidos, o segundo continuaria podendo
+  trocar a senha depois.
+
+**O que falta aqui:** trocar a senha não invalida as sessões já abertas. Os
+tokens de atualização são JWT sem estado e valem 30 dias — então, se a conta
+estava comprometida, trocar a senha não expulsa quem entrou. Vale para a troca
+pelas configurações também, e já era assim antes desta mudança. O conserto é uma
+versão de token no `User`, conferida ao decodificar.
+
 ## Trocar o contato depois
 
 A tela de conta mostra **"Alterar e-mail" ou "Alterar telefone"**, conforme o
@@ -183,6 +223,8 @@ consentimento dos pais).
 | POST | `/api/v1/auth/signup/start` | formulário completo | 201 + `{destination, channel, resend_in_seconds, delivered}` |
 | POST | `/api/v1/auth/signup/verify` | `{destination, code}` | 201 + `{access_token, refresh_token}` |
 | POST | `/api/v1/auth/signup/resend` | `{destination}` | `{destination, channel, …}` |
+| POST | `/api/v1/auth/password/forgot` | `{email\|phone+country}` | `{destination, channel, resend_in_seconds, delivered}` — igual exista a conta ou não |
+| POST | `/api/v1/auth/password/reset` | `{destination, code, password, password_confirm}` | `{access_token, refresh_token}` |
 | POST | `/api/v1/auth/login` | `{email\|phone+country, password}` | `{access_token, refresh_token}` |
 | POST | `/api/v1/auth/refresh` | `{refresh_token}` | `{access_token}` |
 | GET | `/api/v1/auth/me` | — (Bearer) | `{id, email, phone, first_name, …}` |
@@ -226,8 +268,7 @@ Ou explore de forma interativa em <http://localhost:8000/docs>.
    e uma conta do Deskside é um computador inteiro.
 2. **Login social** (Google/Apple/Microsoft): cada provedor valida a
    identidade e reaproveita a mesma emissão de tokens desta base.
-3. **Recuperação de senha**, que reaproveita inteiro o mecanismo de código
-   deste cadastro — é o mesmo envio, o mesmo prazo e o mesmo limite de
-   tentativas.
+3. **Invalidar sessões ao trocar a senha** (versão de token no `User`), sem o
+   que uma troca de senha não expulsa quem já estava dentro.
 4. **Controle de dispositivos autorizados**: vincular refresh tokens a
    dispositivos e permitir revogação — conecta com o pareamento (Etapa 5).
