@@ -103,8 +103,9 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
   }
 
   void _reordenar(int de, int para) {
-    // O `ReorderableListView` entrega o índice de destino contando a posição
-    // antiga ainda ocupada; um item que desce precisa deste ajuste.
+    // O `onReorder` entrega o índice de destino contando a posição antiga
+    // ainda ocupada; um item que desce precisa deste ajuste. (É exatamente isto
+    // que o `onReorderItem` novo faz sozinho — ver a nota no `build`.)
     if (para > de) para -= 1;
     setState(() {
       final nova = [..._passos];
@@ -563,6 +564,9 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 18),
             sliver: SliverReorderableList(
               itemCount: _passos.length,
+              // Ver a nota igual em `profiles_screen.dart`, inclusive o aviso
+              // sobre apagar o ajuste de índice ao migrar.
+              // ignore: deprecated_member_use
               onReorder: _reordenar,
               itemBuilder: (context, i) => _linha(i, t),
             ),

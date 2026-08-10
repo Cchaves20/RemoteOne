@@ -58,8 +58,9 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
   }
 
   Future<void> _reordenar(int de, int para) async {
-    // O `ReorderableListView` entrega o índice de destino contando a posição
-    // antiga ainda ocupada; um item que desce precisa deste ajuste.
+    // O `onReorder` entrega o índice de destino contando a posição antiga
+    // ainda ocupada; um item que desce precisa deste ajuste. (É exatamente isto
+    // que o `onReorderItem` novo faz sozinho — ver a nota no `build`.)
     if (para > de) para -= 1;
     final nova = [..._fila];
     nova.insert(para, nova.removeAt(de));
@@ -178,6 +179,18 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                 ),
                 SliverReorderableList(
                   itemCount: _fila.length,
+                  // `onReorderItem` é o substituto (Flutter > 3.41) e já entrega
+                  // o índice corrigido. A troca é de duas linhas e não foi feita
+                  // por um motivo só: **não dá para conferi-la aqui.** Este
+                  // ambiente não tem Flutter, e a assinatura exata do callback
+                  // novo — e se `onReorder` deixa de ser obrigatório — não é
+                  // coisa para adivinhar.
+                  //
+                  // Ao trocar: **apague** o ajuste de índice em `_reordenar`, nos
+                  // dois lugares (aqui e em `automations_screen.dart`). O
+                  // callback novo já o faz, e fazer duas vezes move o item para o
+                  // lugar errado sem nada quebrar — o pior tipo de defeito.
+                  // ignore: deprecated_member_use
                   onReorder: _reordenar,
                   itemBuilder: (context, i) => _linha(_fila[i], t, i),
                 ),
