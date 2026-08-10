@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/strings.dart';
+import '../models/automation.dart';
 import '../models/control_profile.dart';
 import '../theme.dart';
 
@@ -28,6 +29,8 @@ class ProfileBar extends StatefulWidget {
     required this.onAction,
     this.profiles,
     this.appIcons = const {},
+    this.automations = const [],
+    this.onRunAutomation,
   });
 
   /// Barra em pé (celular deitado). Deitada quando o celular está em pé.
@@ -47,6 +50,19 @@ class ProfileBar extends StatefulWidget {
   /// Ícone real do programa de cada perfil, por `id` de perfil (PNG vindo do
   /// computador). Quando um perfil não está aqui, vale o ícone desenhado.
   final Map<String, Uint8List> appIcons;
+
+  /// As automações que valem para este computador.
+  ///
+  /// Entram na barra como **mais um grupo** na pista de cima, e não numa tela à
+  /// parte: a gramática da barra já é "escolha um grupo, veja os botões dele",
+  /// e uma automação é exatamente um botão. O lugar de rodar "modo reunião" é
+  /// aqui, olhando para o computador — não em Configurações.
+  ///
+  /// Vazia = o grupo não aparece. Um grupo que abre uma pista vazia seria um
+  /// botão que não leva a lugar nenhum.
+  final List<Automation> automations;
+
+  final ValueChanged<Automation>? onRunAutomation;
 
   @override
   State<ProfileBar> createState() => _ProfileBarState();
@@ -80,6 +96,14 @@ class _ProfileBarState extends State<ProfileBar>
   /// Posição ao longo da borda, de -1 (topo/esquerda) a 1 (base/direita).
   double _pos = 0;
 
+  /// Se o grupo de automações está aberto na segunda pista.
+  ///
+  /// Mora aqui, e não no pai como o perfil escolhido, porque não é uma escolha
+  /// que sobrevive à tela: o perfil é lembrado entre aberturas do app (é o
+  /// "jeito de usar" que a pessoa deixou ligado), e um grupo de automações
+  /// aberto é só onde o dedo estava no momento.
+  bool _automacoes = false;
+
   @override
   void initState() {
     super.initState();
@@ -102,13 +126,32 @@ class _ProfileBarState extends State<ProfileBar>
     // dentro se um perfil tiver atalhos demais.
     final maxLength = (vertical ? widget.area.height : widget.area.width) * 0.75;
 
+    // As automações do computador. `_automacoes` só vale enquanto elas
+    // existirem: apagar a última pela tela de perfis deixaria a pista aberta e
+    // vazia, e a barra ficaria com um vão sem explicação.
+    final automacoes = widget.automations;
+    final mostrandoAutomacoes = _automacoes && automacoes.isNotEmpty;
+
     final lanes = <Widget>[
       _lane(
         thickness: _profileTile,
         vertical: vertical,
-        children: [for (final p in profiles) _profileButton(p)],
+        children: [
+          for (final p in profiles) _profileButton(p),
+          // No **fim** da fila de perfis, e não no começo: a barra abre com o
+          // perfil de sistema à mão, e empurrar tudo um lugar para o lado
+          // mudaria de posição um botão que a mão já decorou.
+          if (automacoes.isNotEmpty) _automationsButton(),
+        ],
       ),
-      if (selected != null) ...[
+      if (mostrandoAutomacoes) ...[
+        _divider(vertical: vertical),
+        _lane(
+          thickness: vertical ? _actionTile : _actionHeight,
+          vertical: vertical,
+          children: [for (final a in automacoes) _automationButton(a)],
+        ),
+      ] else if (selected != null) ...[
         _divider(vertical: vertical),
         _lane(
           // Deitada, a pista é uma coluna e o que se fixa é a largura; em pé é
@@ -236,6 +279,8 @@ class _ProfileBarState extends State<ProfileBar>
           borderRadius: BorderRadius.circular(12),
           onTap: () {
             HapticFeedback.selectionClick();
+            // Escolher um perfil fecha as automações: a segunda pista é uma só.
+            if (_automacoes) setState(() => _automacoes = false);
             // Tocar no perfil aceso fecha a pista de atalhos: é o mesmo botão
             // que abre e que fecha, sem um "X" a mais na barra.
             widget.onSelect(aceso ? null : profile);
@@ -287,6 +332,91 @@ class _ProfileBarState extends State<ProfileBar>
       profile.icon,
       size: 21,
       color: aceso ? Colors.white : Colors.white70,
+    );
+  }
+
+  /// O grupo "Automações" na pista de perfis.
+  ///
+  /// Se comporta como um perfil e por isso se parece com um: acende quando está
+  /// aberto, e tocar nele de novo fecha a pista. Abrir um exclui o outro — as
+  /// duas pistas são a mesma, e mostrar as duas coisas ao mesmo tempo faria a
+  /// barra cobrir a tela do computador, que é o que ela existe para não fazer.
+  Widget _automationsButton() {
+    final aceso = _automacoes;
+    return Padding(
+      padding: const EdgeInsets.all(3),
+      child: Tooltip(
+        message: widget.strings.automations,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() => _automacoes = !aceso);
+            // Fecha o perfil aceso: a segunda pista é uma só.
+            if (!aceso && widget.selected != null) widget.onSelect(null);
+          },
+          child: Center(
+            child: Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: aceso ? auroraGradient : null,
+                color: aceso ? null : Colors.white10,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.auto_awesome_motion,
+                size: 21,
+                color: aceso ? Colors.white : Colors.white70,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Uma automação como botão: um toque roda a sequência inteira.
+  Widget _automationButton(Automation a) {
+    return Padding(
+      padding: const EdgeInsets.all(3),
+      child: Tooltip(
+        message: a.name,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => widget.onRunAutomation?.call(a),
+          child: Center(
+            child: SizedBox(
+              width: _actionTile - 6,
+              height: 44,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(a.iconData, size: 20, color: Colors.white),
+                  const SizedBox(height: 2),
+                  // O nome que a pessoa escreveu, encolhido se for longo — é o
+                  // único jeito de distinguir "Modo reunião" de "Fim do
+                  // expediente" numa barra de ícones.
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      a.name,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        height: 1,
+                        color: Colors.white60,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

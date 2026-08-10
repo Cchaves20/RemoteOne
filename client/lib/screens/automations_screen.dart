@@ -691,8 +691,9 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
 Future<void> runAutomationFlow(
   BuildContext context,
   AppState state,
-  Automation automacao,
-) async {
+  Automation automacao, {
+  String? emQual,
+}) async {
   final t = state.t;
 
   // Passos destrutivos confirmam antes. Só eles: pedir confirmação em toda
@@ -719,9 +720,13 @@ Future<void> runAutomationFlow(
     if (ok != true || !context.mounted) return;
   }
 
-  // Onde rodar: o computador fixado, ou uma pergunta. Com um só computador na
-  // conta, não há o que perguntar.
-  var alvo = automacao.deviceId;
+  // Onde rodar: o computador fixado, o que o chamador já sabe, ou uma pergunta.
+  //
+  // `emQual` é o que a barra da tela de controle passa: ali a pessoa está
+  // olhando para uma máquina, e perguntar em qual rodar seria perguntar o que
+  // está à vista. Não atropela a automação que fixou uma: quem fixou, fixou por
+  // um motivo — e o servidor recusaria o desvio de qualquer forma.
+  var alvo = automacao.deviceId.isNotEmpty ? automacao.deviceId : (emQual ?? '');
   if (alvo.isEmpty) {
     final lista = state.devices;
     if (lista.isEmpty) {

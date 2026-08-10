@@ -248,7 +248,11 @@ Dois exemplos, que foram os que motivaram o recurso:
 | silenciar | brilho no mínimo |
 | brilho em 80% | suspender |
 
-### Moram na tela de perfis, e não numa gaveta própria
+Elas aparecem em dois lugares, e cada um tem um papel: **na barra da tela de
+controle** é onde se roda (ver abaixo), e **em Configurações → Perfis** é onde
+se monta.
+
+### Onde se monta: na tela de perfis, e não numa gaveta própria
 
 A tela de perfis já era uma pré-automatização. Compare o que se preenche:
 
@@ -338,6 +342,31 @@ aberto: o passo "falha", e essa é a resposta certa.
 **Passos destrutivos confirmam antes de rodar** — fechar programa e mexer na
 energia. Só eles: pedir confirmação em toda automação faria um recurso de um
 toque custar dois, que é o oposto do que ele existe para fazer.
+
+### Onde se roda: na barra, com o computador à vista
+
+O editor mora em Configurações, mas **rodar uma automação não pode morar lá**.
+"Modo reunião" é uma coisa que se faz olhando para o computador, no meio de
+outra coisa — e sair da tela de controle, entrar nas configurações, achar a
+automação e voltar já custou mais do que abrir os programas à mão.
+
+Então a barra de perfis ganhou **mais um grupo**, no fim da fila: um botão de
+automações que abre a segunda pista com uma automação por botão. A gramática da
+barra já era essa — escolha um grupo, veja os botões dele —, e uma automação é
+exatamente um botão.
+
+Duas regras que caem disso:
+
+- **A segunda pista é uma só.** Abrir as automações fecha o perfil aceso e
+  vice-versa. Mostrar as duas coisas ao mesmo tempo faria a barra cobrir a tela
+  do computador, que é o que ela existe para não fazer.
+- **Só aparecem as automações desta máquina.** As fixadas noutra ficam de fora:
+  um botão que age num computador que não está à vista é pior que botão nenhum,
+  porque nada do que a pessoa está vendo mudaria e não haveria como saber por
+  quê.
+
+Sem automação nenhuma na conta, o grupo não aparece — um botão que abre uma
+pista vazia não leva a lugar nenhum.
 
 ### Em qual computador
 
@@ -433,15 +462,20 @@ ser editado de novo.
    segundo. Se o caminho de lá for outro, o console do agente diz que procurou
    pelo nome e o que achou.
 
-7. Ainda em **Perfis**, role até **Automações** e crie uma: dê um nome, toque
+7. Ainda em **Perfis** (nas Configurações), role até **Automações** e crie uma: dê um nome, toque
    em **Adicionar passo** e monte "abrir um programa · silenciar · brilho".
    Arraste os passos para ver a ordem mudar.
 8. Toque em ▶: o computador executa a sequência inteira e o app diz quantos
    passos rodaram.
 9. Acrescente um passo **Fechar programa** e rode de novo: agora o app pergunta
    antes.
-10. **O teste que interessa de verdade:** toque em ▶ e *bloqueie a tela do
-    telefone na hora*. A sequência tem de terminar inteira no computador — é
+10. Volte à **tela de controle** e abra a barra de perfis: no fim da fila de
+    ícones há um grupo novo. Toque nele e a automação aparece como botão —
+    **é daqui que ela se usa no dia a dia.**
+11. Crie uma automação fixada no outro computador e confira que ela **não**
+    aparece na barra deste.
+12. **O teste que interessa de verdade:** toque na automação e *bloqueie a tela
+    do telefone na hora*. A sequência tem de terminar inteira no computador — é
     para isso que ela vai numa mensagem só.
 
 Para conferir se o backend no VPS já tem isto, `features` no `/health` precisa

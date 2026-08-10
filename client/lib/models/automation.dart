@@ -300,6 +300,13 @@ class Automation {
   /// confirmar antes de rodar.
   bool get hasDestructive => steps.any((s) => s.isDestructive);
 
+  /// Se esta automação aparece na barra ao controlar um computador.
+  ///
+  /// Vazio = vale em qualquer um. Mostrar na barra do computador A uma
+  /// automação fixada no B seria um botão que age noutra máquina, e a pessoa
+  /// está olhando para esta.
+  bool appliesTo(String deviceId) => this.deviceId.isEmpty || this.deviceId == deviceId;
+
   Map<String, dynamic> toJson() => {
         'name': name,
         'icon': icon,

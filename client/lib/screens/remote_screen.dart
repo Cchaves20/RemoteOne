@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../l10n/strings.dart';
+import '../models/automation.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/remote_app.dart';
@@ -25,6 +26,7 @@ import '../theme.dart';
 import '../widgets/profile_bar.dart';
 import '../widgets/remote_keyboard.dart';
 import '../widgets/transitions.dart';
+import 'automations_screen.dart' show runAutomationFlow;
 import 'gesture_tutorial_screen.dart';
 
 /// Controle remoto por toque direto: a tela do computador ocupa a tela inteira
@@ -224,6 +226,11 @@ class _RemoteScreenState extends State<RemoteScreen>
     widget.state.loadProfiles().then((_) {
       if (mounted) setState(() {});
     });
+    // E as automações, que entram na mesma barra como mais um grupo. Falham em
+    // silêncio pelo mesmo motivo dos perfis: sem elas a barra continua útil.
+    widget.state.loadAutomations().then((_) {
+      if (mounted) setState(() {});
+    });
     // Reabre no perfil de atalhos da última vez (pode não existir mais — uma
     // versão nova pode ter tirado um de fábrica, e o usuário pode ter apagado
     // um dos seus).
@@ -286,6 +293,14 @@ class _RemoteScreenState extends State<RemoteScreen>
         widget.state.profileOrder,
         widget.device.deviceId,
       );
+
+  /// As automações que valem para este computador.
+  ///
+  /// As fixadas noutra máquina ficam de fora: um botão que age num computador
+  /// que não está à vista é pior do que botão nenhum.
+  List<Automation> _automacoes() => widget.state.automations
+      .where((a) => a.appliesTo(widget.device.deviceId))
+      .toList(growable: false);
 
   /// Abre um programa de um perfil no computador que está sendo controlado.
   ///
@@ -2126,6 +2141,20 @@ class _RemoteScreenState extends State<RemoteScreen>
                 profiles: _perfis(),
                 selected: _profile,
                 appIcons: _profileIcons,
+                automations: _automacoes(),
+                // O mesmo caminho da tela de perfis, e de propósito: a mesma
+                // confirmação para os passos destrutivos e o mesmo relatório
+                // por passo. `emQual` poupa a pergunta de computador — aqui a
+                // pessoa está olhando para um.
+                onRunAutomation: (a) {
+                  HapticFeedback.selectionClick();
+                  runAutomationFlow(
+                    context,
+                    widget.state,
+                    a,
+                    emQual: widget.device.deviceId,
+                  );
+                },
                 strings: widget.state.t,
                 onSelect: _selectProfile,
                 // Um toque deliberado e único, como o da sugestão do teclado:

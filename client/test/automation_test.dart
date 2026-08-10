@@ -146,6 +146,24 @@ void main() {
       );
     });
 
+    test('a barra só mostra as automações deste computador', () {
+      // A barra flutua sobre a imagem de uma máquina. Um botão ali que agisse
+      // noutra seria pior que botão nenhum: nada do que a pessoa está vendo
+      // mudaria, e não haveria como saber por quê.
+      final solta = Automation(id: '', name: 'Vale em todos', steps: reuniao());
+      expect(solta.appliesTo('dev-a'), isTrue);
+      expect(solta.appliesTo('dev-b'), isTrue);
+
+      final presa = Automation(
+        id: '',
+        name: 'Só no A',
+        steps: reuniao(),
+        deviceId: 'dev-a',
+      );
+      expect(presa.appliesTo('dev-a'), isTrue);
+      expect(presa.appliesTo('dev-b'), isFalse);
+    });
+
     test('cada passo se lê sem consultar o servidor', () {
       final passos = reuniao();
       expect(passos[0].describe(t), 'Abrir Teams');
