@@ -36,6 +36,7 @@ Agente                          Backend
 | `file_list` | `request_id`, `listing?` (`path`, `parent?`, `entries[]`), `error?` | Resposta a um `list_files`. Vem `listing` **ou** `error` — pasta sem permissão não pode chegar ao app como pasta vazia |
 | `file_chunk` | `transfer_id`, `seq`, `data` (base64) | Um pedaço de arquivo indo ao celular; `seq` detecta pedaço fora de ordem |
 | `file_done` | `transfer_id`, `ok`, `detail?`, `size?` | Fim de transferência nos dois sentidos: `detail` traz o caminho salvo ou o motivo da falha |
+| `automation_result` | `request_id`, `results[]` (`index`, `ok`, `error?`) | Resposta a um `run_automation`: uma só, no fim da sequência inteira. Identificado por **índice** e não por nome — dois passos podem ser idênticos. O `error` também vem com `ok` verdadeiro, quando o passo aconteceu com ressalva (a janela abriu mas não foi para o lugar pedido) |
 | `system_stats` | `request_id`, `stats` (`cpu_percent`, `memory_used`, `memory_total`, `disk_used`, `disk_total`, `disk_name`, `uptime_seconds`) | Resposta a um `system_info`. Bytes crus e porcentagem: quem formata é o app, que sabe o idioma |
 
 ## Mensagens do backend → agente
@@ -62,6 +63,7 @@ Agente                          Backend
 | `write_file_chunk` | `transfer_id`, `seq`, `data` (base64) | Um pedaço do arquivo que sobe ao computador |
 | `write_file_end` | `transfer_id` | Fim do envio; o agente publica o arquivo e responde `file_done` |
 | `cancel_transfer` | `transfer_id` | Desiste de uma transferência em curso, nos dois sentidos |
+| `run_automation` | `request_id`, `steps[]` (`kind`, `wait_ms?`, e os campos do tipo) | Executa uma sequência de passos em ordem. Vai **numa mensagem só**: o iOS suspende aplicativos, e uma sequência conduzida pelo telefone pararia no meio se a pessoa bloqueasse a tela. Uma falha não interrompe as seguintes, e cada passo volta no `automation_result` |
 | `media` | `action` (`play_pause`/`next`/`previous`/`volume_up`/`volume_down`/`mute`) | Aciona uma tecla multimídia. São teclas **globais**: valem para quem estiver tocando som, sem depender da janela em foco |
 
 ## Pergunta e resposta (aplicativos)

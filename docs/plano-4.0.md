@@ -34,7 +34,17 @@ Esta parte continua valendo mesmo com a IA cortada, e por isso fica registrada: 
 ela voltar um dia, é por aqui que entra. O que mudou foi o **papel** dela — de
 quem executa para quem escreve. Ver a Fase 2.
 
-## Fase 1 — Automações
+## Fase 1 — Automações — **feita**
+
+Feito. O detalhe de como ficou está em
+[`perfis-de-controle.md`](perfis-de-controle.md); o que segue é o plano, mantido
+porque as decisões continuam valendo e porque a Fase 2 depende delas.
+
+**O que ficou de fora do que estava planejado:** `keep_awake`, escolher monitor e
+escrever na área de transferência não viraram passos. Os três são estados, e não
+ações — "manter pronto" fica ligado depois que a automação termina, e ninguém
+associaria isso ao botão que apertou. Entram quando houver um pedido concreto.
+
 
 Um botão que faz várias coisas. O exemplo do documento é o "Modo Trabalho": abrir
 Outlook, Teams, navegador e Spotify.
@@ -338,7 +348,7 @@ Linux", que é o que de fato dá para fazer.
 ## A ordem, e por quê
 
 1. **Automações.** Útil sozinha, reaproveita tudo o que existe, e é a parte
-   inteiramente verificável daqui.
+   inteiramente verificável daqui. **Feita.**
 2. **Sistemas operacionais.** Maior, mais incerto, e o único que depende de
    comprar ou emprestar hardware.
 

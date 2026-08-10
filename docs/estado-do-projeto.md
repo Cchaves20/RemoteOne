@@ -31,8 +31,8 @@ escolha — vai parecer dívida.
 | 14 | Gamepad e controles externos | 🚫 cortado (ver abaixo) |
 | 15 | Gerenciamento de energia | ✅ (+ "manter pronto", que não estava no plano) |
 | 16 | Áudio e vídeo | ⚠️ áudio ✅; microfone e webcam 🚫 cortados |
-| 17 | Automações | ❌ é a 4.0 |
-| 18 | Integração com IA | ❌ é a 4.0 |
+| 17 | Automações | ✅ ver [`perfis-de-controle.md`](perfis-de-controle.md) |
+| 18 | Integração com IA | 🚫 cortada (ver [`plano-4.0.md`](plano-4.0.md)) |
 | 19 | Notificações | ❌ não feito |
 | 20 | Segurança | ⚠️ falta criptografia de arquivos e permissões granulares |
 
@@ -43,7 +43,7 @@ escolha — vai parecer dívida.
 | MVP | login, pareamento, mouse, teclado, tela, abrir apps | ✅ completa |
 | 2.0 | arquivos, área de transferência, monitoramento, perfis, multimídia | ✅ completa |
 | 3.0 | Wake-on-LAN, áudio, webcam, microfone, gamepad | ✅ completa **como redefinida** |
-| 4.0 | IA, automações, suporte completo aos SOs | ❌ ver [`plano-4.0.md`](plano-4.0.md) |
+| 4.0 | IA, automações, suporte completo aos SOs | ⚠️ automações ✅; IA 🚫 cortada; SOs ❌ — ver [`plano-4.0.md`](plano-4.0.md) |
 
 ## O que foi cortado, e por quê
 

@@ -9,6 +9,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from app import pairing
 from app.agents import AgentRegistry
 from app.auth import router as auth_router
+from app.automations import router as automations_router
 from app.config import settings
 from app.connections import Viewer, manager, viewers
 from app.db import SessionLocal, init_db
@@ -18,6 +19,7 @@ from app.profiles import router as profiles_router
 from app.protocol import (
     Ack,
     AppList,
+    AutomationResult,
     Clipboard,
     ClipboardChanged,
     Error,
@@ -64,6 +66,7 @@ app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifesp
 app.include_router(auth_router)
 app.include_router(devices_router)
 app.include_router(profiles_router)
+app.include_router(automations_router)
 
 # Registro de agentes conectados (em memória; ver app/agents.py).
 registry = AgentRegistry()
@@ -94,6 +97,10 @@ FEATURES = [
     "monitors",
     "control-profiles",
     "keep-awake",
+    "brightness",
+    "launch-many",
+    "window-zones",
+    "automations",
 ]
 
 
@@ -319,6 +326,15 @@ async def agent_ws(websocket: WebSocket) -> None:
                     },
                 )
             elif isinstance(message, LaunchManyResult):
+                pending.resolve(
+                    message.request_id,
+                    {"results": [r.model_dump() for r in message.results]},
+                )
+            elif isinstance(message, AutomationResult):
+                # Uma resposta só, no fim da sequência inteira. O `error` sobe
+                # mesmo quando `ok` é verdadeiro: é onde cabe o aviso de que a
+                # janela abriu mas não foi para o lugar pedido - aviso não é
+                # falha, e esconder não ajudaria ninguém.
                 pending.resolve(
                     message.request_id,
                     {"results": [r.model_dump() for r in message.results]},

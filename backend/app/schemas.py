@@ -410,6 +410,116 @@ class ProfileAppIn(BaseModel):
     zone: ZoneIn | None = None
 
 
+#: As teclas de mídia e os comandos de energia que o agente conhece.
+#:
+#: Duplicar aqui um catálogo que já existe no Rust normalmente não valeria a
+#: pena - e vale, para estes dois, porque são fechados, curtos e escritos à mão
+#: pelo app. Um `"sleep"` no lugar de `"suspend"` passaria batido, e a automação
+#: só falharia no computador, no último passo, com uma mensagem sobre um comando
+#: desconhecido. (Foi exatamente o erro que apareceu ao montar os testes deste
+#: módulo.) O `input` continua sem validação: é uma estrutura aninhada grande, e
+#: copiá-la criaria a segunda fonte de verdade que estes dois conjuntos não
+#: criam.
+MEDIA_ACTIONS = frozenset(
+    {"play_pause", "next", "previous", "volume_up", "volume_down", "mute"}
+)
+POWER_ACTIONS = frozenset({"shutdown", "restart", "suspend"})
+
+
+class StepIn(BaseModel):
+    """Um passo de automação.
+
+    O `kind` decide quais campos importam; os demais vêm nulos. Um modelo por
+    tipo daria validação mais apertada, e custaria seis classes com um campo
+    cada - o agente já valida o que sabe executar, e o que não reconhecer vira
+    um passo que falha com motivo, não um comando estranho.
+
+    `wait_ms` é a pausa **depois** deste passo. Abrir um programa e mandar um
+    atalho no instante seguinte não funciona: o programa ainda não existe para
+    receber a tecla.
+    """
+
+    kind: Literal["launch", "close", "input", "media", "brightness", "power"]
+    #: Pausa depois do passo. O teto de 10 s é o mesmo do agente.
+    wait_ms: int | None = Field(default=None, ge=0, le=10_000)
+
+    #: `launch`: caminho do atalho, e onde a janela vai.
+    id: str | None = Field(default=None, max_length=1024)
+    zone: ZoneIn | None = None
+    #: `close`: nome do processo ("slack", "outlook").
+    name: str | None = Field(default=None, max_length=120)
+    #: `input`: a ação de teclado, no mesmo formato do controle remoto.
+    action: dict | str | None = None
+    #: `brightness`: um ou outro, como no endpoint de brilho.
+    level: int | None = Field(default=None, ge=0, le=100)
+    delta: int | None = Field(default=None, ge=-100, le=100)
+
+    @model_validator(mode="after")
+    def campos_do_tipo(self) -> "StepIn":
+        # Sem isto, um passo `launch` sem caminho chegaria ao computador e
+        # falharia lá - longe de quem montou a automação, e com uma mensagem
+        # sobre um programa vazio em vez de "faltou escolher o programa".
+        faltando = {
+            "launch": self.id,
+            "close": self.name,
+            "input": self.action,
+            "media": self.action,
+            "power": self.action,
+        }.get(self.kind, "ok")
+        if faltando is None:
+            raise ValueError(f"passo {self.kind} está sem o campo obrigatório")
+        if self.kind == "brightness" and (self.level is None) == (self.delta is None):
+            raise ValueError("brilho: mande level ou delta, e apenas um dos dois")
+        catalogo = {"media": MEDIA_ACTIONS, "power": POWER_ACTIONS}.get(self.kind)
+        if catalogo is not None and self.action not in catalogo:
+            raise ValueError(
+                f"{self.kind}: {self.action!r} não é um comando conhecido "
+                f"({', '.join(sorted(catalogo))})"
+            )
+        return self
+
+
+class AutomationIn(BaseModel):
+    """Uma automação criada pelo usuário."""
+
+    name: str = Field(min_length=1, max_length=60)
+    icon: str = Field(default="tune", max_length=32)
+    #: O teto de 24 é o mesmo do agente, e não está aqui para a interface: é
+    #: para o caso de uma mensagem adulterada mandar o computador fazer mil
+    #: coisas.
+    steps: list[StepIn] = Field(default_factory=list, max_length=24)
+    #: Em qual computador ela roda. Vazio = escolher na hora.
+    device_id: str = Field(default="", max_length=64)
+
+
+class AutomationOut(AutomationIn):
+    """O mesmo, com o identificador que o servidor gerou."""
+
+    id: str
+
+
+class AutomationsOut(BaseModel):
+    automations: list[AutomationOut] = []
+
+
+class StepResultOut(BaseModel):
+    """O que aconteceu com um passo.
+
+    Identificado pelo **índice**: dois passos podem ser idênticos ("baixar o
+    volume" duas vezes), e o app precisa saber qual dos dois falhou.
+    """
+
+    index: int
+    ok: bool
+    error: str | None = None
+
+
+class AutomationRunOut(BaseModel):
+    """O resultado de cada passo, na ordem em que foram executados."""
+
+    results: list[StepResultOut] = []
+
+
 class ProfileIn(BaseModel):
     """Um perfil criado pelo usuário."""
 

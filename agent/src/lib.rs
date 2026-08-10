@@ -7,6 +7,7 @@
 pub mod adaptive;
 pub mod apps;
 pub mod audio;
+pub mod automacao;
 pub mod awake;
 pub mod brightness;
 pub mod capture;

@@ -355,6 +355,19 @@ class Strings {
   String get mediaMute =>
       _t('Silenciar', 'Mute', '静音', 'Couper le son', 'Silenciar');
 
+  /// O rótulo de uma tecla de mídia pelo nome que ela tem no protocolo.
+  ///
+  /// Existe pelo mesmo motivo que `powerLabel`: as automações guardam o comando
+  /// (`volume_up`), não o texto, e o texto muda com o idioma.
+  String mediaLabel(String action) => switch (action) {
+        'mute' => mediaMute,
+        'volume_down' => mediaVolumeDown,
+        'volume_up' => mediaVolumeUp,
+        'next' => mediaNext,
+        'previous' => mediaPrevious,
+        _ => mediaPlayPause,
+      };
+
   // Som do computador no telefone
   String get audioOn => _t('Ouvir o computador', 'Listen to the computer',
       '收听电脑声音', "Écouter l'ordinateur", 'Escuchar el equipo');
@@ -528,6 +541,152 @@ class Strings {
       '全部不勾选表示该配置适用于所有电脑。',
       'Ne cochez rien pour que le profil vaille partout.',
       'Deja todo sin marcar para que el perfil valga en todos.');
+
+  // Automações
+  //
+  // Moram na tela de perfis, e não numa aba própria: um perfil já é uma
+  // pré-automatização (um punhado de atalhos guardados juntos), e a automação é
+  // o passo seguinte da mesma ideia. Separar em duas telas obrigaria a pessoa a
+  // saber a diferença antes de qualquer uma das duas servir para algo.
+  String get automations =>
+      _t('Automações', 'Automations', '自动化', 'Automatisations', 'Automatizaciones');
+  String get automationsHint => _t(
+      'Uma sequência que um toque executa: abrir programas, silenciar, ajustar o brilho.',
+      'A sequence one tap runs: open programs, mute, adjust brightness.',
+      '一次点击执行的一串动作：打开程序、静音、调整亮度。',
+      "Une séquence lancée d'un seul geste : ouvrir des programmes, couper le son, régler la luminosité.",
+      'Una secuencia que un toque ejecuta: abrir programas, silenciar, ajustar el brillo.');
+  String get automationsEmpty => _t(
+      'Nenhuma automação ainda.',
+      'No automations yet.',
+      '还没有自动化。',
+      'Aucune automatisation pour le moment.',
+      'Aún no hay automatizaciones.');
+  String get automationNew => _t('Nova automação', 'New automation', '新建自动化',
+      'Nouvelle automatisation', 'Nueva automatización');
+  String get automationEdit => _t('Editar automação', 'Edit automation', '编辑自动化',
+      "Modifier l'automatisation", 'Editar automatización');
+  String automationDeleteConfirm(String nome) => _t(
+      'Excluir "$nome"? Isso vale para todos os seus aparelhos.',
+      'Delete "$nome"? This applies to all your devices.',
+      '删除"$nome"？这会影响你所有的设备。',
+      'Supprimer « $nome » ? Cela vaut pour tous vos appareils.',
+      '¿Eliminar «$nome»? Esto afecta a todos tus dispositivos.');
+  String get automationNameHint => _t('Ex.: Modo reunião, Fim do expediente',
+      'e.g. Meeting mode, End of day', '例如：会议模式、下班',
+      'Ex. : Mode réunion, Fin de journée', 'Ej.: Modo reunión, Fin de jornada');
+  String get automationNameRequired => _t('Dê um nome à automação.',
+      'Give the automation a name.', '请为自动化命名。',
+      "Donnez un nom à l'automatisation.", 'Ponle un nombre a la automatización.');
+  String get automationNoSteps => _t(
+      'Nenhum passo ainda. Eles acontecem na ordem em que estão aqui.',
+      'No steps yet. They run in the order shown here.',
+      '还没有步骤。它们会按这里的顺序执行。',
+      "Aucune étape pour le moment. Elles s'exécutent dans l'ordre affiché ici.",
+      'Aún no hay pasos. Se ejecutan en el orden que aparece aquí.');
+  String automationStepCount(int n) => _t(
+      n == 1 ? '1 passo' : '$n passos',
+      n == 1 ? '1 step' : '$n steps',
+      '$n 步',
+      n == 1 ? '1 étape' : '$n étapes',
+      n == 1 ? '1 paso' : '$n pasos');
+  String get automationSteps => _t('Passos', 'Steps', '步骤', 'Étapes', 'Pasos');
+  String get automationAddStep =>
+      _t('Adicionar passo', 'Add step', '添加步骤', 'Ajouter une étape', 'Añadir paso');
+  String get automationWhere => _t('Onde rodar', 'Where to run', '在哪里运行',
+      'Où exécuter', 'Dónde ejecutar');
+  String get automationWhereAsk => _t('Perguntar na hora', 'Ask each time',
+      '每次询问', 'Demander à chaque fois', 'Preguntar cada vez');
+  String get automationRun => _t('Rodar', 'Run', '运行', 'Exécuter', 'Ejecutar');
+  String get automationRunning =>
+      _t('Rodando…', 'Running…', '正在运行…', 'En cours…', 'Ejecutando…');
+  /// A confirmação antes de rodar uma automação que fecha programas ou mexe na
+  /// energia. Só aparece nessas — pedir confirmação em toda automação faria o
+  /// recurso custar dois toques, que é o oposto do que ele existe para fazer.
+  String automationConfirmDestructive(String nome) => _t(
+      '"$nome" fecha programas ou desliga o computador. Rodar agora?',
+      '"$nome" closes programs or powers the computer off. Run it now?',
+      '"$nome" 会关闭程序或关闭电脑。现在运行？',
+      '« $nome » ferme des programmes ou éteint l\'ordinateur. Exécuter maintenant ?',
+      '«$nome» cierra programas o apaga el equipo. ¿Ejecutar ahora?');
+  /// O resultado. Diz o número porque tudo acontece **no computador**, e de
+  /// longe não se vê nada: sem isto, uma automação que rodou inteira e uma que
+  /// não fez nada seriam idênticas.
+  String automationDone(int n) => _t(
+      n == 1 ? '1 passo executado.' : '$n passos executados.',
+      n == 1 ? '1 step done.' : '$n steps done.',
+      '已执行 $n 步。',
+      n == 1 ? '1 étape exécutée.' : '$n étapes exécutées.',
+      n == 1 ? '1 paso ejecutado.' : '$n pasos ejecutados.');
+  String automationPartial(int feitos, int total) => _t(
+      '$feitos de $total passos. Toque para ver o que falhou.',
+      '$feitos of $total steps. Tap to see what failed.',
+      '$total 步中完成 $feitos 步。点击查看失败项。',
+      '$feitos étapes sur $total. Touchez pour voir ce qui a échoué.',
+      '$feitos de $total pasos. Toca para ver qué falló.');
+  String get automationResult =>
+      _t('Resultado', 'Result', '结果', 'Résultat', 'Resultado');
+  String get automationPickComputer => _t('Rodar em qual computador?',
+      'Run on which computer?', '在哪台电脑上运行？',
+      'Exécuter sur quel ordinateur ?', '¿Ejecutar en qué equipo?');
+  String get automationEmpty => _t('Adicione ao menos um passo.',
+      'Add at least one step.', '请至少添加一个步骤。',
+      'Ajoutez au moins une étape.', 'Añade al menos un paso.');
+
+  // Os tipos de passo, como aparecem no seletor e na lista.
+  String get stepKindLaunch =>
+      _t('Abrir programa', 'Open program', '打开程序', 'Ouvrir un programme', 'Abrir programa');
+  String get stepKindClose => _t('Fechar programa', 'Close program', '关闭程序',
+      'Fermer un programme', 'Cerrar programa');
+  String get stepKindKeys => _t('Atalho de teclado', 'Keyboard shortcut', '键盘快捷键',
+      'Raccourci clavier', 'Atajo de teclado');
+  String get stepKindMedia => _t('Som', 'Sound', '声音', 'Son', 'Sonido');
+  String get stepKindBrightness =>
+      _t('Brilho', 'Brightness', '亮度', 'Luminosité', 'Brillo');
+  String get stepKindPower => _t('Energia', 'Power', '电源', 'Alimentation', 'Energía');
+  String stepLaunch(String programa) => _t('Abrir $programa', 'Open $programa',
+      '打开 $programa', 'Ouvrir $programa', 'Abrir $programa');
+  String stepClose(String programa) => _t('Fechar $programa', 'Close $programa',
+      '关闭 $programa', 'Fermer $programa', 'Cerrar $programa');
+  String stepKeys(String atalho) => _t('Teclas: $atalho', 'Keys: $atalho',
+      '按键：$atalho', 'Touches : $atalho', 'Teclas: $atalho');
+  String stepBrightness(int nivel) => _t('Brilho em $nivel%', 'Brightness at $nivel%',
+      '亮度 $nivel%', 'Luminosité à $nivel %', 'Brillo al $nivel%');
+  String get stepCloseHint => _t(
+      'O nome do programa, sem o caminho. Ex.: slack, outlook.',
+      'The program name, without the path. e.g. slack, outlook.',
+      '程序名称，不含路径。例如：slack、outlook。',
+      'Le nom du programme, sans le chemin. Ex. : slack, outlook.',
+      'El nombre del programa, sin la ruta. Ej.: slack, outlook.');
+  /// Explica por que fechar não é forçar. O agente pede ao programa que feche,
+  /// como o X da janela — uma automação roda sem ninguém olhando, e matar o
+  /// processo descartaria em silêncio o que não foi salvo.
+  String get stepCloseGentle => _t(
+      'Fecha como o X da janela: se houver algo não salvo, o programa pergunta e continua aberto.',
+      'Closes like the window X: if something is unsaved, the program asks and stays open.',
+      '相当于点击窗口的关闭按钮：若有未保存内容，程序会询问并保持打开。',
+      "Ferme comme la croix de la fenêtre : s'il y a du non enregistré, le programme demande et reste ouvert.",
+      'Cierra como la X de la ventana: si hay algo sin guardar, el programa pregunta y sigue abierto.');
+  String get stepWait => _t('Esperar depois', 'Wait afterwards', '之后等待',
+      'Attendre ensuite', 'Esperar después');
+  /// Por que a espera existe. Sem ela o atalho chega antes de o programa
+  /// existir para recebê-lo, e o passo falha sem deixar rastro.
+  String get stepWaitHint => _t(
+      'Dá tempo ao programa de abrir antes do passo seguinte.',
+      'Gives the program time to open before the next step.',
+      '让程序有时间打开，再执行下一步。',
+      "Laisse au programme le temps de s'ouvrir avant l'étape suivante.",
+      'Da tiempo al programa para abrir antes del siguiente paso.');
+  /// A espera de um passo, em segundos. Recebe milissegundos porque é como o
+  /// passo a guarda — converter no chamador espalharia a mesma divisão por mil
+  /// por toda a tela.
+  String stepSeconds(int ms) {
+    if (ms == 0) {
+      return _t('Sem espera', 'No wait', '不等待', "Aucune attente", 'Sin espera');
+    }
+    final s = (ms / 1000).toStringAsFixed(ms % 1000 == 0 ? 0 : 1);
+    return '$s s';
+  }
 
   String get monitorsTitle => _t('Tela do computador', 'Computer display',
       '电脑显示器', "Écran de l'ordinateur", 'Pantalla del equipo');

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/strings.dart';
+import '../models/automation.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
@@ -404,6 +405,48 @@ class AppState extends ChangeNotifier {
       rethrow;
     }
   }
+
+  /// As automações da conta.
+  ///
+  /// Mesma escolha dos perfis, e pelos mesmos dois motivos: ficam no servidor
+  /// (a conta é usada em mais de um aparelho, e o app instalado por sideload é
+  /// reinstalado com frequência) e ficam em memória aqui (a lista só muda
+  /// quando o usuário mexe nela).
+  List<Automation> automations = const [];
+
+  /// Recarrega as automações. Falha em silêncio, como os perfis: um backend
+  /// antigo, que não tem o endpoint, deixa a seção vazia em vez de derrubar a
+  /// tela de perfis inteira.
+  Future<void> loadAutomations() async {
+    try {
+      automations = await api.automations();
+      notifyListeners();
+    } catch (_) {
+      // Backend antigo ou rede fora.
+    }
+  }
+
+  Future<Automation> createAutomation(Automation a) async {
+    final criada = await api.createAutomation(a);
+    automations = [...automations, criada];
+    notifyListeners();
+    return criada;
+  }
+
+  Future<void> updateAutomation(Automation a) async {
+    final salva = await api.updateAutomation(a);
+    automations = [for (final c in automations) c.id == salva.id ? salva : c];
+    notifyListeners();
+  }
+
+  Future<void> deleteAutomation(String id) async {
+    await api.deleteAutomation(id);
+    automations = automations.where((c) => c.id != id).toList();
+    notifyListeners();
+  }
+
+  Future<List<StepResult>> runAutomation(Automation a, {String? deviceId}) =>
+      api.runAutomation(a.id, deviceId: deviceId);
 
   Future<RemoteMonitors> monitors(Device device) =>
       api.monitors(device.deviceId);

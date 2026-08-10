@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/strings.dart';
+import '../models/automation.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/remote_app.dart';
@@ -9,6 +10,8 @@ import '../models/window_zone.dart';
 import '../services/app_state.dart';
 import '../theme.dart';
 import '../widgets/layout_picker.dart';
+import 'app_picker_screen.dart';
+import 'automations_screen.dart';
 
 /// Editor de perfis: criar, editar, reordenar e apagar.
 ///
@@ -42,6 +45,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
 
   Future<void> _recarregar() async {
     await widget.state.loadProfiles();
+    await widget.state.loadAutomations();
     if (!mounted) return;
     setState(() {
       // Sem filtro por computador: aqui se edita a coleção inteira.
@@ -112,51 +116,177 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
     }
   }
 
+  Future<void> _editarAutomacao(Automation? automacao) async {
+    final salvou = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AutomationEditorScreen(
+          state: widget.state,
+          automation: automacao,
+        ),
+      ),
+    );
+    if (salvou == true) await _recarregar();
+  }
+
+  Future<void> _apagarAutomacao(Automation a) async {
+    final t = widget.state.t;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(a.name),
+        content: Text(t.automationDeleteConfirm(a.name)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(t.delete),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await widget.state.deleteAutomation(a.id);
+      await _recarregar();
+    } catch (e) {
+      _avisar(e.toString());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = widget.state.t;
     return Scaffold(
       appBar: AppBar(title: Text(t.profilesTitle)),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _editar(null),
-        icon: const Icon(Icons.add),
-        label: Text(t.profileNew),
-      ),
       body: _carregando
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 4),
-                  child: Text(
-                    t.profilesHint,
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+          // Duas listas numa rolagem só, e a de perfis continua arrastável:
+          // é para isso que existe o `SliverReorderableList`. Empilhar duas
+          // listas roláveis daria duas barras de rolagem competindo pelo dedo.
+          : CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: _cabecalho(
+                    titulo: t.profilesTitle,
+                    dica: t.profilesHint,
+                    botao: t.profileNew,
+                    onAdd: () => _editar(null),
                   ),
                 ),
-                Expanded(
-                  child: ReorderableListView.builder(
-                    padding: const EdgeInsets.only(bottom: 96),
-                    itemCount: _fila.length,
-                    // `onReorderItem` substitui isto e já entrega o índice
-                    // corrigido - mas só existe nas versões mais novas do
-                    // Flutter, e o Codemagic compila em `stable`, que pode
-                    // estar atrás da máquina de quem escreve. Trocar agora
-                    // arriscaria quebrar o build por causa de um aviso.
-                    //
-                    // Ao trocar: **apague** o ajuste de índice em `_reordenar`.
-                    // O callback novo já o faz, e fazer duas vezes move o item
-                    // para o lugar errado sem nada quebrar.
-                    // ignore: deprecated_member_use
-                    onReorder: _reordenar,
-                    itemBuilder: (context, i) => _linha(_fila[i], t),
+                SliverReorderableList(
+                  itemCount: _fila.length,
+                  onReorder: _reordenar,
+                  itemBuilder: (context, i) => _linha(_fila[i], t, i),
+                ),
+                SliverToBoxAdapter(
+                  child: _cabecalho(
+                    titulo: t.automations,
+                    dica: t.automationsHint,
+                    botao: t.automationNew,
+                    onAdd: () => _editarAutomacao(null),
+                    comDivisor: true,
                   ),
                 ),
+                SliverList.builder(
+                  itemCount: widget.state.automations.length,
+                  itemBuilder: (context, i) =>
+                      _linhaAutomacao(widget.state.automations[i], t),
+                ),
+                if (widget.state.automations.isEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 4, 18, 0),
+                      child: Text(
+                        t.automationsEmpty,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                const SliverToBoxAdapter(child: SizedBox(height: 32)),
               ],
             ),
     );
   }
 
-  Widget _linha(ControlProfile p, Strings t) {
+  Widget _cabecalho({
+    required String titulo,
+    required String dica,
+    required String botao,
+    required VoidCallback onAdd,
+    bool comDivisor = false,
+  }) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(18, comDivisor ? 8 : 12, 18, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (comDivisor) const Divider(height: 24, color: Colors.white12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: onAdd,
+                icon: const Icon(Icons.add),
+                label: Text(botao),
+              ),
+            ],
+          ),
+          Text(
+            dica,
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
+
+  Widget _linhaAutomacao(Automation a, Strings t) {
+    final onde = widget.state.devices
+        .where((d) => d.deviceId == a.deviceId)
+        .map((d) => d.name);
+    return ListTile(
+      key: ValueKey(a.id),
+      leading: Icon(a.iconData, color: auroraCyan),
+      title: Text(a.name, style: const TextStyle(color: Colors.white)),
+      subtitle: Text(
+        [
+          t.automationStepCount(a.steps.length),
+          if (onde.isNotEmpty) onde.first,
+        ].join(' · '),
+        style: const TextStyle(color: Colors.white54, fontSize: 12),
+      ),
+      onTap: () => _editarAutomacao(a),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Rodar daqui é o caminho principal: a tela de perfis é onde a
+          // automação existe, e obrigar a abrir o editor para executá-la faria
+          // do recurso de um toque um recurso de três.
+          IconButton(
+            tooltip: t.automationRun,
+            icon: const Icon(Icons.play_arrow, color: Colors.white70),
+            onPressed: () => runAutomationFlow(context, widget.state, a),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, color: Colors.white38),
+            onPressed: () => _apagarAutomacao(a),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _linha(ControlProfile p, Strings t, int i) {
     final quantos = p.actions.length;
     return ListTile(
       key: ValueKey(p.id),
@@ -185,7 +315,12 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
               icon: const Icon(Icons.delete_outline, color: Colors.white38),
               onPressed: () => _apagar(p),
             ),
-          const Icon(Icons.drag_handle, color: Colors.white38),
+          // O `SliverReorderableList` não desenha alça por conta própria (ao
+          // contrário do `ReorderableListView`): quem arrasta é este ouvinte.
+          ReorderableDragStartListener(
+            index: i,
+            child: const Icon(Icons.drag_handle, color: Colors.white38),
+          ),
         ],
       ),
     );
@@ -303,7 +438,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
 
     final escolhidos = await Navigator.of(context).push<List<RemoteApp>>(
       MaterialPageRoute(
-        builder: (_) => _AppPickerScreen(state: widget.state, device: onde),
+        builder: (_) => AppPickerScreen(state: widget.state, device: onde),
       ),
     );
     if (escolhidos == null || escolhidos.isEmpty) return;
@@ -500,135 +635,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
             ),
         ],
       ),
-    );
-  }
-}
-
-/// Lista de programas de um computador, com seleção múltipla.
-class _AppPickerScreen extends StatefulWidget {
-  // Sem `key`: a classe é privada e só é instanciada num lugar. Um parâmetro
-  // opcional que ninguém passa é parâmetro morto, e o analisador acusa.
-  const _AppPickerScreen({required this.state, required this.device});
-
-
-  final AppState state;
-  final Device device;
-
-  @override
-  State<_AppPickerScreen> createState() => _AppPickerScreenState();
-}
-
-class _AppPickerScreenState extends State<_AppPickerScreen> {
-  List<RemoteApp> _apps = const [];
-  final Set<String> _escolhidos = {};
-  String _busca = '';
-  bool _carregando = true;
-  String? _erro;
-
-  @override
-  void initState() {
-    super.initState();
-    _carregar();
-  }
-
-  Future<void> _carregar() async {
-    try {
-      // `installed` e não `desktop`: o pedido era poder escolher programas que
-      // estão na área de trabalho **ou não**, e o menu Iniciar é onde estão
-      // todos.
-      final lista = await widget.state.listApps(widget.device, kind: 'installed');
-      if (!mounted) return;
-      setState(() {
-        _apps = lista;
-        _carregando = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _erro = e.toString();
-        _carregando = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final t = widget.state.t;
-    final filtrados = _busca.isEmpty
-        ? _apps
-        : _apps
-            .where((a) => a.name.toLowerCase().contains(_busca.toLowerCase()))
-            .toList();
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(t.profileAddProgram),
-        actions: [
-          TextButton(
-            onPressed: _escolhidos.isEmpty
-                ? null
-                : () => Navigator.of(context).pop(
-                      _apps.where((a) => _escolhidos.contains(a.id)).toList(),
-                    ),
-            child: Text('${t.save} (${_escolhidos.length})'),
-          ),
-        ],
-      ),
-      body: _carregando
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 12),
-                  Text(t.appsQuerying,
-                      style: const TextStyle(color: Colors.white54)),
-                ],
-              ),
-            )
-          : _erro != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(_erro!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white54)),
-                  ),
-                )
-              : Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: TextField(
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.search),
-                          hintText: t.appsSearch,
-                        ),
-                        onChanged: (v) => setState(() => _busca = v),
-                      ),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: filtrados.length,
-                        itemBuilder: (context, i) {
-                          final a = filtrados[i];
-                          return CheckboxListTile(
-                            value: _escolhidos.contains(a.id),
-                            title: Text(a.name,
-                                style: const TextStyle(color: Colors.white)),
-                            onChanged: (v) => setState(() {
-                              if (v == true) {
-                                _escolhidos.add(a.id);
-                              } else {
-                                _escolhidos.remove(a.id);
-                              }
-                            }),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
     );
   }
 }

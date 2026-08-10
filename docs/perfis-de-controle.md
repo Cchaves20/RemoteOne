@@ -233,11 +233,158 @@ perfil criado noutro aparelho, ou um perfil de fábrica trazido por uma versão
 nova do app, aparecer em vez de sumir por não constar de uma lista salva antes
 de ele existir.
 
+## Automações
+
+Um perfil é um punhado de botões: você toca no que quiser, e a ordem entre eles
+não significa nada. Uma **automação** é o passo seguinte da mesma ideia — uma
+sequência que um toque só executa, em ordem, com espera entre os passos.
+
+Dois exemplos, que foram os que motivaram o recurso:
+
+| Modo reunião | Fim do expediente |
+|---|---|
+| abrir o Teams à esquerda | fechar o Slack |
+| abrir o OneNote à direita | fechar o Outlook |
+| silenciar | brilho no mínimo |
+| brilho em 80% | suspender |
+
+### Moram na tela de perfis, e não numa gaveta própria
+
+A tela de perfis já era uma pré-automatização. Compare o que se preenche:
+
+| Perfil | Automação |
+|---|---|
+| ícone | ícone |
+| nome | nome |
+| **lista de programas** | **lista de passos** |
+| em quais computadores vale | em qual computador roda |
+
+É o mesmo gesto e o mesmo lugar na cabeça de quem usa: *coisas que eu montei
+para o meu jeito de trabalhar*. Uma tela separada obrigaria a pessoa a saber,
+antes de procurar, em qual das duas gavetas o que ela quer foi guardado — e a
+diferença entre as duas é sutil demais para isso.
+
+**Mas continuam dois objetos**, e não um. Num perfil a ordem é indiferente; numa
+automação ela é o recurso inteiro. Um editor que servisse aos dois teria de
+explicar essa diferença antes de servir para alguma coisa, e todo perfil passaria
+a carregar uma sequência que talvez não queira ter.
+
+### O que um passo pode ser
+
+Abrir um programa (com zona, como no "abrir todos") · fechar um programa · um
+atalho de teclado · uma tecla de mídia · o brilho · energia.
+
+Isso não é economia de esforço, é limite de projeto: **o conjunto do que uma
+automação pode fazer é exatamente o conjunto do que a pessoa já podia fazer
+tocando nos botões.** Nenhum poder novo entra pela porta da automação — e cada
+passo herda um comportamento já testado e explicado em outro lugar.
+
+Os atalhos de teclado oferecidos são os dos perfis de fábrica, e por um motivo
+concreto: cada um já vem com o formato certo resolvido (tecla com nome próprio,
+letra solta ou combinação). Um campo livre de "escreva o atalho" deixaria montar
+combinações que o computador não sabe receber, e a falha só apareceria na hora
+de rodar.
+
+### A sequência inteira vai numa mensagem só
+
+A mesma decisão do "abrir todos", pelo mesmo motivo decisivo: **o iOS suspende
+aplicativos**. Se o telefone conduzisse passo a passo, bastaria bloquear a tela
+para a rotina parar no meio — com o Teams aberto, o som ainda alto e o brilho
+como estava. Uma automação que às vezes faz metade é pior que não ter.
+
+Então o backend manda uma mensagem com a lista, e o agente executa em ordem.
+
+### A espera é depois do passo, e tem teto
+
+Abrir um programa e mandar um atalho no instante seguinte não funciona: o
+programa ainda não existe para receber a tecla. Por isso cada passo carrega
+quanto esperar **depois** dele — 1,5 s por padrão nos que abrem programa, nada
+nos demais.
+
+Três tetos, e nenhum é decoração — a lista chega pela rede, e não pode prender o
+agente para sempre:
+
+| | |
+|---|---|
+| Passos por automação | 24 |
+| Espera de um passo | 10 s |
+| Espera somada | 60 s |
+
+A espera nunca acontece depois do último passo: seria o agente dormindo à toa
+com a automação já terminada.
+
+### Uma falha não interrompe as seguintes
+
+Se o Slack não estava aberto para ser fechado, o brilho ainda baixa e a máquina
+ainda suspende. Quem pediu "fim do expediente" quer o expediente encerrado, não
+uma verificação de integridade.
+
+Mas o resultado de **cada** passo volta, identificado pelo **índice** e não pelo
+nome: dois passos podem ser idênticos ("baixar o volume" duas vezes), e dizer só
+"baixar o volume falhou" não diria qual dos dois. O app mostra quantos passos
+rodaram e, tocando em *Resultado*, quais falharam e por quê.
+
+Um aviso volta com o passo tendo dado certo — "a janela abriu, mas não foi para
+o lugar pedido". Aviso não é falha, e esconder não ajudaria: a pessoa vê o Teams
+no meio da tela e precisa saber que aquilo era o esperado.
+
+### Fechar programa é gentil, e é por isso que confirma
+
+O agente pede ao programa que feche, como o X da janela — sem `/F`. Uma
+automação roda sem ninguém olhando, e matar o processo descartaria em silêncio o
+que não foi salvo. Se houver algo pendente, o programa pergunta e continua
+aberto: o passo "falha", e essa é a resposta certa.
+
+**Passos destrutivos confirmam antes de rodar** — fechar programa e mexer na
+energia. Só eles: pedir confirmação em toda automação faria um recurso de um
+toque custar dois, que é o oposto do que ele existe para fazer.
+
+### Em qual computador
+
+Uma automação pode fixar a máquina ou perguntar na hora. Fixar é singular, ao
+contrário do perfil (que aceita vários): um perfil é um punhado de atalhos que
+vale em qualquer Windows, mas uma automação abre programas *daquele* computador
+e pode terminar suspendendo *aquela* máquina.
+
+Quando ela fixou uma, o parâmetro da URL não a desvia — quem fixou, fixou por um
+motivo.
+
+### Endpoints
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/v1/automations` | As automações da conta |
+| `POST` | `/api/v1/automations` | Cria (o servidor gera o `id`) |
+| `PUT` | `/api/v1/automations/{id}` | Substitui o conteúdo; o `id` continua |
+| `DELETE` | `/api/v1/automations/{id}` | Apaga |
+| `POST` | `/api/v1/automations/{id}/run` | Executa e devolve o relatório |
+
+O `run` aceita `?device_id=` para quando a automação não fixou um computador, e
+recusa com 409 uma automação sem passos: o relatório seria uma lista vazia, e
+lista vazia é indistinguível de "rodou tudo e nada deu errado".
+
+Um passo sem o campo obrigatório do próprio tipo é recusado com 422 **no
+telefone**, e não no computador — um `launch` sem caminho falharia lá, longe de
+quem montou a automação, com uma mensagem sobre um programa vazio em vez de
+"faltou escolher o programa". Os nomes dos comandos de mídia e de energia também
+são conferidos aqui: `sleep` é o nome corrente em inglês e o agente chama de
+`suspend`, e sem essa conferência o passo só falharia na última linha da
+sequência.
+
+### Limites
+
+| | |
+|---|---|
+| Automações por conta | 30 |
+| Passos por automação | 24 |
+| Tamanho do nome | 60 caracteres |
+
 ## Onde fica
 
 **Configurações → Perfis.** Fora da tela de controle, de propósito: montar um
 perfil é arrumar a casa, não usar o computador — e quem está no meio de uma
-apresentação não quer esbarrar num editor.
+apresentação não quer esbarrar num editor. A mesma tela tem as duas seções:
+perfis em cima, automações embaixo.
 
 ## Limites
 
@@ -286,5 +433,16 @@ ser editado de novo.
    segundo. Se o caminho de lá for outro, o console do agente diz que procurou
    pelo nome e o que achou.
 
+7. Ainda em **Perfis**, role até **Automações** e crie uma: dê um nome, toque
+   em **Adicionar passo** e monte "abrir um programa · silenciar · brilho".
+   Arraste os passos para ver a ordem mudar.
+8. Toque em ▶: o computador executa a sequência inteira e o app diz quantos
+   passos rodaram.
+9. Acrescente um passo **Fechar programa** e rode de novo: agora o app pergunta
+   antes.
+10. **O teste que interessa de verdade:** toque em ▶ e *bloqueie a tela do
+    telefone na hora*. A sequência tem de terminar inteira no computador — é
+    para isso que ela vai numa mensagem só.
+
 Para conferir se o backend no VPS já tem isto, `features` no `/health` precisa
-conter `control-profiles`.
+conter `control-profiles` e `automations`.

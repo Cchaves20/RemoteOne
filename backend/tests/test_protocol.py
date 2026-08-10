@@ -2,6 +2,7 @@ import pytest
 
 from app.protocol import (
     Ack,
+    AutomationResult,
     Error,
     Heartbeat,
     Hello,
@@ -92,3 +93,30 @@ def test_parse_webrtc_ice_com_e_sem_campos_opcionais():
 def test_webrtc_ice_sem_session_id_e_recusado():
     with pytest.raises(ValueError):
         parse_client_message({"type": "webrtc_ice", "candidate": "c"})
+
+
+def test_parse_automation_result():
+    """O relatório da automação, como o agente Rust o serializa.
+
+    O `error` é omitido quando não há motivo (`skip_serializing_if` no lado do
+    Rust), então o backend precisa aceitar o passo sem ele. Exigir o campo faria
+    a mensagem inteira ser recusada, e o app receberia um 504 - "o computador
+    demorou para responder" - por uma automação que rodou inteira e deu certo.
+    """
+    msg = parse_client_message(
+        {
+            "type": "automation_result",
+            "request_id": "r1",
+            "results": [
+                {"index": 0, "ok": True},
+                {"index": 1, "ok": False, "error": "o Slack não estava aberto"},
+                {"index": 2, "ok": True, "error": "não achei a janela para posicionar"},
+            ],
+        }
+    )
+    assert isinstance(msg, AutomationResult)
+    assert msg.request_id == "r1"
+    assert msg.results[0].error is None
+    assert msg.results[1].ok is False
+    # Aviso não é falha: o passo aconteceu, e o motivo vem junto mesmo assim.
+    assert msg.results[2].ok is True and msg.results[2].error

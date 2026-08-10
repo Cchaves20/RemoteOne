@@ -771,6 +771,30 @@ pub async fn run(
                                 )?;
                                 ws.send(Message::Text(reply)).await?;
                             }
+                            Some(Action::RunAutomation { request_id, steps }) => {
+                                // Fora do laço, e aqui isso importa mais que
+                                // nunca: uma automação com esperas pode levar
+                                // meio minuto, e segurar o laço por esse tempo
+                                // pararia a captura de tela junto.
+                                let quantos = steps.len();
+                                println!("Rodando automação de {quantos} passo(s)");
+                                let results = tokio::task::spawn_blocking(move || {
+                                    crate::automacao::executar(
+                                        &steps,
+                                        std::thread::sleep,
+                                        executar_passo,
+                                    )
+                                })
+                                .await
+                                .unwrap_or_default();
+                                let reply = serde_json::to_string(
+                                    &ClientMessage::AutomationResult {
+                                        request_id,
+                                        results,
+                                    },
+                                )?;
+                                ws.send(Message::Text(reply)).await?;
+                            }
                             Some(Action::Brightness {
                                 request_id,
                                 level,
@@ -1281,6 +1305,56 @@ impl AudioStats {
     }
 }
 
+/// Executa um passo de automação.
+///
+/// Cada braço chama exatamente o que o resto do agente já fazia por outro
+/// caminho - é isso que garante que a automação não tenha nenhum poder novo.
+///
+/// Roda numa thread de bloqueio, então pode dormir e pode chamar PowerShell à
+/// vontade: quem a chama já saiu do laço da conexão.
+fn executar_passo(acao: &crate::automacao::Acao) -> crate::automacao::Desfecho {
+    use crate::automacao::{Acao, Desfecho};
+    match acao {
+        Acao::Launch { id, zone } => {
+            let item = crate::lote::Item {
+                id: id.clone(),
+                zone: *zone,
+            };
+            match abrir_e_posicionar(&item) {
+                crate::lote::Passo::Ok => Desfecho::Ok,
+                crate::lote::Passo::ComAviso(a) => Desfecho::ComAviso(a),
+                crate::lote::Passo::Falhou(m) => Desfecho::Falhou(m),
+            }
+        }
+        Acao::Close { name } => match crate::apps::close_by_name(name) {
+            Ok(()) => Desfecho::Ok,
+            Err(motivo) => Desfecho::Falhou(motivo),
+        },
+        Acao::Input { action } => {
+            match crate::injector::controller().apply(action) {
+                Ok(()) => Desfecho::Ok,
+                Err(motivo) => Desfecho::Falhou(motivo),
+            }
+        }
+        Acao::Media { action } => {
+            match crate::injector::controller().media(*action) {
+                Ok(()) => Desfecho::Ok,
+                Err(motivo) => Desfecho::Falhou(motivo),
+            }
+        }
+        Acao::Brightness { level, delta } => {
+            match crate::brightness::ajustar(*level, *delta) {
+                Ok(_) => Desfecho::Ok,
+                Err(motivo) => Desfecho::Falhou(motivo),
+            }
+        }
+        Acao::Power { action } => match crate::power::apply(*action) {
+            Ok(()) => Desfecho::Ok,
+            Err(motivo) => Desfecho::Falhou(motivo),
+        },
+    }
+}
+
 /// Abre um programa e, se houver zona, põe a janela dele no lugar.
 ///
 /// **A fotografia das janelas é tirada antes de abrir.** É o que dispensa
@@ -1342,6 +1416,11 @@ enum Action {
     LaunchMany {
         request_id: String,
         itens: Vec<crate::lote::Item>,
+    },
+    /// Rodar uma automação e responder com o resultado de cada passo.
+    RunAutomation {
+        request_id: String,
+        steps: Vec<crate::automacao::Passo>,
     },
     /// Ajustar o brilho e responder com o resultado.
     Brightness {
@@ -1603,6 +1682,9 @@ fn handle_server_text(
                 })
                 .collect();
             return Some(Action::LaunchMany { request_id, itens });
+        }
+        Ok(ServerMessage::RunAutomation { request_id, steps }) => {
+            return Some(Action::RunAutomation { request_id, steps });
         }
         Ok(ServerMessage::CloseApp { id }) => {
             println!("Encerrando aplicativo (PID {id})");

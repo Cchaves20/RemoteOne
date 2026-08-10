@@ -89,6 +89,56 @@ pub fn close(id: &str) -> Result<(), String> {
     imp::close(id)
 }
 
+/// Fecha um programa pelo **nome do processo** (`slack`, `outlook`).
+///
+/// Existe para as automações, e a diferença para o `close` acima não é
+/// cosmética: aquele recebe um PID, que serve à tela de aplicativos (a lista
+/// acabou de ser lida, o PID é de agora). Uma automação é escrita hoje e rodada
+/// amanhã, e o PID de hoje não existe amanhã.
+///
+/// **Pede para fechar, não mata.** O `close` por PID usa `/F` porque quem tocou
+/// no botão está olhando a lista e decidiu encerrar aquilo. Uma automação roda
+/// sozinha, muitas vezes com a pessoa longe do computador - e forçar ali
+/// descartaria em silêncio o documento não salvo que o programa teria pedido
+/// para gravar. Sem `/F`, o Windows manda o pedido de fechamento e o programa
+/// decide o que fazer com ele.
+pub fn close_by_name(name: &str) -> Result<(), String> {
+    imp::close_by_name(name)
+}
+
+/// O nome de processo que o `taskkill` aceita, a partir do que veio do app.
+///
+/// Pura e testável: é aqui que mora o erro fácil. O app pode mandar `slack`,
+/// `Slack.exe` ou até um caminho, e o que o `taskkill /IM` quer é o nome do
+/// executável com extensão. Devolve `None` para nome vazio ou com caractere que
+/// não pertence a um nome de processo - a lista chega pela rede, e daqui sai um
+/// argumento de linha de comando.
+pub fn nome_de_processo(bruto: &str) -> Option<String> {
+    let base = bruto
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(bruto)
+        .trim();
+    if base.is_empty() || base.len() > 120 {
+        return None;
+    }
+    // Só o que compõe um nome de arquivo de programa. Sem espaço, aspas, `&`,
+    // `|` nem `..`: nada daqui pode virar outro comando nem subir de pasta.
+    if !base
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+        || base.contains("..")
+    {
+        return None;
+    }
+    let minusculo = base.to_ascii_lowercase();
+    if minusculo.ends_with(".exe") {
+        Some(minusculo)
+    } else {
+        Some(format!("{minusculo}.exe"))
+    }
+}
+
 /// Ordena por nome (sem diferenciar maiúsculas) e remove nomes repetidos.
 /// Só a implementação do Windows usa; mantida fora do `cfg` para ser testável
 /// em qualquer sistema.
@@ -446,6 +496,29 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
             .map(|_| ())
             .map_err(|e| format!("não foi possível encerrar: {e}"))
     }
+
+    pub fn close_by_name(name: &str) -> Result<(), String> {
+        let alvo = super::nome_de_processo(name)
+            .ok_or_else(|| format!("nome de programa inválido: {name}"))?;
+        // `output` e não `spawn`: aqui interessa **saber** se fechou. O
+        // `taskkill` devolve 128 quando não há processo com aquele nome, e uma
+        // automação que diz "fechei o Slack" com o Slack aberto seria pior que
+        // uma que diz que não achou.
+        let saida = Command::new("taskkill")
+            .args(["/IM", &alvo])
+            .output()
+            .map_err(|e| format!("não foi possível encerrar: {e}"))?;
+        if saida.status.success() {
+            return Ok(());
+        }
+        let motivo = String::from_utf8_lossy(&saida.stderr);
+        let primeira = motivo.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+        Err(if primeira.is_empty() {
+            format!("{alvo} não estava aberto")
+        } else {
+            primeira.trim().to_string()
+        })
+    }
 }
 
 /// Reexporta o que o resto do agente usa de dentro do `imp` do Windows: o
@@ -483,10 +556,65 @@ mod imp {
         println!("[apps-stub] encerrar: {id}");
         Ok(())
     }
+
+    pub fn close_by_name(name: &str) -> Result<(), String> {
+        println!("[apps-stub] encerrar por nome: {name}");
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    /// O nome que o `taskkill` recebe.
+    ///
+    /// É argumento de linha de comando montado a partir de texto que chegou
+    /// pela rede: o que se protege aqui é a fronteira.
+    mod nome_de_processo {
+        use super::super::nome_de_processo as nome;
+
+        #[test]
+        fn acrescenta_exe_quando_falta() {
+            assert_eq!(nome("slack").as_deref(), Some("slack.exe"));
+            assert_eq!(nome("Outlook").as_deref(), Some("outlook.exe"));
+        }
+
+        #[test]
+        fn nao_duplica_a_extensao() {
+            assert_eq!(nome("slack.exe").as_deref(), Some("slack.exe"));
+            assert_eq!(nome("SLACK.EXE").as_deref(), Some("slack.exe"));
+        }
+
+        #[test]
+        fn tira_o_caminho_e_fica_com_o_nome() {
+            // O app pode mandar o que tiver à mão; o `taskkill /IM` quer só o
+            // nome do executável.
+            assert_eq!(
+                nome("C:\\Program Files\\Slack\\slack.exe").as_deref(),
+                Some("slack.exe")
+            );
+        }
+
+        #[test]
+        fn recusa_o_que_nao_e_nome_de_programa() {
+            // Daqui sai um argumento de linha de comando. Espaço, aspas, `&` e
+            // `..` não pertencem a um nome de processo, e recusar é mais seguro
+            // do que tentar limpar.
+            assert_eq!(nome(""), None);
+            assert_eq!(nome("   "), None);
+            assert_eq!(nome("slack & shutdown"), None);
+            assert_eq!(nome("a\"b"), None);
+            assert_eq!(nome(".."), None);
+            assert_eq!(nome(&"a".repeat(200)), None);
+            // Um caminho com `..` **não** é recusado, e não deve ser: ele
+            // colapsa no nome do arquivo, que é o que o `/IM` aceita. Subir de
+            // pasta não significa nada para quem só quer um nome de processo.
+            assert_eq!(
+                nome("..\\..\\evil.exe").as_deref(),
+                Some("evil.exe")
+            );
+        }
+    }
+
     use super::*;
 
     #[test]

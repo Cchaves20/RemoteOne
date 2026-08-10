@@ -161,6 +161,35 @@ class LaunchManyResult(BaseModel):
     results: list[LaunchResult] = []
 
 
+class StepResult(BaseModel):
+    """O que aconteceu com um passo de uma automação.
+
+    Identificado por **índice**, e não por nome: dois passos podem ser
+    idênticos ("baixar o volume" duas vezes), e o app precisa saber qual dos
+    dois falhou.
+    """
+
+    index: int
+    ok: bool
+    #: O motivo, quando não deu. Também vem com `ok=True` quando o passo
+    #: aconteceu com ressalva — a janela abriu mas não foi para o lugar pedido,
+    #: por exemplo. Um aviso desses não é falha, e esconder não ajudaria.
+    error: str | None = None
+
+
+class AutomationResult(BaseModel):
+    """Resposta do agente a um `run_automation`.
+
+    Uma resposta só, no fim da sequência inteira, e não uma por passo: o app
+    fica na mão de um HTTP que espera, e um relatório parcial não teria a quem
+    entregar.
+    """
+
+    type: Literal["automation_result"] = "automation_result"
+    request_id: str
+    results: list[StepResult] = []
+
+
 class BrightnessState(BaseModel):
     """Resposta do agente a um `brightness`: o brilho depois do ajuste.
 
@@ -304,6 +333,7 @@ ClientMessage = Annotated[
     | KeepAwakeState
     | BrightnessState
     | LaunchManyResult
+    | AutomationResult
     | FileList
     | FileChunk
     | FileDone

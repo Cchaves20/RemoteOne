@@ -133,6 +133,15 @@ pub enum ClientMessage {
         request_id: String,
         results: Vec<crate::lote::Resultado>,
     },
+    /// Resposta a um `run_automation`: o que aconteceu com cada passo.
+    ///
+    /// Identificado por **índice**, e não por nome: dois passos de uma
+    /// automação podem ser idênticos ("baixar o volume" duas vezes), e o app
+    /// precisa saber qual dos dois falhou.
+    AutomationResult {
+        request_id: String,
+        results: Vec<crate::automacao::ResultadoPasso>,
+    },
     /// Resposta a um `brightness`: o brilho depois do ajuste.
     ///
     /// Tem resposta, e as teclas de mídia não têm, porque as duas coisas falham
@@ -292,6 +301,17 @@ pub enum ServerMessage {
     /// com `keep_awake_state` carregando o mesmo `request_id`.
     KeepAwakeInfo {
         request_id: String,
+    },
+    /// Roda uma automação: a sequência inteira numa mensagem só.
+    ///
+    /// Pelo mesmo motivo do `launch_many`, e aqui ele pesa mais: uma automação
+    /// tem esperas no meio, e pode levar meio minuto. Se o app disparasse passo
+    /// a passo, bastaria a pessoa bloquear a tela para o iOS suspendê-lo e a
+    /// rotina parar no meio - com o Teams aberto, o som ainda alto e o brilho
+    /// como estava.
+    RunAutomation {
+        request_id: String,
+        steps: Vec<crate::automacao::Passo>,
     },
     /// Ajusta o brilho da tela do computador.
     ///

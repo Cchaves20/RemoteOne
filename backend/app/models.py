@@ -98,6 +98,42 @@ class ControlProfile(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class Automation(Base):
+    """Uma automação: a sequência de passos que um toque executa.
+
+    Mora ao lado do `ControlProfile` e **não** dentro dele, apesar de as duas
+    coisas se parecerem no editor. A diferença é uma só e aparece no uso: num
+    perfil a ordem não significa nada (são botões lado a lado, e você toca no
+    que quiser), enquanto numa automação a ordem é o recurso inteiro.
+
+    Guardar as duas no mesmo objeto faria todo perfil carregar uma sequência que
+    talvez não queira ter, e obrigaria o editor a explicar a diferença antes de
+    servir para alguma coisa.
+    """
+
+    __tablename__ = "automations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    #: Identificador que o app usa. Gerado no servidor, estável para sempre.
+    automation_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    icon: Mapped[str] = mapped_column(String(32), default="tune")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    #: Os passos, em JSON. Mesmo raciocínio dos programas de um perfil: é uma
+    #: lista curta que só se lê inteira, nunca consultada por campo. Uma tabela
+    #: filha custaria um join e uma migração para não ganhar nada - e este
+    #: projeto ainda não tem Alembic.
+    steps: Mapped[str] = mapped_column(Text, default="[]")
+    #: Em qual computador ela roda. Vazio = pergunta na hora.
+    #:
+    #: Singular, ao contrário do perfil: um perfil é um punhado de atalhos que
+    #: vale em várias máquinas, mas uma automação abre programas *daquele*
+    #: computador e pode terminar suspendendo *aquela* máquina.
+    device_id: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class ProfileLayout(Base):
     """A ordem dos perfis na barra, escolhida pelo usuário.
 

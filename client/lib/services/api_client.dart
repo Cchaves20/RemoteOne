@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../models/automation.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
@@ -419,6 +420,65 @@ class ApiClient {
       body: jsonEncode({'ids': ids}),
     );
     if (res.statusCode != 204) throw _error(res);
+  }
+
+  /// As automações da conta.
+  Future<List<Automation>> automations() async {
+    final res = await _http
+        .get(_uri('/api/v1/automations'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    final json = _decode(res) as Map<String, dynamic>;
+    return ((json['automations'] as List?) ?? [])
+        .map((e) => Automation.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Automation> createAutomation(Automation a) async {
+    final res = await _http.post(
+      _uri('/api/v1/automations'),
+      headers: _authHeaders,
+      body: jsonEncode(a.toJson()),
+    );
+    return Automation.fromJson(_decode(res, expected: 201) as Map<String, dynamic>);
+  }
+
+  Future<Automation> updateAutomation(Automation a) async {
+    final res = await _http.put(
+      _uri('/api/v1/automations/${a.id}'),
+      headers: _authHeaders,
+      body: jsonEncode(a.toJson()),
+    );
+    return Automation.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteAutomation(String id) async {
+    final res = await _http.delete(
+      _uri('/api/v1/automations/$id'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode != 204) throw _error(res);
+  }
+
+  /// Roda a automação e devolve o que aconteceu com cada passo.
+  ///
+  /// A espera é longa de propósito: a sequência inteira roda **no computador**,
+  /// numa mensagem só, e pode incluir esperas entre os passos. É esse desenho
+  /// que faz a automação sobreviver ao iOS suspender o app assim que a tela
+  /// apaga — se o telefone conduzisse passo a passo, bloquear o aparelho pararia
+  /// a rotina no meio.
+  ///
+  /// `deviceId` só é usado quando a automação não fixou um computador.
+  Future<List<StepResult>> runAutomation(String id, {String? deviceId}) async {
+    final onde = (deviceId == null || deviceId.isEmpty)
+        ? ''
+        : '?device_id=${Uri.encodeQueryComponent(deviceId)}';
+    final res = await _http
+        .post(_uri('/api/v1/automations/$id/run$onde'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 160));
+    final json = _decode(res) as Map<String, dynamic>;
+    return ((json['results'] as List?) ?? [])
+        .map((e) => StepResult.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// As telas do computador, e qual delas está sendo capturada.
