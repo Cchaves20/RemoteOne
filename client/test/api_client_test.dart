@@ -29,7 +29,7 @@ void main() {
     );
 
     expect(client.isAuthenticated, isFalse);
-    await client.login('a@b.com', 'senhaSegura123');
+    await client.login('senhaSegura123!', email: 'a@b.com');
     expect(client.isAuthenticated, isTrue);
 
     await client.listDevices();
@@ -138,7 +138,7 @@ void main() {
         );
       }),
     );
-    await client.login('a@b.com', 'senhaSegura123', totpCode: '123456');
+    await client.login('senhaSegura123!', email: 'a@b.com', totpCode: '123456');
     expect(body?['totp_code'], '123456');
   });
 
@@ -269,7 +269,7 @@ void main() {
         return http.Response('', 204);
       }),
     );
-    await client.login('a@b.com', 'senhaSegura123');
+    await client.login('senhaSegura123!', email: 'a@b.com');
     expect(client.isAuthenticated, isTrue);
     await client.deleteAccount('senhaSegura123');
     expect(client.isAuthenticated, isFalse);

@@ -218,7 +218,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
                       onPressed: () => Navigator.of(context).pop(),
                       icon: const Icon(Icons.edit_outlined, size: 18),
                       label: Text(
-                        _pendente.porEmail ? t.changeEmail : t.changePhone,
+                        _pendente.porEmail ? t.verifyChangeEmail : t.verifyChangePhone,
                       ),
                     ),
                   ],

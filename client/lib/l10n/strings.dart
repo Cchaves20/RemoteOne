@@ -111,18 +111,22 @@ class Strings {
       '$s 秒后可重发', 'Renvoyer dans ${s}s', 'Reenviar en ${s}s');
   String get codeResent => _t('Código reenviado.', 'Code resent.', '验证码已重发。',
       'Code renvoyé.', 'Código reenviado.');
-  String get changeEmail => _t('Corrigir o e-mail', 'Change the email',
+  // `verify*` e não `change*`: já existe um `changeEmail` na tela de
+  // configurações, e ele quer dizer outra coisa — lá se **troca** o e-mail de
+  // uma conta que existe, aqui se **corrige** o que foi digitado num cadastro
+  // que ainda nem virou conta.
+  String get verifyChangeEmail => _t('Corrigir o e-mail', 'Change the email',
       '修改邮箱', "Corriger l'e-mail", 'Corregir el correo');
-  String get changePhone => _t('Corrigir o telefone', 'Change the phone',
+  String get verifyChangePhone => _t('Corrigir o telefone', 'Change the phone',
       '修改手机号', 'Corriger le téléphone', 'Corregir el teléfono');
 
   String get server => _t('Servidor', 'Server', '服务器', 'Serveur', 'Servidor');
   String get serverHint => 'Ex.: http://192.168.0.10:8000';
   String get signInButton => _t('Entrar', 'Sign in', '登录', 'Se connecter', 'Entrar');
-  String get createAccountButton =>
-      _t('Cadastrar', 'Sign up', '注册', "S'inscrire", 'Registrarse');
-  String get haveAccount => _t('Já tenho conta', 'I already have an account', '我已有账户',
-      "J'ai déjà un compte", 'Ya tengo una cuenta');
+  // `createAccountButton` e `haveAccount` saíram junto com o botão que
+  // alternava login e cadastro na mesma tela. O cadastro tem tela própria,
+  // e quem volta usa a seta da barra — texto traduzido em cinco idiomas que
+  // ninguém mostra é peso que engana quem procura de onde vem uma frase.
   String get createOne => _t('Criar uma conta', 'Create an account', '创建账户',
       'Créer un compte', 'Crear una cuenta');
   String get invalidCode => _t('Código inválido. Tente de novo.', 'Invalid code. Try again.',
