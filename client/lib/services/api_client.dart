@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/automation.dart';
+import '../models/cadastro.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
@@ -58,25 +59,86 @@ class ApiClient {
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
 
-  Future<void> register(String email, String password) async {
+  /// Primeira etapa do cadastro: valida o formulário e manda o código.
+  ///
+  /// **Não cria conta.** Devolve para onde o código foi (normalizado pelo
+  /// servidor — telefone em E.164, e-mail em minúsculas), que é o que a tela de
+  /// verificação manda de volta. Usar o valor do servidor, e não o que foi
+  /// digitado, evita que o app repita a normalização e erre de outro jeito.
+  Future<SignupPending> signupStart({
+    required String firstName,
+    required String lastName,
+    required DateTime birthDate,
+    String? email,
+    String? phone,
+    String? country,
+    required String password,
+    required String passwordConfirm,
+  }) async {
     final res = await _http
         .post(
-          _uri('/api/v1/auth/register'),
+          _uri('/api/v1/auth/signup/start'),
           headers: _jsonHeaders,
-          body: jsonEncode({'email': email, 'password': password}),
+          body: jsonEncode({
+            'first_name': firstName,
+            'last_name': lastName,
+            // Só a data, sem hora: `toIso8601String()` traria um horário que o
+            // servidor recusaria, e um fuso que faria a data mudar de dia.
+            'birth_date':
+                birthDate.toIso8601String().split('T').first,
+            if (email != null) 'email': email,
+            if (phone != null) 'phone': phone,
+            if (country != null) 'country': country,
+            'password': password,
+            'password_confirm': passwordConfirm,
+          }),
+        )
+        .timeout(_timeout);
+    return SignupPending.fromJson(
+        _decode(res, expected: 201) as Map<String, dynamic>);
+  }
+
+  /// Segunda etapa: confere o código e cria a conta, guardando os tokens.
+  Future<void> signupVerify(String destination, String code) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/signup/verify'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'destination': destination, 'code': code}),
         )
         .timeout(_timeout);
     _storeTokens(_decode(res, expected: 201));
     await _persist();
   }
 
-  Future<void> login(String email, String password, {String? totpCode}) async {
+  Future<SignupPending> signupResend(String destination) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/signup/resend'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'destination': destination}),
+        )
+        .timeout(_timeout);
+    return SignupPending.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Entra com e-mail **ou** telefone. O telefone vai com o país junto:
+  /// `987654321` não identifica ninguém sem saber de onde é.
+  Future<void> login(
+    String password, {
+    String? email,
+    String? phone,
+    String? country,
+    String? totpCode,
+  }) async {
     final res = await _http
         .post(
           _uri('/api/v1/auth/login'),
           headers: _jsonHeaders,
           body: jsonEncode({
-            'email': email,
+            if (email != null) 'email': email,
+            if (phone != null) 'phone': phone,
+            if (country != null) 'country': country,
             'password': password,
             if (totpCode != null && totpCode.isNotEmpty) 'totp_code': totpCode,
           }),

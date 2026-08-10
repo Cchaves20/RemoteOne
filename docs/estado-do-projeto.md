@@ -16,7 +16,7 @@ escolha — vai parecer dívida.
 | # | Etapa | Estado |
 |---|---|---|
 | 1 | Estrutura inicial | ✅ |
-| 2 | Usuários e autenticação | ⚠️ falta login Google/Apple/Microsoft |
+| 2 | Usuários e autenticação | ⚠️ cadastro completo com verificação; falta login Google/Apple/Microsoft |
 | 3 | Agente desktop | ⚠️ só Windows (Linux e macOS são stub) |
 | 4 | Comunicação | ⚠️ externa ✅ (WebSocket + WebRTC + STUN/TURN); local (mDNS/UDP) ❌ |
 | 5 | Pareamento | ✅ |
@@ -135,7 +135,8 @@ falta para o Deskside poder ser vendido:
   cima do volume, subir, e confirmar no app que os pareamentos sobreviveram. Um
   backup nunca restaurado é hipótese, não garantia. Ver
   [`deploy-vps-oracle.md`](deploy-vps-oracle.md).
-- **Limite de tentativas** em `/login` e `/register`.
+- **Limite de tentativas** em `/login` e no cadastro. (O código de verificação já tem o seu; a senha, não.)
+- **Provedor de e-mail e SMS.** O cadastro verifica por código, e a entrega está pronta atrás de uma interface — falta contratar SMTP e Twilio e pôr as credenciais no `deploy/.env`. Sem isso o código vai para o registro do servidor, e o app avisa.
 - **App Store.** Hoje é sideload que expira em sete dias por aparelho.
 - **Cobrança e planos.**
 - **Termos de uso, política de privacidade, LGPD.**

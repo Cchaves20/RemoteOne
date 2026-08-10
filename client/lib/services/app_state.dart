@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/strings.dart';
 import '../models/automation.dart';
+import '../models/cadastro.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
@@ -246,8 +247,20 @@ class AppState extends ChangeNotifier {
     return v.replaceAll(RegExp(r'/+$'), '');
   }
 
-  Future<void> login(String email, String password, {String? totpCode}) async {
-    await api.login(email, password, totpCode: totpCode);
+  Future<void> login(
+    String password, {
+    String? email,
+    String? phone,
+    String? country,
+    String? totpCode,
+  }) async {
+    await api.login(
+      password,
+      email: email,
+      phone: phone,
+      country: country,
+      totpCode: totpCode,
+    );
     await refreshDevices();
     try {
       twoFactorEnabled = await api.fetchTwoFactorEnabled();
@@ -273,11 +286,38 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> register(String email, String password) async {
-    await api.register(email, password);
+  /// Primeira etapa do cadastro. Não cria conta — manda o código.
+  Future<SignupPending> signupStart({
+    required String firstName,
+    required String lastName,
+    required DateTime birthDate,
+    String? email,
+    String? phone,
+    String? country,
+    required String password,
+    required String passwordConfirm,
+  }) =>
+      api.signupStart(
+        firstName: firstName,
+        lastName: lastName,
+        birthDate: birthDate,
+        email: email,
+        phone: phone,
+        country: country,
+        password: password,
+        passwordConfirm: passwordConfirm,
+      );
+
+  /// Segunda etapa: com o código certo, a conta passa a existir e a sessão
+  /// começa. É aqui que se carrega o que uma sessão nova precisa.
+  Future<void> signupVerify(String destination, String code) async {
+    await api.signupVerify(destination, code);
     await refreshDevices();
     notifyListeners();
   }
+
+  Future<SignupPending> signupResend(String destination) =>
+      api.signupResend(destination);
 
   Future<void> refreshDevices() async {
     devices = await api.listDevices();

@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../models/pais.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../widgets/brand.dart';
+import 'signup_screen.dart';
 
-/// Tela de login/cadastro. Também permite ajustar a URL do servidor, para
-/// apontar o celular ao computador na mesma rede.
+/// Tela de login. Também permite ajustar a URL do servidor, para apontar o
+/// celular ao computador na mesma rede.
+///
+/// O cadastro **saiu daqui** e virou tela própria: são sete campos, um seletor
+/// de país e uma lista de regras de senha, e espremer isso num formulário que
+/// também faz login faria as duas coisas piores.
+///
+/// Entrar aceita e-mail **ou** telefone. Duas formas, um campo de cada vez, com
+/// um seletor em cima: um campo só que aceitasse as duas teria de adivinhar o
+/// país quando o texto parecesse um número — e `987654321` não identifica
+/// ninguém sem saber de onde é.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.state});
 
@@ -16,39 +27,78 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _email = TextEditingController();
+  /// O campo de identificação: guarda o e-mail **ou** o telefone, conforme o
+  /// seletor. Um controlador só porque nunca há os dois ao mesmo tempo — dois
+  /// campos fariam parecer que se pede as duas coisas.
+  final _contato = TextEditingController();
   final _password = TextEditingController();
   final _code = TextEditingController();
   late final TextEditingController _server =
       TextEditingController(text: widget.state.serverUrl);
 
-  bool _registering = false;
+  /// Se entra por telefone. Falso = e-mail.
+  bool _porTelefone = false;
+  Pais _pais = Pais.padrao;
+
   bool _busy = false;
   // Vira true quando a conta tem 2FA e o backend pede o código.
   bool _needsCode = false;
 
   @override
   void dispose() {
-    _email.dispose();
+    _contato.dispose();
     _password.dispose();
     _code.dispose();
     _server.dispose();
     super.dispose();
   }
 
+  Future<void> _criarConta() async {
+    widget.state.serverUrl = _server.text.trim();
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => SignupScreen(state: widget.state)),
+    );
+  }
+
+  Future<void> _escolherPais() async {
+    final escolhido = await showModalBottomSheet<Pais>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheet) => SafeArea(
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          builder: (_, controller) => ListView.builder(
+            controller: controller,
+            itemCount: Pais.todos.length,
+            itemBuilder: (_, i) {
+              final p = Pais.todos[i];
+              return ListTile(
+                leading: Text(p.bandeira, style: const TextStyle(fontSize: 24)),
+                title: Text(p.nome),
+                trailing: Text('+${p.ddi}'),
+                selected: p == _pais,
+                onTap: () => Navigator.of(sheet).pop(p),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    if (escolhido != null) setState(() => _pais = escolhido);
+  }
+
   Future<void> _submit() async {
     setState(() => _busy = true);
     widget.state.serverUrl = _server.text.trim();
     try {
-      if (_registering) {
-        await widget.state.register(_email.text.trim(), _password.text);
-      } else {
-        await widget.state.login(
-          _email.text.trim(),
-          _password.text,
-          totpCode: _needsCode ? _code.text.trim() : null,
-        );
-      }
+      await widget.state.login(
+        _password.text,
+        email: _porTelefone ? null : _contato.text.trim(),
+        phone: _porTelefone ? _contato.text.trim() : null,
+        country: _porTelefone ? _pais.iso : null,
+        totpCode: _needsCode ? _code.text.trim() : null,
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       if (e.message == 'two_factor_required') {
@@ -93,7 +143,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Text('Deskside', style: theme.textTheme.headlineSmall),
                     const SizedBox(height: 4),
                     Text(
-                      _registering ? t.createAccountTitle : t.signInTitle,
+                      t.signInTitle,
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
@@ -108,15 +158,64 @@ class _LoginScreenState extends State<LoginScreen> {
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            TextField(
-                              controller: _email,
-                              keyboardType: TextInputType.emailAddress,
-                              autocorrect: false,
-                              decoration: InputDecoration(
-                                labelText: t.email,
-                                prefixIcon: const Icon(Icons.alternate_email),
-                              ),
+                            SegmentedButton<bool>(
+                              segments: [
+                                ButtonSegment(
+                                  value: false,
+                                  label: Text(t.email),
+                                  icon: const Icon(Icons.alternate_email),
+                                ),
+                                ButtonSegment(
+                                  value: true,
+                                  label: Text(t.phone),
+                                  icon: const Icon(Icons.smartphone),
+                                ),
+                              ],
+                              selected: {_porTelefone},
+                              onSelectionChanged: (v) => setState(() {
+                                _porTelefone = v.first;
+                                // Limpa: um e-mail no campo de telefone não é
+                                // um telefone, e deixá-lo lá convidaria a
+                                // mandar.
+                                _contato.clear();
+                              }),
                             ),
+                            const SizedBox(height: 12),
+                            if (_porTelefone)
+                              Row(
+                                children: [
+                                  InkWell(
+                                    onTap: _escolherPais,
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 18),
+                                      child: Text('${_pais.bandeira} +${_pais.ddi}'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _contato,
+                                      keyboardType: TextInputType.phone,
+                                      decoration: InputDecoration(
+                                        labelText: t.phone,
+                                        hintText: t.phoneHint,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              TextField(
+                                controller: _contato,
+                                keyboardType: TextInputType.emailAddress,
+                                autocorrect: false,
+                                decoration: InputDecoration(
+                                  labelText: t.email,
+                                  prefixIcon: const Icon(Icons.alternate_email),
+                                ),
+                              ),
                             const SizedBox(height: 12),
                             TextField(
                               controller: _password,
@@ -126,7 +225,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 prefixIcon: const Icon(Icons.lock_outline),
                               ),
                             ),
-                            if (_needsCode && !_registering) ...[
+                            if (_needsCode) ...[
                               const SizedBox(height: 12),
                               TextField(
                                 controller: _code,
@@ -165,16 +264,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                 width: 20,
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : Text(_registering
-                                ? t.createAccountButton
-                                : t.signInButton),
+                            : Text(t.signInButton),
                       ),
                     ),
                     TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() => _registering = !_registering),
-                      child: Text(_registering ? t.haveAccount : t.createOne),
+                      onPressed: _busy ? null : _criarConta,
+                      child: Text(t.createOne),
                     ),
                   ],
                 ),

@@ -38,6 +38,84 @@ class Strings {
       '验证码 (2FA)', 'Code de vérification (2FA)', 'Código de verificación (2FA)');
   String get twoFactorCodeHint => _t('Do seu app autenticador', 'From your authenticator app',
       '来自身份验证器应用', "De votre application d'authentification", 'De tu app de autenticación');
+  // Criação de conta
+  String get firstName => _t('Nome', 'First name', '名字', 'Prénom', 'Nombre');
+  String get lastName =>
+      _t('Sobrenome', 'Last name', '姓氏', 'Nom', 'Apellido');
+  String get birthDate => _t('Data de nascimento', 'Date of birth', '出生日期',
+      'Date de naissance', 'Fecha de nacimiento');
+  String get birthDateHint =>
+      _t('Toque para escolher', 'Tap to pick', '点击选择', 'Touchez pour choisir',
+          'Toca para elegir');
+  String get phone => _t('Telefone', 'Phone', '手机', 'Téléphone', 'Teléfono');
+  String get phoneHint => _t('(11) 98765-4321', '(555) 123-4567', '138 0013 8000',
+      '06 12 34 56 78', '612 345 678');
+  String get passwordConfirm => _t('Confirmar senha', 'Confirm password',
+      '确认密码', 'Confirmer le mot de passe', 'Confirmar contraseña');
+  String get passwordMismatch => _t('As senhas não conferem.',
+      "Passwords don't match.", '两次输入的密码不一致。',
+      'Les mots de passe ne correspondent pas.', 'Las contraseñas no coinciden.');
+  String get continueButton =>
+      _t('Continuar', 'Continue', '继续', 'Continuer', 'Continuar');
+  String get signupCodeExplain => _t(
+      'Vamos mandar um código para confirmar que o contato é seu. A conta só é criada depois disso.',
+      "We'll send a code to confirm the contact is yours. The account is only created after that.",
+      '我们会发送验证码确认联系方式属于你。之后才会创建账户。',
+      "Nous enverrons un code pour confirmer que ce contact est le vôtre. Le compte n'est créé qu'ensuite.",
+      'Enviaremos un código para confirmar que el contacto es tuyo. La cuenta solo se crea después.');
+  String get networkError => _t(
+      'Não consegui falar com o servidor. Confira a conexão e o endereço.',
+      "Couldn't reach the server. Check your connection and the address.",
+      '无法连接服务器。请检查网络和地址。',
+      "Impossible de joindre le serveur. Vérifiez la connexion et l'adresse.",
+      'No pude contactar al servidor. Revisa la conexión y la dirección.');
+
+  // As cinco regras da senha. Aparecem todas desde o começo e vão acendendo —
+  // um formulário que revela uma exigência por vez faz a pessoa tentar cinco
+  // vezes para descobrir cinco regras.
+  String regraTamanho(int n) => _t('$n caracteres', '$n characters', '$n 个字符',
+      '$n caractères', '$n caracteres');
+  String get regraMaiuscula =>
+      _t('1 maiúscula', '1 uppercase', '1 个大写字母', '1 majuscule', '1 mayúscula');
+  String get regraMinuscula =>
+      _t('1 minúscula', '1 lowercase', '1 个小写字母', '1 minuscule', '1 minúscula');
+  String get regraNumero =>
+      _t('1 número', '1 number', '1 个数字', '1 chiffre', '1 número');
+  String get regraEspecial => _t('1 caractere especial', '1 special character',
+      '1 个特殊字符', '1 caractère spécial', '1 carácter especial');
+
+  // Verificação do cadastro
+  String get verifyTitle => _t('Confirme o código', 'Confirm the code',
+      '输入验证码', 'Confirmez le code', 'Confirma el código');
+  String get verifySentEmail => _t('Mandamos um código para o seu e-mail.',
+      'We sent a code to your email.', '我们已向你的邮箱发送验证码。',
+      'Nous avons envoyé un code à votre e-mail.',
+      'Enviamos un código a tu correo.');
+  String get verifySentSms => _t('Mandamos um código por SMS.',
+      'We sent a code by SMS.', '我们已通过短信发送验证码。',
+      'Nous avons envoyé un code par SMS.', 'Enviamos un código por SMS.');
+  /// O servidor está sem provedor e o código foi para o diário dele. Sem este
+  /// aviso, a pessoa esperaria uma mensagem que nunca vai chegar e concluiria
+  /// que o app está quebrado.
+  String get verifyNotDelivered => _t(
+      'Este servidor ainda não tem envio configurado: o código foi para o registro do servidor, não para você.',
+      'This server has no delivery configured yet: the code went to the server log, not to you.',
+      '此服务器尚未配置发送方式：验证码写入了服务器日志，而不是发给你。',
+      "Ce serveur n'a pas encore d'envoi configuré : le code est allé dans le journal du serveur, pas à vous.",
+      'Este servidor aún no tiene envío configurado: el código fue al registro del servidor, no a ti.');
+  String get verifyConfirm =>
+      _t('Confirmar', 'Confirm', '确认', 'Confirmer', 'Confirmar');
+  String get resendCode => _t('Reenviar código', 'Resend code', '重新发送验证码',
+      'Renvoyer le code', 'Reenviar código');
+  String resendIn(int s) => _t('Reenviar em ${s}s', 'Resend in ${s}s',
+      '$s 秒后可重发', 'Renvoyer dans ${s}s', 'Reenviar en ${s}s');
+  String get codeResent => _t('Código reenviado.', 'Code resent.', '验证码已重发。',
+      'Code renvoyé.', 'Código reenviado.');
+  String get changeEmail => _t('Corrigir o e-mail', 'Change the email',
+      '修改邮箱', "Corriger l'e-mail", 'Corregir el correo');
+  String get changePhone => _t('Corrigir o telefone', 'Change the phone',
+      '修改手机号', 'Corriger le téléphone', 'Corregir el teléfono');
+
   String get server => _t('Servidor', 'Server', '服务器', 'Serveur', 'Servidor');
   String get serverHint => 'Ex.: http://192.168.0.10:8000';
   String get signInButton => _t('Entrar', 'Sign in', '登录', 'Se connecter', 'Entrar');
