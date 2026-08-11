@@ -321,6 +321,13 @@ class AppState extends ChangeNotifier {
   Future<void> signupVerify(String destination, String code) async {
     await api.signupVerify(destination, code);
     await refreshDevices();
+    // Ler o `/me` aqui não é redundância com o cadastro que acabou de passar: é
+    // o que troca a conta **anterior** que ficou na memória. Era o único caminho
+    // de entrada que não lia — `login`, `restore` e a recuperação de senha leem
+    // —, e o efeito aparecia na tela de conta: quem apagava uma conta de
+    // telefone e criava uma de e-mail no mesmo uso do app continuava vendo
+    // "Alterar telefone", com o número da conta que já não existia.
+    await recarregarConta();
     notifyListeners();
   }
 
@@ -638,15 +645,35 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteAccount(String password) async {
     await api.deleteAccount(password);
-    devices = [];
-    selected = null;
+    _esquecerSessao();
     notifyListeners();
   }
 
   Future<void> logout() async {
     await api.logout();
+    _esquecerSessao();
+    notifyListeners();
+  }
+
+  /// Apaga **tudo** o que pertencia à sessão que acabou.
+  ///
+  /// Existe porque sair e excluir a conta zeravam só a lista de computadores, e
+  /// o que sobrava não era uma sobra inofensiva: `conta` alimenta a tela de
+  /// conta, que decide entre "Alterar e-mail" e "Alterar telefone" e mostra o
+  /// contato embaixo. Entrar numa conta nova sem passar por um caminho que
+  /// releia o `/me` deixava a **conta anterior** na tela — com o contato de
+  /// alguém que já não estava logado ali.
+  ///
+  /// `twoFactorEnabled` cai junto pelo mesmo motivo: herdado, o interruptor de
+  /// 2FA apareceria ligado numa conta que nunca configurou nada.
+  ///
+  /// É a mesma armadilha das cascatas do `User` no servidor, um andar acima: o
+  /// que não for explicitamente descartado não fica esquecido — reaparece como
+  /// dado de outra pessoa.
+  void _esquecerSessao() {
     devices = [];
     selected = null;
-    notifyListeners();
+    conta = null;
+    twoFactorEnabled = false;
   }
 }
