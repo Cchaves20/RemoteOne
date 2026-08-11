@@ -93,6 +93,9 @@ class User(Base):
     password_resets: Mapped[list["PasswordReset"]] = relationship(
         cascade="all, delete-orphan"
     )
+    contact_change: Mapped["PendingContactChange | None"] = relationship(
+        cascade="all, delete-orphan"
+    )
 
 
 class PendingSignup(Base):
@@ -159,6 +162,45 @@ class PasswordReset(Base):
     #: Para onde o código foi. Guardado para a tela poder mostrar e para o
     #: `reset` achar o pedido sem expor o `user_id` ao app.
     destino: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    canal: Mapped[str] = mapped_column(String(8))
+    hashed_code: Mapped[str] = mapped_column(String(255))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PendingContactChange(Base):
+    """Uma troca de e-mail ou telefone esperando o código.
+
+    Existe pelo mesmo motivo do `PendingSignup`: **o contato novo só entra na
+    conta depois de provado**. Antes disso a troca era imediata, e isso abria
+    dois buracos de uma vez — apontar a conta para um endereço que não é seu
+    (perdendo a conta na hora) e, de quebra, **ocupar aquele contato** na
+    restrição de unicidade, impedindo que o dono real se cadastrasse. É
+    exatamente o que o cadastro em duas etapas já fechava do outro lado.
+
+    A chave é o `user_id`, e é única: uma troca pendente por conta. Começar
+    outra substitui a anterior, e quem confirma já está autenticado — então o
+    código não precisa dizer a que troca pertence, ao contrário do cadastro,
+    onde não há sessão nenhuma para consultar.
+
+    O `destino` **não** é único, de propósito. Duas pessoas podem ter uma troca
+    pendente para o mesmo endereço sem que nenhuma tenha provado nada; quem
+    confirmar primeiro fica com ele, e a outra recebe 409 na confirmação. Com
+    unicidade aqui, bastaria começar uma troca para um endereço alheio para
+    travar a troca da outra pessoa — o buraco de novo, um degrau acima.
+    """
+
+    __tablename__ = "pending_contact_changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), unique=True, index=True
+    )
+    #: O contato novo, já normalizado (e-mail em minúsculas, telefone em E.164).
+    destino: Mapped[str] = mapped_column(String(320), index=True)
+    #: "email" ou "phone". Diz por onde mandar e em qual coluna gravar no fim.
     canal: Mapped[str] = mapped_column(String(8))
     hashed_code: Mapped[str] = mapped_column(String(255))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

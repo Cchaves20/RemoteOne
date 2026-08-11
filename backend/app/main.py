@@ -104,6 +104,8 @@ FEATURES = [
     "window-zones",
     "automations",
     "signup-verification",
+    "session-revocation",
+    "contact-verification",
 ]
 
 

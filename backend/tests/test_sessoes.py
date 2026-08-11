@@ -119,7 +119,7 @@ def test_senha_atual_errada_nao_cancela_nada():
     assert _me(dono["access_token"]) == 200
 
 
-def test_trocar_email_ou_telefone_nao_derruba_ninguem():
+def test_trocar_email_ou_telefone_nao_derruba_ninguem(espiao):
     """O limite do recurso, escrito de propósito.
 
     Cancelar sessão a cada mexida na conta seria deslogar o usuário por trocar
@@ -129,12 +129,18 @@ def test_trocar_email_ou_telefone_nao_derruba_ninguem():
     dono = criar_conta(client, email=EMAIL)
     outro = _segundo_aparelho()
 
-    resp = client.patch(
-        "/api/v1/auth/me/email",
-        json={"current_password": SENHA, "new_email": "novo@example.com"},
+    inicio = client.post(
+        "/api/v1/auth/me/contact/start",
+        json={"current_password": SENHA, "email": "novo@example.com"},
         headers=_headers(dono["access_token"]),
     )
-    assert resp.status_code == 200
+    assert inicio.status_code == 200, inicio.text
+    fim = client.post(
+        "/api/v1/auth/me/contact/verify",
+        json={"code": espiao.ultimo_codigo("novo@example.com")},
+        headers=_headers(dono["access_token"]),
+    )
+    assert fim.status_code == 200, fim.text
     assert _me(outro["access_token"]) == 200
 
 

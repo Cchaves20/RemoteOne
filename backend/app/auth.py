@@ -30,9 +30,11 @@ from app import entrega, telefone, verificacao
 from app import senha as politica_de_senha
 from app.config import settings
 from app.db import get_db
-from app.models import PasswordReset, PendingSignup, User
+from app.models import PasswordReset, PendingContactChange, PendingSignup, User
 from app.schemas import (
     AccessToken,
+    ContactChangeStart,
+    ContactChangeVerify,
     CountryOut,
     Credentials,
     DeleteAccountRequest,
@@ -47,9 +49,7 @@ from app.schemas import (
     TwoFactorDisableRequest,
     TwoFactorEnableRequest,
     TwoFactorSetupOut,
-    UpdateEmailRequest,
     UpdatePasswordRequest,
-    UpdatePhoneRequest,
     UserOut,
 )
 from app.security import (
@@ -153,7 +153,7 @@ def _idade(nascimento: date, hoje: date | None = None) -> int:
 
 
 def _destino(
-    body: SignupStart | Credentials | ForgotPasswordRequest,
+    body: SignupStart | Credentials | ForgotPasswordRequest | ContactChangeStart,
 ) -> tuple[str, str]:
     """O identificador normalizado e o canal, ou um 400 explicando o quê.
 
@@ -565,67 +565,181 @@ def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-@router.patch("/me/email", response_model=UserOut)
-def update_email(
-    body: UpdateEmailRequest,
+# --- trocar o contato da conta ------------------------------------------------
+#
+# Três rotas onde antes havia dois `PATCH` que trocavam na hora. A troca imediata
+# abria dois buracos de uma vez: apontar a conta para um endereço que não é seu —
+# e perdê-la —, e **ocupar aquele contato** na restrição de unicidade, impedindo
+# que o dono real se cadastrasse. É o mesmo buraco que o cadastro em duas etapas
+# fechou do outro lado, e ele continuava aberto por aqui.
+#
+# Os `PATCH /me/email` e `PATCH /me/phone` **saíram**. Enquanto existissem, o
+# código seria decoração: bastaria chamar a rota velha para trocar sem provar
+# nada. Há um teste guardando a porta fechada, porque reabri-la por engano não
+# quebraria mais nada.
+
+
+def _troca_pendente(db: Session, user: User) -> PendingContactChange:
+    achada = db.scalar(
+        select(PendingContactChange).where(PendingContactChange.user_id == user.id)
+    )
+    if achada is None:
+        raise _erro(status.HTTP_404_NOT_FOUND, "não há troca de contato em andamento")
+    return achada
+
+
+def _resposta_de_codigo(destino: str, canal: str, entregue: bool) -> SignupPending:
+    return SignupPending(
+        destination=destino,
+        channel=canal,
+        resend_in_seconds=int(verificacao.ESPERA_REENVIO.total_seconds()),
+        delivered=entregue,
+    )
+
+
+@router.post("/me/contact/start", response_model=SignupPending)
+def contact_change_start(
+    body: ContactChangeStart,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> User:
-    """Troca o e-mail da conta (exige a senha atual)."""
+) -> SignupPending:
+    """Manda um código para o contato **novo**. Nada muda na conta ainda."""
     if not verify_password(body.current_password, current_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="senha atual incorreta"
+        raise _erro(status.HTTP_401_UNAUTHORIZED, "senha atual incorreta")
+
+    # O telefone passa pela **mesma normalização** do cadastro (dentro do
+    # `_destino`). Sem isso, gravar "(11) 98765-4321" produziria uma forma que o
+    # login — que normaliza — nunca encontraria: a pessoa trocaria o número e
+    # ficaria fora da própria conta sem entender por quê.
+    destino, canal = _destino(body)
+    if destino in (current_user.email, current_user.phone):
+        raise _erro(status.HTTP_400_BAD_REQUEST, "este já é o contato da conta")
+    _livre(db, destino, canal)
+
+    anterior = db.scalar(
+        select(PendingContactChange).where(
+            PendingContactChange.user_id == current_user.id
         )
-    if body.new_email != current_user.email:
-        taken = db.scalar(select(User).where(User.email == body.new_email))
-        if taken is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="e-mail já cadastrado"
+    )
+    agora = datetime.now(UTC)
+    if anterior is not None:
+        # A espera vale para o **mesmo** destino, que é o caso de apertar
+        # "enviar" de novo. Trocar de destino é o caso de ter digitado errado, e
+        # fazer esperar um minuto para corrigir um erro de digitação seria
+        # castigo sem ganho nenhum.
+        if anterior.destino == destino and not verificacao.pode_reenviar(
+            anterior.last_sent_at
+        ):
+            raise _erro(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                f"espere {verificacao.segundos_para_reenviar(anterior.last_sent_at)}s "
+                "para pedir outro código",
             )
-        current_user.email = body.new_email
-        db.commit()
-        db.refresh(current_user)
-    return current_user
+        db.delete(anterior)
+        db.flush()
+
+    codigo = verificacao.gerar()
+    db.add(
+        PendingContactChange(
+            user_id=current_user.id,
+            destino=destino,
+            canal=canal,
+            hashed_code=verificacao.resumo(codigo),
+            expires_at=verificacao.prazo(agora),
+            last_sent_at=agora,
+        )
+    )
+    db.commit()
+
+    return _resposta_de_codigo(destino, canal, _enviar(destino, canal, codigo))
 
 
-@router.patch("/me/phone", response_model=UserOut)
-def update_phone(
-    body: UpdatePhoneRequest,
+@router.post("/me/contact/resend", response_model=SignupPending)
+def contact_change_resend(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SignupPending:
+    """Outro código para a mesma troca, com prazo novo e tentativas zeradas.
+
+    Sem corpo: qual troca reenviar sai do token. Zerar as tentativas é o certo —
+    elas contam contra *aquele* código, e o que a pessoa vai digitar é outro.
+    """
+    pendente = _troca_pendente(db, current_user)
+    if not verificacao.pode_reenviar(pendente.last_sent_at):
+        raise _erro(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"espere {verificacao.segundos_para_reenviar(pendente.last_sent_at)}s "
+            "para pedir outro código",
+        )
+
+    codigo = verificacao.gerar()
+    agora = datetime.now(UTC)
+    pendente.hashed_code = verificacao.resumo(codigo)
+    pendente.expires_at = verificacao.prazo(agora)
+    pendente.last_sent_at = agora
+    pendente.attempts = 0
+    db.commit()
+
+    return _resposta_de_codigo(
+        pendente.destino,
+        pendente.canal,
+        _enviar(pendente.destino, pendente.canal, codigo),
+    )
+
+
+@router.post("/me/contact/verify", response_model=UserOut)
+def contact_change_verify(
+    body: ContactChangeVerify,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    """Troca o telefone da conta (exige a senha atual).
+    """Confere o código e **aí sim** troca o contato da conta."""
+    pendente = _troca_pendente(db, current_user)
 
-    Gêmeo do `/me/email`, e existe porque a conta pode ter sido criada por
-    telefone: quem entrou pelo número não tem e-mail nenhum para trocar, e a
-    tela de conta mostrava um botão que não servia para nada.
-
-    O número passa pela **mesma normalização** do cadastro. Sem isso, editar o
-    telefone para "(11) 98765-4321" gravaria uma forma que o login — que
-    normaliza — nunca encontraria: a pessoa trocaria o número e ficaria fora da
-    própria conta sem entender por quê.
-    """
-    if not verify_password(body.current_password, current_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="senha atual incorreta"
-        )
-
-    pais = telefone.pais(body.country)
-    if pais is None:
-        raise _erro(status.HTTP_400_BAD_REQUEST, "país desconhecido")
-    numero = telefone.normalizar(body.new_phone, pais.iso)
-    if numero is None:
-        raise _erro(
-            status.HTTP_400_BAD_REQUEST,
-            f"número de telefone inválido para {pais.nome} "
-            f"(esperado {pais.minimo}–{pais.maximo} dígitos com DDD)",
-        )
-
-    if numero != current_user.phone:
-        _livre(db, numero, "phone")
-        current_user.phone = numero
+    if verificacao.expirou(pendente.expires_at):
+        db.delete(pendente)
         db.commit()
-        db.refresh(current_user)
+        raise _erro(status.HTTP_410_GONE, "o código expirou; peça outro")
+
+    if not verificacao.confere(body.code.strip(), pendente.hashed_code):
+        pendente.attempts += 1
+        restantes = verificacao.MAX_TENTATIVAS - pendente.attempts
+        if restantes <= 0:
+            # Descarta a troca inteira, e não só o código: seis dígitos com
+            # tentativas infinitas se adivinham, e reaproveitar a mesma pendência
+            # com um código novo devolveria as tentativas de graça.
+            db.delete(pendente)
+            db.commit()
+            raise _erro(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "tentativas demais; recomece a troca",
+            )
+        db.commit()
+        raise _erro(
+            status.HTTP_401_UNAUTHORIZED,
+            f"código incorreto ({restantes} tentativa"
+            f"{'s' if restantes > 1 else ''} restante"
+            f"{'s' if restantes > 1 else ''})",
+        )
+
+    # Entre começar e confirmar, alguém pode ter ficado com o contato — inclusive
+    # outra pessoa que tinha a mesma troca pendente. Sem esta conferência o
+    # `commit` estouraria a unicidade e viraria um 500.
+    _livre(db, pendente.destino, pendente.canal)
+
+    # O contato novo **substitui** o antigo: a conta se identifica por um só, e é
+    # por ele que se entra. Deixar os dois preenchidos daria duas formas de login
+    # para uma conta que só provou uma delas.
+    if pendente.canal == "email":
+        current_user.email = pendente.destino
+        current_user.phone = None
+    else:
+        current_user.phone = pendente.destino
+        current_user.email = None
+
+    db.delete(pendente)
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 

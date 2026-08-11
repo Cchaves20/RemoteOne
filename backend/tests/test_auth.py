@@ -153,44 +153,6 @@ def _register_headers(creds=CREDS) -> dict:
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
-def test_update_email_changes_login():
-    headers = _register_headers()
-    resp = client.patch(
-        "/api/v1/auth/me/email",
-        json={"current_password": CREDS["password"], "new_email": "novo@example.com"},
-        headers=headers,
-    )
-    assert resp.status_code == 200
-    assert resp.json()["email"] == "novo@example.com"
-    # Login com o e-mail novo funciona; com o antigo, não.
-    assert client.post(
-        "/api/v1/auth/login",
-        json={"email": "novo@example.com", "password": CREDS["password"]},
-    ).status_code == 200
-    assert client.post("/api/v1/auth/login", json=CREDS).status_code == 401
-
-
-def test_update_email_wrong_password():
-    headers = _register_headers()
-    resp = client.patch(
-        "/api/v1/auth/me/email",
-        json={"current_password": "errada12345", "new_email": "novo@example.com"},
-        headers=headers,
-    )
-    assert resp.status_code == 401
-
-
-def test_update_email_conflict():
-    _register({"email": "ocupado@example.com", "password": SENHA})
-    headers = _register_headers()
-    resp = client.patch(
-        "/api/v1/auth/me/email",
-        json={"current_password": CREDS["password"], "new_email": "ocupado@example.com"},
-        headers=headers,
-    )
-    assert resp.status_code == 409
-
-
 def test_update_password_changes_login():
     headers = _register_headers()
     resp = client.patch(
@@ -245,74 +207,10 @@ def test_delete_account_wrong_password():
     assert client.post("/api/v1/auth/login", json=CREDS).status_code == 200
 
 
-# --- trocar o contato da conta ----------------------------------------------
-
-
-def test_troca_de_telefone_normaliza_e_muda_o_login():
-    """Sem normalizar, a pessoa trocaria o número e ficaria fora da conta.
-
-    Gravar "(11) 98765-4321" como veio produziria uma forma que o login — que
-    normaliza — nunca encontraria. A conta continuaria lá, inacessível, e nada
-    na tela explicaria por quê.
-    """
-    tokens = criar_conta(client, phone="11911112222", country="BR")
-    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-
-    resp = client.patch(
-        "/api/v1/auth/me/phone",
-        json={
-            "current_password": SENHA,
-            "new_phone": "(11) 98765-4321",
-            "country": "BR",
-        },
-        headers=headers,
-    )
-    assert resp.status_code == 200
-    assert resp.json()["phone"] == "+5511987654321"
-
-    # Entra com o novo, escrito de qualquer jeito; não entra com o antigo.
-    assert client.post(
-        "/api/v1/auth/login",
-        json={"phone": "11 98765 4321", "country": "BR", "password": SENHA},
-    ).status_code == 200
-    assert client.post(
-        "/api/v1/auth/login",
-        json={"phone": "11911112222", "country": "BR", "password": SENHA},
-    ).status_code == 401
-
-
-def test_troca_de_telefone_exige_senha_e_numero_possivel():
-    tokens = criar_conta(client, phone="11933334444", country="BR")
-    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-
-    errada = client.patch(
-        "/api/v1/auth/me/phone",
-        json={"current_password": "outra1!Senha", "new_phone": "11955556666",
-              "country": "BR"},
-        headers=headers,
-    )
-    assert errada.status_code == 401
-
-    curto = client.patch(
-        "/api/v1/auth/me/phone",
-        json={"current_password": SENHA, "new_phone": "1199", "country": "BR"},
-        headers=headers,
-    )
-    assert curto.status_code == 400
-    assert "Brasil" in curto.json()["detail"]
-
-
-def test_troca_de_telefone_para_um_numero_ja_usado():
-    criar_conta(client, phone="11977778888", country="BR")
-    tokens = criar_conta(client, phone="11966665555", country="BR")
-    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    resp = client.patch(
-        "/api/v1/auth/me/phone",
-        json={"current_password": SENHA, "new_phone": "11977778888",
-              "country": "BR"},
-        headers=headers,
-    )
-    assert resp.status_code == 409
+# --- como a conta se identifica ---------------------------------------------
+#
+# A troca de contato em si mudou de rota e de forma (virou um fluxo com
+# código) e tem suíte própria: `test_troca_de_contato.py`.
 
 
 def test_me_diz_por_qual_das_duas_a_conta_se_identifica():

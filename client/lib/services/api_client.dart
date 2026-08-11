@@ -293,39 +293,58 @@ class ApiClient {
 
   // --- conta -----------------------------------------------------------------
 
-  /// Troca o e-mail da conta (exige a senha atual).
-  Future<void> updateEmail(String currentPassword, String newEmail) async {
-    final res = await _http.patch(
-      _uri('/api/v1/auth/me/email'),
-      headers: _authHeaders,
-      body: jsonEncode({
-        'current_password': currentPassword,
-        'new_email': newEmail,
-      }),
-    );
-    _decode(res); // 200 ou lança
+  /// Primeira etapa da troca de contato: manda o código para o contato **novo**.
+  ///
+  /// **Nada muda na conta ainda** — quem fecha o app aqui continua com o
+  /// contato de antes. Substituiu os antigos `updateEmail`/`updatePhone`, que
+  /// trocavam na hora: bastava a senha para apontar a conta a um endereço que
+  /// não é seu, e de quebra ocupar aquele endereço para o dono real.
+  ///
+  /// Um método só para e-mail e telefone, como no servidor: são o mesmo fluxo,
+  /// e dois caminhos quase iguais seriam dois lugares para esquecer a mesma
+  /// conferência.
+  Future<SignupPending> contactChangeStart({
+    required String currentPassword,
+    String? email,
+    String? phone,
+    String? country,
+  }) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/me/contact/start'),
+          headers: _authHeaders,
+          body: jsonEncode({
+            'current_password': currentPassword,
+            if (email != null) 'email': email,
+            if (phone != null) 'phone': phone,
+            if (country != null) 'country': country,
+          }),
+        )
+        .timeout(_timeout);
+    return SignupPending.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
-  /// Troca o telefone da conta (exige a senha atual).
-  ///
-  /// O país vai junto e o servidor normaliza: sem isso, gravar "(11)
-  /// 98765-4321" produziria uma forma que o login — que normaliza — nunca
-  /// encontraria, e a pessoa ficaria fora da própria conta.
-  Future<void> updatePhone(
-    String currentPassword,
-    String newPhone,
-    String country,
-  ) async {
-    final res = await _http.patch(
-      _uri('/api/v1/auth/me/phone'),
-      headers: _authHeaders,
-      body: jsonEncode({
-        'current_password': currentPassword,
-        'new_phone': newPhone,
-        'country': country,
-      }),
-    );
-    _decode(res); // 200 ou lança
+  /// Outro código para a mesma troca. Sem corpo: qual troca é sai do token.
+  Future<SignupPending> contactChangeResend() async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/me/contact/resend'),
+          headers: _authHeaders,
+        )
+        .timeout(_timeout);
+    return SignupPending.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Segunda etapa: confere o código e **aí sim** troca o contato.
+  Future<Conta> contactChangeVerify(String code) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/me/contact/verify'),
+          headers: _authHeaders,
+          body: jsonEncode({'code': code}),
+        )
+        .timeout(_timeout);
+    return Conta.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
   /// Troca a senha da conta (exige a senha atual).

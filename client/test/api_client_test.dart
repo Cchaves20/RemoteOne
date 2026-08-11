@@ -335,6 +335,54 @@ void main() {
     expect(seenBody, {'action': 'play_pause'});
   });
 
+  test('trocar o contato só vale depois do código', () async {
+    // O `start` **não** troca nada: ele manda o código. Um app que tratasse a
+    // resposta do start como "pronto" mostraria o contato novo na tela sem que
+    // ele existisse na conta — e a pessoa descobriria isso no próximo login.
+    final chamadas = <String>[];
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        chamadas.add(req.url.path);
+        if (req.url.path == '/api/v1/auth/me/contact/start') {
+          return http.Response(
+            jsonEncode({
+              'destination': 'novo@example.com',
+              'channel': 'email',
+              'resend_in_seconds': 60,
+              'delivered': true,
+            }),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode({
+            'id': 1,
+            'email': 'novo@example.com',
+            'phone': null,
+            'two_factor_enabled': false,
+          }),
+          200,
+        );
+      }),
+    );
+
+    final pendente = await client.contactChangeStart(
+      currentPassword: 'senhaSegura123!',
+      email: 'novo@example.com',
+    );
+    expect(pendente.destination, 'novo@example.com');
+    expect(pendente.porEmail, isTrue);
+
+    final conta = await client.contactChangeVerify('123456');
+    expect(conta.email, 'novo@example.com');
+    expect(chamadas, [
+      '/api/v1/auth/me/contact/start',
+      '/api/v1/auth/me/contact/verify',
+    ]);
+  });
+
   test('trocar a senha adota os tokens novos da resposta', () async {
     // O servidor cancela **todos** os tokens da conta ao trocar a senha, para
     // derrubar sessões em outros aparelhos — inclusive o token deste aqui. Se o

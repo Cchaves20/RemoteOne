@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/strings.dart';
+import '../models/cadastro.dart';
 import '../models/pais.dart';
 import '../models/stream_quality.dart';
+import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../widgets/brand.dart';
 import '../widgets/transitions.dart';
 import 'gesture_tutorial_screen.dart';
 import 'profiles_screen.dart';
 import 'two_factor_screen.dart';
+import 'verify_screen.dart';
 import 'wake_on_lan_screen.dart';
 
 /// Configurações do app e da conta: tema, qualidade da tela, segurança,
@@ -358,6 +361,8 @@ class SettingsScreen extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Text(t.contactNeedsCode, style: const TextStyle(fontSize: 12)),
+            const SizedBox(height: 8),
             TextField(
               controller: email,
               autofocus: true,
@@ -384,9 +389,14 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
     if (ok != true) return;
-    await _run(
+    if (!context.mounted) return;
+    await _verificarContato(
+      context,
       messenger,
-      () => state.updateEmail(password.text, email.text.trim()),
+      () => state.contactChangeStart(
+        currentPassword: password.text,
+        email: email.text.trim(),
+      ),
       t.emailUpdated,
     );
   }
@@ -411,6 +421,8 @@ class SettingsScreen extends StatelessWidget {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Text(t.contactNeedsCode, style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   TextButton(
@@ -454,10 +466,62 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
     if (ok != true) return;
-    await _run(
+    if (!context.mounted) return;
+    await _verificarContato(
+      context,
       messenger,
-      () => state.updatePhone(password.text, phone.text.trim(), pais.iso),
+      () => state.contactChangeStart(
+        currentPassword: password.text,
+        phone: phone.text.trim(),
+        country: pais.iso,
+      ),
       t.phoneUpdated,
+    );
+  }
+
+  /// A segunda metade das duas trocas: manda o código e abre a tela de código.
+  ///
+  /// Comum aos dois porque a partir daqui e-mail e telefone são o mesmo fluxo —
+  /// o que muda é só o que se digitou antes. A tela de verificação é a **mesma**
+  /// do cadastro, com outras ações penduradas: repetir aquela tela aqui daria
+  /// dois lugares para consertar a mesma máscara e a mesma contagem.
+  ///
+  /// O erro do início (senha errada, contato já cadastrado, número impossível)
+  /// aparece no aviso de rodapé e a tela de código **não** abre: mandar a pessoa
+  /// para um campo de código que nunca vai receber código seria o pior lugar
+  /// para descobrir que a senha estava errada.
+  Future<void> _verificarContato(
+    BuildContext context,
+    ScaffoldMessengerState messenger,
+    Future<SignupPending> Function() comecar,
+    String sucesso,
+  ) async {
+    final t = state.t;
+    final SignupPending pendente;
+    try {
+      pendente = await comecar();
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(t.networkError)));
+      return;
+    }
+
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VerifyScreen(
+          state: state,
+          pendente: pendente,
+          confirmar: (_, codigo) => state.contactChangeVerify(codigo),
+          reenviar: (_) => state.contactChangeResend(),
+          aoConcluir: (telaDoCodigo) {
+            Navigator.of(telaDoCodigo).pop();
+            messenger.showSnackBar(SnackBar(content: Text(sucesso)));
+          },
+        ),
+      ),
     );
   }
 

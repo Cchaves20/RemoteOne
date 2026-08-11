@@ -927,6 +927,15 @@ class Strings {
 
   // Diálogos de conta
   String get newEmail => _t('Novo e-mail', 'New email', '新邮箱', 'Nouvel e-mail', 'Nuevo correo');
+  // Avisa **antes** de a pessoa confirmar que ainda haverá um código. Sem isso,
+  // a tela de código aparece do nada e parece que a troca deu errado — e quem
+  // digitou um endereço a que não tem acesso só descobriria o problema ali.
+  String get contactNeedsCode => _t(
+      'Vamos enviar um código para o contato novo para confirmar que é seu.',
+      'We will send a code to the new contact to confirm it is yours.',
+      '我们会向新的联系方式发送验证码，以确认它属于你。',
+      'Nous enverrons un code au nouveau contact pour confirmer qu’il est bien à vous.',
+      'Enviaremos un código al nuevo contacto para confirmar que es tuyo.');
   String get currentPassword => _t('Senha atual', 'Current password', '当前密码',
       'Mot de passe actuel', 'Contraseña actual');
   String get emailUpdated => _t('E-mail atualizado.', 'Email updated.', '邮箱已更新。',

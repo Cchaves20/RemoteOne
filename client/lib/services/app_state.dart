@@ -593,22 +593,32 @@ class AppState extends ChangeNotifier {
 
   // --- conta -----------------------------------------------------------------
 
-  /// Troca o contato da conta e **relê o `/me`**.
+  /// Começa a troca de contato: manda o código para o contato **novo**.
+  ///
+  /// Nada muda na conta aqui, e por isso não há o que recarregar ainda.
+  Future<SignupPending> contactChangeStart({
+    required String currentPassword,
+    String? email,
+    String? phone,
+    String? country,
+  }) =>
+      api.contactChangeStart(
+        currentPassword: currentPassword,
+        email: email,
+        phone: phone,
+        country: country,
+      );
+
+  Future<SignupPending> contactChangeResend() => api.contactChangeResend();
+
+  /// Confirma o código e **relê o `/me`**.
   ///
   /// Reler não é zelo: a tela de conta mostra o contato atual, e sem isso ela
   /// continuaria exibindo o antigo até o app ser reaberto — parecendo que a
-  /// troca não pegou.
-  Future<void> updateEmail(String currentPassword, String newEmail) async {
-    await api.updateEmail(currentPassword, newEmail);
-    await recarregarConta();
-  }
-
-  Future<void> updatePhone(
-    String currentPassword,
-    String newPhone,
-    String country,
-  ) async {
-    await api.updatePhone(currentPassword, newPhone, country);
+  /// troca não pegou. A resposta do `verify` já traz a conta, mas passar pelo
+  /// `recarregarConta` mantém um caminho só para atualizar esse estado.
+  Future<void> contactChangeVerify(String code) async {
+    await api.contactChangeVerify(code);
     await recarregarConta();
   }
 

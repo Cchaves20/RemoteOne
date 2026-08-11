@@ -18,11 +18,34 @@ import '../widgets/brand.dart';
 /// **Dá para voltar**, e isso não é cortesia: o erro mais comum desta tela é ter
 /// digitado o número errado na anterior, e a correção é lá. A tela de cadastro
 /// continua viva na pilha, com tudo preenchido.
+/// Também serve à **troca de contato**, com os mesmos seis dígitos, a mesma
+/// contagem de reenvio e as mesmas mensagens de erro do servidor. Os três
+/// parâmetros opcionais abaixo são o que muda entre um caso e outro; deixá-los
+/// nulos dá o comportamento do cadastro. Duas telas quase iguais seriam dois
+/// lugares para consertar o mesmo detalhe de máscara, contagem ou teclado.
 class VerifyScreen extends StatefulWidget {
-  const VerifyScreen({super.key, required this.state, required this.pendente});
+  const VerifyScreen({
+    super.key,
+    required this.state,
+    required this.pendente,
+    this.confirmar,
+    this.reenviar,
+    this.aoConcluir,
+  });
 
   final AppState state;
   final SignupPending pendente;
+
+  /// O que fazer com o código digitado. Nulo = confirmar o cadastro.
+  final Future<void> Function(String destino, String codigo)? confirmar;
+
+  /// De onde vem outro código. Nulo = reenviar o do cadastro.
+  final Future<SignupPending> Function(String destino)? reenviar;
+
+  /// Para onde ir ao dar certo. Nulo = sair da pilha inteira do cadastro,
+  /// porque a sessão começou e voltar ao formulário não faria sentido. Na troca
+  /// de contato é o contrário: volta-se para a tela de conta.
+  final void Function(BuildContext context)? aoConcluir;
 
   @override
   State<VerifyScreen> createState() => _VerifyScreenState();
@@ -72,11 +95,16 @@ class _VerifyScreenState extends State<VerifyScreen> {
       _erro = null;
     });
     try {
-      await widget.state.signupVerify(_pendente.destination, _codigo.text.trim());
+      final acao = widget.confirmar ?? widget.state.signupVerify;
+      await acao(_pendente.destination, _codigo.text.trim());
       if (!mounted) return;
-      // Sai da pilha inteira do cadastro: a sessão começou, e voltar para o
-      // formulário depois disso não faria sentido nenhum.
-      Navigator.of(context).popUntil((rota) => rota.isFirst);
+      if (widget.aoConcluir != null) {
+        widget.aoConcluir!(context);
+      } else {
+        // Sai da pilha inteira do cadastro: a sessão começou, e voltar para o
+        // formulário depois disso não faria sentido nenhum.
+        Navigator.of(context).popUntil((rota) => rota.isFirst);
+      }
     } on ApiException catch (e) {
       // A mensagem vem do servidor porque é ela que sabe quantas tentativas
       // sobraram, e se o que expirou foi o código ou o cadastro inteiro.
@@ -95,7 +123,8 @@ class _VerifyScreenState extends State<VerifyScreen> {
     final t = widget.state.t;
     setState(() => _erro = null);
     try {
-      final novo = await widget.state.signupResend(_pendente.destination);
+      final pedir = widget.reenviar ?? widget.state.signupResend;
+      final novo = await pedir(_pendente.destination);
       if (!mounted) return;
       setState(() => _pendente = novo);
       _comecarContagem(novo.resendInSeconds);

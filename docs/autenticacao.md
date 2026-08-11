@@ -177,16 +177,44 @@ que identifica a conta — quem entrou pelo número não tem e-mail nenhum para
 trocar, e o botão errado ali não levava a lugar nenhum. É o `/auth/me` que
 responde a pergunta: ele devolve os dois campos, e um deles vem nulo.
 
-O número novo passa pela **mesma normalização** do cadastro. Sem isso, gravar
-"(11) 98765-4321" produziria uma forma que o login — que normaliza — nunca
-encontraria: a pessoa trocaria o telefone e ficaria fora da própria conta.
+A troca tem **duas etapas**, como o cadastro, e pelo mesmo motivo: o contato
+novo só entra na conta depois de provado.
 
-**O que ainda falta aqui:** a troca não verifica o contato novo. É possível
-apontar a conta para um e-mail ou número que não é seu — o que, além de perder
-a conta, **ocupa aquele contato** e impede que o dono real se cadastre. É o
-mesmo buraco que o cadastro em duas etapas fechou, e ele continua aberto neste
-caminho (já estava, para o e-mail, antes desta mudança). O conserto é rotear a
-troca pelo mesmo código de seis dígitos.
+1. `POST /auth/me/contact/start` — senha atual mais o contato novo. Valida,
+   normaliza e manda um código para **o contato novo**. Nada muda na conta.
+2. `POST /auth/me/contact/verify` — só o código; qual troca ele confirma sai do
+   token. Aí sim o contato entra, e o antigo sai junto.
+
+Antes a troca era imediata, e isso abria dois buracos de uma vez. O primeiro é o
+óbvio: apontar a conta para um endereço que não é seu, e perdê-la — é por ele
+que se entra e é para ele que vai a recuperação de senha. O segundo é o que
+passava despercebido: a coluna é única, então o endereço alheio preso a esta
+conta **impediria o dono real de se cadastrar**. Sem nunca provar nada.
+
+Três detalhes que decidem se o conserto funciona:
+
+- **A pendência não reserva o contato.** A tentação, ao adiar a troca, é gravar
+  a pendência com o destino único "para ninguém pegar antes" — o que recriaria o
+  problema num degrau acima: bastaria começar uma troca para o e-mail de outra
+  pessoa para travar o cadastro dela. Uma pendência não prova posse. Duas trocas
+  pendentes para o mesmo destino coexistem; quem confirma primeiro fica com ele,
+  e a segunda recebe 409 (a conferência é refeita no `verify`, senão a unicidade
+  do banco viraria um 500).
+- **Os `PATCH /me/email` e `/me/phone` saíram.** Enquanto existissem, o código
+  seria decoração. Há um teste guardando a porta fechada — o mesmo cuidado que o
+  `/auth/register` recebeu.
+- **O número novo passa pela mesma normalização do cadastro.** Sem isso, gravar
+  "(11) 98765-4321" produziria uma forma que o login — que normaliza — nunca
+  encontraria: a pessoa trocaria o telefone e ficaria fora da própria conta.
+
+O contato novo **substitui** o antigo: a conta se identifica por um só, e é por
+ele que se entra. Trocar um e-mail por um telefone limpa o e-mail — deixar os
+dois preenchidos daria duas formas de login para uma conta que só provou uma.
+
+Prazo, tentativas e espera de reenvio são os do cadastro. Uma diferença: começar
+de novo com **outro** destino não espera o minuto, porque esse é o caso de ter
+digitado errado, e o minuto existe contra apertar "enviar" de novo para o mesmo
+lugar.
 
 ## Excluir a conta leva tudo junto
 
@@ -276,8 +304,9 @@ consentimento dos pais).
 | POST | `/api/v1/auth/login` | `{email\|phone+country, password}` | `{access_token, refresh_token}` |
 | POST | `/api/v1/auth/refresh` | `{refresh_token}` | `{access_token}` |
 | GET | `/api/v1/auth/me` | — (Bearer) | `{id, email, phone, first_name, …}` |
-| PATCH | `/api/v1/auth/me/email` | `{current_password, new_email}` | a conta atualizada |
-| PATCH | `/api/v1/auth/me/phone` | `{current_password, new_phone, country}` | a conta atualizada |
+| POST | `/api/v1/auth/me/contact/start` | `{current_password, email\|phone+country}` | `{destination, channel, resend_in_seconds, delivered}` |
+| POST | `/api/v1/auth/me/contact/resend` | — (Bearer) | idem |
+| POST | `/api/v1/auth/me/contact/verify` | `{code}` | a conta atualizada |
 | PATCH | `/api/v1/auth/me/password` | `{current_password, new_password}` | `{access_token, refresh_token}` — os antigos param de valer |
 
 **`/api/v1/auth/register` não existe mais.** Enquanto existisse, o código de
@@ -323,10 +352,9 @@ Ou explore de forma interativa em <http://localhost:8000/docs>.
    qualquer um tranca a conta alheia de fora.
 2. **O app tratar 401 como sessão encerrada**, em vez de esperar a próxima
    restauração (ver a seção de tokens).
-3. **Verificar o contato novo** ao trocar e-mail/telefone (ver acima).
-4. **Login social** (Google/Apple/Microsoft): cada provedor valida a
+3. **Login social** (Google/Apple/Microsoft): cada provedor valida a
    identidade e reaproveita a mesma emissão de tokens desta base.
-5. **Controle de dispositivos autorizados**: vincular refresh tokens a
+4. **Controle de dispositivos autorizados**: vincular refresh tokens a
    dispositivos e permitir revogação um a um — hoje a chave de sessão é uma só
    por conta, então derrubar um aparelho derruba todos. Conecta com o
    pareamento (Etapa 5).

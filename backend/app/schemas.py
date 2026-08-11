@@ -161,20 +161,42 @@ class TwoFactorDisableRequest(BaseModel):
     password: str = Field(min_length=1, max_length=72)
 
 
-class UpdateEmailRequest(BaseModel):
-    """Troca de e-mail: exige a senha atual para confirmar a identidade."""
+class ContactChangeStart(BaseModel):
+    """Início da troca de contato: a senha atual e o contato novo.
+
+    Um só schema para e-mail e telefone, ao contrário dos dois pedidos que
+    havia antes. A troca virou um fluxo de duas etapas com código, e duas rotas
+    quase iguais significariam dois caminhos para manter em sincronia — cada um
+    com sua chance de esquecer a conferência que o outro faz.
+
+    O país acompanha o telefone, como em toda parte que aceita número:
+    `987654321` não identifica ninguém sem saber de onde é.
+    """
 
     current_password: str = Field(min_length=1, max_length=72)
-    new_email: EmailStr
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=32)
+    country: str | None = Field(default=None, max_length=2)
+
+    @model_validator(mode="after")
+    def um_identificador(self) -> "ContactChangeStart":
+        if (self.email is None) == (self.phone is None):
+            raise ValueError("mande e-mail ou telefone, e apenas um dos dois")
+        if self.phone is not None and not self.country:
+            raise ValueError("telefone precisa do país")
+        return self
 
 
-class UpdatePhoneRequest(BaseModel):
-    """Troca de telefone. O país vai junto, como em toda parte que aceita
-    número: `987654321` não identifica ninguém sem saber de onde é."""
+class ContactChangeVerify(BaseModel):
+    """Só o código.
 
-    current_password: str = Field(min_length=1, max_length=72)
-    new_phone: str = Field(min_length=1, max_length=32)
-    country: str = Field(min_length=2, max_length=2)
+    Sem `destination`, ao contrário do cadastro: aqui quem confirma já está
+    autenticado, e a troca pendente se acha pelo token. Pedir o destino no corpo
+    seria deixar o cliente escolher **qual** troca confirmar — informação que o
+    servidor já tem e que ele não deveria aceitar de fora.
+    """
+
+    code: str = Field(min_length=1, max_length=10)
 
 
 class UpdatePasswordRequest(BaseModel):
