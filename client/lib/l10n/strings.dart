@@ -965,8 +965,15 @@ class Strings {
   String get newPasswordMin => _t('Nova senha (mín. 8 caracteres)',
       'New password (min. 8 characters)', '新密码（至少 8 个字符）',
       'Nouveau mot de passe (min. 8 caractères)', 'Nueva contraseña (mín. 8 caracteres)');
-  String get passwordUpdated => _t('Senha atualizada.', 'Password updated.', '密码已更新。',
-      'Mot de passe mis à jour.', 'Contraseña actualizada.');
+  // Diz o efeito colateral porque ele é visível: quem usa a conta no iPhone e
+  // no iPad vai encontrar o outro aparelho pedindo login. Sem o aviso, isso
+  // parece defeito; com ele, é o recurso funcionando.
+  String get passwordUpdated => _t(
+      'Senha atualizada. Os outros aparelhos foram desconectados.',
+      'Password updated. Your other devices were signed out.',
+      '密码已更新。你的其他设备已退出登录。',
+      'Mot de passe mis à jour. Vos autres appareils ont été déconnectés.',
+      'Contraseña actualizada. Tus otros dispositivos fueron desconectados.');
   String get deleteAccountBody => _t(
       'Isso remove sua conta e todos os computadores pareados. A ação não pode ser desfeita.',
       'This deletes your account and all paired computers. This cannot be undone.',

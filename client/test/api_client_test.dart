@@ -335,6 +335,40 @@ void main() {
     expect(seenBody, {'action': 'play_pause'});
   });
 
+  test('trocar a senha adota os tokens novos da resposta', () async {
+    // O servidor cancela **todos** os tokens da conta ao trocar a senha, para
+    // derrubar sessões em outros aparelhos — inclusive o token deste aqui. Se o
+    // app ficasse com o antigo, a chamada seguinte daria 401 e a pessoa cairia
+    // na tela de login logo depois de trocar a senha com sucesso.
+    String? seenAuth;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        if (req.url.path == '/api/v1/auth/login') {
+          return http.Response(
+            jsonEncode({'access_token': 'velho', 'refresh_token': 'r-velho'}),
+            200,
+          );
+        }
+        if (req.url.path == '/api/v1/auth/me/password') {
+          return http.Response(
+            jsonEncode({'access_token': 'novo', 'refresh_token': 'r-novo'}),
+            200,
+          );
+        }
+        seenAuth = req.headers['Authorization'];
+        return http.Response(jsonEncode([]), 200);
+      }),
+    );
+
+    await client.login('senhaSegura123!', email: 'a@b.com');
+    await client.updatePassword('senhaSegura123!', 'outraSenha456!');
+
+    await client.listDevices();
+    expect(seenAuth, 'Bearer novo');
+  });
+
   group('formatação das métricas', () {
     test('bytes viram GB/MB em base 1024, como o Windows mostra', () {
       expect(SystemStats.formatBytes(16 * 1024 * 1024 * 1024), '16.0 GB');

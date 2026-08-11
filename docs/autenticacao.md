@@ -166,11 +166,9 @@ próprios:
   o que foi usado. Se havia dois códigos válidos, o segundo continuaria podendo
   trocar a senha depois.
 
-**O que falta aqui:** trocar a senha não invalida as sessões já abertas. Os
-tokens de atualização são JWT sem estado e valem 30 dias — então, se a conta
-estava comprometida, trocar a senha não expulsa quem entrou. Vale para a troca
-pelas configurações também, e já era assim antes desta mudança. O conserto é uma
-versão de token no `User`, conferida ao decodificar.
+Recuperar a senha **derruba as sessões abertas** — ver a seção de tokens abaixo.
+É onde isso mais importa: quem chega aqui ou perdeu o acesso ou desconfia que
+alguém o tem.
 
 ## Trocar o contato depois
 
@@ -217,6 +215,48 @@ na conta seguinte.
 O payload traz um campo `type` (`access`/`refresh`); o backend recusa usar um
 no lugar do outro. Senhas são guardadas com hash **bcrypt** (nunca em texto).
 
+### Cancelar um token que já saiu
+
+JWT não tem como ser cancelado: é uma assinatura que o servidor confere sozinho,
+sem consultar nada — e é exatamente isso que o torna barato. A consequência era
+concreta e invisível: **trocar a senha não expulsava ninguém**. O refresh token
+de quem tivesse entrado na conta continuava valendo os 30 dias inteiros,
+renovando o access a cada 15 minutos. E trocar a senha é o que se faz justamente
+quando se desconfia disso.
+
+O conserto é uma **chave de sessão** por conta (`User.token_key`), que todo
+token carrega no campo `tk`. Ao decodificar, o backend compara com a que está no
+banco; trocar ou recuperar a senha sorteia outra, e todo token emitido antes
+morre na mesma hora. Custo: nenhuma consulta a mais — a rota já carregou a linha
+do usuário.
+
+Três detalhes que decidem se isso funciona de verdade:
+
+- **A chave é sorteada, não um contador a partir de zero.** O SQLite reaproveita
+  `INTEGER PRIMARY KEY`: apagar a conta 1 faz a próxima nascer como 1, e o token
+  da conta apagada tem o mesmo `sub`. Com contador, ele abriria a conta de outra
+  pessoa — a mesma armadilha que fez perfis de uma conta excluída reaparecerem
+  em outra, agora na forma de uma sessão inteira. Uma versão anterior tentou
+  resolver pelo relógio (token emitido antes de a conta existir não é dela) e
+  foi descartada: `iat` só tem segundos inteiros, e apagar e recriar dentro do
+  mesmo segundo passava direto.
+- **O WebSocket da tela confere igual.** Ele tem autenticação própria e não passa
+  pelo `get_current_user`. Fechar as rotas HTTP e deixar aberto o canal que
+  entrega imagem, teclado e mouse seria o pior resultado possível.
+- **`PATCH /auth/me/password` devolve um par de tokens** em vez do antigo 204. A
+  troca cancela todos os tokens da conta, **inclusive o de quem a fez**; sem o
+  substituto na resposta, a pessoa trocaria a senha e cairia na tela de login no
+  instante seguinte.
+
+Trocar o e-mail ou o telefone **não** derruba sessão nenhuma: quem faz isso já
+provou a senha atual, e deslogar todos os aparelhos por uma edição de contato
+seria incômodo sem contrapartida. O corte é a credencial de entrada.
+
+**O que ainda falta:** o app só percebe o corte na próxima vez que restaura a
+sessão (na abertura, quando o `refresh` devolve 401 e ele desloga). Um aparelho
+com o app já aberto continua na tela até lá, mostrando erro em cada ação. O
+conserto é o app tratar 401 de rota protegida como "sessão encerrada".
+
 Configuração por variável de ambiente (ver `app/config.py`):
 `DESKSIDE_JWT_SECRET` (obrigatório trocar em produção),
 `DESKSIDE_ACCESS_TOKEN_TTL_MINUTES`, `DESKSIDE_REFRESH_TOKEN_TTL_DAYS`,
@@ -238,6 +278,7 @@ consentimento dos pais).
 | GET | `/api/v1/auth/me` | — (Bearer) | `{id, email, phone, first_name, …}` |
 | PATCH | `/api/v1/auth/me/email` | `{current_password, new_email}` | a conta atualizada |
 | PATCH | `/api/v1/auth/me/phone` | `{current_password, new_phone, country}` | a conta atualizada |
+| PATCH | `/api/v1/auth/me/password` | `{current_password, new_password}` | `{access_token, refresh_token}` — os antigos param de valer |
 
 **`/api/v1/auth/register` não existe mais.** Enquanto existisse, o código de
 seis dígitos seria decoração: bastaria chamar a rota velha para ter conta sem
@@ -272,11 +313,20 @@ Ou explore de forma interativa em <http://localhost:8000/docs>.
 
 ## Próximos passos desta etapa
 
-1. **Limite de tentativas** em `/login` — hoje não há freio contra força bruta,
-   e uma conta do Deskside é um computador inteiro.
-2. **Login social** (Google/Apple/Microsoft): cada provedor valida a
+1. **Limite de tentativas** em `/login`, `/signup/start` e `/password/forgot`.
+   Não é tanto contra adivinhar senha — as cinco regras já tiram o dicionário do
+   jogo, e o bcrypt limita a umas cinco tentativas por segundo. É contra o
+   **custo**: esses 200 ms de bcrypt são do único worker da VM de 1 GB, e um
+   loop de login derruba a API para todo mundo sem descobrir senha nenhuma. Nas
+   duas rotas que mandam código, o desperdício é a cota do provedor de e-mail.
+   Atraso crescente por IP e por conta, nunca bloqueio permanente — senão
+   qualquer um tranca a conta alheia de fora.
+2. **O app tratar 401 como sessão encerrada**, em vez de esperar a próxima
+   restauração (ver a seção de tokens).
+3. **Verificar o contato novo** ao trocar e-mail/telefone (ver acima).
+4. **Login social** (Google/Apple/Microsoft): cada provedor valida a
    identidade e reaproveita a mesma emissão de tokens desta base.
-3. **Invalidar sessões ao trocar a senha** (versão de token no `User`), sem o
-   que uma troca de senha não expulsa quem já estava dentro.
-4. **Controle de dispositivos autorizados**: vincular refresh tokens a
-   dispositivos e permitir revogação — conecta com o pareamento (Etapa 5).
+5. **Controle de dispositivos autorizados**: vincular refresh tokens a
+   dispositivos e permitir revogação um a um — hoje a chave de sessão é uma só
+   por conta, então derrubar um aparelho derruba todos. Conecta com o
+   pareamento (Etapa 5).

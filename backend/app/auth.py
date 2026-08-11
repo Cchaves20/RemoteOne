@@ -53,11 +53,13 @@ from app.schemas import (
     UserOut,
 )
 from app.security import (
+    chave_confere,
     create_access_token,
     create_refresh_token,
     decode_token,
     generate_totp_secret,
     hash_password,
+    nova_chave_de_sessao,
     totp_uri,
     verify_password,
     verify_totp,
@@ -67,11 +69,34 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 _bearer = HTTPBearer(auto_error=True)
 
 
+def sessao_valida(payload: dict, user: User) -> bool:
+    """O token continua valendo para **esta** conta?
+
+    Uma pergunta que a assinatura do JWT não responde, porque ele é conferido
+    sozinho, sem consultar o banco. Duas coisas dependem dela:
+
+    1. **Trocar a senha derruba as sessões.** A troca sorteia uma
+       `token_key` nova, e todo token emitido antes disso deixa de valer.
+    2. **Um token não atravessa para a conta seguinte.** O SQLite reaproveita
+       `INTEGER PRIMARY KEY`: apagar a conta 1 faz a próxima nascer como 1, e o
+       token da apagada tem o mesmo `sub`. Como a chave é sorteada por conta, a
+       da nova nunca coincide com a da morta. É a mesma armadilha que já tinha
+       feito perfis de uma conta excluída reaparecerem em outra — aqui na forma
+       de uma sessão inteira.
+
+    Uma tentativa anterior usava o relógio (token emitido antes de a conta
+    existir não é dela) e foi descartada: `iat` só tem segundos inteiros, então
+    apagar e recriar a conta dentro do mesmo segundo passava direto. A chave
+    sorteada não depende de relógio nem de folga.
+    """
+    return chave_confere(payload, user.token_key)
+
+
 def _tokens_for(user: User) -> TokenPair:
     subject = str(user.id)
     return TokenPair(
-        access_token=create_access_token(subject),
-        refresh_token=create_refresh_token(subject),
+        access_token=create_access_token(subject, user.token_key),
+        refresh_token=create_refresh_token(subject, user.token_key),
     )
 
 
@@ -95,6 +120,11 @@ def get_current_user(
 
     user = db.get(User, int(payload["sub"]))
     if user is None:
+        raise invalid
+    # A assinatura confere e o prazo não venceu — e ainda assim o token pode
+    # estar cancelado. É aqui que a troca de senha faz efeito nas sessões que
+    # já estavam abertas em outros aparelhos.
+    if not sessao_valida(payload, user):
         raise invalid
     return user
 
@@ -466,6 +496,11 @@ def reset_password(
         raise _erro(status.HTTP_404_NOT_FOUND, "conta não encontrada")
 
     user.hashed_password = hash_password(body.password)
+    # Aqui a derrubada das sessões vale ainda mais do que na troca comum: quem
+    # usa "esqueci minha senha" ou perdeu o acesso ou desconfia que alguém o
+    # tem. Trocar a senha e deixar de pé o token de quem entrou seria trocar a
+    # fechadura sem recolher a cópia da chave.
+    user.token_key = nova_chave_de_sessao()
     # Todo pedido em aberto dessa conta cai junto, e não só o que foi usado: se
     # havia dois códigos válidos, o segundo continuaria trocando a senha depois.
     for aberto in db.scalars(
@@ -518,7 +553,11 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> AccessToken:
     user = db.get(User, int(payload["sub"]))
     if user is None:
         raise invalid
-    return AccessToken(access_token=create_access_token(str(user.id)))
+    # O ponto que decide: é o refresh que dura 30 dias, e é ele que mantinha a
+    # sessão viva depois da troca de senha renovando o access a cada hora.
+    if not sessao_valida(payload, user):
+        raise invalid
+    return AccessToken(access_token=create_access_token(str(user.id), user.token_key))
 
 
 @router.get("/me", response_model=UserOut)
@@ -590,19 +629,33 @@ def update_phone(
     return current_user
 
 
-@router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+@router.patch("/me/password", response_model=TokenPair)
 def update_password(
     body: UpdatePasswordRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> None:
-    """Troca a senha da conta (exige a senha atual)."""
+) -> TokenPair:
+    """Troca a senha da conta (exige a senha atual) e **derruba as outras sessões**.
+
+    Devolve um par de tokens novo, e não o 204 de antes, por causa da derrubada:
+    incrementar a geração cancela todos os tokens da conta, **inclusive o de
+    quem está fazendo a troca**. Sem devolver o substituto, a pessoa trocaria a
+    senha e seria expulsa do próprio aparelho no momento seguinte — o app
+    guarda o novo par e nem percebe que houve corte.
+
+    Quem some são as outras: qualquer sessão aberta em outro celular, tablet ou
+    computador para de valer na requisição seguinte, e é isso que se espera de
+    trocar a senha por desconfiança.
+    """
     if not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="senha atual incorreta"
         )
     current_user.hashed_password = hash_password(body.new_password)
+    current_user.token_key = nova_chave_de_sessao()
     db.commit()
+    db.refresh(current_user)
+    return _tokens_for(current_user)
 
 
 @router.post("/2fa/setup", response_model=TwoFactorSetupOut)

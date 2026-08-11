@@ -35,7 +35,7 @@ computador de casa. Ver `docs/deploy-vps-oracle.md`.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 #: Quantas cópias diárias ficam na VM.
@@ -59,7 +59,7 @@ def nome_do_arquivo(quando: datetime | None = None) -> str:
     servidor não pode sobrescrever o automático do mesmo dia — que é justamente
     o que se quer preservar quando algo dá errado logo depois.
     """
-    agora = quando or datetime.now(timezone.utc)
+    agora = quando or datetime.now(UTC)
     return f"{PREFIXO}{agora.strftime('%Y%m%d-%H%M%S')}{SUFIXO}"
 
 

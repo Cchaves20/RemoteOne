@@ -6,6 +6,7 @@ from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+from app.security import nova_chave_de_sessao
 
 
 def _now() -> datetime:
@@ -44,6 +45,26 @@ class User(Base):
     # confirmar um código; só então `totp_enabled` vira verdadeiro.
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False)
+    #: Chave de sessão. Todo token carrega a que valia quando foi emitido, e só
+    #: vale enquanto for igual a esta. Trocar a senha sorteia outra, e **todo
+    #: token já emitido morre na mesma hora**.
+    #:
+    #: Existe porque JWT não tem como ser cancelado: ele é uma assinatura que o
+    #: servidor confere sozinho, sem consultar nada — é justamente isso que o
+    #: torna barato. Sem esta chave, o refresh token dura os 30 dias
+    #: configurados **mesmo depois** de a senha ter sido trocada, e quem tivesse
+    #: entrado na conta continuaria dentro por um mês. Trocar a senha é o que se
+    #: faz exatamente quando se suspeita disso, e era o único gesto que não
+    #: resolvia.
+    #:
+    #: Uma chave por conta, e não uma lista de tokens revogados: a lista
+    #: cresceria para sempre e custaria uma consulta a mais por requisição. Aqui
+    #: a conferência é um campo da mesma linha que a rota já carregou.
+    #:
+    #: Sorteada, e não um contador a partir de zero — ver a explicação em
+    #: `security.nova_chave_de_sessao`. É a mesma armadilha de id reaproveitado
+    #: que as cascatas acima resolvem para os dados, agora para a sessão.
+    token_key: Mapped[str] = mapped_column(String(32), default=nova_chave_de_sessao)
 
     # Tudo o que pertence à conta sai junto com ela. **Todas** as coleções
     # precisam estar aqui, e a que faltar não vira uma linha esquecida e

@@ -329,6 +329,13 @@ class ApiClient {
   }
 
   /// Troca a senha da conta (exige a senha atual).
+  ///
+  /// Guarda o par de tokens que vem na resposta, e isso não é detalhe: trocar a
+  /// senha **cancela no servidor todos os tokens da conta**, para derrubar
+  /// sessões abertas em outros aparelhos. O que este aparelho tem em mãos morre
+  /// junto, e sem trocar pelo par novo o app seria deslogado na requisição
+  /// seguinte — a pessoa trocaria a senha e cairia na tela de login sem
+  /// entender por quê.
   Future<void> updatePassword(
       String currentPassword, String newPassword) async {
     final res = await _http.patch(
@@ -339,9 +346,8 @@ class ApiClient {
         'new_password': newPassword,
       }),
     );
-    if (res.statusCode != 204) {
-      throw _error(res);
-    }
+    _storeTokens(_decode(res));
+    await _persist();
   }
 
   /// Exclui a conta (exige a senha). Ao concluir, limpa a sessão local.

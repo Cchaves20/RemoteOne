@@ -9,17 +9,20 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from app import entrega, pairing
 from app.agents import AgentRegistry
 from app.auth import router as auth_router
+from app.auth import sessao_valida
 from app.automations import router as automations_router
 from app.config import settings
 from app.connections import Viewer, manager, viewers
 from app.db import SessionLocal, init_db
 from app.devices import router as devices_router
 from app.ice import ice_servers
+from app.models import User
 from app.profiles import router as profiles_router
 from app.protocol import (
     Ack,
     AppList,
     AutomationResult,
+    BrightnessState,
     Clipboard,
     ClipboardChanged,
     Error,
@@ -29,7 +32,6 @@ from app.protocol import (
     Foreground,
     Hello,
     KeepAwakeState,
-    BrightnessState,
     LaunchManyResult,
     MonitorList,
     PairCode,
@@ -437,7 +439,14 @@ def _authenticate_viewer(token: str, device_id: str) -> bool:
         return False
     with SessionLocal() as db:
         device = pairing.get_device(db, device_id)
-        return device is not None and str(device.user_id) == str(payload.get("sub"))
+        if device is None or str(device.user_id) != str(payload.get("sub")):
+            return False
+        # A mesma conferência de geração que o `get_current_user` faz nas rotas
+        # HTTP. Esta é a que não pode faltar: sem ela, trocar a senha fecharia
+        # as rotas e deixaria aberto justamente o canal que mostra a tela do
+        # computador e recebe teclado e mouse.
+        user = db.get(User, device.user_id)
+        return user is not None and sessao_valida(payload, user)
 
 
 # Paradas de transmissão agendadas por dispositivo. Ao sair o último viewer,

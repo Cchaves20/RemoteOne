@@ -73,8 +73,21 @@ def test_email_deixa_de_ser_obrigatorio(banco_antigo):
     colunas = {c["name"]: c for c in inspect(banco_antigo).get_columns("users")}
     assert colunas["email"]["nullable"] is True
     # E as colunas novas continuam lá depois da reconstrução.
-    for nova in ("phone", "first_name", "last_name", "birth_date"):
+    for nova in ("phone", "first_name", "last_name", "birth_date", "token_key"):
         assert nova in colunas, nova
+
+
+def test_a_conta_antiga_ganha_uma_chave_de_sessao(banco_antigo):
+    """Sem esta etapa, a conta que já existia **nunca mais entraria**.
+
+    O `ADD COLUMN` só sabe pôr um valor fixo, e o valor fixo aqui é a string
+    vazia — que a conferência recusa de propósito. O login funcionaria, e a
+    requisição seguinte devolveria 401 para sempre. É um erro que não aparece na
+    subida do servidor: só na cara de quem tenta usar a conta.
+    """
+    with banco_antigo.connect() as conn:
+        chave = conn.execute(text("SELECT token_key FROM users")).scalar()
+    assert chave, "a conta antiga ficou sem chave de sessão"
 
 
 def test_a_conta_que_ja_existia_sobrevive(banco_antigo):

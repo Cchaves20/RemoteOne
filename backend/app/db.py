@@ -72,6 +72,15 @@ def _migrate() -> None:
             "first_name": "VARCHAR(80) DEFAULT '' NOT NULL",
             "last_name": "VARCHAR(80) DEFAULT '' NOT NULL",
             "birth_date": "DATE",
+            # Chave de sessão (ver `User.token_key`). Nasce vazia — `ADD COLUMN`
+            # com `NOT NULL` precisa de um padrão fixo, e sortear um por linha
+            # aqui é impossível — e `_sortear_chaves_de_sessao()` logo abaixo
+            # troca cada vazia por uma chave de verdade. Os tokens que as contas
+            # antigas têm em mãos não trazem chave nenhuma e param de valer
+            # nesta subida: um login a mais, uma vez só, que é o comportamento
+            # correto. Aceitá-los por compatibilidade manteria aberta
+            # exatamente a porta que a coluna fecha.
+            "token_key": "VARCHAR(32) DEFAULT '' NOT NULL",
         },
     }
     with engine.begin() as conn:
@@ -82,6 +91,35 @@ def _migrate() -> None:
                     conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"))
 
     _email_deixa_de_ser_obrigatorio()
+    _sortear_chaves_de_sessao()
+
+
+def _sortear_chaves_de_sessao() -> None:
+    """Dá uma `token_key` de verdade a quem entrou nesta coluna com ela vazia.
+
+    A vazia é recusada na conferência (`security.chave_confere`), então sem esta
+    etapa a conta antiga nunca mais entraria: cada login emitiria um token com
+    chave vazia que a requisição seguinte rejeitaria. O `ADD COLUMN` não tem
+    como sortear uma por linha — é um valor fixo para a tabela inteira —, e por
+    isso o sorteio acontece aqui, um por conta.
+    """
+    from sqlalchemy import inspect, select, text
+
+    from app.models import User
+    from app.security import nova_chave_de_sessao
+
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+    with engine.begin() as conn:
+        ids = list(conn.scalars(select(User.id).where(User.token_key == "")))
+        for user_id in ids:
+            conn.execute(
+                text("UPDATE users SET token_key = :chave WHERE id = :id"),
+                {"chave": nova_chave_de_sessao(), "id": user_id},
+            )
+    if ids:
+        print(f"migração: {len(ids)} conta(s) ganharam chave de sessão")
 
 
 def _email_deixa_de_ser_obrigatorio() -> None:

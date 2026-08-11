@@ -198,7 +198,10 @@ def test_update_password_changes_login():
         json={"current_password": CREDS["password"], "new_password": "novaSenha456!"},
         headers=headers,
     )
-    assert resp.status_code == 204
+    # 200 com tokens novos, e não mais 204: a troca cancela todos os tokens da
+    # conta, inclusive o de quem a fez, e o substituto vem na resposta.
+    assert resp.status_code == 200
+    assert resp.json()["access_token"]
     assert client.post("/api/v1/auth/login", json=CREDS).status_code == 401
     assert client.post(
         "/api/v1/auth/login",
