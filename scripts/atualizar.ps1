@@ -475,7 +475,8 @@ $esperado = @(
     "wake-on-lan", "totp", "webrtc-signaling", "system-stats",
     "media-keys", "file-transfer", "foreground-app", "audio-stream",
     "ice-servers", "clipboard", "monitors", "control-profiles",
-    "keep-awake"
+    "keep-awake", "brightness", "launch-many", "window-zones",
+    "automations", "signup-verification"
 )
 
 Titulo "Conferência"
@@ -525,6 +526,24 @@ if ($null -eq $saude -or $null -eq $saude.features) {
         $falhas += "vps (desatualizado)"
     } else {
         Write-Host "  Servidor com tudo o que este código espera." -ForegroundColor Green
+    }
+
+    # A entrega do código de verificação é o único recurso que sobe "presente e
+    # desligado": as rotas existem, o /health lista `signup-verification`, e o
+    # código vai para o log em vez de para a pessoa. Sem esta linha, descobrir
+    # isso exige ler o JSON à mão - foi o que aconteceu, e a causa era o compose
+    # não repassar as variáveis do .env.
+    if ($null -ne $saude.delivery) {
+        $desligados = @()
+        if (-not $saude.delivery.email) { $desligados += "e-mail" }
+        if (-not $saude.delivery.sms) { $desligados += "SMS" }
+        if ($desligados.Count -eq 0) {
+            Write-Host "  Envio de codigo: e-mail e SMS configurados." -ForegroundColor Green
+        } else {
+            Write-Host "  Envio de codigo sem provedor: $($desligados -join ', ')." -ForegroundColor Yellow
+            Write-Host "  O codigo vai para o log do servidor; so voce consegue criar conta." -ForegroundColor DarkGray
+            Write-Host "  Configure em deploy/.env (ver docs/autenticacao.md)." -ForegroundColor DarkGray
+        }
     }
 }
 

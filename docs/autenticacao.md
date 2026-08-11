@@ -122,7 +122,15 @@ DESKSIDE_TWILIO_TOKEN=...
 DESKSIDE_TWILIO_FROM=+15551234567
 ```
 
-Vão no `deploy/.env` da VPS, que é gitignorado e nunca versionado.
+Vão no `deploy/.env` da VPS, que é gitignorado e nunca versionado. O
+`docker-compose.lite.yml` passa o `.env` inteiro para o contêiner (`env_file`),
+então acrescentar uma variável ali basta — não é preciso mexer no compose.
+
+Nem sempre foi assim: o compose listava as variáveis uma a uma, e as de SMTP
+ficaram de fora. O efeito é o pior possível para diagnosticar — o `.env` está
+certo, o servidor sobe, o `/health` responde "ok", e o recurso continua
+desligado. Depois de configurar, `atualizar.cmd -Vps` diz na conferência se o
+envio está de pé.
 
 ## Esqueci minha senha
 

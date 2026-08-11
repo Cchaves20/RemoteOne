@@ -33,6 +33,19 @@ services:
   api:
     build: ../backend
     restart: unless-stopped
+    # **Todo** o `.env` entra no contêiner, e não só as variáveis listadas
+    # abaixo. A lista explícita era o caminho anterior, e ela tem um modo de
+    # falhar que não deixa rastro: uma variável nova no `.env` — as de SMTP
+    # foram o caso — é lida pelo compose para substituir `${...}` aqui, mas
+    # nunca chega à aplicação. O servidor sobe, o `/health` responde "ok", e o
+    # recurso fica desligado sem ninguém errar nada.
+    #
+    # Com `env_file`, acrescentar uma variável ao `.env` basta. O que fica
+    # abaixo em `environment:` é o que **não** vem de lá: o caminho do banco
+    # (fixo), e os dois segredos com guarda de nome antigo — `environment`
+    # vence `env_file`, então as guardas continuam valendo.
+    env_file:
+      - .env
     environment:
       # SQLite num volume persistente (4 barras = caminho absoluto /data/...).
       DESKSIDE_DATABASE_URL: sqlite:////data/deskside.db
