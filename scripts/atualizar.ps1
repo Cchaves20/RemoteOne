@@ -149,6 +149,17 @@ function Executar($programa, $argumentos, $onde) {
     }
 }
 
+# A ferramenta existe nesta máquina?
+#
+# Existe porque "não instalado" e "instalado e falhou" pedem respostas
+# opostas, e o script tratava os dois como a mesma coisa. O Rust ausente caía
+# no ramo de erro de compilação, que repetia o build inteiro e depois sugeria
+# "o .exe está preso por outro programa" - um diagnóstico errado, para um
+# problema que a mensagem certa resolve em um comando.
+function Instalado($comando) {
+    return [bool](Get-Command $comando -ErrorAction SilentlyContinue)
+}
+
 # Encerra qualquer agente em execução.
 #
 # `-ErrorAction SilentlyContinue` nos dois: não haver agente rodando é o caso
@@ -276,33 +287,57 @@ if (-not $NoPull -and (Get-FileHash $eu -Algorithm SHA256).Hash -ne $antes) {
 
 if ($Agente) {
     Titulo "Agente (Rust)"
-    # O agente rodando segura o próprio .exe, e o build falha com
-    # "Acesso negado (os error 5)". Parar antes evita isso.
-    PararAgente
-
     $pastaAgente = Join-Path $raiz "agent"
-    Passo "cargo build --release"
-    if (Executar "cargo" @("build", "--release") $pastaAgente) {
-        Write-Host "  Agente compilado." -ForegroundColor Green
-        ReinstalarSeInstalado $pastaAgente
+    $exeAgente = Join-Path $pastaAgente "target\release\deskside-agent.exe"
+
+    if (-not (Instalado "cargo")) {
+        $falhas += "agente (Rust nao instalado)"
+        Write-Host "  Rust nao esta instalado nesta maquina." -ForegroundColor Yellow
+        Write-Host "  Quem compila o agente e o computador que voce quer controlar;" -ForegroundColor DarkGray
+        Write-Host "  numa maquina que so acompanha o projeto, use: atualizar.cmd -Vps" -ForegroundColor DarkGray
+        Write-Host "  Para instalar aqui:" -ForegroundColor DarkGray
+        Write-Host "    winget install --id Rustlang.Rustup -e" -ForegroundColor DarkGray
+        Write-Host "    winget install --id Microsoft.VisualStudio.2022.BuildTools -e" -ForegroundColor DarkGray
+        Write-Host "  Os dois: o Rust nao traz o link.exe da Microsoft. Reabra o terminal depois." -ForegroundColor DarkGray
     } else {
-        # "Acesso negado" quase nunca é erro de código: é alguém segurando o
-        # arquivo. Costuma ser o antivírus terminando de examinar o .exe recém
-        # gravado, e nesse caso esperar resolve. Uma segunda tentativa custa
-        # segundos e evita mandar o usuário caçar um problema que não existe.
-        Write-Host "  Falhou. Vendo quem está segurando o executável..." -ForegroundColor Yellow
-        QuemSegura (Join-Path $pastaAgente "target\release\deskside-agent.exe")
+        # O agente rodando segura o próprio .exe, e o build falha com
+        # "Acesso negado (os error 5)". Parar antes evita isso.
         PararAgente
-        Start-Sleep -Seconds 3
-        Passo "cargo build --release (segunda tentativa)"
+        Passo "cargo build --release"
         if (Executar "cargo" @("build", "--release") $pastaAgente) {
             Write-Host "  Agente compilado." -ForegroundColor Green
             ReinstalarSeInstalado $pastaAgente
-        } else {
+        } elseif (-not (Test-Path $exeAgente)) {
+            # Sem executável no disco, "alguém está segurando o arquivo" é
+            # impossível: o build nem chegou ao passo de gravá-lo. Repetir aqui
+            # custava a compilação inteira de novo para dar o mesmo erro, e a
+            # dica de "Acesso negado" no fim apontava para o lugar errado.
             $falhas += "agente"
-            Write-Host "  Falha ao compilar o agente." -ForegroundColor Red
-            Write-Host "  Se disse 'Acesso negado', o .exe está preso por outro programa." -ForegroundColor Red
-            Write-Host "  Feche o Explorer nessa pasta, ou reinicie e rode de novo." -ForegroundColor Red
+            Write-Host "  Falha ao compilar o agente - o erro esta logo acima." -ForegroundColor Red
+            Write-Host "  Se disse 'linker link.exe not found', falta o compilador da Microsoft:" -ForegroundColor Red
+            Write-Host "    winget install --id Microsoft.VisualStudio.2022.BuildTools -e" -ForegroundColor DarkGray
+            Write-Host "  Em Windows ARM64, acrescente o componente ARM64 na instalacao." -ForegroundColor DarkGray
+            Write-Host "  Confira a arquitetura com: rustc -vV  (linha 'host')" -ForegroundColor DarkGray
+        } else {
+            # Com o .exe no disco, "Acesso negado" quase nunca é erro de
+            # código: é alguém segurando o arquivo. Costuma ser o antivírus
+            # terminando de examinar o binário recém-gravado, e nesse caso
+            # esperar resolve. Uma segunda tentativa custa segundos e evita
+            # mandar o usuário caçar um problema que não existe.
+            Write-Host "  Falhou. Vendo quem está segurando o executável..." -ForegroundColor Yellow
+            QuemSegura $exeAgente
+            PararAgente
+            Start-Sleep -Seconds 3
+            Passo "cargo build --release (segunda tentativa)"
+            if (Executar "cargo" @("build", "--release") $pastaAgente) {
+                Write-Host "  Agente compilado." -ForegroundColor Green
+                ReinstalarSeInstalado $pastaAgente
+            } else {
+                $falhas += "agente"
+                Write-Host "  Falha ao compilar o agente." -ForegroundColor Red
+                Write-Host "  Se disse 'Acesso negado', o .exe está preso por outro programa." -ForegroundColor Red
+                Write-Host "  Feche o Explorer nessa pasta, ou reinicie e rode de novo." -ForegroundColor Red
+            }
         }
     }
 }
@@ -312,22 +347,36 @@ if ($Agente) {
 if ($App) {
     Titulo "App (Flutter)"
     $cliente = Join-Path $raiz "client"
-    Passo "flutter pub get"
-    if (-not (Executar "flutter" @("pub", "get") $cliente)) {
-        $falhas += "app (pub get)"
+    if (-not (Instalado "flutter")) {
+        # Aninhado num `else`, e não com um `return` aqui: este é corpo de
+        # script, não de função, e `return` encerraria o **script inteiro** - o
+        # deploy do VPS, logo abaixo, nunca rodaria. Falharia calado, que é o
+        # pior jeito de falhar num script cuja razão de existir é não deixar
+        # uma ponta para trás.
+        $falhas += "app (Flutter nao instalado)"
+        Write-Host "  Flutter nao esta instalado nesta maquina." -ForegroundColor Yellow
+        Write-Host "  O .ipa do iPhone sai do Codemagic, nao daqui - o Flutter local serve" -ForegroundColor DarkGray
+        Write-Host "  para rodar o analyze e os testes antes de gastar um build." -ForegroundColor DarkGray
+        Write-Host "  Numa maquina que so acompanha o projeto, use: atualizar.cmd -Vps" -ForegroundColor DarkGray
     } else {
-        # `--fatal-infos`: sem isto o `flutter analyze` **sai com sucesso**
-        # quando só há apontamentos de nível "info", e este script dizia "App
-        # sem apontamentos" com três problemas impressos logo acima. Um
-        # verificador que não distingue "passou" de "passou mas reclamou" é
-        # pior do que não ter verificador: ele ensina a ignorar a saída.
-        Passo "flutter analyze --fatal-infos"
-        if (Executar "flutter" @("analyze", "--fatal-infos") $cliente) {
-            Write-Host "  App sem apontamentos." -ForegroundColor Green
+        Passo "flutter pub get"
+        if (-not (Executar "flutter" @("pub", "get") $cliente)) {
+            $falhas += "app (pub get)"
         } else {
-            $falhas += "app (analyze)"
-            Write-Host "  O analyze apontou algo - a lista está logo acima." -ForegroundColor Red
-            Write-Host "  Corrija antes de gastar build do Codemagic." -ForegroundColor Red
+            # `--fatal-infos`: sem isto o `flutter analyze` **sai com sucesso**
+            # quando só há apontamentos de nível "info", e este script dizia
+            # "App sem apontamentos" com três problemas impressos logo acima.
+            # Um verificador que não distingue "passou" de "passou mas
+            # reclamou" é pior do que não ter verificador: ele ensina a ignorar
+            # a saída.
+            Passo "flutter analyze --fatal-infos"
+            if (Executar "flutter" @("analyze", "--fatal-infos") $cliente) {
+                Write-Host "  App sem apontamentos." -ForegroundColor Green
+            } else {
+                $falhas += "app (analyze)"
+                Write-Host "  O analyze apontou algo - a lista está logo acima." -ForegroundColor Red
+                Write-Host "  Corrija antes de gastar build do Codemagic." -ForegroundColor Red
+            }
         }
     }
 }
@@ -557,13 +606,22 @@ if ($falhas.Count -eq 0) {
     Write-Host "  Pendências: $($falhas -join ', ')" -ForegroundColor Yellow
 }
 
-if ($Ocultar) {
+# Sem executável, `-Ocultar` e `-Rodar` só produziriam um "termo não
+# reconhecido" do PowerShell, apontando para esta linha - a três telas de
+# distância do erro de compilação que é a causa. Dizer o que falta aqui evita
+# que a última mensagem da tela seja a menos informativa das duas.
+$exeAgente = Join-Path $raiz "agent\target\release\deskside-agent.exe"
+if (($Ocultar -or $Rodar) -and -not (Test-Path $exeAgente)) {
+    Titulo "Agente"
+    Write-Host "  O executavel do agente nao existe - a compilacao acima nao passou." -ForegroundColor Red
+    Write-Host "  Resolva o erro do cargo antes de instalar ou rodar." -ForegroundColor Red
+} elseif ($Ocultar) {
     Titulo "Agente oculto"
     # Quem instala agora é o próprio executável: um `.ps1` não entra na
     # verificação cruzada para Windows nem tem teste, e este projeto já pagou
     # caro por código que ninguém verifica.
-    & (Join-Path $raiz "agent\target\release\deskside-agent.exe") install "wss://$Dominio/ws/agent"
+    & $exeAgente install "wss://$Dominio/ws/agent"
 } elseif ($Rodar) {
     Titulo "Agente (Ctrl+C para sair)"
-    & (Join-Path $raiz "agent\target\release\deskside-agent.exe")
+    & $exeAgente
 }
