@@ -214,7 +214,10 @@ impl Shaper {
     }
 }
 
-#[cfg(windows)]
+// A condição acompanha a das dependências no Cargo.toml, e o motivo está lá:
+// o Opus do `audiopus_sys` só existe pronto para x86 e x64. Windows em ARM cai
+// no stub abaixo, junto com Linux e macOS.
+#[cfg(all(windows, any(target_arch = "x86", target_arch = "x86_64")))]
 mod imp {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -397,18 +400,20 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(all(windows, any(target_arch = "x86", target_arch = "x86_64"))))]
 mod imp {
     use super::Packet;
 
-    /// Sem captura fora do Windows (é a única plataforma com agente real).
+    /// Sem captura aqui: fora do Windows não há agente real, e no Windows em
+    /// ARM falta o Opus pronto (ver `Cargo.toml`). O resto do agente funciona
+    /// igual — tela, teclado, mouse, arquivos —, só não vai som.
     pub struct Capture;
 
     pub fn start(
         _tx: tokio::sync::mpsc::Sender<Packet>,
         _gain: std::sync::Arc<super::Gain>,
     ) -> Result<Capture, String> {
-        Err("captura de som só no Windows".to_string())
+        Err("captura de som indisponível nesta plataforma".to_string())
     }
 }
 

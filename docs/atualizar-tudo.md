@@ -111,7 +111,12 @@ problema é a arquitetura — por isso ficam registradas aqui.
    (`CC_aarch64_pc_windows_msvc`) só durante o build — ver
    `PrepararClangArm64`.
 
-3. **Paciência.** São 434 dependências, e algumas são grandes (`webrtc`,
+3. **Sem som.** O Opus (`audiopus_sys`) só vem pronto para x86 e x64 — em
+   ARM64 o `build.rs` dele nem compila (`cannot find value ARCHITECTURE`). O
+   agente ali cai no mesmo stub que Linux e macOS usam: tela, teclado, mouse,
+   arquivos e automações funcionam; o som do computador não vai para o
+   telefone. Melhor perder um recurso do que não existir na plataforma.
+4. **Paciência.** São 434 dependências, e algumas são grandes (`webrtc`,
    `wgpu`, `rav1e`). A primeira compilação leva dezenas de minutos numa VM ARM.
 
 Confira a arquitetura com `rustc -vV`, linha `host`. E lembre que **o binário

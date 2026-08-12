@@ -41,19 +41,33 @@ fast_image_resize = "6.1.0"
 
 # Só no Windows (única plataforma testável aqui). Linux/macOS usam os stubs
 # em src/injector.rs e src/capture.rs, sem estas dependências.
+# Som do computador indo para o telefone. O `cpal` abre o dispositivo de SAÍDA
+# como entrada, que é como o WASAPI faz "loopback" (capturar o que sai pelo
+# alto-falante). O `audiopus` traz o Opus, exigido pelo WebRTC - no MSVC ele
+# linka uma biblioteca pronta que vem no próprio pacote, sem cmake nem
+# compilador C a mais.
+#
+# **Windows x86/x64 apenas, e não Windows inteiro.** A biblioteca pronta do
+# `audiopus_sys` existe só para essas duas arquiteturas: o `build.rs` dele
+# define a constante `ARCHITECTURE` com `#[cfg]` para x86 e x86_64 e mais nada,
+# então em ARM64 ele nem compila - o erro é `cannot find value ARCHITECTURE`,
+# que não diz que a causa é a arquitetura não ser suportada.
+#
+# Num Windows ARM o agente cai no mesmo stub que Linux e macOS usam: tudo
+# funciona menos o som do computador. Melhor perder um recurso do que não
+# existir na plataforma.
+#
+# Fora do Windows elas nem entram, porque o `cpal` no Linux pediria as
+# bibliotecas do ALSA para compilar.
+[target.'cfg(all(windows, any(target_arch = "x86", target_arch = "x86_64")))'.dependencies]
+cpal = "0.18"
+audiopus = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 enigo = "0.2"
 # 0.9.x traz o backend WGC (Windows.Graphics.Capture), acelerado por hardware,
 # no lugar do BitBlt do GDI. A feature não é padrão e precisa ser pedida.
 xcap = { version = "0.9", features = ["wgc"] }
-# Som do computador indo para o telefone. O `cpal` abre o dispositivo de SAÍDA
-# como entrada, que é como o WASAPI faz "loopback" (capturar o que sai pelo
-# alto-falante). O `audiopus` traz o Opus, exigido pelo WebRTC - no MSVC ele
-# linka uma biblioteca pronta que vem no próprio pacote, sem cmake nem
-# compilador C a mais. As duas ficam aqui, e não nas dependências comuns,
-# porque o `cpal` no Linux pediria as bibliotecas do ALSA para compilar.
-cpal = "0.18"
-audiopus = "0.2"
 # Área de transferência. Leve e sem C: o que interessa aqui é o `seq_num`, o
 # contador que o Windows muda a cada cópia - é ele que permite perceber uma
 # cópia nova sem ficar lendo o conteúdo o segundo inteiro.
