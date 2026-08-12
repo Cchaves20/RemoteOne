@@ -75,6 +75,16 @@ workflows:
           REASON="Desbloquear o Deskside"
           /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string $REASON" "$PLIST" \
             || /usr/libexec/PlistBuddy -c "Set :NSFaceIDUsageDescription $REASON" "$PLIST"
+      - name: Nome do app embaixo do ícone
+        script: |
+          # Sem isto o iPhone mostra "Deskside Client": o `flutter create` usa
+          # o `--project-name` (deskside_client) como nome visível, e ninguém
+          # nunca corrigiu. O nome do projeto continua com sufixo porque é ele
+          # que dá o identificador do pacote; o que a pessoa lê é outro campo.
+          PLIST=ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Deskside" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Deskside" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$PLIST"
       - name: Análise e testes
         script: |
           flutter analyze
@@ -115,3 +125,134 @@ workflows:
   #     app_store_connect:
   #       auth: integration
   #       submit_to_testflight: true
+
+  android:
+    name: Android (APK para instalar direto, sem expirar)
+    # Linux, e não Mac: o Android não precisa de macOS, a instância é mais
+    # rápida e não gasta os minutos de Mac da conta gratuita.
+    instance_type: linux_x2
+    max_build_duration: 60
+    working_directory: client
+    environment:
+      flutter: stable
+      # O Flutter estável exige JDK 17; a imagem traz várias versões.
+      java: 17
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+        - pattern: 'claude/*'
+          include: true
+    scripts:
+      - name: Gerar pasta android/ se ainda não versionada
+        script: |
+          if [ ! -d android ]; then
+            flutter create --org com.deskside --project-name deskside_client --platforms=android .
+          fi
+      - name: Dependências
+        script: flutter pub get
+      - name: Ícone e splash (não bloqueia o build se falhar)
+        script: |
+          dart run flutter_launcher_icons || echo "aviso: geração de ícone falhou"
+          dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
+      - name: Ajustes obrigatórios do Android
+        script: |
+          set -e
+
+          # Cada ajuste confere se pegou, e derruba o build se não pegou. A
+          # pasta android/ é gerada pelo template do Flutter a cada execução, e
+          # template muda de forma entre versões: um `sed` que deixa de casar
+          # passaria batido e o defeito só apareceria no celular de alguém.
+          exigir() {
+            grep -q "$2" "$1" || {
+              echo "FALHOU: '$2' não está em $1 - o template do Flutter mudou."
+              exit 1
+            }
+          }
+
+          # --- 1. Biometria -------------------------------------------------
+          # O local_auth exige FlutterFragmentActivity. Com o FlutterActivity
+          # padrão a biometria não falha: **derruba o app**.
+          MAIN=$(find android/app/src/main -name MainActivity.kt | head -1)
+          sed -i 's/FlutterActivity/FlutterFragmentActivity/g' "$MAIN"
+          exigir "$MAIN" "FlutterFragmentActivity"
+
+          # --- 2. Manifesto -------------------------------------------------
+          MANIFESTO=android/app/src/main/AndroidManifest.xml
+
+          # O espaço de nomes `tools` é o que permite **remover** permissões que
+          # vieram de uma dependência.
+          sed -i 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools">|' "$MANIFESTO"
+          exigir "$MANIFESTO" "xmlns:tools"
+
+          # INTERNET não vem no manifesto principal do template - só nos de
+          # debug e profile. Sem esta linha o APK de release **não conecta**, e
+          # o build passa: é o defeito que só aparece na versão que se
+          # distribui.
+          #
+          # CAMERA e RECORD_AUDIO vêm do manifesto do flutter_webrtc e são
+          # mescladas no nosso. O Deskside só **recebe** vídeo, nunca liga a
+          # câmera - e uma ficha de loja dizendo que um app de controle remoto
+          # pede câmera e microfone destrói a confiança de que a venda depende.
+          #
+          # usesCleartextTraffic: o campo "Servidor" aceita http://IP:8000 para
+          # uso na rede local, e o Android 9+ bloqueia texto puro por padrão.
+          # Antes da Play Store isto vira uma network security config restrita
+          # às faixas locais, em vez de liberar tudo.
+          python3 - "$MANIFESTO" <<'PY'
+          import re, sys
+          caminho = sys.argv[1]
+          texto = open(caminho, encoding="utf-8").read()
+          permissoes = (
+              '    <uses-permission android:name="android.permission.INTERNET"/>\n'
+              '    <uses-permission android:name="android.permission.CAMERA" tools:node="remove"/>\n'
+              '    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>\n\n'
+          )
+          texto = texto.replace("    <application", permissoes + "    <application", 1)
+          texto = re.sub(
+              r'android:label="[^"]*"',
+              'android:label="Deskside"\n        android:allowBackup="false"\n'
+              '        android:fullBackupContent="false"\n'
+              '        android:usesCleartextTraffic="true"',
+              texto,
+              count=1,
+          )
+          open(caminho, "w", encoding="utf-8").write(texto)
+          PY
+          exigir "$MANIFESTO" "permission.INTERNET"
+          exigir "$MANIFESTO" 'tools:node="remove"'
+          exigir "$MANIFESTO" 'android:label="Deskside"'
+          exigir "$MANIFESTO" 'android:allowBackup="false"'
+
+          # --- 3. minSdk ----------------------------------------------------
+          # O flutter_webrtc não compila abaixo da 23. O template usa Gradle
+          # em Groovy ou em Kotlin conforme a versão do Flutter; os dois casos
+          # entram aqui.
+          APPGRADLE=$(ls android/app/build.gradle.kts android/app/build.gradle 2>/dev/null | head -1)
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' "$APPGRADLE"
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' "$APPGRADLE"
+          exigir "$APPGRADLE" "23"
+
+          echo "--- manifesto final ---"
+          cat "$MANIFESTO"
+      - name: Análise e testes
+        script: |
+          flutter analyze
+          flutter test
+      - name: Build do APK
+        # `--no-shrink` de propósito: o R8 do release removeria classes que o
+        # WebRTC alcança por reflexão, e o resultado seria um APK que instala,
+        # abre e quebra só na hora de mostrar a tela. As regras de ProGuard
+        # entram quando a pasta android/ for versionada - aqui o que se quer é
+        # um APK de teste que funcione.
+        #
+        # Sem assinatura de loja: o Flutter assina com a chave de depuração, o
+        # que basta para instalar no aparelho. E **não expira**, ao contrário
+        # do sideload do iPhone.
+        script: flutter build apk --release --no-shrink
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+      - client/build/app/outputs/flutter-apk/*.apk
+      - "**/*.apk"
