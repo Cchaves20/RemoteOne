@@ -195,6 +195,43 @@ function QuemSegura($caminho) {
     }
 }
 
+# Põe o clang ao alcance do build, quando o Windows é ARM64.
+#
+# Só o ARM64 precisa. O `ring` (criptografia, sob o TLS) tem trechos em
+# assembly, e nesse alvo ele **não** os compila com o `cl.exe` da Microsoft:
+# exige o clang. Num Windows x86-64 nada disto acontece, e foi por isso que a
+# exigência apareceu só quando o projeto foi compilado numa máquina ARM.
+#
+# O instalador do LLVM costuma não pôr o clang no PATH, e o que vem junto do
+# Visual Studio nunca está. O erro que isso produz - "failed to find tool
+# clang" - não diz onde procurar nem que é coisa de ARM64.
+#
+# Procura nos dois lugares conhecidos e avisa o cc-rs pela variável do alvo,
+# em vez de mexer no PATH do sistema: vale só para esta execução.
+function PrepararClangArm64 {
+    $alvo = (& rustc -vV 2>$null | Select-String '^host:').ToString()
+    if ($alvo -notmatch 'aarch64') { return }
+    if (Get-Command clang -ErrorAction SilentlyContinue) { return }
+    if ($env:CC_aarch64_pc_windows_msvc) { return }
+
+    $candidatos = @(
+        "$env:ProgramFiles\LLVM\bin\clang.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\ARM64\bin\clang.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\clang.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\bin\clang.exe"
+    )
+    $achado = $candidatos | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($achado) {
+        Passo "clang encontrado para o alvo ARM64: $achado"
+        $env:CC_aarch64_pc_windows_msvc = $achado
+        return
+    }
+
+    Write-Host "  Windows ARM64 sem clang: o 'ring' nao compila sem ele." -ForegroundColor Yellow
+    Write-Host "    winget install --id LLVM.LLVM -e" -ForegroundColor DarkGray
+    Write-Host "  So o ARM64 precisa disto; num Windows x86-64 nao faz falta." -ForegroundColor DarkGray
+}
+
 # Devolve o agente instalado ao ar depois de uma compilação que falhou.
 #
 # O `PararAgente` mata o agente **antes** do build, para liberar o .exe. Se o
@@ -320,6 +357,7 @@ if ($Agente) {
         Write-Host "    winget install --id Microsoft.VisualStudio.2022.BuildTools -e" -ForegroundColor DarkGray
         Write-Host "  Os dois: o Rust nao traz o link.exe da Microsoft. Reabra o terminal depois." -ForegroundColor DarkGray
     } else {
+        PrepararClangArm64
         # O agente rodando segura o próprio .exe, e o build falha com
         # "Acesso negado (os error 5)". Parar antes evita isso.
         PararAgente
@@ -338,6 +376,8 @@ if ($Agente) {
             Write-Host "  Se disse 'linker link.exe not found', falta o compilador da Microsoft:" -ForegroundColor Red
             Write-Host "    winget install --id Microsoft.VisualStudio.2022.BuildTools -e" -ForegroundColor DarkGray
             Write-Host "  Em Windows ARM64, acrescente o componente ARM64 na instalacao." -ForegroundColor DarkGray
+            Write-Host "  Se disse 'failed to find tool clang', instale o LLVM:" -ForegroundColor Red
+            Write-Host "    winget install --id LLVM.LLVM -e" -ForegroundColor DarkGray
             Write-Host "  Confira a arquitetura com: rustc -vV  (linha 'host')" -ForegroundColor DarkGray
         } else {
             # Com o .exe no disco, "Acesso negado" quase nunca é erro de

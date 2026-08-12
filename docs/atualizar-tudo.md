@@ -80,6 +80,44 @@ recente de lá), passe o caminho:
 .\scripts\atualizar.ps1 -ChaveSsh C:\caminho\sua-chave.key
 ```
 
+## Compilar o agente no Windows ARM64
+
+Um Windows em ARM (Surface, Copilot+ PC, uma VM num MateBook Fold) precisa de
+três coisas que o x86-64 não precisa. As três dão erros que não dizem que o
+problema é a arquitetura — por isso ficam registradas aqui.
+
+1. **O linker da Microsoft**, com o componente ARM64. Sem ele: `linker link.exe
+   not found`.
+
+   ```powershell
+   $opcoes = '--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 --includeRecommended'
+   winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override $opcoes
+   ```
+
+   O instalador do Visual Studio **recusa `--quiet`/`--passive` sem elevação** e
+   sai com código 5007 — precisa de um terminal já aberto como Administrador.
+   Ele não pede UAC no meio do caminho.
+
+2. **O clang.** O `ring` (criptografia, sob o TLS) tem trechos em assembly que
+   neste alvo não compilam com o `cl.exe`. Sem ele: `failed to find tool
+   "clang"`.
+
+   ```powershell
+   winget install --id LLVM.LLVM -e
+   ```
+
+   O instalador costuma não pôr o clang no PATH. O `atualizar.ps1` procura nos
+   lugares conhecidos e aponta o compilador pela variável do alvo
+   (`CC_aarch64_pc_windows_msvc`) só durante o build — ver
+   `PrepararClangArm64`.
+
+3. **Paciência.** São 434 dependências, e algumas são grandes (`webrtc`,
+   `wgpu`, `rav1e`). A primeira compilação leva dezenas de minutos numa VM ARM.
+
+Confira a arquitetura com `rustc -vV`, linha `host`. E lembre que **o binário
+não atravessa arquiteturas**: o agente compilado no ARM64 não roda no Dell, e
+vice-versa. Cada computador controlado compila o seu.
+
 ## A conferência do fim
 
 Esta é a parte que economiza mais tempo. O script tem a lista do que este
