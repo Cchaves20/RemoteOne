@@ -195,6 +195,26 @@ function QuemSegura($caminho) {
     }
 }
 
+# Devolve o agente instalado ao ar depois de uma compilação que falhou.
+#
+# O `PararAgente` mata o agente **antes** do build, para liberar o .exe. Se o
+# build falha, o computador fica sem agente e some do app - e a pessoa não
+# associa "não consegui compilar" a "meu computador sumiu". Aconteceu: numa
+# máquina sem o linker da Microsoft, cada tentativa de atualizar derrubava o
+# agente que estava funcionando.
+#
+# Sobe o **instalado**, que é o binário antigo e continua servindo. Melhor um
+# agente desatualizado no ar do que nenhum.
+function RestaurarAgenteInstalado {
+    if ($Ocultar -or $Rodar) { return }
+    $jaInstalado = Join-Path $env:LOCALAPPDATA "Programs\Deskside\deskside-agent.exe"
+    if (-not (Test-Path $jaInstalado)) { return }
+    if (Get-Process deskside-agent -ErrorAction SilentlyContinue) { return }
+
+    Write-Host "  Subindo o agente que ja estava instalado (versao anterior)." -ForegroundColor Yellow
+    Start-Process -FilePath $jaInstalado -WindowStyle Hidden
+}
+
 # Reinstala o agente com o binário recém-compilado, se ele estava instalado.
 #
 # Sem isto, atualizar **derruba** o agente e não o levanta: o `PararAgente` o
@@ -313,6 +333,7 @@ if ($Agente) {
             # custava a compilação inteira de novo para dar o mesmo erro, e a
             # dica de "Acesso negado" no fim apontava para o lugar errado.
             $falhas += "agente"
+            RestaurarAgenteInstalado
             Write-Host "  Falha ao compilar o agente - o erro esta logo acima." -ForegroundColor Red
             Write-Host "  Se disse 'linker link.exe not found', falta o compilador da Microsoft:" -ForegroundColor Red
             Write-Host "    winget install --id Microsoft.VisualStudio.2022.BuildTools -e" -ForegroundColor DarkGray
@@ -334,6 +355,7 @@ if ($Agente) {
                 ReinstalarSeInstalado $pastaAgente
             } else {
                 $falhas += "agente"
+                RestaurarAgenteInstalado
                 Write-Host "  Falha ao compilar o agente." -ForegroundColor Red
                 Write-Host "  Se disse 'Acesso negado', o .exe está preso por outro programa." -ForegroundColor Red
                 Write-Host "  Feche o Explorer nessa pasta, ou reinicie e rode de novo." -ForegroundColor Red
