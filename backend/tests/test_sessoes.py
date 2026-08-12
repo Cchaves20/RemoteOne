@@ -276,3 +276,78 @@ def test_token_da_conta_excluida_nao_abre_a_conta_que_herdou_o_id():
     assert _refresh(antigo["refresh_token"]) == 401
     # E o dono novo entra normalmente.
     assert _me(novo["access_token"]) == 200
+
+
+# --- o sinal que o app usa para separar os 401 -------------------------------
+
+
+def test_so_o_401_de_token_traz_o_cabecalho_www_authenticate(espiao):
+    """O contrato de que o app depende, escrito aqui porque quem o cumpre é daqui.
+
+    Três 401 convivem nesta API e só um deles é sobre a sessão:
+
+    - token inválido ou cancelado  -> o app deve deslogar;
+    - senha atual errada           -> o app deve dizer "senha errada";
+    - código de verificação errado -> idem.
+
+    Se o app tratasse os três igual, errar a digitação da senha atual expulsaria
+    a pessoa da conta. Quem separa é o `WWW-Authenticate`, que só o
+    `get_current_user` manda — é o que ele significa em HTTP: "suas credenciais
+    estão ausentes ou não valem".
+
+    Este teste existe porque o sinal é fácil de perder sem nada quebrar aqui: um
+    `HTTPException(401)` a mais numa rota de conta, sem o cabeçalho, continua
+    passando na suíte e some silenciosamente lá — o app volta a ficar preso numa
+    sessão morta, ou passa a deslogar por erro de digitação.
+    """
+    dono = criar_conta(client, email=EMAIL)
+    cabecalho = "www-authenticate"
+
+    # 1. Token que não vale: com o cabeçalho.
+    ruim = client.get("/api/v1/auth/me", headers=_headers("token-de-mentira"))
+    assert ruim.status_code == 401
+    assert cabecalho in ruim.headers
+
+    # 2. Token cancelado pela troca de senha: idem — é o caso que motivou tudo.
+    outro = _segundo_aparelho()
+    _trocar_senha(dono["access_token"])
+    cancelado = client.get("/api/v1/auth/me", headers=_headers(outro["access_token"]))
+    assert cancelado.status_code == 401
+    assert cabecalho in cancelado.headers
+
+    # 3. Senha atual errada: **sem** o cabeçalho. O token está ótimo.
+    novo = client.post(
+        "/api/v1/auth/login", json={"email": EMAIL, "password": NOVA}
+    ).json()
+    senha_errada = client.patch(
+        "/api/v1/auth/me/password",
+        json={"current_password": "naoEssa1!", "new_password": "terceira789!"},
+        headers=_headers(novo["access_token"]),
+    )
+    assert senha_errada.status_code == 401
+    assert cabecalho not in senha_errada.headers
+
+    # 4. Código de verificação errado: **sem** o cabeçalho, pelo mesmo motivo.
+    assert client.post(
+        "/api/v1/auth/me/contact/start",
+        json={"current_password": NOVA, "email": "outro@example.com"},
+        headers=_headers(novo["access_token"]),
+    ).status_code == 200
+    codigo_errado = client.post(
+        "/api/v1/auth/me/contact/verify",
+        json={"code": "000000"},
+        headers=_headers(novo["access_token"]),
+    )
+    assert codigo_errado.status_code == 401
+    assert cabecalho not in codigo_errado.headers
+
+
+def test_o_login_recusado_nao_traz_o_cabecalho():
+    """Quem erra a senha no login não tem sessão para perder, e o app não deve
+    tratar isso como "sua sessão acabou"."""
+    criar_conta(client, email=EMAIL)
+    resp = client.post(
+        "/api/v1/auth/login", json={"email": EMAIL, "password": "erradA1!"}
+    )
+    assert resp.status_code == 401
+    assert "www-authenticate" not in resp.headers

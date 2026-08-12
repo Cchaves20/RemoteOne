@@ -23,7 +23,20 @@ import 'word_suggester.dart';
 
 /// Estado global do app: autenticação, dispositivos e preferências.
 class AppState extends ChangeNotifier {
-  AppState(this.api);
+  AppState(this.api) {
+    // Quando o servidor recusa o refresh, a sessão acabou de verdade: alguém
+    // trocou a senha noutro aparelho, ou a conta foi excluída. O cliente já
+    // descartou os tokens; aqui se apaga o resto e se avisa a interface, que
+    // troca sozinha para a tela de login (ver `main.dart`).
+    //
+    // Sem este aviso o app ficava na tela de dentro dando "credenciais
+    // inválidas" em cada toque até ser reaberto — o recurso funcionando, com
+    // cara de defeito.
+    api.aoEncerrarSessao = () {
+      _esquecerSessao();
+      notifyListeners();
+    };
+  }
 
   final ApiClient api;
 

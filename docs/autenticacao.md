@@ -280,10 +280,38 @@ Trocar o e-mail ou o telefone **não** derruba sessão nenhuma: quem faz isso j�
 provou a senha atual, e deslogar todos os aparelhos por uma edição de contato
 seria incômodo sem contrapartida. O corte é a credencial de entrada.
 
-**O que ainda falta:** o app só percebe o corte na próxima vez que restaura a
-sessão (na abertura, quando o `refresh` devolve 401 e ele desloga). Um aparelho
-com o app já aberto continua na tela até lá, mostrando erro em cada ação. O
-conserto é o app tratar 401 de rota protegida como "sessão encerrada".
+### Como o app reage ao 401
+
+Duas situações se parecem muito e pedem respostas opostas.
+
+**Token vencido.** O access token dura 15 minutos, e nada o renovava durante o
+uso - só na abertura do app. Depois de um quarto de hora, toda ação respondia
+"credenciais inválidas" até o app ser reaberto. Era o "parou de funcionar,
+fechei e abri e voltou".
+
+**Sessão encerrada.** Com o cancelamento acima, o aparelho derrubado precisa
+cair na tela de login.
+
+Tratar os dois igual dá o pior dos dois lados: deslogar no primeiro pediria a
+senha a cada 15 minutos; insistir no segundo prenderia o aparelho numa sessão
+morta. A diferença sai do **refresh token** - se ele ainda vale, era
+vencimento; se o servidor o recusa, a sessão acabou. E há um terceiro caso que
+não é nenhum dos dois: **rede fora**. Aí não se desloga, porque perder a sessão
+por causa de um elevador seria pior que o problema original.
+
+Falta ainda separar os 401 entre si. Senha atual errada e código de verificação
+errado também respondem 401, e deslogar neles expulsaria quem só errou a
+digitação. Quem separa é o cabeçalho **`WWW-Authenticate`**, que só o
+`get_current_user` manda - é o que ele significa em HTTP. O contrato tem teste
+dos dois lados (`test_sessoes.py` e `api_client_test.dart`), porque perdê-lo não
+quebraria nada visível: uma rota de conta que levantasse 401 com o cabeçalho
+passaria a deslogar por erro de digitação, em silêncio.
+
+Tudo isso mora num `http.Client` que embrulha o de verdade
+(`_ClienteComSessao`), então nenhuma das 35 chamadas do app precisou mudar.
+
+**O que ainda falta:** o WebSocket da tela não renova nada. Se o token vencer
+com a tela aberta, o canal é recusado e o app precisa reabrir a visualização.
 
 Configuração por variável de ambiente (ver `app/config.py`):
 `DESKSIDE_JWT_SECRET` (obrigatório trocar em produção),
@@ -350,11 +378,9 @@ Ou explore de forma interativa em <http://localhost:8000/docs>.
    duas rotas que mandam código, o desperdício é a cota do provedor de e-mail.
    Atraso crescente por IP e por conta, nunca bloqueio permanente — senão
    qualquer um tranca a conta alheia de fora.
-2. **O app tratar 401 como sessão encerrada**, em vez de esperar a próxima
-   restauração (ver a seção de tokens).
-3. **Login social** (Google/Apple/Microsoft): cada provedor valida a
+2. **Login social** (Google/Apple/Microsoft): cada provedor valida a
    identidade e reaproveita a mesma emissão de tokens desta base.
-4. **Controle de dispositivos autorizados**: vincular refresh tokens a
+3. **Controle de dispositivos autorizados**: vincular refresh tokens a
    dispositivos e permitir revogação um a um — hoje a chave de sessão é uma só
    por conta, então derrubar um aparelho derruba todos. Conecta com o
    pareamento (Etapa 5).

@@ -417,6 +417,122 @@ void main() {
     expect(seenAuth, 'Bearer novo');
   });
 
+  group('401: vencido é uma coisa, sessão encerrada é outra', () {
+    // O cabeçalho vai em minúsculas de propósito: é como um servidor HTTP de
+    // verdade entrega, e o `MockClient` repassa o mapa como foi escrito.
+    const cabecalhoDeToken = {'www-authenticate': 'Bearer'};
+
+    test('token vencido é renovado e a requisição refeita, sem deslogar',
+        () async {
+      // O defeito que isto fecha: o access token dura 15 minutos e nada o
+      // renovava durante o uso. Depois de um quarto de hora, toda ação
+      // respondia "credenciais inválidas" ate o app ser reaberto.
+      var tentativas = 0;
+      final tokensVistos = <String?>[];
+      var encerrou = false;
+      final client = ApiClient(
+        baseUrl: 'http://test',
+        tokenStore: InMemoryTokenStore(),
+        httpClient: MockClient((req) async {
+          if (req.url.path == '/api/v1/auth/login') {
+            return http.Response(
+              jsonEncode({'access_token': 'velho', 'refresh_token': 'r'}),
+              200,
+            );
+          }
+          if (req.url.path == '/api/v1/auth/refresh') {
+            return http.Response(jsonEncode({'access_token': 'novo'}), 200);
+          }
+          tentativas++;
+          tokensVistos.add(req.headers['Authorization']);
+          // Só a primeira vez recusa: é o token vencido.
+          if (tentativas == 1) {
+            return http.Response('{"detail":"credenciais inválidas"}', 401,
+                headers: cabecalhoDeToken);
+          }
+          return http.Response(jsonEncode([]), 200);
+        }),
+      );
+      client.aoEncerrarSessao = () => encerrou = true;
+
+      await client.login('senhaSegura123!', email: 'a@b.com');
+      final devices = await client.listDevices();
+
+      expect(devices, isEmpty, reason: 'a requisição precisa ter sido refeita');
+      expect(tentativas, 2);
+      expect(tokensVistos, ['Bearer velho', 'Bearer novo']);
+      expect(encerrou, isFalse, reason: 'vencer não é a sessão acabar');
+      expect(client.isAuthenticated, isTrue);
+    });
+
+    test('refresh recusado encerra a sessão', () async {
+      // O outro lado: alguém trocou a senha noutro aparelho, e este aqui
+      // precisa cair na tela de login em vez de ficar dando erro em cada toque.
+      var encerrou = false;
+      final client = ApiClient(
+        baseUrl: 'http://test',
+        tokenStore: InMemoryTokenStore(),
+        httpClient: MockClient((req) async {
+          if (req.url.path == '/api/v1/auth/login') {
+            return http.Response(
+              jsonEncode({'access_token': 'a', 'refresh_token': 'r'}),
+              200,
+            );
+          }
+          if (req.url.path == '/api/v1/auth/refresh') {
+            return http.Response('{"detail":"refresh token inválido"}', 401);
+          }
+          return http.Response('{"detail":"credenciais inválidas"}', 401,
+              headers: cabecalhoDeToken);
+        }),
+      );
+      client.aoEncerrarSessao = () => encerrou = true;
+
+      await client.login('senhaSegura123!', email: 'a@b.com');
+      await expectLater(client.listDevices(), throwsA(isA<ApiException>()));
+
+      expect(encerrou, isTrue);
+      expect(client.isAuthenticated, isFalse);
+    });
+
+    test('401 sem o cabeçalho não mexe na sessão', () async {
+      // Senha atual errada e código de verificação errado também respondem 401,
+      // e deslogar neles expulsaria quem só errou a digitação. O servidor manda
+      // o `WWW-Authenticate` só quando o problema é o token; há teste do outro
+      // lado, em backend/tests/test_sessoes.py.
+      var encerrou = false;
+      var refreshes = 0;
+      final client = ApiClient(
+        baseUrl: 'http://test',
+        tokenStore: InMemoryTokenStore(),
+        httpClient: MockClient((req) async {
+          if (req.url.path == '/api/v1/auth/login') {
+            return http.Response(
+              jsonEncode({'access_token': 'a', 'refresh_token': 'r'}),
+              200,
+            );
+          }
+          if (req.url.path == '/api/v1/auth/refresh') {
+            refreshes++;
+            return http.Response(jsonEncode({'access_token': 'b'}), 200);
+          }
+          return http.Response('{"detail":"senha atual incorreta"}', 401);
+        }),
+      );
+      client.aoEncerrarSessao = () => encerrou = true;
+
+      await client.login('senhaSegura123!', email: 'a@b.com');
+      await expectLater(
+        client.updatePassword('errada', 'outraSenha456!'),
+        throwsA(isA<ApiException>()),
+      );
+
+      expect(encerrou, isFalse);
+      expect(refreshes, 0, reason: 'nem deveria tentar renovar');
+      expect(client.isAuthenticated, isTrue);
+    });
+  });
+
   group('formatação das métricas', () {
     test('bytes viram GB/MB em base 1024, como o Windows mostra', () {
       expect(SystemStats.formatBytes(16 * 1024 * 1024 * 1024), '16.0 GB');

@@ -31,19 +31,37 @@ class ApiException implements Exception {
 ///
 /// Os tokens são guardados em disco (armazenamento seguro) para manter o login
 /// entre aberturas do app; nos testes, um `TokenStore` em memória é injetado.
+///
+/// **Toda requisição passa pelo `_ClienteComSessao`**, no fim deste arquivo, que
+/// trata o 401 de token. A explicação está lá: é onde moram as duas situações
+/// que se parecem e pedem respostas opostas — token vencido (renova e refaz) e
+/// sessão encerrada (desloga).
 class ApiClient {
   ApiClient({required this.baseUrl, http.Client? httpClient, TokenStore? tokenStore})
-      : _http = httpClient ?? http.Client(),
-        _store = tokenStore ?? SecureTokenStore();
+      : _store = tokenStore ?? SecureTokenStore() {
+    _http = _ClienteComSessao(httpClient ?? http.Client(), this);
+  }
 
   /// URL base do backend (ex.: http://192.168.0.10:8000). Editável para
   /// apontar o celular ao computador na mesma rede.
   String baseUrl;
-  final http.Client _http;
+  late final http.Client _http;
   final TokenStore _store;
+
+  /// Avisado quando a sessão acabou de verdade e os tokens foram descartados.
+  /// O `AppState` usa isto para limpar a conta e voltar à tela de login.
+  void Function()? aoEncerrarSessao;
 
   String? _accessToken;
   String? _refreshToken;
+
+  /// A renovação em curso, se houver.
+  ///
+  /// Uma só, compartilhada: a tela de controle dispara várias requisições quase
+  /// ao mesmo tempo, e sem isto um token vencido produziria uma renovação por
+  /// requisição — várias trocas simultâneas do mesmo refresh token, disputando
+  /// quem grava por último.
+  Future<bool>? _renovacao;
 
   /// Tempo máximo de espera por resposta do servidor (evita travas longas
   /// quando o backend está inacessível).
@@ -289,6 +307,42 @@ class ApiClient {
     _accessToken = null;
     _refreshToken = null;
     await _store.clear();
+  }
+
+  /// Troca o access token vencido por um novo. Devolve se conseguiu.
+  ///
+  /// Distingue três desfechos, e a distinção é o recurso inteiro:
+  ///
+  /// - **Deu certo** — o token estava só vencido (15 minutos), o que acontece o
+  ///   tempo todo. Quem chamou refaz a requisição e a pessoa não vê nada.
+  /// - **O servidor recusou o refresh (401)** — a sessão acabou de verdade:
+  ///   alguém trocou a senha noutro aparelho, ou a conta foi excluída. Aí sim
+  ///   desloga.
+  /// - **Não deu para perguntar** (rede fora, servidor caído) — **não** desloga.
+  ///   Deslogar por Wi-Fi instável faria a pessoa digitar a senha de novo por
+  ///   causa de um elevador.
+  Future<bool> _renovarSessao() =>
+      _renovacao ??= _renovar().whenComplete(() => _renovacao = null);
+
+  Future<bool> _renovar() async {
+    if (_refreshToken == null) {
+      await _encerrarSessao();
+      return false;
+    }
+    try {
+      await refreshAccess();
+      return true;
+    } on ApiException catch (e) {
+      if (e.statusCode == 401) await _encerrarSessao();
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _encerrarSessao() async {
+    await logout();
+    aoEncerrarSessao?.call();
   }
 
   // --- conta -----------------------------------------------------------------
@@ -957,4 +1011,95 @@ class ApiClient {
     }
     return ApiException(res.statusCode, message);
   }
+}
+
+/// O `http.Client` por onde tudo passa: renova o token vencido e encerra a
+/// sessão quando ela realmente acabou.
+///
+/// Existe por causa de dois defeitos que parecem um só e pedem respostas
+/// opostas.
+///
+/// **Token vencido.** O access token dura 15 minutos, e nada o renovava durante
+/// o uso — só na abertura do app. Depois de um quarto de hora, toda ação
+/// respondia "credenciais inválidas" até o app ser reaberto. Era o "parou de
+/// funcionar, fechei e abri e voltou".
+///
+/// **Sessão encerrada.** Desde que trocar a senha cancela os tokens da conta, o
+/// aparelho derrubado precisa cair na tela de login. Sem isso ele fica na tela
+/// de dentro dando erro em cada toque — o recurso funcionando, com cara de
+/// defeito.
+///
+/// Tratar os dois igual dá o pior dos dois lados: deslogar no primeiro pediria a
+/// senha a cada 15 minutos; insistir no segundo prenderia o aparelho numa sessão
+/// morta. A diferença sai do **refresh token**: se ele ainda vale, era
+/// vencimento; se o servidor o recusa, a sessão acabou.
+class _ClienteComSessao extends http.BaseClient {
+  _ClienteComSessao(this._interno, this._dono);
+
+  final http.Client _interno;
+  final ApiClient _dono;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest pedido) async {
+    final resposta = await _interno.send(pedido);
+    if (!_tokenRecusado(pedido, resposta)) return resposta;
+
+    // A cópia precisa existir **antes** de renovar: o corpo do pedido é um
+    // fluxo de leitura única, e reenviar o original não funciona.
+    final copia = _copiar(pedido);
+    if (copia == null) return resposta;
+
+    if (!await _dono._renovarSessao()) return resposta;
+
+    // Só agora dá para descartar a resposta antiga. Se a renovação tivesse
+    // falhado, é ela que o chamador receberia.
+    await resposta.stream.drain<void>();
+    copia.headers['Authorization'] = 'Bearer ${_dono._accessToken}';
+    final segunda = await _interno.send(copia);
+
+    // Recusado **com** token novo em folha não é vencimento: é sessão morta.
+    // Sem esta linha o aparelho derrubado ficaria renovando e falhando para
+    // sempre, sem nunca chegar ao login.
+    if (_tokenRecusado(copia, segunda)) await _dono._encerrarSessao();
+    return segunda;
+  }
+
+  /// O 401 foi sobre o token, e não sobre o que a requisição pedia?
+  ///
+  /// Três 401 convivem nesta API e só um é sobre a sessão: senha atual errada ao
+  /// trocar a senha, código de verificação errado, e token inválido. Deslogar
+  /// nos dois primeiros expulsaria quem só errou a digitação.
+  ///
+  /// Quem separa é o cabeçalho `WWW-Authenticate`, que só o `get_current_user`
+  /// do servidor manda — é o que ele significa em HTTP: "suas credenciais estão
+  /// ausentes ou não valem". O contrato tem teste do lado de lá, em
+  /// `backend/tests/test_sessoes.py`.
+  ///
+  /// Exigir que o **pedido** leve `Authorization` fecha o laço: o próprio
+  /// `/auth/refresh` não leva, então um refresh recusado não dispara outra
+  /// renovação.
+  bool _tokenRecusado(http.BaseRequest pedido, http.StreamedResponse resposta) {
+    if (resposta.statusCode != 401) return false;
+    final temToken = pedido.headers.keys
+        .any((chave) => chave.toLowerCase() == 'authorization');
+    return temToken && resposta.headers.containsKey('www-authenticate');
+  }
+
+  /// Um pedido igual, pronto para reenvio. `null` quando não dá.
+  ///
+  /// Hoje toda chamada vira `http.Request` (corpo em memória). Envio de arquivo
+  /// em fluxo, se um dia existir, cai aqui e **não** é refeito: o fluxo já foi
+  /// consumido, e reenviar meio arquivo seria pior do que falhar.
+  http.Request? _copiar(http.BaseRequest pedido) {
+    if (pedido is! http.Request) return null;
+    return http.Request(pedido.method, pedido.url)
+      ..headers.addAll(pedido.headers)
+      ..bodyBytes = pedido.bodyBytes
+      ..followRedirects = pedido.followRedirects
+      ..maxRedirects = pedido.maxRedirects
+      ..persistentConnection = pedido.persistentConnection;
+  }
+
+  @override
+  void close() => _interno.close();
 }
