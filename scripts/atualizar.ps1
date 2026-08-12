@@ -275,6 +275,13 @@ function ReinstalarSeInstalado($pasta) {
         return
     }
 
+    # De novo, e não só antes do build: entre um e outro passam minutos, e nesse
+    # intervalo o agente instalado volta a rodar sozinho - pelo logon, ou pelo
+    # `RestaurarAgenteInstalado` de uma tentativa anterior. Aí a cópia falha com
+    # "o arquivo já está sendo usado por outro processo", depois de a compilação
+    # ter dado certo: o pior momento para tropeçar.
+    PararAgente
+
     Passo "reinstalando com o binário novo"
     $recem = Join-Path $pasta "target\release\deskside-agent.exe"
     if (Executar $recem @("install") $pasta) {
