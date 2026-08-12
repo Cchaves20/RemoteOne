@@ -209,8 +209,9 @@ function QuemSegura($caminho) {
 # Procura nos dois lugares conhecidos e avisa o cc-rs pela variável do alvo,
 # em vez de mexer no PATH do sistema: vale só para esta execução.
 function PrepararClangArm64 {
-    $alvo = (& rustc -vV 2>$null | Select-String '^host:').ToString()
-    if ($alvo -notmatch 'aarch64') { return }
+    $linha = & rustc -vV 2>$null | Select-String '^host:'
+    if (-not $linha) { return }
+    if ("$linha" -notmatch 'aarch64') { return }
     if (Get-Command clang -ErrorAction SilentlyContinue) { return }
     if ($env:CC_aarch64_pc_windows_msvc) { return }
 
