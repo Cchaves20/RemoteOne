@@ -66,88 +66,33 @@ Agente                          Backend
 | `run_automation` | `request_id`, `steps[]` (`kind`, `wait_ms?`, e os campos do tipo) | Executa uma sequência de passos em ordem. Vai **numa mensagem só**: o iOS suspende aplicativos, e uma sequência conduzida pelo telefone pararia no meio se a pessoa bloqueasse a tela. Uma falha não interrompe as seguintes, e cada passo volta no `automation_result` |
 | `media` | `action` (`play_pause`/`next`/`previous`/`volume_up`/`volume_down`/`mute`) | Aciona uma tecla multimídia. São teclas **globais**: valem para quem estiver tocando som, sem depender da janela em foco |
 
-## Pergunta e resposta (aplicativos)
+## O heartbeat é um contrato dos dois lados
 
-Quase tudo aqui é mão única (o backend manda, o agente executa). Listar
-aplicativos é a exceção: o backend precisa **esperar a resposta**. Para isso,
-cada pedido leva um `request_id`, e o backend guarda um "pedido pendente"
-([`backend/app/rpc.py`](../backend/app/rpc.py)) até chegar o `app_list` com o
-mesmo id — ou até estourar o tempo limite (15 s → HTTP 504).
+O agente manda `heartbeat` a cada **10 s** e o servidor responde `ack`. As duas
+pontas cobram esse ritmo, e nenhuma cobrava antes:
 
-```
-App          Backend                         Agente
- |  GET /apps   |                               |
- |  ──────────► |  ── list_apps (request_id) ─► |  varre menu Iniciar
- |              |  ◄──── app_list (request_id)  |  (ou lista processos)
- |  ◄────────── |                               |
-```
+- **Agente** (`SEM_RESPOSTA`, em `client.rs`): 35 s sem receber **nada** do
+  servidor derrubam a conexão e disparam a reconexão.
+- **Servidor** (`SILENCIO_DO_AGENTE`, em `main.py`): 35 s sem receber nada do
+  agente fecham o socket.
 
-O agente lista fora do laço de eventos (`spawn_blocking`), então varrer os
-programas não trava o controle remoto que estiver em andamento.
+Os dois números são iguais, e são três batidas com folga. Menos que isso
+derrubaria a conexão por uma batida perdida em rede ruim; muito mais é o
+problema original.
 
-O agente responde ao `start_stream` enviando frames JPEG como mensagens
-**binárias** (agente → backend). O backend os repassa em tempo real aos apps
-conectados em `/ws/viewer/{device_id}` (que autenticam com
-`{"token": ...}`). A tela remota está em [`tela-remota.md`](tela-remota.md).
+E o problema original era este: **uma conexão TCP pode morrer sem que nenhum
+dos lados saiba**. Numa máquina virtual que suspende, num Wi-Fi que troca de
+rede, num notebook que dorme, o socket fica meio-aberto. O agente continua
+escrevendo `heartbeat` nele, o sistema operacional guarda em buffer e
+retransmite, e o erro só aparece quando a retransmissão esgota — **minutos**
+depois. Nesse intervalo o agente se diz conectado, o app mostra o computador
+online, e nada funciona. A reconexão em 5 s não ajudava: o que era lento não
+era reconectar, era **perceber**.
 
-Frames repetidos não são enviados: o agente compara um hash da imagem com o do
-frame anterior e, se a tela não mudou, não transmite nada. Um silêncio no canal
-binário significa "continua igual", não "caiu" — quem entra no meio recebe o
-último frame guardado pelo backend. Detalhes em
-[`video-e-latencia.md`](video-e-latencia.md).
+### A conexão antiga não limpa a sessão nova
 
-## Sinalização de WebRTC
-
-O mesmo par de canais transporta a negociação de WebRTC, que vai substituir o
-JPEG pelo vídeo comprimido (plano em [`webrtc-plano.md`](webrtc-plano.md)). O
-backend **não participa** da negociação: só encaminha.
-
-Cada app conectado em `/ws/viewer/{device_id}` recebe um `session_id` interno,
-porque o mesmo agente pode negociar com vários apps ao mesmo tempo. O app nunca
-vê esse identificador — o backend o acrescenta na ida e o remove na volta.
-
-App → backend → agente:
-
-| Tipo | Campos | O que é |
-| --- | --- | --- |
-| `webrtc_offer` | `sdp` | Oferta do app, que quer receber a tela |
-| `webrtc_ice` | `candidate`, `sdp_mid?`, `sdp_mline_index?` | Candidato ICE |
-
-Agente → backend → app:
-
-| Tipo | Campos | O que é |
-| --- | --- | --- |
-| `webrtc_answer` | `session_id`, `sdp` | Resposta do agente |
-| `webrtc_ice` | `session_id`, `candidate`, … | Candidato ICE |
-
-E o backend avisa o agente por conta própria quando um app sai, com
-`webrtc_close` — assim a conexão daquela sessão não fica pendurada.
-
-Dois detalhes que importam:
-
-- **`candidate` vazio é válido** e significa "acabaram os meus candidatos".
-  Descartá-lo deixaria a outra ponta esperando para sempre.
-- **O backend confere que a sessão pertence ao dispositivo** antes de repassar
-  a resposta do agente. Sem essa checagem, um agente que se comportasse mal
-  poderia injetar sinalização na sessão de outro computador chutando um
-  `session_id`.
-
-O pareamento está documentado em [`pareamento.md`](pareamento.md) e o controle
-remoto em [`controle-remoto.md`](controle-remoto.md).
-
-## Estado e identidade
-
-- O `device_id` é um UUID gerado pelo agente na primeira execução e
-  persistido em disco (`%APPDATA%\deskside\device_id` no Windows,
-  `~/.config/deskside/device_id` no Linux/macOS), então o mesmo computador
-  é reconhecido em conexões futuras.
-- O registro de agentes online vive em memória no backend
-  ([`backend/app/agents.py`](../backend/app/agents.py)). Ao escalar para
-  múltiplos workers, passa a ser respaldado por Redis (já na stack).
-
-## Verificação manual
-
-1. Suba o backend: `cd backend && docker compose up` (ou `uvicorn app.main:app`).
-2. Rode o agente: `cd agent && cargo run`.
-3. Abra <http://localhost:8000/api/v1/agents> — o agente aparece com o
-   `last_seen` avançando a cada heartbeat, e some ao encerrar o agente.
+Enquanto o socket morto está pendurado, o agente já voltou por um socket novo.
+Quando o antigo finalmente morre, o encerramento dele não pode apagar nada — e
+apagava. Ver `main.encerrar_agente`: o registro de presença e o último quadro
+da tela agora conferem **qual** conexão está saindo, como o gerenciador já
+fazia. Sem isso, o computador sumia do app minutos depois de voltar.

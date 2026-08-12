@@ -33,6 +33,14 @@ class ConnectionManager:
             self._agents.pop(device_id, None)
             self._public_ip.pop(device_id, None)
 
+    def get(self, device_id: str) -> WebSocket | None:
+        """A conexão registrada agora, para quem precisa saber **qual** é.
+
+        Quem encerra uma conexão precisa disso: com o agente já reconectado por
+        outro socket, o antigo não pode limpar nada. Ver `main.encerrar_agente`.
+        """
+        return self._agents.get(device_id)
+
     def is_online(self, device_id: str) -> bool:
         return device_id in self._agents
 

@@ -241,7 +241,21 @@ async def agent_ws(websocket: WebSocket) -> None:
         await websocket.send_json(intro)
 
         while True:
-            packet = await websocket.receive()
+            # Com prazo, e não um `receive()` nu. Um socket TCP pode morrer sem
+            # que nenhum dos lados saiba - a máquina virtual suspende, o Wi-Fi
+            # troca de rede -, e o `receive()` sem prazo espera por isso para
+            # sempre. O agente reconecta por outro socket e este fica pendurado,
+            # vivo aos olhos do servidor, até o sistema operacional desistir.
+            #
+            # O agente manda `heartbeat` a cada 10s; três batidas de silêncio
+            # não são rede ruim, são conexão morta.
+            try:
+                packet = await asyncio.wait_for(
+                    websocket.receive(), timeout=SILENCIO_DO_AGENTE
+                )
+            except TimeoutError:
+                logger.info("agente calado por %ss: %s", SILENCIO_DO_AGENTE, device_id)
+                break
             if packet["type"] == "websocket.disconnect":
                 break
 
@@ -425,10 +439,40 @@ async def agent_ws(websocket: WebSocket) -> None:
         pass
     finally:
         if device_id is not None:
-            registry.unregister(device_id)
-            manager.unregister(device_id, websocket)
-            frame_store.clear(device_id)
-            logger.info("agente desconectado: %s", device_id)
+            if encerrar_agente(device_id, websocket):
+                logger.info("agente desconectado: %s", device_id)
+            else:
+                logger.info(
+                    "conexão antiga de %s encerrada; a nova continua", device_id
+                )
+
+
+def encerrar_agente(device_id: str, websocket) -> bool:
+    """Desfaz o registro **desta** conexão. Devolve se o agente ficou offline.
+
+    Existe por causa de uma assimetria que só aparece na reconexão. O
+    `manager.unregister` já conferia se a conexão registrada era esta antes de
+    remover; o registro de presença e o último quadro da tela não conferiam
+    nada. Só que o agente volta por um **socket novo** enquanto o antigo ainda
+    está pendurado — a conexão meio-aberta pode levar minutos para morrer —, e
+    ao morrer ela apagava estado da sessão nova, que estava funcionando.
+
+    É a mesma armadilha das cascatas do `User` e do estado que sobrava no app: o
+    que não for descartado com cuidado não fica esquecido e inofensivo, some com
+    o que é de outro.
+
+    Função, e não o corpo do `finally`, para poder ser testada sem depender de
+    duas conexões WebSocket de verdade fechando na ordem certa.
+    """
+    substituido = (
+        manager.is_online(device_id) and manager.get(device_id) is not websocket
+    )
+    manager.unregister(device_id, websocket)
+    if substituido:
+        return False
+    registry.unregister(device_id)
+    frame_store.clear(device_id)
+    return True
 
 
 def _authenticate_viewer(token: str, device_id: str) -> bool:
@@ -454,6 +498,13 @@ def _authenticate_viewer(token: str, device_id: str) -> bool:
 # Paradas de transmissão agendadas por dispositivo. Ao sair o último viewer,
 # o stream é mantido "aquecido" por alguns segundos antes de parar de fato —
 # assim, voltar à tela logo em seguida é instantâneo (Etapa de refino #16).
+#: Silêncio máximo de um agente antes de o servidor fechar a conexão.
+#:
+#: Três batidas do heartbeat de 10s, com folga. O par disto vive no agente
+#: (`SEM_RESPOSTA`, em `client.rs`): os dois lados precisam desistir, porque a
+#: conexão meio-aberta engana os dois.
+SILENCIO_DO_AGENTE = 35
+
 _pending_stops: dict[str, asyncio.Task] = {}
 _STREAM_GRACE_SECONDS = 8
 

@@ -96,6 +96,23 @@ impl StreamConfig {
 /// isto o laço acordaria 60 vezes por segundo com o computador ocioso.
 const IDLE_INTERVAL: Duration = Duration::from_millis(500);
 
+/// Quanto tempo sem **nenhuma** resposta do servidor antes de desistir da
+/// conexão e reconectar.
+///
+/// Existe porque um socket TCP pode morrer sem que nenhum dos lados saiba. Numa
+/// máquina virtual que suspende (fechar a tampa), num Wi-Fi que troca de rede,
+/// num notebook que dorme, a conexão fica meio-aberta: o agente continua
+/// escrevendo `heartbeat` num socket morto, o Windows guarda em buffer e fica
+/// retransmitindo, e o erro só aparece quando a retransmissão esgota - minutos
+/// depois. Nesse intervalo o agente se diz conectado, o app mostra o computador
+/// online, e nada funciona. Era o "cai muito ao religar o computador".
+///
+/// O servidor responde `Ack` a cada `heartbeat`, então três batidas sem
+/// resposta nenhuma significam que o caminho de volta acabou. Três, e não uma:
+/// uma batida perdida é rede ruim, e derrubar a conexão por causa dela trocaria
+/// um problema por outro.
+const SEM_RESPOSTA: Duration = Duration::from_secs(35);
+
 /// De quanto em quanto tempo a qualidade adaptativa reavalia.
 ///
 /// Dois segundos porque os relatórios de recepção chegam a cada ~1s: menos que
@@ -197,6 +214,10 @@ pub async fn run(
 
     let mut ticker = interval(heartbeat);
     ticker.tick().await; // consome o primeiro tick imediato
+
+    // Quando chegou a última notícia do servidor. **Qualquer** mensagem serve,
+    // e não só o `Ack`: se o backend falou, o caminho de volta está de pé.
+    let mut ultimo_sinal = tokio::time::Instant::now();
 
     // Injetor de entrada da plataforma (real no Windows, stub no restante).
     let mut injector = crate::injector::controller();
@@ -381,6 +402,15 @@ pub async fn run(
                 }
             }
             _ = ticker.tick() => {
+                // A cobrança vem **antes** de mandar a próxima batida: mandar
+                // primeiro adiaria a decisão em mais um ciclo, e o socket morto
+                // aceita a escrita sem reclamar - é justamente por isso que ele
+                // engana.
+                if ultimo_sinal.elapsed() > SEM_RESPOSTA {
+                    video.close_all().await;
+                    let _ = audio.take();
+                    return Err("servidor parou de responder".into());
+                }
                 let hb = serde_json::to_string(&ClientMessage::Heartbeat)?;
                 ws.send(Message::Text(hb)).await?;
                 // De carona no relógio que já existe: não vale um temporizador
@@ -615,6 +645,12 @@ pub async fn run(
                 }
             }
             incoming = ws.next() => {
+                // Antes do `match`, de propósito: mensagem que este laço ignora
+                // (um pong, um binário) prova a mesma coisa que uma tratada -
+                // que o servidor ainda está do outro lado.
+                if matches!(incoming, Some(Ok(_))) {
+                    ultimo_sinal = tokio::time::Instant::now();
+                }
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
                         match handle_server_text(
