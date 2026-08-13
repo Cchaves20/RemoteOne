@@ -106,6 +106,7 @@ FEATURES = [
     "signup-verification",
     "session-revocation",
     "contact-verification",
+    "close-all",
 ]
 
 
