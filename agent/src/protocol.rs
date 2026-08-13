@@ -205,6 +205,23 @@ pub enum ClientMessage {
     },
 }
 
+/// Uma automação agendada, como o servidor a entrega.
+///
+/// `days` com segunda = 0; vazio significa todos os dias. O horário vem como
+/// "HH:MM" porque é **hora local do computador** — uma posição no relógio da
+/// parede, e não um instante.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgendaItem {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    pub time: String,
+    #[serde(default)]
+    pub days: Vec<u8>,
+    #[serde(default)]
+    pub steps: Vec<crate::automacao::Passo>,
+}
+
 /// Mensagens que o backend envia ao agente.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -382,6 +399,14 @@ pub enum ServerMessage {
     /// Encerra um aplicativo em execução (id = PID).
     CloseApp {
         id: String,
+    },
+    /// A agenda das automações que este computador dispara sozinho.
+    ///
+    /// Chega **inteira** e substitui a anterior: lista inteira não
+    /// dessincroniza, e lista vazia é como se apaga o que foi desagendado.
+    SetSchedule {
+        #[serde(default)]
+        items: Vec<AgendaItem>,
     },
     /// Traz a janela de um aplicativo para frente (id = PID).
     ///

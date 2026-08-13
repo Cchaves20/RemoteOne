@@ -65,6 +65,39 @@ Agente                          Backend
 | `cancel_transfer` | `transfer_id` | Desiste de uma transferência em curso, nos dois sentidos |
 | `run_automation` | `request_id`, `steps[]` (`kind`, `wait_ms?`, e os campos do tipo) | Executa uma sequência de passos em ordem. Vai **numa mensagem só**: o iOS suspende aplicativos, e uma sequência conduzida pelo telefone pararia no meio se a pessoa bloqueasse a tela. Uma falha não interrompe as seguintes, e cada passo volta no `automation_result` |
 | `media` | `action` (`play_pause`/`next`/`previous`/`volume_up`/`volume_down`/`mute`) | Aciona uma tecla multimídia. São teclas **globais**: valem para quem estiver tocando som, sem depender da janela em foco |
+| `set_schedule` | `items[]` (`id`, `name`, `time` `"HH:MM"`, `days[]`, `steps[]`) | A lista **inteira** das automações que este computador dispara sozinho. Ver abaixo |
+
+## A agenda vive no computador, não no servidor
+
+O agendamento só tem sentido se funcionar **com o celular na gaveta**. Por isso o
+backend não dispara nada às 18h: ele entrega a agenda ao agente (no aperto de mão
+e a cada mudança em `/automations`), e o relógio que decide é o do próprio
+computador.
+
+No agente, a agenda vive **fora do laço da conexão** (`vigiar_agenda`, em
+`client.rs`). Se ela morasse dentro dele, um Wi-Fi que trocasse de rede às 17:59
+levaria junto as dezoito horas: o laço cai, reconecta e a agenda voltaria zerada.
+Como está, uma vez entregue ela dispara mesmo com o servidor fora do ar. O que
+ainda não sobrevive é **reiniciar o agente**: a agenda só existe em memória, e
+volta na próxima conexão. Persistir em disco é o passo que falta.
+
+Três consequências que o formato registra:
+
+- **A lista vai inteira, nunca em pedaços.** Lista inteira não dessincroniza:
+  não existe "o servidor achava que tinha apagado". O agente troca a agenda toda
+  e esquece as marcas de quem saiu.
+- **`time` é hora local da máquina.** "18:00" é dezoito horas onde o computador
+  está. Um agente que decidisse em UTC fecharia tudo às 15h no Brasil.
+- **`days` tem segunda = 0, e vazio significa todos os dias.** Um item com
+  horário malformado é **descartado** em vez de virar 00:00: uma automação que
+  não aparece na lista é um problema visível; uma que dispara na madrugada por
+  causa de um `parse` falho é um problema que ninguém liga à causa.
+
+O que o agente faz sozinho, em `agenda.rs`: avisa **5 min antes** (na janela ou,
+em máquina sem placa de vídeo, numa caixa do Windows com "Cancelar por hoje"),
+dispara na hora com **2 min** de folga, e **não dispara** se passou disso — ligar
+o computador às 19h e ver o "fim de expediente" das 18h fechar tudo seria pior do
+que ele não ter rodado. Cancelar vale só para hoje.
 
 ## O heartbeat é um contrato dos dois lados
 

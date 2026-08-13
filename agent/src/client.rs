@@ -198,6 +198,7 @@ pub async fn run(
     stream: StreamConfig,
     keep_awake: bool,
     estado: crate::gui::Compartilhado,
+    agenda: crate::agenda::Compartilhada,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (mut ws, _response) = connect_async(url).await?;
     println!("Conectado ao backend em {url}");
@@ -657,6 +658,22 @@ pub async fn run(
                             &text, injector.as_mut(), &mut streaming, &mut active,
                             &mut last_frame,
                         ) {
+                            // A lista inteira, sempre. Quem avalia é a tarefa da
+                            // agenda, que vive fora desta conexão: ela precisa
+                            // sobreviver ao socket que cai.
+                            Some(Action::SetSchedule { items }) => {
+                                let convertidos = items
+                                    .iter()
+                                    .filter_map(crate::agenda::Item::do_protocolo)
+                                    .collect::<Vec<_>>();
+                                println!(
+                                    "Agenda: {} automação(ões) agendada(s)",
+                                    convertidos.len()
+                                );
+                                if let Ok(mut a) = agenda.lock() {
+                                    a.substituir(convertidos);
+                                }
+                            }
                             // A transmissão começou, parou ou trocou de fps. O
                             // próximo tique já reavaliaria tudo, mas do ritmo
                             // ocioso isso levaria meio segundo: acerta agora.
@@ -1341,6 +1358,86 @@ impl AudioStats {
     }
 }
 
+/// Ritmo com que a agenda é consultada.
+///
+/// Dez segundos para uma decisão com precisão de minuto: folga de sobra, e a
+/// mesma folga que `ATRASO_MAXIMO_MINUTOS` cobre quando o relógio não observa o
+/// instante exato das 18:00.
+const RITMO_DA_AGENDA: Duration = Duration::from_secs(10);
+
+/// Vigia o relógio e dispara as automações agendadas. Nunca retorna.
+///
+/// **Fora do laço da conexão, de propósito.** Dentro dele, um Wi-Fi que troca de
+/// rede às 17:59 levaria as dezoito horas junto: o laço morre, reconecta e a
+/// agenda voltaria zerada. Aqui a única coisa que a conexão faz é entregar a
+/// lista; o disparo é do computador, e continua acontecendo com o servidor fora
+/// do ar e com o celular na gaveta.
+pub async fn vigiar_agenda(agenda: crate::agenda::Compartilhada, estado: crate::gui::Compartilhado) {
+    let mut relogio = interval(RITMO_DA_AGENDA);
+    loop {
+        relogio.tick().await;
+        // Fora do Windows não há relógio local nem automação para rodar: o
+        // agente de desenvolvimento roda no terminal.
+        let Some((dia, semana, minuto)) = crate::agenda::agora_local() else {
+            continue;
+        };
+
+        // O cancelamento é lido **antes** de avaliar: cancelar às 17:59 e ver a
+        // automação rodar mesmo assim seria o pior desfecho possível daqui.
+        let pedido = estado.lock().ok().and_then(|mut e| e.cancelar.take());
+        if let Some(id) = pedido {
+            println!("Agenda: cancelada por hoje ({id})");
+            if let Ok(mut a) = agenda.lock() {
+                a.cancelar(&id, dia);
+            }
+            esquecer_aviso(&estado, &id);
+        }
+
+        let eventos = match agenda.lock() {
+            Ok(mut a) => a.avaliar(dia, semana, minuto),
+            Err(_) => continue,
+        };
+        for evento in eventos {
+            match evento {
+                crate::agenda::Evento::Avisar { id, nome, faltam } => {
+                    println!("Agenda: \"{nome}\" roda em {faltam} min");
+                    if let Ok(mut e) = estado.lock() {
+                        e.aviso = Some(crate::gui::AvisoDeAgenda {
+                            id,
+                            nome,
+                            minuto_do_dia: minuto.saturating_add(faltam.max(0) as u16),
+                        });
+                    }
+                }
+                crate::agenda::Evento::Disparar { id, nome, passos } => {
+                    println!("Agenda: rodando \"{nome}\"");
+                    esquecer_aviso(&estado, &id);
+                    // Sem `await`: uma automação com esperas leva meio minuto, e
+                    // segurar esta tarefa por esse tempo atrasaria a automação
+                    // seguinte - duas marcadas para o mesmo horário são o caso
+                    // normal, não a exceção.
+                    tokio::task::spawn_blocking(move || {
+                        crate::automacao::executar(&passos, std::thread::sleep, executar_passo)
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Tira o aviso da bandeja, se ele for **desta** automação.
+///
+/// A conferência do identificador importa: com duas automações próximas, apagar
+/// cegamente ao disparar a primeira levaria junto o aviso da segunda, e a pessoa
+/// perderia a chance de cancelar aquela que ainda não rodou.
+fn esquecer_aviso(estado: &crate::gui::Compartilhado, id: &str) {
+    if let Ok(mut e) = estado.lock() {
+        if e.aviso.as_ref().is_some_and(|a| a.id == id) {
+            e.aviso = None;
+        }
+    }
+}
+
 /// Executa um passo de automação.
 ///
 /// Cada braço chama exatamente o que o resto do agente já fazia por outro
@@ -1434,6 +1531,11 @@ fn abrir_e_posicionar(item: &crate::lote::Item) -> crate::lote::Passo {
 /// Algo que o laço principal precisa fazer depois de tratar uma mensagem —
 /// tarefas que exigem `await` (recriar o ticker, responder ao servidor).
 enum Action {
+    /// A agenda mudou: trocar a lista do que dispara sozinho.
+    ///
+    /// Volta como ação em vez de ser aplicada onde chega porque quem guarda a
+    /// agenda é o laço principal — é ele que tem o relógio.
+    SetSchedule { items: Vec<crate::protocol::AgendaItem> },
     /// A transmissão ou o fps mudaram: reavaliar o ritmo do `frame_ticker`.
     RestartFrameTicker,
     /// Medir CPU/memória/disco e responder ao backend.
@@ -1730,6 +1832,9 @@ fn handle_server_text(
         Ok(ServerMessage::RunAutomation { request_id, steps }) => {
             return Some(Action::RunAutomation { request_id, steps });
         }
+        Ok(ServerMessage::SetSchedule { items }) => {
+            return Some(Action::SetSchedule { items });
+        }
         Ok(ServerMessage::FocusApp { id }) => {
             println!("Trazendo para frente (PID {id})");
             match id.parse::<u32>() {
@@ -1798,6 +1903,27 @@ mod tests {
         stats.since = std::time::Instant::now() - AudioStats::INTERVAL;
         let linha = stats.report_if_due(false).expect("devia reportar");
         assert!(linha.contains("SEM ninguém ouvindo"), "{linha}");
+    }
+
+    #[test]
+    fn o_aviso_so_some_se_for_o_da_automacao_que_rodou() {
+        // Com duas automações próximas, apagar o aviso cegamente levaria junto
+        // o da segunda - e a pessoa perderia a chance de cancelar aquela que
+        // ainda não rodou, sem nenhum sinal de que isso aconteceu.
+        let estado = crate::gui::compartilhar(crate::gui::Estado {
+            aviso: Some(crate::gui::AvisoDeAgenda {
+                id: "b".into(),
+                nome: "backup".into(),
+                minuto_do_dia: 18 * 60,
+            }),
+            ..Default::default()
+        });
+
+        super::esquecer_aviso(&estado, "a");
+        assert!(estado.lock().unwrap().aviso.is_some());
+
+        super::esquecer_aviso(&estado, "b");
+        assert!(estado.lock().unwrap().aviso.is_none());
     }
 
     use super::*;

@@ -45,6 +45,29 @@ pub struct Item {
 }
 
 impl Item {
+    /// Converte o que o servidor mandou. `None` quando o horário não é "HH:MM".
+    ///
+    /// Descartar o item malformado é melhor que aceitar com um horário
+    /// inventado: uma automação que não aparece na lista é um problema
+    /// visível, e uma que dispara às 00:00 por causa de um `parse` falho é um
+    /// problema que ninguém liga à causa.
+    pub fn do_protocolo(item: &crate::protocol::AgendaItem) -> Option<Self> {
+        let (h, m) = item.time.split_once(':')?;
+        let hora: u8 = h.parse().ok()?;
+        let minuto: u8 = m.parse().ok()?;
+        if hora > 23 || minuto > 59 {
+            return None;
+        }
+        Some(Self {
+            id: item.id.clone(),
+            nome: item.name.clone(),
+            hora,
+            minuto,
+            dias: item.days.iter().copied().filter(|d| *d <= 6).collect(),
+            passos: item.steps.clone(),
+        })
+    }
+
     fn minuto_do_dia(&self) -> i32 {
         self.hora as i32 * 60 + self.minuto as i32
     }
@@ -85,6 +108,14 @@ pub struct Agenda {
     itens: Vec<Item>,
     marcas: HashMap<String, Marca>,
 }
+
+/// A agenda vista pelas duas partes que a usam.
+///
+/// Compartilhada porque ela **não pode viver dentro da conexão**. O laço de
+/// rede morre e renasce a cada Wi-Fi que troca de rede e a cada suspensão do
+/// notebook; uma agenda que morresse junto perderia as dezoito horas por causa
+/// de um socket - exatamente o contrário do que este recurso promete.
+pub type Compartilhada = std::sync::Arc<std::sync::Mutex<Agenda>>;
 
 impl Agenda {
     /// Troca a agenda inteira pela que o servidor mandou.
@@ -150,7 +181,7 @@ impl Agenda {
             // `faltam` negativo é atraso. A folga cobre o relógio que só bate
             // de dez em dez segundos; além dela, o computador estava desligado
             // e o dia passou.
-            if faltam <= 0 && faltam >= -ATRASO_MAXIMO_MINUTOS {
+            if (-ATRASO_MAXIMO_MINUTOS..=0).contains(&faltam) {
                 marca.disparado = true;
                 eventos.push(Evento::Disparar {
                     id: item.id.clone(),
@@ -314,6 +345,30 @@ mod tests {
         a.substituir(vec![item("x", 18, 0, vec![])]);
         let eventos = a.avaliar(HOJE, SEG, 18 * 60);
         assert!(matches!(eventos[..], [Evento::Disparar { .. }]));
+    }
+
+    #[test]
+    fn horario_malformado_e_descartado() {
+        // Aceitar com um horário inventado seria pior: uma automação que não
+        // aparece na lista é um problema visível; uma que dispara às 00:00 por
+        // causa de um `parse` falho é um problema que ninguém liga à causa.
+        let bruto = |t: &str| crate::protocol::AgendaItem {
+            id: "x".into(),
+            name: "n".into(),
+            time: t.into(),
+            days: vec![],
+            steps: vec![],
+        };
+        assert!(Item::do_protocolo(&bruto("18:00")).is_some());
+        assert!(Item::do_protocolo(&bruto("25:00")).is_none());
+        assert!(Item::do_protocolo(&bruto("18h00")).is_none());
+        assert!(Item::do_protocolo(&bruto("")).is_none());
+        // Dia fora da semana some, e o resto do item continua valendo.
+        let com_dia_ruim = crate::protocol::AgendaItem {
+            days: vec![0, 9, 3],
+            ..bruto("07:30")
+        };
+        assert_eq!(Item::do_protocolo(&com_dia_ruim).unwrap().dias, vec![0, 3]);
     }
 
     #[test]

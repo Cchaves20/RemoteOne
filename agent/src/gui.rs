@@ -47,6 +47,29 @@ pub struct Estado {
     /// Se o "manter pronto" está ligado, e se está valendo agora.
     pub keep_awake: bool,
     pub segurando: bool,
+    /// A automação que vai disparar em instantes, se houver.
+    ///
+    /// Escrito pelo laço de rede, lido pela bandeja — que é onde o aviso
+    /// precisa aparecer. Na janela seria mais bonito, e numa máquina virtual
+    /// sem placa de vídeo a janela **não abre**: um aviso que só funciona em
+    /// computador com GPU não serve para um produto de acesso remoto.
+    pub aviso: Option<AvisoDeAgenda>,
+    /// Qual automação a pessoa pediu para cancelar hoje.
+    ///
+    /// A bandeja escreve, o laço de rede lê e limpa. Um campo e não um canal
+    /// porque a bandeja nasce antes do laço e sobrevive às reconexões dele —
+    /// um canal teria que ser recriado a cada uma.
+    pub cancelar: Option<String>,
+}
+
+/// O aviso de que uma automação vai rodar.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AvisoDeAgenda {
+    pub id: String,
+    pub nome: String,
+    /// Quando ela roda, em minuto do dia — a bandeja recalcula quanto falta em
+    /// vez de receber uma contagem que envelheceria entre um desenho e outro.
+    pub minuto_do_dia: u16,
 }
 
 /// Um estado compartilhado, pronto para ser clonado entre as duas threads.
@@ -66,7 +89,7 @@ pub fn rodar(estado: Compartilhado) {
 
 #[cfg(windows)]
 mod imp {
-    use super::{Compartilhado, Estado};
+    use super::{AvisoDeAgenda, Compartilhado, Estado};
     use eframe::egui;
     use std::sync::OnceLock;
     use tray_icon::{
@@ -231,6 +254,14 @@ mod imp {
                 mostrar_janela();
             });
 
+            // Pelo mesmo motivo: um aviso de cinco minutos que só aparece se a
+            // janela já estiver aberta não avisa ninguém. Quem quer cancelar
+            // precisa ver o aviso sem ter ido procurá-lo.
+            ao_surgir_aviso(estado.clone(), |_| {
+                crate::diario("janela: pedida por automação agendada");
+                mostrar_janela();
+            });
+
             crate::diario(&format!(
                 "interface iniciada (bandeja: {})",
                 if bandeja.is_some() { "sim" } else { "NÃO" }
@@ -244,6 +275,48 @@ mod imp {
                 copiado: false,
             }
         }
+    }
+
+    /// Quantos minutos faltam para a automação avisada rodar.
+    ///
+    /// Recalculado a cada desenho a partir do relógio, e não recebido pronto:
+    /// uma contagem guardada envelheceria entre um quadro e outro, e a janela
+    /// diria "5 minutos" pelos cinco minutos inteiros.
+    fn faltam_minutos(aviso: &AvisoDeAgenda) -> i32 {
+        crate::agenda::agora_local()
+            .map(|(_, _, agora)| aviso.minuto_do_dia as i32 - agora as i32)
+            .unwrap_or(crate::agenda::AVISO_MINUTOS)
+            .max(0)
+    }
+
+    /// Chama `ao_aparecer` uma vez para cada aviso novo da agenda.
+    ///
+    /// Uma thread que consulta, e não um canal: o aviso é um estado ("é isto
+    /// que vai rodar"), não uma sequência de eventos, e quem escreve não pode
+    /// esperar quem lê — quem publica o aviso é o mesmo laço que mantém o
+    /// computador alcançável.
+    fn ao_surgir_aviso(estado: Compartilhado, ao_aparecer: impl Fn(AvisoDeAgenda) + Send + 'static) {
+        std::thread::Builder::new()
+            .name("deskside-agenda".into())
+            .spawn(move || {
+                let mut mostrado: Option<String> = None;
+                loop {
+                    let atual = estado.lock().ok().and_then(|e| e.aviso.clone());
+                    // O identificador é o que evita repetir: o mesmo aviso fica
+                    // de pé por cinco minutos, e sem esta conferência a caixa
+                    // reapareceria a cada consulta.
+                    match atual {
+                        Some(a) if mostrado.as_deref() != Some(&a.id) => {
+                            mostrado = Some(a.id.clone());
+                            ao_aparecer(a);
+                        }
+                        None => mostrado = None,
+                        _ => {}
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+            })
+            .ok();
     }
 
     /// Threads que ficam ouvindo o ícone da bandeja.
@@ -318,6 +391,11 @@ mod imp {
                 ui.add_space(12.0);
             }
 
+            if let Some(aviso) = estado.aviso.clone() {
+                self.desenhar_aviso(ui, &aviso);
+                ui.add_space(12.0);
+            }
+
             ui.group(|ui| {
                 ui.set_width(ui.available_width());
                 let (cor, texto) = if estado.conectado {
@@ -363,6 +441,43 @@ mod imp {
                 .small()
                 .weak(),
             );
+        }
+
+        /// A automação que vai rodar em instantes, com a saída de emergência.
+        ///
+        /// O botão é o recurso inteiro: uma automação que fecha tudo às 18h sem
+        /// jeito de dizer "hoje não" é uma promessa de perder trabalho, e
+        /// bastaria uma vez para ninguém mais agendar nada.
+        fn desenhar_aviso(&mut self, ui: &mut egui::Ui, aviso: &AvisoDeAgenda) {
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    egui::RichText::new("Automação agendada")
+                        .strong()
+                        .color(egui::Color32::from_rgb(0xd9, 0x7a, 0x00)),
+                );
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(&aviso.nome).strong());
+                let faltam = faltam_minutos(aviso);
+                ui.label(
+                    egui::RichText::new(if faltam > 1 {
+                        format!("Roda em {faltam} minutos.")
+                    } else {
+                        "Roda em instantes.".to_string()
+                    })
+                    .small(),
+                );
+                ui.add_space(6.0);
+                if ui.button("Cancelar por hoje").clicked() {
+                    if let Ok(mut e) = self.estado.lock() {
+                        e.cancelar = Some(aviso.id.clone());
+                        // Sumir com o aviso agora, e não esperar o laço de rede
+                        // confirmar: dez segundos de botão que já foi clicado e
+                        // continua ali é o que faz a pessoa clicar de novo.
+                        e.aviso = None;
+                    }
+                }
+            });
         }
 
         fn desenhar_pareamento(&mut self, ui: &mut egui::Ui, code: &str, expira_em: u64) {
@@ -514,6 +629,25 @@ mod imp {
             })
             .ok();
 
+        // Sem janela, o aviso da agenda também vira caixa - e é aqui que ele
+        // mais importa: esta é a máquina em que a janela não abre, e um recurso
+        // que só avisa em computador com placa de vídeo não serve.
+        let da_agenda = estado.clone();
+        ao_surgir_aviso(estado.clone(), move |aviso| {
+            if !caixa_de_aviso(&aviso) {
+                return;
+            }
+            if let Ok(mut e) = da_agenda.lock() {
+                // A caixa fica aberta enquanto a pessoa decide, e nesse tempo a
+                // automação pode ter rodado. Cancelar depois do disparo seria
+                // registrar um cancelamento que não cancelou nada.
+                if e.aviso.as_ref().is_some_and(|v| v.id == aviso.id) {
+                    e.cancelar = Some(aviso.id.clone());
+                    e.aviso = None;
+                }
+            }
+        });
+
         crate::notify::ao_receber_codigo(|| {
             if let Some((code, expira)) = crate::notify::codigo_pendente() {
                 caixa_de_pareamento(&code, expira);
@@ -640,9 +774,15 @@ mod imp {
     }
 
     const MB_OK: u32 = 0x0000_0000;
+    const MB_YESNO: u32 = 0x0000_0004;
     const MB_ICONINFORMATION: u32 = 0x0000_0040;
+    const MB_ICONWARNING: u32 = 0x0000_0030;
+    /// Sem isto o botão em foco é o "Sim", e um Enter distraído cancelaria a
+    /// automação. O padrão tem que ser deixar acontecer o que foi agendado.
+    const MB_DEFBUTTON2: u32 = 0x0000_0100;
     const MB_SETFOREGROUND: u32 = 0x0001_0000;
     const MB_TOPMOST: u32 = 0x0004_0000;
+    const ID_YES: i32 = 6;
 
     #[link(name = "user32")]
     extern "system" {
@@ -656,6 +796,45 @@ mod imp {
              Expira em {} min.",
             expira_em / 60
         ));
+    }
+
+    /// Pergunta se a automação agendada deve ser cancelada hoje. `true` = sim.
+    ///
+    /// Bloqueia de propósito, ao contrário de `caixa`: quem chama é a thread da
+    /// agenda, criada só para isto, e a resposta é o motivo da caixa existir.
+    /// Enquanto ela está aberta, essa thread não consulta o estado - e é
+    /// exatamente o que se quer, porque a pergunta já está na tela.
+    fn caixa_de_aviso(aviso: &AvisoDeAgenda) -> bool {
+        let faltam = faltam_minutos(aviso);
+        let texto = format!(
+            "A automação \"{}\" vai rodar {}.\n\n\
+             Cancelar por hoje?\n\n\
+             Ela volta a valer amanhã no horário de sempre.",
+            aviso.nome,
+            if faltam > 1 {
+                format!("em {faltam} minutos")
+            } else {
+                "em instantes".to_string()
+            }
+        );
+        let texto: Vec<u16> = texto.encode_utf16().chain(std::iter::once(0)).collect();
+        let titulo: Vec<u16> = "Deskside"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let resposta = unsafe {
+            MessageBoxW(
+                0,
+                texto.as_ptr(),
+                titulo.as_ptr(),
+                MB_YESNO
+                    | MB_ICONWARNING
+                    | MB_DEFBUTTON2
+                    | MB_SETFOREGROUND
+                    | MB_TOPMOST,
+            )
+        };
+        resposta == ID_YES
     }
 
     /// Mostra um texto numa caixa do Windows, sem travar quem chamou.

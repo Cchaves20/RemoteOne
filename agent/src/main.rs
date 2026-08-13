@@ -104,6 +104,12 @@ async fn laco_de_conexao(
     keep_awake: bool,
     estado: deskside_agent::gui::Compartilhado,
 ) {
+    // A agenda nasce aqui, e não dentro de `client::run`: ela precisa
+    // sobreviver às reconexões. Um Wi-Fi que troca de rede às 17:59 não pode
+    // levar junto as dezoito horas.
+    let agenda = deskside_agent::agenda::Compartilhada::default();
+    tokio::spawn(client::vigiar_agenda(agenda.clone(), estado.clone()));
+
     loop {
         // `stream` é clonado a cada tentativa: a config carrega a lista de
         // servidores STUN, então não é mais `Copy`.
@@ -114,6 +120,7 @@ async fn laco_de_conexao(
             stream.clone(),
             keep_awake,
             estado.clone(),
+            agenda.clone(),
         )
         .await
         .err();
@@ -273,6 +280,8 @@ fn main() {
         ultimo_erro: None,
         keep_awake,
         segurando: false,
+        aviso: None,
+        cancelar: None,
     });
 
     // O agente sobe **antes** da interface e independe dela. Se a janela não
