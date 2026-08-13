@@ -699,11 +699,14 @@ class Strings {
   /// guarda a agenda é a máquina, e "perguntar na hora" pressupõe alguém ali —
   /// que é justamente quem não está quando o agendamento importa.
   String get automationScheduleNeedsDevice => _t(
-      'Escolha um computador abaixo para poder agendar.',
-      'Pick a computer below to schedule this.',
-      '请在下方选择一台电脑后再定时。',
-      'Choisissez un ordinateur ci-dessous pour programmer.',
-      'Elige un equipo abajo para poder programarla.');
+      'Escolha um computador acima para poder agendar.',
+      'Pick a computer above to schedule this.',
+      '请在上方选择一台电脑后再定时。',
+      'Choisissez un ordinateur ci-dessus pour programmer.',
+      'Elige un equipo arriba para poder programarla.');
+  String get automationScheduleDays =>
+      _t('Em quais dias', 'On which days', '在哪些天', 'Quels jours',
+          'En qué días');
   String get automationScheduleEveryDay =>
       _t('Todos os dias', 'Every day', '每天', 'Tous les jours', 'Todos los días');
   /// Segunda = 0, como no servidor e no agente.

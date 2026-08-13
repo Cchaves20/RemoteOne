@@ -33,7 +33,16 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
       TextEditingController(text: widget.automation?.name ?? '');
   late String _icone = widget.automation?.icon ?? 'tune';
   late List<AutomationStep> _passos = [...?widget.automation?.steps];
-  late String _deviceId = widget.automation?.deviceId ?? '';
+  /// Onde a automação roda.
+  ///
+  /// Numa automação nova com **um só** computador na conta, ele já vem
+  /// escolhido. "Perguntar na hora" só ganha sentido com duas máquinas, e
+  /// deixá-lo como padrão trancava o agendamento atrás de uma escolha que a
+  /// pessoa não tinha motivo para fazer — e nem sabia que precisava.
+  late String _deviceId = widget.automation?.deviceId ??
+      (widget.state.devices.length == 1
+          ? widget.state.devices.first.deviceId
+          : '');
   late String _hora = widget.automation?.scheduleTime ?? '';
   late List<int> _dias = [...?widget.automation?.scheduleDays];
   bool _salvando = false;
@@ -554,6 +563,23 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
                     ),
                 ],
               ),
+              // "Onde rodar" e "Horário" vêm **antes** dos passos, e nesta
+              // ordem, porque uma coisa depende da outra: quem guarda a agenda
+              // é o computador. No fim da tela, depois de uma lista de passos
+              // que pode ter vinte itens, o horário simplesmente não era
+              // encontrado.
+              const Divider(height: 32, color: Colors.white12),
+              Text(t.automationWhere,
+                  style: const TextStyle(color: Colors.white, fontSize: 15)),
+              // `ListTile` com o desenho do rádio, e não `RadioListTile`: o
+              // `groupValue`/`onChanged` dele está a caminho da aposentadoria
+              // nas versões novas do Flutter, e o Codemagic compila em
+              // `stable` - que pode estar à frente da máquina de quem escreve.
+              // Um aviso de API obsoleta pararia o build por um detalhe visual.
+              _escolha('', t.automationWhereAsk),
+              for (final d in widget.state.devices) _escolha(d.deviceId, d.name),
+              const Divider(height: 32, color: Colors.white12),
+              ..._agenda(t),
               const Divider(height: 32, color: Colors.white12),
               Row(
                 children: [
@@ -608,19 +634,6 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
                   }),
                 ),
               ],
-              const Divider(height: 32, color: Colors.white12),
-              Text(t.automationWhere,
-                  style: const TextStyle(color: Colors.white, fontSize: 15)),
-              // `ListTile` com o desenho do rádio, e não `RadioListTile`: o
-              // `groupValue`/`onChanged` dele está a caminho da aposentadoria
-              // nas versões novas do Flutter, e o Codemagic compila em
-              // `stable` - que pode estar à frente da máquina de quem escreve.
-              // Um aviso de API obsoleta pararia o build por um detalhe visual.
-              _escolha('', t.automationWhereAsk),
-              for (final d in widget.state.devices)
-                _escolha(d.deviceId, d.name),
-              const Divider(height: 32, color: Colors.white12),
-              ..._agenda(t),
             ]),
           ),
         ],
@@ -662,9 +675,14 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
         ),
         if (_hora.isNotEmpty) ...[
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.only(bottom: 12),
             child: Text(t.automationScheduleHint,
                 style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(t.automationScheduleDays,
+                style: const TextStyle(color: Colors.white54, fontSize: 12)),
           ),
           Wrap(
             spacing: 8,

@@ -46,6 +46,19 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
   Future<void> _recarregar() async {
     await widget.state.loadProfiles();
     await widget.state.loadAutomations();
+    // Os computadores também: o editor de automação precisa deles para "onde
+    // rodar", e é essa escolha que libera o agendamento. Sem isto, chegar aqui
+    // com a lista vazia deixava o horário inalcançável — sem nada na tela
+    // explicando por quê.
+    //
+    // E numa tentativa que não derruba o resto: esta tela é dos perfis, e uma
+    // rede ruim não pode deixá-la em branco por causa de uma lista que ela
+    // usa só ao abrir o editor. A de antes continua valendo.
+    try {
+      await widget.state.refreshDevices();
+    } catch (_) {
+      // Segue com a lista que já estava carregada.
+    }
     if (!mounted) return;
     setState(() {
       // Sem filtro por computador: aqui se edita a coleção inteira.
