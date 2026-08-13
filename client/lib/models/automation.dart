@@ -288,6 +288,8 @@ class Automation {
     this.icon = 'tune',
     this.steps = const [],
     this.deviceId = '',
+    this.scheduleTime = '',
+    this.scheduleDays = const [],
   });
 
   /// Identificador gerado pelo servidor. Vazio numa automação ainda não salva.
@@ -307,6 +309,18 @@ class Automation {
   /// computador e pode terminar suspendendo *aquela* máquina.
   final String deviceId;
 
+  /// Hora local **do computador**, "HH:MM". Vazio = só roda no toque.
+  ///
+  /// Do computador, e não do telefone: "18:00" é dezoito horas onde a máquina
+  /// está. Quem viaja com o celular não quer o expediente encerrando às 14h
+  /// porque mudou de fuso.
+  final String scheduleTime;
+
+  /// Dias da semana em que roda, **segunda = 0**. Vazio = todos os dias.
+  final List<int> scheduleDays;
+
+  bool get isScheduled => scheduleTime.isNotEmpty;
+
   IconData get iconData => profileIcon(icon);
 
   /// Se algum passo é do tipo que não se desfaz sozinho — o que faz a tela
@@ -325,6 +339,8 @@ class Automation {
         'icon': icon,
         'steps': [for (final s in steps) s.toJson()],
         'device_id': deviceId,
+        'schedule_time': scheduleTime,
+        'schedule_days': scheduleDays,
       };
 
   factory Automation.fromJson(Map<String, dynamic> json) => Automation(
@@ -336,6 +352,14 @@ class Automation {
             AutomationStep.fromJson(s as Map<String, dynamic>),
         ],
         deviceId: (json['device_id'] as String?) ?? '',
+        scheduleTime: (json['schedule_time'] as String?) ?? '',
+        // O intervalo é conferido aqui, e não só no servidor: um dia fora de
+        // 0..6 vira um índice inválido na lista de nomes da semana, e isso não
+        // seria um rótulo errado — seria a tela de perfis inteira caindo.
+        scheduleDays: [
+          for (final d in ((json['schedule_days'] as List?) ?? const []))
+            if (d is num && d >= 0 && d <= 6) d.toInt(),
+        ],
       );
 
   Automation copyWith({
@@ -343,6 +367,8 @@ class Automation {
     String? icon,
     List<AutomationStep>? steps,
     String? deviceId,
+    String? scheduleTime,
+    List<int>? scheduleDays,
   }) =>
       Automation(
         id: id,
@@ -350,5 +376,7 @@ class Automation {
         icon: icon ?? this.icon,
         steps: steps ?? this.steps,
         deviceId: deviceId ?? this.deviceId,
+        scheduleTime: scheduleTime ?? this.scheduleTime,
+        scheduleDays: scheduleDays ?? this.scheduleDays,
       );
 }

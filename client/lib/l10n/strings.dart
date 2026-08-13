@@ -679,6 +679,43 @@ class Strings {
       'Où exécuter', 'Dónde ejecutar');
   String get automationWhereAsk => _t('Perguntar na hora', 'Ask each time',
       '每次询问', 'Demander à chaque fois', 'Preguntar cada vez');
+  String get automationSchedule =>
+      _t('Horário', 'Schedule', '定时', 'Horaire', 'Horario');
+  String get automationScheduleOff => _t('Só quando eu tocar',
+      'Only when I tap it', '仅在我点按时', 'Seulement si je la lance',
+      'Solo cuando yo la ejecute');
+  String get automationScheduleOn =>
+      _t('Todo dia às…', 'Every day at…', '每天于…', 'Chaque jour à…',
+          'Todos los días a las…');
+  /// A hora é a **do computador**, e dizer isso importa: quem viaja com o
+  /// celular não quer o expediente encerrando às 14h porque mudou de fuso.
+  String get automationScheduleHint => _t(
+      'Hora do computador. Ele avisa 5 minutos antes e dá a opção de cancelar.',
+      "The computer's clock. It warns 5 minutes ahead and lets you cancel.",
+      '使用电脑的时间。它会提前 5 分钟提醒并允许取消。',
+      "L'heure de l'ordinateur. Il prévient 5 minutes avant et permet d'annuler.",
+      'La hora del equipo. Avisa 5 minutos antes y permite cancelar.');
+  /// Por que o horário não aparece enquanto não há computador escolhido: quem
+  /// guarda a agenda é a máquina, e "perguntar na hora" pressupõe alguém ali —
+  /// que é justamente quem não está quando o agendamento importa.
+  String get automationScheduleNeedsDevice => _t(
+      'Escolha um computador abaixo para poder agendar.',
+      'Pick a computer below to schedule this.',
+      '请在下方选择一台电脑后再定时。',
+      'Choisissez un ordinateur ci-dessous pour programmer.',
+      'Elige un equipo abajo para poder programarla.');
+  String get automationScheduleEveryDay =>
+      _t('Todos os dias', 'Every day', '每天', 'Tous les jours', 'Todos los días');
+  /// Segunda = 0, como no servidor e no agente.
+  String weekdayShort(int dia) => _t(
+      const ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][dia],
+      const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][dia],
+      const ['一', '二', '三', '四', '五', '六', '日'][dia],
+      const ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'][dia],
+      const ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'][dia]);
+  /// O resumo na lista: "18:00 · Seg a Sex".
+  String automationScheduleSummary(String hora, String dias) =>
+      '$hora · $dias';
   String get automationRun => _t('Rodar', 'Run', '运行', 'Exécuter', 'Ejecutar');
   String get automationRunning =>
       _t('Rodando…', 'Running…', '正在运行…', 'En cours…', 'Ejecutando…');

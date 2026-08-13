@@ -677,6 +677,14 @@ class AutomationIn(BaseModel):
             # Normaliza para "08:05": o agente compara texto com texto, e "8:5"
             # nunca casaria.
             self.schedule_time = f"{hora:02d}:{minuto:02d}"
+            # Quem guarda a agenda é o computador, então precisa haver um. Com
+            # "escolher na hora" não há a quem mandar, e o resultado seria a
+            # pior forma de falhar que este recurso tem: a automação aparece
+            # agendada na tela, o app diz que salvou, e às 18h não acontece
+            # nada. "Escolher na hora" pressupõe alguém ali para escolher - e o
+            # agendamento existe justamente para quando não há ninguém.
+            if not self.device_id:
+                raise ValueError("agendamento precisa de um computador escolhido")
         elif self.schedule_days:
             raise ValueError("dias da semana sem horário não agendam nada")
         if len(set(self.schedule_days)) != len(self.schedule_days):

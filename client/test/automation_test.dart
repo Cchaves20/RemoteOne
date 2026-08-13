@@ -122,6 +122,47 @@ void main() {
       expect(volta.steps[0].waitMs, 1500);
     });
 
+    test('o agendamento sobrevive à ida e à volta', () {
+      final volta = Automation.fromJson({
+        ...Automation(
+          id: '',
+          name: 'Fim do expediente',
+          steps: fimDoExpediente(),
+          deviceId: 'dev-1',
+          scheduleTime: '18:00',
+          scheduleDays: const [0, 1, 2, 3, 4],
+        ).toJson(),
+        'id': 'u-4',
+      });
+      expect(volta.scheduleTime, '18:00');
+      expect(volta.scheduleDays, [0, 1, 2, 3, 4]);
+      expect(volta.isScheduled, isTrue);
+    });
+
+    test('sem agendamento a automação continua sendo de toque', () {
+      final volta = Automation.fromJson({
+        ...Automation(id: '', name: 'X', steps: reuniao()).toJson(),
+        'id': 'u-5',
+      });
+      expect(volta.scheduleTime, '');
+      expect(volta.scheduleDays, isEmpty);
+      expect(volta.isScheduled, isFalse);
+    });
+
+    test('dia da semana fora de 0..6 é descartado na leitura', () {
+      // Não é um rótulo errado: a tela de perfis indexa uma lista de sete nomes
+      // com esse número, e um 9 derrubaria a tela inteira.
+      final volta = Automation.fromJson({
+        'id': 'u-6',
+        'name': 'X',
+        'steps': const [],
+        'device_id': 'dev-1',
+        'schedule_time': '07:30',
+        'schedule_days': const [0, 9, -1, 3],
+      });
+      expect(volta.scheduleDays, [0, 3]);
+    });
+
     test('o identificador não viaja no corpo', () {
       // Quem gera o `id` é o servidor, e ele nunca muda. Mandá-lo de volta
       // abriria a porta para o app tentar escolher o próprio identificador.

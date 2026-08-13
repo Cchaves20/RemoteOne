@@ -117,14 +117,25 @@ async def _reenviar_agendas(db: Session, user: User, *device_ids: str) -> None:
 
 
 def _to_out(row: Automation) -> AutomationOut:
+    # Agendamento sem computador é lido como "não agendada", e não devolvido
+    # como está. Duas razões, e as duas importam:
+    #
+    # - `AutomationOut` herda a validação de `AutomationIn`, que agora recusa
+    #   essa combinação. Uma linha antiga assim derrubaria a listagem **inteira**
+    #   com 500 - a tela de perfis sumiria por causa de uma automação.
+    # - Ela nunca disparou de verdade: sem computador não há a quem mandar a
+    #   agenda. Mostrar "18:00" seria prometer o que não acontece.
+    agendada = bool(row.device_id and row.schedule_time)
     return AutomationOut(
         id=row.automation_id,
         name=row.name,
         icon=row.icon,
         steps=_loads(row.steps),
         device_id=row.device_id,
-        schedule_time=row.schedule_time,
-        schedule_days=[d for d in _loads(row.schedule_days) if isinstance(d, int)],
+        schedule_time=row.schedule_time if agendada else "",
+        schedule_days=[d for d in _loads(row.schedule_days) if isinstance(d, int)]
+        if agendada
+        else [],
     )
 
 

@@ -34,10 +34,21 @@ class AgenteFalso:
 
 
 def _conta(email: str) -> tuple[dict, int]:
+    """Uma conta com um computador já pareado.
+
+    O computador vem junto porque agendar exige um: quem guarda a agenda é a
+    máquina. Sem ele, todo teste daqui teria de parear antes de qualquer coisa.
+    """
     tokens = criar_conta(client, email=email)
     with SessionLocal() as db:
         uid = db.scalar(select(User.id).where(User.email == email))
+    _parear(uid, _padrao(email))
     return {"Authorization": f"Bearer {tokens['access_token']}"}, uid
+
+
+def _padrao(email: str) -> str:
+    """O identificador do computador que cada conta ganha de brinde."""
+    return f"dev-{email.split('@')[0]}"
 
 
 def _parear(uid: int, device_id: str) -> None:
@@ -54,8 +65,13 @@ def _parear(uid: int, device_id: str) -> None:
         db.commit()
 
 
-def _criar(headers, **corpo):
-    base = {"name": "Fim de expediente", "steps": [{"kind": "close_all"}]}
+def _criar(headers, email="", **corpo):
+    base = {
+        "name": "Fim de expediente",
+        "steps": [{"kind": "close_all"}],
+        # O computador de brinde da conta, quando o teste não escolhe outro.
+        "device_id": _padrao(email) if email else "",
+    }
     return client.post("/api/v1/automations", json={**base, **corpo}, headers=headers)
 
 
@@ -65,7 +81,7 @@ def _criar(headers, **corpo):
 def test_horario_normalizado_para_dois_digitos():
     """O agente compara texto com texto: "8:5" nunca casaria com "08:05"."""
     headers, _ = _conta("ag1@example.com")
-    resp = _criar(headers, schedule_time="8:5")
+    resp = _criar(headers, "ag1@example.com", schedule_time="8:5")
     assert resp.status_code == 201, resp.text
     assert resp.json()["schedule_time"] == "08:05"
 
@@ -75,22 +91,38 @@ def test_horario_impossivel_e_recusado():
     dispara nunca, e não há tela onde esse erro apareça — ele só existiria às
     25h, que não chegam."""
     headers, _ = _conta("ag2@example.com")
-    assert _criar(headers, schedule_time="25:00").status_code == 422
-    assert _criar(headers, schedule_time="18h").status_code == 422
-    assert _criar(headers, schedule_time="18:60").status_code == 422
+    em = "ag2@example.com"
+    assert _criar(headers, em, schedule_time="25:00").status_code == 422
+    assert _criar(headers, em, schedule_time="18h").status_code == 422
+    assert _criar(headers, em, schedule_time="18:60").status_code == 422
 
 
 def test_dias_sem_horario_nao_agendam_nada():
     headers, _ = _conta("ag3@example.com")
-    assert _criar(headers, schedule_days=[0, 1]).status_code == 422
+    assert _criar(headers, "ag3@example.com", schedule_days=[0, 1]).status_code == 422
 
 
 def test_dia_fora_da_semana_e_repetido():
     headers, _ = _conta("ag4@example.com")
-    assert _criar(headers, schedule_time="18:00", schedule_days=[7]).status_code == 422
+    em = "ag4@example.com"
+    assert _criar(headers, em, schedule_time="18:00", schedule_days=[7]).status_code == 422
     assert (
-        _criar(headers, schedule_time="18:00", schedule_days=[1, 1]).status_code == 422
+        _criar(headers, em, schedule_time="18:00", schedule_days=[1, 1]).status_code
+        == 422
     )
+
+
+def test_agendar_sem_computador_e_recusado():
+    """A pior forma de falhar que este recurso tem: a automação aparece agendada
+    na tela, o app diz que salvou, e às 18h não acontece nada.
+
+    Quem guarda a agenda é o computador. Com "escolher na hora" não há a quem
+    mandá-la — e "escolher na hora" pressupõe alguém ali para escolher, que é
+    justamente quem não está quando o agendamento importa.
+    """
+    headers, _ = _conta("ag12@example.com")
+    resp = _criar(headers, schedule_time="18:00")
+    assert resp.status_code == 422, resp.text
 
 
 def test_sem_agendamento_continua_valendo():
@@ -221,10 +253,38 @@ def test_a_agenda_so_leva_o_que_e_daquele_computador():
         manager.unregister("dev-ag-6", agente)
 
 
+def test_agendamento_orfao_gravado_antes_da_regra_nao_derruba_a_listagem():
+    """A regra é nova; as linhas gravadas antes dela existem.
+
+    `AutomationOut` herda a validação de `AutomationIn`, então uma linha com
+    horário e sem computador estouraria na serialização — e o 500 não seria numa
+    automação, seria na listagem inteira: a tela de perfis sumiria por causa de
+    uma linha antiga.
+    """
+    from app.models import Automation
+
+    headers, _ = _conta("ag13@example.com")
+    criada = _criar(headers, "ag13@example.com", schedule_time="18:00").json()
+    with SessionLocal() as db:
+        row = db.scalar(
+            select(Automation).where(Automation.automation_id == criada["id"])
+        )
+        row.device_id = ""  # o estado que a regra nova não deixa mais criar
+        db.commit()
+
+    resp = client.get("/api/v1/automations", headers=headers)
+    assert resp.status_code == 200, resp.text
+    # E é lida como não agendada, porque nunca chegou a disparar: sem computador
+    # não há a quem mandar a agenda.
+    assert resp.json()["automations"][0]["schedule_time"] == ""
+
+
 def test_o_json_dos_dias_nao_derruba_a_leitura():
     """Campo ilegível não pode quebrar a listagem inteira de automações."""
     headers, uid = _conta("ag11@example.com")
-    criada = _criar(headers, schedule_time="18:00", schedule_days=[0]).json()
+    criada = _criar(
+        headers, "ag11@example.com", schedule_time="18:00", schedule_days=[0]
+    ).json()
     with SessionLocal() as db:
         from app.models import Automation
 

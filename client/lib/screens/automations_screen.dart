@@ -34,6 +34,8 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
   late String _icone = widget.automation?.icon ?? 'tune';
   late List<AutomationStep> _passos = [...?widget.automation?.steps];
   late String _deviceId = widget.automation?.deviceId ?? '';
+  late String _hora = widget.automation?.scheduleTime ?? '';
+  late List<int> _dias = [...?widget.automation?.scheduleDays];
   bool _salvando = false;
 
   /// Como a tela é dividida pelos passos que abrem programas.
@@ -78,6 +80,11 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
       icon: _icone,
       steps: _passos,
       deviceId: _deviceId,
+      // Sem computador não há agenda: quem a guarda é a máquina. O servidor
+      // recusa, e limpar aqui evita um 422 no fim de um formulário inteiro —
+      // a tela já esconde o horário nesse caso.
+      scheduleTime: _deviceId.isEmpty ? '' : _hora,
+      scheduleDays: _deviceId.isEmpty || _hora.isEmpty ? const [] : _dias,
     );
     try {
       if (widget.automation == null) {
@@ -612,6 +619,8 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
               _escolha('', t.automationWhereAsk),
               for (final d in widget.state.devices)
                 _escolha(d.deviceId, d.name),
+              const Divider(height: 32, color: Colors.white12),
+              ..._agenda(t),
             ]),
           ),
         ],
@@ -619,18 +628,115 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
     );
   }
 
-  Widget _escolha(String id, String rotulo) {
-    final marcado = _deviceId == id;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(
-        marcado ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-        color: marcado ? auroraCyan : Colors.white38,
-      ),
-      title: Text(rotulo, style: const TextStyle(color: Colors.white)),
-      onTap: () => setState(() => _deviceId = id),
-    );
+  /// A seção de horário, **depois** da escolha do computador.
+  ///
+  /// Nessa ordem porque uma depende da outra: quem guarda a agenda é a máquina,
+  /// e sem computador escolhido não há a quem mandá-la. Mostrar o horário antes
+  /// deixaria a pessoa preencher algo que o servidor vai recusar no fim.
+  List<Widget> _agenda(Strings t) {
+    final semComputador = _deviceId.isEmpty;
+    return [
+      Text(t.automationSchedule,
+          style: const TextStyle(color: Colors.white, fontSize: 15)),
+      if (semComputador)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(t.automationScheduleNeedsDevice,
+              style: const TextStyle(color: Colors.white38, fontSize: 12)),
+        )
+      else ...[
+        _radio(
+          marcado: _hora.isEmpty,
+          rotulo: t.automationScheduleOff,
+          aoTocar: () => setState(() {
+            _hora = '';
+            // Os dias vão junto: dias sem horário não agendam nada, e guardá-los
+            // faria a próxima edição reaparecer com uma seleção que não valia.
+            _dias = [];
+          }),
+        ),
+        _radio(
+          marcado: _hora.isNotEmpty,
+          rotulo: _hora.isEmpty ? t.automationScheduleOn : _hora,
+          aoTocar: _escolherHora,
+        ),
+        if (_hora.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(t.automationScheduleHint,
+                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (var d = 0; d < 7; d++)
+                FilterChip(
+                  selected: _dias.contains(d),
+                  label: Text(t.weekdayShort(d)),
+                  onSelected: (marcar) => setState(() {
+                    _dias = [
+                      for (final v in _dias)
+                        if (v != d) v,
+                      if (marcar) d,
+                    ]..sort();
+                  }),
+                ),
+            ],
+          ),
+          if (_dias.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              // Nenhum dia marcado **não** é "nunca": é todos os dias, tanto no
+              // servidor quanto no agente. Deixar isso implícito faria a pessoa
+              // ler a tela como uma automação desligada.
+              child: Text(t.automationScheduleEveryDay,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            ),
+        ],
+      ],
+    ];
   }
+
+  Future<void> _escolherHora() async {
+    final partes = _hora.split(':');
+    final inicial = partes.length == 2
+        ? TimeOfDay(
+            hour: int.tryParse(partes[0]) ?? 18,
+            minute: int.tryParse(partes[1]) ?? 0,
+          )
+        : const TimeOfDay(hour: 18, minute: 0);
+    final escolhida =
+        await showTimePicker(context: context, initialTime: inicial);
+    if (escolhida == null || !mounted) return;
+    setState(() {
+      // Formatado à mão, e não com `format(context)`: o relógio de 12 horas
+      // daria "6:00 PM", e o servidor e o agente comparam texto com "18:00".
+      _hora = '${escolhida.hour.toString().padLeft(2, '0')}:'
+          '${escolhida.minute.toString().padLeft(2, '0')}';
+    });
+  }
+
+  Widget _radio({
+    required bool marcado,
+    required String rotulo,
+    required VoidCallback aoTocar,
+  }) =>
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(
+          marcado ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+          color: marcado ? auroraCyan : Colors.white38,
+        ),
+        title: Text(rotulo, style: const TextStyle(color: Colors.white)),
+        onTap: aoTocar,
+      );
+
+  Widget _escolha(String id, String rotulo) => _radio(
+        marcado: _deviceId == id,
+        rotulo: rotulo,
+        aoTocar: () => setState(() => _deviceId = id),
+      );
 
   Widget _linha(int i, Strings t) {
     final p = _passos[i];

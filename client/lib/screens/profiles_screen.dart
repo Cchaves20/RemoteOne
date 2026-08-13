@@ -263,6 +263,14 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
     );
   }
 
+  /// "18:00" ou "18:00 · Seg, Ter, Qua". Sem dias = todos os dias.
+  String _quando(Automation a, Strings t) => a.scheduleDays.isEmpty
+      ? a.scheduleTime
+      : t.automationScheduleSummary(
+          a.scheduleTime,
+          a.scheduleDays.map(t.weekdayShort).join(', '),
+        );
+
   Widget _linhaAutomacao(Automation a, Strings t) {
     final onde = widget.state.devices
         .where((d) => d.deviceId == a.deviceId)
@@ -275,6 +283,10 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         [
           t.automationStepCount(a.steps.length),
           if (onde.isNotEmpty) onde.first,
+          // O horário aparece na lista porque uma automação agendada **age
+          // sozinha**: é a única da lista que faz algo sem ninguém tocar nela,
+          // e isso não pode estar escondido dentro do editor.
+          if (a.isScheduled) _quando(a, t),
         ].join(' · '),
         style: const TextStyle(color: Colors.white54, fontSize: 12),
       ),
