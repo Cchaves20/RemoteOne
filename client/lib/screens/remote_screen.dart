@@ -114,6 +114,23 @@ class _RemoteScreenState extends State<RemoteScreen>
     duration: const Duration(milliseconds: 420),
   );
   List<RemoteApp>? _dockApps;
+
+  /// Nomes (normalizados) dos programas abertos agora no computador.
+  ///
+  /// Alimenta o anel branco da dock. Guardado como conjunto de nomes, e não a
+  /// lista inteira, porque a pergunta que a dock faz é sempre "este aqui está
+  /// aberto?".
+  Set<String> _rodando = const {};
+
+  /// Programas abertos que **não** têm atalho na área de trabalho — o terminal
+  /// é o caso típico. Entram no fim da dock como indicação, não como botão:
+  /// não há como trazer uma janela para frente ainda, e um botão que não faz
+  /// nada é pior que um ícone que informa.
+  List<RemoteApp> _avulsos = const [];
+
+  Timer? _rodandoTimer;
+  bool _rodandoInFlight = false;
+  bool _rodandoFailed = false;
   bool _dockLoading = false;
   /// Posição ao longo da borda, de -1 (topo/esquerda) a 1 (base/direita).
   double _dockPos = 0;
@@ -684,6 +701,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _dockAnim.dispose();
     _statsTimer?.cancel();
     _foregroundTimer?.cancel();
+    _rodandoTimer?.cancel();
     _audioCheck?.cancel();
     // Sair da tela sem desligar deixaria o computador capturando som para
     // ninguém. O agente também desliga sozinho quando a sessão cai, mas isto
@@ -716,12 +734,50 @@ class _RemoteScreenState extends State<RemoteScreen>
       if (!mounted) return;
       setState(() => _dockApps = apps);
       if (apps.isNotEmpty) _dockAnim.forward();
+      _refreshRunning();
+      // 10 s, e não 1 s como as métricas: cada consulta roda um PowerShell no
+      // computador controlado. Um relógio rápido aqui transformaria a dock num
+      // consumidor constante de CPU da máquina que se quer usar.
+      _rodandoTimer ??= Timer.periodic(
+        const Duration(seconds: 10),
+        (_) => _refreshRunning(),
+      );
     } catch (_) {
       // Silencioso: a tela de Aplicativos mostra o erro em detalhe.
     } finally {
       if (mounted) setState(() => _dockLoading = false);
     }
   }
+
+  /// Quem está aberto agora, para o anel da dock e para os avulsos.
+  ///
+  /// Falha em silêncio e **desiste**: agente antigo não conhece o pedido, e
+  /// insistir de dez em dez segundos para sempre encheria o log dos dois lados
+  /// sem nunca dar certo. A dock continua funcionando sem os anéis.
+  Future<void> _refreshRunning() async {
+    if (_rodandoInFlight || _rodandoFailed || !mounted) return;
+    _rodandoInFlight = true;
+    try {
+      final abertos = await widget.state.listApps(widget.device, kind: 'running');
+      if (!mounted) return;
+      final naDock = (_dockApps ?? const <RemoteApp>[])
+          .map((a) => RemoteApp.matchName(a.name))
+          .toSet();
+      setState(() {
+        _rodando = abertos.map((a) => RemoteApp.matchName(a.name)).toSet();
+        _avulsos = abertos
+            .where((a) => !naDock.contains(RemoteApp.matchName(a.name)))
+            .toList();
+      });
+    } catch (_) {
+      _rodandoFailed = true;
+      _rodandoTimer?.cancel();
+      _rodandoTimer = null;
+    } finally {
+      _rodandoInFlight = false;
+    }
+  }
+
 
   Future<void> _launchFromDock(RemoteApp app) async {
     HapticFeedback.selectionClick();
@@ -733,6 +789,11 @@ class _RemoteScreenState extends State<RemoteScreen>
         duration: const Duration(seconds: 2),
         content: Text(t.appOpening(app.name)),
       ));
+      // Fora do relógio de 10 s: aqui a pessoa acabou de mandar abrir e está
+      // olhando para o ícone. Esperar o próximo ciclo pareceria que não pegou.
+      // Um segundo de folga porque o programa ainda não tem janela no instante
+      // em que o `start` volta.
+      Future.delayed(const Duration(seconds: 1), _refreshRunning);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
     }
@@ -1281,7 +1342,11 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// longo da borda. Em pé quando o celular está na horizontal; deitada quando
   /// está na vertical.
   Widget _appDock({required bool vertical, required Size area}) {
-    final apps = _dockApps ?? const <RemoteApp>[];
+    final atalhos = _dockApps ?? const <RemoteApp>[];
+    // Os avulsos entram **no fim**, depois dos atalhos: a ordem que a pessoa
+    // montou na área de trabalho é estável, e o que está aberto muda o tempo
+    // todo. Intercalar faria os ícones dançarem de lugar a cada dez segundos.
+    final apps = [...atalhos, ..._avulsos];
     if (apps.isEmpty) return const SizedBox.shrink();
 
     // Limita o comprimento a ~65% da tela: fica curta e não cobre demais.
@@ -1354,7 +1419,10 @@ class _RemoteScreenState extends State<RemoteScreen>
         shrinkWrap: true,
         padding: EdgeInsets.zero,
         itemCount: apps.length,
-        itemBuilder: (context, i) => _dockTile(apps[i]),
+        itemBuilder: (context, i) => _dockTile(
+          apps[i],
+          avulso: i >= (_dockApps?.length ?? 0),
+        ),
       ),
     );
   }
@@ -1362,7 +1430,11 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// Ícone do aplicativo: o ícone real do programa quando o computador
   /// conseguiu enviá-lo; senão, a inicial no gradiente da marca. O nome aparece
   /// ao segurar (tooltip), mantendo a dock compacta.
-  Widget _dockTile(RemoteApp app) {
+  Widget _dockTile(RemoteApp app, {bool avulso = false}) {
+    final t = widget.state.t;
+    // O avulso **é** um programa aberto, por definição: ele veio da lista de
+    // abertos. O atalho precisa ser conferido.
+    final aberto = avulso || _rodando.contains(RemoteApp.matchName(app.name));
     final icon = app.iconBytes;
     final Widget content = icon != null
         ? ClipRRect(
@@ -1381,19 +1453,41 @@ class _RemoteScreenState extends State<RemoteScreen>
           )
         : _initialTile(app);
 
+    // O anel branco: é o que responde "está aberto?" sem ocupar espaço nenhum
+    // a mais. Fica **em volta** do ícone, com uma folga, para não brigar com o
+    // desenho do próprio programa.
+    final Widget alvo = Container(
+      width: _dockIcon + 8,
+      height: _dockIcon + 8,
+      decoration: aberto
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white, width: 1.5),
+            )
+          : null,
+      child: Center(
+        child: SizedBox(width: _dockIcon, height: _dockIcon, child: content),
+      ),
+    );
+
     return Padding(
       padding: const EdgeInsets.all(3),
       child: Tooltip(
-        message: app.name,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => _launchFromDock(app),
-          // Center evita que a restrição justa do eixo cruzado da lista
-          // estique o ícone (era o motivo das "barras" alongadas).
-          child: Center(
-            child: SizedBox(width: _dockIcon, height: _dockIcon, child: content),
-          ),
-        ),
+        // O avulso diz **por que** está ali: sem isso, um ícone que não abre
+        // nada no meio de uma fileira de botões parece defeito.
+        message: avulso ? t.dockOpenOnly(app.name) : app.name,
+        child: avulso
+            // Sem `InkWell`: não há como trazer uma janela para frente ainda, e
+            // um botão que não faz nada ensina a desconfiar dos que fazem.
+            // Levemente apagado para separar informação de ação.
+            ? Opacity(opacity: 0.72, child: alvo)
+            : InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _launchFromDock(app),
+                // Center evita que a restrição justa do eixo cruzado da lista
+                // estique o ícone (era o motivo das "barras" alongadas).
+                child: alvo,
+              ),
       ),
     );
   }

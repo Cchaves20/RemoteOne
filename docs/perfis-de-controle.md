@@ -445,6 +445,52 @@ sequência.
 | Passos por automação | 24 |
 | Tamanho do nome | 60 caracteres |
 
+## A dock diz o que está aberto
+
+A dock flutuante mostra os atalhos da área de trabalho. Ela passou a mostrar
+também **o que está aberto agora**, de dois jeitos:
+
+- **Anel branco** em volta do ícone dos atalhos cujo programa está rodando.
+- **Os abertos sem atalho** — o terminal é o caso típico — entram no fim da
+  fileira.
+
+### Por que os avulsos não são botões
+
+Eles entram levemente apagados e **não respondem ao toque**. Não é descuido: não
+existe ainda uma ação de "trazer a janela para frente" no agente, e um botão que
+não faz nada ensina a desconfiar dos que fazem. Enquanto isso eles são
+informação — e o texto ao segurar diz exatamente isso, para o ícone mudo não
+parecer defeito.
+
+Ficam **no fim**, depois dos atalhos, e não intercalados: a ordem que a pessoa
+montou na área de trabalho é estável, e o que está aberto muda o tempo todo.
+Misturar faria os ícones dançarem de lugar a cada dez segundos.
+
+### O casamento entre atalho e processo
+
+O atalho chega como `Spotify.lnk` e o processo como `Spotify`. Tira-se a
+extensão, baixa-se o caso, e compara-se **exato**.
+
+Exato, e não por prefixo, porque prefixo pegaria "Google Chrome" com "chrome" —
+mas também pegaria **"Word" com "WordPad"**. Entre errar para menos e errar para
+mais, aqui se erra para menos: o anel não aparece, a dock segue funcionando, e
+ninguém é informado de algo falso. Um indicador que mente é pior que um
+indicador ausente, porque quem olha confia.
+
+O preço é conhecido e está no teste: `Google Chrome.lnk` não casa com `chrome`.
+Se um dia incomodar, o conserto é o agente devolver o executável junto do
+atalho — não afrouxar a comparação.
+
+### Dez segundos, e não um
+
+Cada consulta de "quem está aberto" roda um **PowerShell** no computador
+controlado. Um relógio de um segundo, como o das métricas, transformaria a dock
+num consumidor constante de CPU da máquina que se quer usar.
+
+A exceção é logo depois de abrir um programa pela dock: aí a pessoa acabou de
+tocar e está olhando para o ícone, e esperar o próximo ciclo pareceria que não
+pegou.
+
 ## Onde fica
 
 **Configurações → Perfis.** Fora da tela de controle, de propósito: montar um

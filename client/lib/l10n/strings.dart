@@ -720,6 +720,14 @@ class Strings {
       _t('Abrir programa', 'Open program', '打开程序', 'Ouvrir un programme', 'Abrir programa');
   String get stepKindClose => _t('Fechar programa', 'Close program', '关闭程序',
       'Fermer un programme', 'Cerrar programa');
+  // O avulso é informação, não botão: o texto precisa dizer isso, senão um
+  // ícone que não responde ao toque parece defeito.
+  String dockOpenOnly(String programa) => _t(
+      '$programa (aberto, sem atalho na área de trabalho)',
+      '$programa (open, no desktop shortcut)',
+      '$programa（已打开，桌面没有快捷方式）',
+      '$programa (ouvert, sans raccourci sur le bureau)',
+      '$programa (abierto, sin acceso directo en el escritorio)');
   String get stepKindCloseAll => _t(
       'Fechar tudo',
       'Close everything',

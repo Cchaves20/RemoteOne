@@ -13,6 +13,23 @@ class RemoteApp {
   final String name;
   final Uint8List? iconBytes;
 
+  /// O nome pelo qual um atalho e um processo se reconhecem.
+  ///
+  /// Existe para uma pergunta só: **este atalho da área de trabalho está
+  /// aberto agora?** O atalho chega como "Spotify.lnk" e o processo como
+  /// "Spotify" — sem tirar a extensão e o caso, nenhum dos dois casa.
+  ///
+  /// A comparação depois disso é **exata**, e é uma decisão. Casar por prefixo
+  /// pegaria "Google Chrome" com "chrome", mas também casaria "Word" com
+  /// "WordPad": diria que um programa está aberto quando não está. Entre errar
+  /// para menos e errar para mais, aqui se erra para menos — o anel não
+  /// aparece, a dock segue funcionando, e ninguém é informado de algo falso.
+  static String matchName(String nome) {
+    final base = nome.split(RegExp(r'[\\/]')).last;
+    final ponto = base.lastIndexOf('.');
+    return (ponto > 0 ? base.substring(0, ponto) : base).toLowerCase();
+  }
+
   factory RemoteApp.fromJson(Map<String, dynamic> json) {
     final icon = json['icon'] as String?;
     Uint8List? bytes;
