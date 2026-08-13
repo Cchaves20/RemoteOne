@@ -50,6 +50,36 @@ Na tela de login, em **Servidor**: `https://caio-remoteone.duckdns.org`.
 | instalação | cabo + Sideloadly | abrir o arquivo |
 | distribuir para outra pessoa | praticamente impossível | mandar o arquivo |
 
+## O gesto de voltar e o touchpad
+
+A navegação por gestos do Android põe o "voltar" nas bordas esquerda e direita,
+e o "início" numa arrastada de baixo para cima. A tela de controle espera o dedo
+exatamente aí — o touchpad ocupa a área toda. Sem tratamento, arrastar o cursor
+até a beirada da tela **fecha a sessão**, e ninguém associa "movi o mouse para o
+canto" a "o app fechou".
+
+Por isso a tela de controle entra em `immersiveSticky` no Android: as barras
+somem, e uma arrastada da borda as **revela** em vez de disparar o gesto. Quem
+quer mesmo sair arrasta duas vezes; quem só estava movendo o cursor, não sai. Ao
+sair da tela as barras voltam — senão o app inteiro ficaria sem navegação depois
+da primeira sessão de controle.
+
+O iOS ficou de fora de propósito: lá o comportamento já foi testado em uso, e
+mudá-lo por causa de um problema que a plataforma não tem seria trocar o certo
+pelo duvidoso.
+
+## O que ainda depende de um aparelho de verdade
+
+Duas coisas não dá para decidir sem ver:
+
+- **O teclado virtual.** No Android ele redimensiona a tela por padrão. Se a
+  imagem do computador ficar deformada ao digitar, o ajuste é
+  `resizeToAvoidBottomInset`. Não foi mexido porque o comportamento atual está
+  testado no iPhone, e mudar no escuro trocaria um problema conhecido por um
+  desconhecido.
+- **Confirmar antes de sair.** Talvez o "voltar" deva perguntar quando há sessão
+  ativa. Talvez isso só irrite. É decisão de quem usou.
+
 ## Decisões que estão no `codemagic.yaml`
 
 Três ajustes são obrigatórios e o build **falha de propósito** se algum deixar

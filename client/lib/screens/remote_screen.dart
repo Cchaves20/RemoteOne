@@ -204,6 +204,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     super.initState();
     // Mantém a tela do celular acesa durante a sessão de controle (#13).
     WakelockPlus.enable();
+    _esconderBarrasDoAndroid();
     _connect();
     _flushTimer =
         Timer.periodic(const Duration(milliseconds: 60), (_) => _flushScroll());
@@ -639,9 +640,38 @@ class _RemoteScreenState extends State<RemoteScreen>
     }
   }
 
+  /// Esconde as barras do sistema enquanto se controla o computador.
+  ///
+  /// **Só no Android, e não é estética.** A navegação por gestos do Android põe
+  /// o "voltar" na borda esquerda e na direita, e o "início" numa arrastada de
+  /// baixo para cima — exatamente onde esta tela espera o dedo, porque o
+  /// touchpad ocupa a área toda. Sem isto, arrastar o mouse até a beirada da
+  /// tela fecha a sessão.
+  ///
+  /// `immersiveSticky` é o modo certo para o caso: as barras somem, e uma
+  /// arrastada da borda as **revela** em vez de disparar o gesto. Quem quer
+  /// mesmo sair arrasta duas vezes; quem só estava movendo o cursor, não sai.
+  ///
+  /// O iOS fica de fora de propósito: lá o comportamento atual já foi testado
+  /// em uso, e esconder a barra de status mudaria uma tela que funciona por
+  /// causa de um problema que aquela plataforma não tem.
+  void _esconderBarrasDoAndroid() {
+    if (!Platform.isAndroid) return;
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  /// Devolve as barras ao sair. Sem isto, a lista de computadores e as
+  /// configurações herdariam a tela cheia — e o app inteiro ficaria sem barra
+  /// de navegação depois da primeira sessão de controle.
+  void _devolverBarrasDoAndroid() {
+    if (!Platform.isAndroid) return;
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+
   @override
   void dispose() {
     _disposed = true;
+    _devolverBarrasDoAndroid();
     _flushTimer?.cancel();
     _fpsTimer?.cancel();
     _reconnectTimer?.cancel();
