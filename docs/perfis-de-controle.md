@@ -466,6 +466,43 @@ Ficam **no fim**, depois dos atalhos, e não intercalados: a ordem que a pessoa
 montou na área de trabalho é estável, e o que está aberto muda o tempo todo.
 Misturar faria os ícones dançarem de lugar a cada dez segundos.
 
+### Nem tudo que tem janela é programa
+
+O Windows mantém uma coleção de hospedeiros de interface com título de janela: o
+painel de emoji (`TextInputHost`), o casco das aplicações da loja
+(`ApplicationFrameHost`), a busca, o menu Iniciar. Eles passam pelo filtro de
+"tem janela" e não são nada que alguém queira ver numa dock.
+
+Duas peneiras, em `agent/src/apps.rs`:
+
+1. **Uma lista de nomes**, curada à mão. Não existe marca no sistema que separe
+   "programa da pessoa" de "peça do shell", então acrescentar uma entrada é o
+   conserto esperado quando aparecer outra — é uma linha, e tem teste.
+2. **O caminho**: tudo que mora em `Windows\SystemApps` é hospedeiro do shell
+   por definição. É a peneira que envelhece bem, porque pega o que ninguém
+   lembrou de listar.
+
+A peneira de caminho olha `SystemApps`, e não a pasta `Windows` inteira: cortar
+por "Windows" levaria junto o bloco de notas e a calculadora, que moram em
+`System32`.
+
+O `explorer` entra na lista por um motivo mais forte que ruído visual. O Windows
+usa **um só** processo para a área de trabalho, a barra de tarefas e as janelas
+de pasta — e esta é a mesma lista que o "fechar tudo" consome. Fechá-lo pelo PID
+derrubaria a barra de tarefas inteira.
+
+### O ícone de verdade, e não a inicial
+
+Os abertos vêm com o ícone extraído do próprio executável, no mesmo caminho que
+os atalhos da área de trabalho já usavam (`PrivateExtractIcons` em 128px). A
+inicial no gradiente continua existindo como último recurso — processo protegido
+recusa a leitura do caminho, e aí não há de onde tirar ícone.
+
+Sem cache dos ícones, de propósito: o custo que importa é **abrir o PowerShell**
+(uns 200 ms), não extrair uma dúzia de ícones de um recurso já pronto dentro do
+executável. Guardar acrescentaria estado compartilhado para economizar a parte
+barata.
+
 ### O casamento entre atalho e processo
 
 O atalho chega como `Spotify.lnk` e o processo como `Spotify`. Tira-se a

@@ -172,6 +172,59 @@ fn tidy(mut apps: Vec<AppInfo>) -> Vec<AppInfo> {
 /// Interpreta o JSON do PowerShell com os processos (objeto único quando há só
 /// um processo, array quando há vários). Função pura — testada em qualquer SO.
 #[cfg_attr(not(windows), allow(dead_code))]
+/// Processos que têm janela mas **não são programas** para quem olha.
+///
+/// O Windows mantém uma coleção de hospedeiros de interface com título de
+/// janela: o painel de emoji (`TextInputHost`), o casco das aplicações da loja
+/// (`ApplicationFrameHost`), a busca, o menu Iniciar. Eles passam pelo filtro
+/// de "tem janela visível" e não são nada que alguém queira ver numa dock - nem
+/// mandar fechar.
+///
+/// A lista é por nome e curada à mão, porque não existe marca no sistema que
+/// separe "programa da pessoa" de "peça do shell". Acrescentar uma entrada aqui
+/// é o conserto esperado quando aparecer outra: é uma linha, e tem teste.
+///
+/// O `explorer` entra por um motivo diferente e mais forte: o Windows usa **um
+/// só** processo para a área de trabalho, a barra de tarefas e as janelas de
+/// pasta. Fechá-lo pelo PID derrubaria a barra de tarefas inteira, então ele
+/// não pode aparecer numa lista cujo uso é "fechar tudo".
+#[cfg_attr(not(windows), allow(dead_code))]
+const RUIDO: &[&str] = &[
+    "applicationframehost",
+    "ctfmon",
+    "dllhost",
+    "explorer",
+    "lockapp",
+    "messageexchangetools",
+    "phoneexperiencehost",
+    "runtimebroker",
+    "searchapp",
+    "searchhost",
+    "searchui",
+    "shellexperiencehost",
+    "sihost",
+    "startmenuexperiencehost",
+    "systemsettings",
+    "textinputhost",
+    "widgets",
+    "widgetservice",
+];
+
+/// Se este processo é peça do sistema, e não programa de gente.
+///
+/// Duas peneiras. A primeira é a lista de nomes acima. A segunda é o caminho:
+/// tudo que mora em `Windows\SystemApps` é hospedeiro do shell por definição, e
+/// pega os que ninguém lembrou de listar - é a peneira que envelhece bem.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn e_ruido(nome: &str, caminho: &str) -> bool {
+    let n = nome.to_lowercase();
+    if RUIDO.contains(&n.as_str()) {
+        return true;
+    }
+    caminho.to_lowercase().contains(r"\windows\systemapps\")
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
 fn parse_running(text: &str) -> Vec<AppInfo> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
         return Vec::new();
@@ -185,10 +238,21 @@ fn parse_running(text: &str) -> Vec<AppInfo> {
         .filter_map(|item| {
             let id = item.get("Id")?.as_i64()?;
             let name = item.get("ProcessName")?.as_str()?.to_string();
+            // O caminho serve só para peneirar: não vai para o app, que
+            // identifica o processo pelo PID.
+            let caminho = item.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            if e_ruido(&name, caminho) {
+                return None;
+            }
+            let icon = item
+                .get("icon")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
             Some(AppInfo {
                 id: id.to_string(),
                 name,
-                icon: None,
+                icon,
             })
         })
         .collect()
@@ -444,10 +508,36 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
 
     /// Programas abertos = processos com janela visível (evita listar dezenas
     /// de serviços de fundo que não interessam ao usuário).
+    /// Corpo do script dos abertos: PID, nome, caminho do executável e ícone.
+    ///
+    /// O caminho existe para peneirar (ver `e_ruido`) e para achar o ícone. Vem
+    /// dentro de `try/catch` porque processo protegido recusa a leitura, e uma
+    /// exceção ali derrubaria a listagem inteira por causa de um antivírus.
+    const RUNNING_BODY: &str = r#"
+$tam = 128
+$out = @()
+foreach ($p in Get-Process | Where-Object { $_.MainWindowTitle -ne '' }) {
+  $caminho = ''
+  try { $caminho = $p.Path } catch { }
+  $icon = ''
+  if ($caminho -ne '') { $icon = Get-IconBase64 $caminho 0 $tam }
+  $out += [PSCustomObject]@{
+    Id = $p.Id; ProcessName = $p.ProcessName; path = $caminho; icon = $icon
+  }
+}
+ConvertTo-Json -InputObject @($out) -Compress -Depth 3
+"#;
+
+    /// Os programas abertos, com ícone.
+    ///
+    /// Sem cache dos ícones de propósito: o custo que importa aqui é **abrir o
+    /// PowerShell** (uns 200 ms), não extrair uma dúzia de ícones com o
+    /// `PrivateExtractIcons`, que lê um recurso já pronto do executável.
+    /// Guardar os ícones acrescentaria estado compartilhado para economizar a
+    /// parte barata.
     pub fn list_running() -> Vec<AppInfo> {
-        let script = "Get-Process | Where-Object {$_.MainWindowTitle -ne ''} | \
-                      Select-Object Id,ProcessName | ConvertTo-Json -Compress";
-        let Ok(output) = run_powershell(script) else {
+        let script = format!("{ICON_HELPER}\n{RUNNING_BODY}");
+        let Ok(output) = run_powershell(&script) else {
             return Vec::new();
         };
         let text = String::from_utf8_lossy(&output.stdout);
@@ -636,6 +726,62 @@ mod imp {
 
 #[cfg(test)]
 mod tests {
+    use super::{e_ruido, parse_running};
+
+    #[test]
+    fn os_hospedeiros_do_shell_nao_sao_programas() {
+        // O que motivou a lista: os dois apareceram na dock de um computador
+        // de verdade, com título de janela e tudo.
+        assert!(e_ruido("TextInputHost", ""));
+        assert!(e_ruido("MessageExchangeTools", ""));
+        // Maiúsculas não importam - o nome vem do Windows como ele quiser.
+        assert!(e_ruido("textinputhost", ""));
+    }
+
+    #[test]
+    fn o_explorer_fica_de_fora_por_um_motivo_mais_forte() {
+        // O Windows usa **um** processo para a área de trabalho, a barra de
+        // tarefas e as janelas de pasta. Fechá-lo pelo PID derrubaria a barra
+        // inteira, e esta lista alimenta o "fechar tudo".
+        assert!(e_ruido("explorer", r"C:\Windows\explorer.exe"));
+    }
+
+    #[test]
+    fn o_caminho_pega_quem_a_lista_esqueceu() {
+        // A peneira que envelhece bem: tudo em SystemApps é hospedeiro do
+        // shell por definição, mesmo o que ninguém lembrou de listar.
+        assert!(e_ruido(
+            "AlgoNovoDaMicrosoft",
+            r"C:\Windows\SystemApps\Microsoft.Alguma_8wekyb3d8bbwe\algo.exe"
+        ));
+    }
+
+    #[test]
+    fn programa_de_gente_passa() {
+        assert!(!e_ruido("Spotify", r"C:\Users\eu\AppData\Roaming\Spotify\Spotify.exe"));
+        assert!(!e_ruido("notepad", r"C:\Windows\System32\notepad.exe"));
+        // O notepad mora dentro de Windows e **não** é ruído: a peneira de
+        // caminho olha SystemApps, não a pasta Windows inteira. Cortar por
+        // "Windows" levaria junto o bloco de notas e a calculadora.
+    }
+
+    #[test]
+    fn a_lista_de_abertos_traz_icone_e_descarta_ruido() {
+        let json = r#"[
+          {"Id":10,"ProcessName":"Spotify","path":"C:\\x\\Spotify.exe","icon":"QUJD"},
+          {"Id":11,"ProcessName":"TextInputHost","path":"","icon":""},
+          {"Id":12,"ProcessName":"Terminal","path":"C:\\x\\wt.exe","icon":""}
+        ]"#;
+        let apps = parse_running(json);
+        assert_eq!(apps.len(), 2, "o TextInputHost devia ter sido descartado");
+        assert_eq!(apps[0].name, "Spotify");
+        assert_eq!(apps[0].icon.as_deref(), Some("QUJD"));
+        // Ícone vazio vira ausente, e não uma string vazia que o app tentaria
+        // decodificar como imagem.
+        assert_eq!(apps[1].name, "Terminal");
+        assert_eq!(apps[1].icon, None);
+    }
+
     /// O nome que o `taskkill` recebe.
     ///
     /// É argumento de linha de comando montado a partir de texto que chegou
