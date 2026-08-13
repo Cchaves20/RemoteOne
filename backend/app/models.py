@@ -305,6 +305,17 @@ class Automation(Base):
     #: filha custaria um join e uma migração para não ganhar nada - e este
     #: projeto ainda não tem Alembic.
     steps: Mapped[str] = mapped_column(Text, default="[]")
+    #: Hora do dia em que ela roda sozinha, "HH:MM". Vazio = só no toque.
+    #:
+    #: Texto e não `Time` porque o que se guarda é **hora local do
+    #: computador**, não um instante: "18:00" significa dezoito horas onde a
+    #: máquina está, e continua significando isso se ela mudar de fuso ou entrar
+    #: no horário de verão. Um `Time` com fuso guardaria a resposta errada para
+    #: a pergunta certa.
+    schedule_time: Mapped[str] = mapped_column(String(5), default="")
+    #: Dias da semana, em JSON: `[0,1,2,3,4]` (segunda=0). Vazio com hora
+    #: preenchida = todos os dias.
+    schedule_days: Mapped[str] = mapped_column(Text, default="[]")
     #: Em qual computador ela roda. Vazio = pergunta na hora.
     #:
     #: Singular, ao contrário do perfil: um perfil é um punhado de atalhos que

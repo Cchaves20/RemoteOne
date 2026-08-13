@@ -57,6 +57,12 @@ def _migrate() -> None:
             "mac_address": "VARCHAR(32)",
             "last_public_ip": "VARCHAR(64)",
         },
+        # Agendamento das automações. As duas com padrão, porque `ADD COLUMN`
+        # com `NOT NULL` e sem padrão é recusado em tabela que já tem linhas.
+        "automations": {
+            "schedule_time": "VARCHAR(5) DEFAULT '' NOT NULL",
+            "schedule_days": "TEXT DEFAULT '[]' NOT NULL",
+        },
         "users": {
             "totp_secret": "VARCHAR(64)",
             "totp_enabled": "BOOLEAN DEFAULT 0 NOT NULL",

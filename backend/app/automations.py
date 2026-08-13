@@ -68,6 +68,54 @@ def _loads(text: str) -> list:
     return value if isinstance(value, list) else []
 
 
+async def enviar_agenda(db: Session, user_id: int, device_id: str) -> None:
+    """Manda ao computador as automações agendadas que rodam nele.
+
+    É o que torna o agendamento independente do celular: o agente guarda a
+    agenda e dispara sozinho, mesmo com o telefone descarregado, longe ou
+    desinstalado. Se o servidor tivesse de mandar o comando na hora, "18:00"
+    dependeria de o servidor estar de pé às 18:00 **e** de a máquina estar
+    conectada naquele exato minuto - em vez de em qualquer momento antes.
+
+    Manda a agenda **inteira**, e não a diferença: é uma lista curta, e lista
+    inteira não tem como dessincronizar. Com diferenças, um envio perdido
+    deixaria o computador com uma automação fantasma para sempre.
+
+    Agenda vazia é resposta válida e importante - é como se apaga o que foi
+    desagendado.
+    """
+    linhas = db.scalars(
+        select(Automation).where(
+            Automation.user_id == user_id,
+            Automation.device_id == device_id,
+            Automation.schedule_time != "",
+        )
+    ).all()
+    agenda = [
+        {
+            "id": row.automation_id,
+            "name": row.name,
+            "time": row.schedule_time,
+            "days": [d for d in _loads(row.schedule_days) if isinstance(d, int)],
+            "steps": _loads(row.steps),
+        }
+        for row in linhas
+    ]
+    await manager.send_to_agent(device_id, {"type": "set_schedule", "items": agenda})
+
+
+async def _reenviar_agendas(db: Session, user: User, *device_ids: str) -> None:
+    """Reenvia a agenda dos computadores tocados por uma mudança.
+
+    Aceita mais de um identificador porque editar uma automação pode **mudar**
+    de computador: o novo passa a ter o agendamento, e o antigo precisa
+    perdê-lo. Reenviando só ao novo, o antigo continuaria disparando o que já
+    não é dele.
+    """
+    for device_id in {d for d in device_ids if d}:
+        await enviar_agenda(db, user.id, device_id)
+
+
 def _to_out(row: Automation) -> AutomationOut:
     return AutomationOut(
         id=row.automation_id,
@@ -75,6 +123,8 @@ def _to_out(row: Automation) -> AutomationOut:
         icon=row.icon,
         steps=_loads(row.steps),
         device_id=row.device_id,
+        schedule_time=row.schedule_time,
+        schedule_days=[d for d in _loads(row.schedule_days) if isinstance(d, int)],
     )
 
 
@@ -145,7 +195,7 @@ def list_automations(
     response_model_exclude_none=True,
     status_code=status.HTTP_201_CREATED,
 )
-def create_automation(
+async def create_automation(
     body: AutomationIn,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -172,10 +222,13 @@ def create_automation(
         position=quantas,
         steps=_passos(body),
         device_id=body.device_id,
+        schedule_time=body.schedule_time,
+        schedule_days=json.dumps(sorted(body.schedule_days)),
     )
     db.add(row)
     db.commit()
     db.refresh(row)
+    await _reenviar_agendas(db, current_user, row.device_id)
     return _to_out(row)
 
 
@@ -184,7 +237,7 @@ def create_automation(
     response_model=AutomationOut,
     response_model_exclude_none=True,
 )
-def update_automation(
+async def update_automation(
     automation_id: str,
     body: AutomationIn,
     current_user: User = Depends(get_current_user),
@@ -194,27 +247,39 @@ def update_automation(
     row = _owned(db, automation_id, current_user)
     _check_device(body, db, current_user)
 
+    # O computador de antes precisa saber que perdeu a automação; o de agora,
+    # que ganhou. Guardado antes da escrita, senão só sobra o novo.
+    antes = row.device_id
+
     row.name = body.name
     row.icon = body.icon
     row.steps = _passos(body)
     row.device_id = body.device_id
+    row.schedule_time = body.schedule_time
+    row.schedule_days = json.dumps(sorted(body.schedule_days))
     db.commit()
     db.refresh(row)
+    await _reenviar_agendas(db, current_user, antes, row.device_id)
     return _to_out(row)
 
 
 @router.delete(
     "/automations/{automation_id}", status_code=status.HTTP_204_NO_CONTENT
 )
-def delete_automation(
+async def delete_automation(
     automation_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
     """Apaga uma automação."""
     row = _owned(db, automation_id, current_user)
+    # Guardado antes de apagar: depois do `delete` a linha não responde mais.
+    onde = row.device_id
     db.delete(row)
     db.commit()
+    # Sem isto, apagar uma automação agendada a deixaria disparando no
+    # computador para sempre - o agente só sabe o que lhe contaram.
+    await _reenviar_agendas(db, current_user, onde)
 
 
 @router.post(

@@ -655,6 +655,35 @@ class AutomationIn(BaseModel):
     steps: list[StepIn] = Field(default_factory=list, max_length=24)
     #: Em qual computador ela roda. Vazio = escolher na hora.
     device_id: str = Field(default="", max_length=64)
+    #: Hora local do computador em que ela roda sozinha, "HH:MM". Vazio = só no
+    #: toque.
+    schedule_time: str = Field(default="", max_length=5)
+    #: Dias da semana (segunda=0). Vazio com hora preenchida = todos os dias.
+    schedule_days: list[int] = Field(default_factory=list, max_length=7)
+
+    @model_validator(mode="after")
+    def agendamento_coerente(self) -> "AutomationIn":
+        # O agendamento é o único caminho em que a automação roda **sem
+        # ninguém olhando**. Um "18:0" ou um dia 9 aceitos aqui virariam uma
+        # automação que simplesmente nunca dispara, e nada explicaria por quê -
+        # não há tela onde o erro apareça, porque o erro só existe às 18h.
+        if self.schedule_time:
+            partes = self.schedule_time.split(":")
+            if len(partes) != 2 or not all(p.isdigit() for p in partes):
+                raise ValueError("horário precisa ser HH:MM")
+            hora, minuto = int(partes[0]), int(partes[1])
+            if not (0 <= hora <= 23 and 0 <= minuto <= 59):
+                raise ValueError("horário fora do relógio")
+            # Normaliza para "08:05": o agente compara texto com texto, e "8:5"
+            # nunca casaria.
+            self.schedule_time = f"{hora:02d}:{minuto:02d}"
+        elif self.schedule_days:
+            raise ValueError("dias da semana sem horário não agendam nada")
+        if len(set(self.schedule_days)) != len(self.schedule_days):
+            raise ValueError("dia da semana repetido")
+        if any(d < 0 or d > 6 for d in self.schedule_days):
+            raise ValueError("dia da semana fora de 0..6")
+        return self
 
 
 class AutomationOut(AutomationIn):

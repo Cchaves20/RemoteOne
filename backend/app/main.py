@@ -10,6 +10,7 @@ from app import entrega, pairing
 from app.agents import AgentRegistry
 from app.auth import router as auth_router
 from app.auth import sessao_valida
+from app.automations import enviar_agenda
 from app.automations import router as automations_router
 from app.config import settings
 from app.connections import Viewer, manager, viewers
@@ -108,6 +109,7 @@ FEATURES = [
     "contact-verification",
     "close-all",
     "focus-app",
+    "automation-schedule",
 ]
 
 
@@ -139,6 +141,23 @@ def api_root() -> dict[str, str]:
 def list_agents() -> dict:
     """Lista os agentes atualmente conectados (online)."""
     return {"agents": [a.as_dict() for a in registry.list()]}
+
+
+async def _mandar_agenda(device_id: str) -> None:
+    """Entrega a este computador as automações que ele deve disparar sozinho.
+
+    Falha em silêncio de propósito: um erro aqui não pode derrubar a conexão do
+    agente. Sem agenda, o computador continua servindo para tudo o mais - e a
+    próxima reconexão tenta de novo.
+    """
+    try:
+        with SessionLocal() as db:
+            device = pairing.get_device(db, device_id)
+            if device is None:
+                return
+            await enviar_agenda(db, device.user_id, device_id)
+    except Exception:
+        logger.exception("falha ao enviar a agenda para %s", device_id)
 
 
 def _paired_email(device_id: str) -> str | None:
@@ -241,6 +260,11 @@ async def agent_ws(websocket: WebSocket) -> None:
         intro = _pairing_intro(message)
         paired_notified = intro["type"] == "paired"
         await websocket.send_json(intro)
+
+        # A agenda vai **na conexão**, e não só quando alguém edita: o
+        # computador que passou a noite desligado precisa saber o que roda hoje
+        # antes de a hora chegar, e ninguém vai abrir o app para "sincronizar".
+        await _mandar_agenda(device_id)
 
         while True:
             # Com prazo, e não um `receive()` nu. Um socket TCP pode morrer sem
