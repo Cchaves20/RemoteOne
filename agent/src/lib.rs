@@ -6,6 +6,7 @@
 
 pub mod adaptive;
 pub mod apps;
+pub mod agenda;
 pub mod audio;
 pub mod automacao;
 pub mod awake;
