@@ -51,6 +51,15 @@ class AutomationStep {
   AutomationStep.close({required String processName, int? waitMs})
       : this(kind: kindClose, processName: processName, waitMs: waitMs);
 
+  /// Fecha **todos** os programas abertos.
+  ///
+  /// Sem campo nenhum de propósito: quem responde "o que está aberto" é o
+  /// computador, na hora de rodar. Uma lista escolhida no editor envelheceria —
+  /// o que está aberto hoje não é o que estava ontem, e "fim do expediente"
+  /// precisa acertar nos dois dias.
+  AutomationStep.closeAll({int? waitMs})
+      : this(kind: kindCloseAll, waitMs: waitMs);
+
   /// Mandar um atalho de teclado, no mesmo formato do teclado remoto.
   AutomationStep.input({required Map<String, dynamic> keys, int? waitMs})
       : this(kind: kindInput, action: keys, waitMs: waitMs);
@@ -74,6 +83,7 @@ class AutomationStep {
   // usa `ObjectKey`, e duas chaves iguais na mesma lista derrubam a tela.
   static const kindLaunch = 'launch';
   static const kindClose = 'close';
+  static const kindCloseAll = 'close_all';
   static const kindInput = 'input';
   static const kindMedia = 'media';
   static const kindBrightness = 'brightness';
@@ -110,7 +120,8 @@ class AutomationStep {
   /// Fechar um programa pode perder o que não foi salvo; suspender ou desligar
   /// tira a máquina do ar. Nenhum dos dois tem "voltar atrás" a um toque de
   /// distância, e é por isso que a tela confirma antes de rodar.
-  bool get isDestructive => kind == kindClose || kind == kindPower;
+  bool get isDestructive =>
+      kind == kindClose || kind == kindCloseAll || kind == kindPower;
 
   Map<String, dynamic> toJson() => {
         'kind': kind,
@@ -154,6 +165,8 @@ class AutomationStep {
         return t.stepLaunch(appName.isEmpty ? (path ?? '') : appName);
       case kindClose:
         return t.stepClose(processName ?? '');
+      case kindCloseAll:
+        return t.stepCloseAll;
       case kindBrightness:
         return t.stepBrightness(level ?? 0);
       case kindMedia:

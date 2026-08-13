@@ -523,3 +523,45 @@ def test_rodar_em_computador_de_outra_conta_404():
 def test_automacoes_exigem_autenticacao():
     assert client.get("/api/v1/automations").status_code == 401
     assert client.post("/api/v1/automations", json={"name": "x"}).status_code == 401
+
+
+def test_fechar_tudo_nao_precisa_de_campo_nenhum():
+    """O passo que pergunta ao computador o que está aberto.
+
+    Sem campo de propósito: uma lista de programas escrita à mão envelheceria -
+    o que está aberto hoje não é o que estava ontem, e "fim do expediente"
+    precisa acertar nos dois dias.
+
+    O teste existe porque o validador recusa passo sem o campo obrigatório, e
+    `close_all` é o único que **não tem** obrigatório nenhum. Um `.get(kind)` sem
+    o padrão certo o recusaria, e a automação inteira voltaria 422 sem dizer
+    qual passo.
+    """
+    headers, _ = _auth("fecha1@example.com")
+    resp = client.post(
+        "/api/v1/automations",
+        json={
+            "name": "Fim do expediente",
+            "steps": [{"kind": "close_all"}, {"kind": "power", "action": "suspend"}],
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    passos = resp.json()["steps"]
+    assert passos[0] == {"kind": "close_all"}
+
+
+def test_fechar_tudo_ignora_campos_que_nao_lhe_dizem_respeito():
+    """Mandar `name` num `close_all` não é erro: o passo simplesmente não usa.
+
+    Recusar seria rigor sem ganho - o app pode carregar um campo vazio de um
+    passo que era `close` e virou `close_all` -, e o que chega ao agente é
+    limpo pelo `exclude_none` antes de sair.
+    """
+    headers, _ = _auth("fecha2@example.com")
+    resp = client.post(
+        "/api/v1/automations",
+        json={"name": "A", "steps": [{"kind": "close_all", "name": "slack"}]},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text

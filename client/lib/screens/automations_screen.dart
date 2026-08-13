@@ -132,6 +132,11 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             for (final e in <(String, String, IconData)>[
               (AutomationStep.kindLaunch, t.stepKindLaunch, Icons.launch),
               (AutomationStep.kindClose, t.stepKindClose, Icons.close),
+              (
+                AutomationStep.kindCloseAll,
+                t.stepKindCloseAll,
+                Icons.clear_all
+              ),
               (AutomationStep.kindInput, t.stepKindKeys, Icons.keyboard),
               (AutomationStep.kindMedia, t.stepKindMedia, Icons.volume_up),
               (
@@ -161,6 +166,13 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
         await _passoAbrir();
       case AutomationStep.kindClose:
         await _passoFechar();
+      case AutomationStep.kindCloseAll:
+        // Sem diálogo: não há o que escolher. É o único passo que entra na
+        // lista com um toque só, e é de propósito — "fecha tudo" não tem
+        // parâmetro, e inventar uma tela de confirmação aqui só atrasaria
+        // quem já sabe o que pediu. O aviso de passo destrutivo continua
+        // valendo na hora de rodar.
+        _acrescentar(AutomationStep.closeAll());
       case AutomationStep.kindInput:
         await _passoTeclas();
       case AutomationStep.kindMedia:

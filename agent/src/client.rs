@@ -1366,6 +1366,14 @@ fn executar_passo(acao: &crate::automacao::Acao) -> crate::automacao::Desfecho {
             Ok(()) => Desfecho::Ok,
             Err(motivo) => Desfecho::Falhou(motivo),
         },
+        Acao::CloseAll => match crate::apps::close_all() {
+            // `ComAviso` mesmo quando dá certo: a quantidade é informação útil
+            // no relatório da automação. Fechar zero programa não é erro - é o
+            // computador já estando limpo -, mas ver "0 programa(s)" evita a
+            // dúvida de ter ou não funcionado.
+            Ok(quantos) => Desfecho::ComAviso(format!("{quantos} programa(s) fechado(s)")),
+            Err(motivo) => Desfecho::Falhou(motivo),
+        },
         Acao::Input { action } => {
             match crate::injector::controller().apply(action) {
                 Ok(()) => Desfecho::Ok,

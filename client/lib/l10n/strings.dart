@@ -720,6 +720,12 @@ class Strings {
       _t('Abrir programa', 'Open program', '打开程序', 'Ouvrir un programme', 'Abrir programa');
   String get stepKindClose => _t('Fechar programa', 'Close program', '关闭程序',
       'Fermer un programme', 'Cerrar programa');
+  String get stepKindCloseAll => _t(
+      'Fechar tudo',
+      'Close everything',
+      '全部关闭',
+      'Tout fermer',
+      'Cerrar todo');
   String get stepKindKeys => _t('Atalho de teclado', 'Keyboard shortcut', '键盘快捷键',
       'Raccourci clavier', 'Atajo de teclado');
   String get stepKindMedia => _t('Som', 'Sound', '声音', 'Son', 'Sonido');
@@ -730,6 +736,14 @@ class Strings {
       '打开 $programa', 'Ouvrir $programa', 'Abrir $programa');
   String stepClose(String programa) => _t('Fechar $programa', 'Close $programa',
       '关闭 $programa', 'Fermer $programa', 'Cerrar $programa');
+  // Sem interpolação, ao contrário do `stepClose`: este passo não tem alvo, e
+  // é justamente essa a diferença que a pessoa precisa enxergar na lista.
+  String get stepCloseAll => _t(
+      'Fechar todos os programas abertos',
+      'Close all open programs',
+      '关闭所有已打开的程序',
+      'Fermer tous les programmes ouverts',
+      'Cerrar todos los programas abiertos');
   String stepKeys(String atalho) => _t('Teclas: $atalho', 'Keys: $atalho',
       '按键：$atalho', 'Touches : $atalho', 'Teclas: $atalho');
   String stepBrightness(int nivel) => _t('Brilho em $nivel%', 'Brightness at $nivel%',

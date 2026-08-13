@@ -243,10 +243,47 @@ Dois exemplos, que foram os que motivaram o recurso:
 
 | Modo reunião | Fim do expediente |
 |---|---|
-| abrir o Teams à esquerda | fechar o Slack |
-| abrir o OneNote à direita | fechar o Outlook |
-| silenciar | brilho no mínimo |
-| brilho em 80% | suspender |
+| abrir o Teams à esquerda | **fechar tudo** |
+| abrir o OneNote à direita | brilho no mínimo |
+| silenciar | suspender |
+| brilho em 80% | |
+
+### "Fechar tudo", e por que ele não tem campo nenhum
+
+O "fim do expediente" nasceu como uma lista: fechar o Slack, fechar o Outlook,
+fechar o navegador. E envelheceu na semana seguinte, porque **o que está aberto
+hoje não é o que estava ontem** — entrou um PDF, entrou o Excel de um colega,
+entrou o terminal. A lista escrita à mão só acerta no dia em que foi escrita.
+
+O passo `close_all` pergunta ao computador o que está aberto na hora de rodar.
+Por isso ele não tem parâmetro: não há o que escolher, e escolher é justamente
+o que dá errado.
+
+"Aberto" tem uma definição precisa: **processo com janela visível**. Serviço de
+sistema e tarefa de fundo não são o que a pessoa vê na barra de tarefas, e
+encerrá-los seria estragar a máquina para cumprir o pedido ao pé da letra.
+
+Três decisões dentro dele:
+
+- **O agente se exclui.** Ele tem janela e apareceria na própria lista; fechar-se
+  no meio da automação mataria a sessão e os passos seguintes junto. O nome vem
+  do executável, não escrito à mão — quem renomeia o binário não pode fazer o
+  agente se suicidar por causa disso.
+- **O Explorer fica de fora**, porque é a barra de tarefas e a área de trabalho.
+- **Sem `/F`.** O programa recebe o pedido de fechar e pergunta sobre o que não
+  foi salvo. Uma automação que roda sozinha, de madrugada, não pode descartar o
+  trabalho de ninguém. Programa que recusa não interrompe os outros: o relatório
+  diz quantos aceitaram.
+
+Não pede confirmação no app, ao contrário do que se poderia esperar de um passo
+tão destrutivo. Quem monta uma automação chamada "fim do expediente" quer que
+ela rode sozinha — um diálogo derrotaria o propósito. O aviso continua onde
+serve: o passo é marcado como destrutivo, e é isso que o app usa para avisar
+**antes de rodar a automação inteira**.
+
+Quem quiser exceções ("fecha tudo menos o Spotify") põe o `close_all` primeiro e
+um `launch` depois. Uma lista de exceções teria o mesmo problema de envelhecer
+que a lista original.
 
 Elas aparecem em dois lugares, e cada um tem um papel: **na barra da tela de
 controle** é onde se roda (ver abaixo), e **em Configurações → Perfis** é onde

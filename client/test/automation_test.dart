@@ -256,4 +256,22 @@ void main() {
       }
     });
   });
+
+  group('fechar tudo', () {
+    test('atravessa o JSON sem campo nenhum', () {
+      // O agente espera exatamente `{"kind":"close_all"}`. Um campo nulo a mais
+      // não estragaria, mas um `kind` diferente sim — e o erro só apareceria no
+      // computador, na hora de rodar.
+      final passo = AutomationStep.closeAll();
+      expect(passo.toJson(), {'kind': 'close_all'});
+      expect(AutomationStep.fromJson(passo.toJson()).kind, 'close_all');
+    });
+
+    test('conta como destrutivo', () {
+      // É a lista que faz o app avisar antes de rodar. Fechar tudo é o mais
+      // destrutivo dos passos e o mais fácil de esquecer aqui: não tem campo,
+      // então nada quebraria se ficasse de fora.
+      expect(AutomationStep.closeAll().isDestructive, isTrue);
+    });
+  });
 }

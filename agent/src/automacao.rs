@@ -95,6 +95,18 @@ pub enum Acao {
     /// aplicativos: uma automação é escrita hoje e rodada amanhã, e o PID de
     /// hoje não existe amanhã.
     Close { name: String },
+    /// Fecha **todos** os programas abertos de uma vez.
+    ///
+    /// Existe porque a alternativa era listar cada programa num passo `Close`,
+    /// e "fim do expediente" não é uma lista fixa: o que está aberto hoje é
+    /// diferente do que estava ontem. Um passo que pergunta ao computador o que
+    /// está aberto acerta sempre; uma lista escrita à mão envelhece na semana
+    /// seguinte.
+    ///
+    /// Não leva campo nenhum de propósito. Exceções ("menos o Spotify")
+    /// virariam uma lista para manter, com o mesmo problema de envelhecer - e
+    /// quem quer isso põe o `CloseAll` antes e um `Launch` depois.
+    CloseAll,
     /// Manda uma tecla, um atalho ou um texto.
     Input { action: InputAction },
     /// Tecla de mídia: tocar/pausar, próxima, volume, silenciar.
@@ -119,7 +131,10 @@ impl Acao {
     /// passos são perigosos é aqui — a mesma lista serviria a outro cliente, e
     /// duas cópias divergiriam.
     pub fn destrutiva(&self) -> bool {
-        matches!(self, Acao::Close { .. } | Acao::Power { .. })
+        matches!(
+            self,
+            Acao::Close { .. } | Acao::CloseAll | Acao::Power { .. }
+        )
     }
 }
 
@@ -370,6 +385,10 @@ mod tests {
         // É esta lista que o app usa para pedir confirmação. Uma automação que
         // suspende a máquina sem avisar seria uma surpresa cara.
         assert!(Acao::Close { name: "slack".into() }.destrutiva());
+        // O que fecha tudo é o mais destrutivo dos três, e seria o mais fácil
+        // de esquecer nesta lista: ele não tem campo nenhum, então um
+        // `matches!` desatento o deixaria de fora sem o compilador reclamar.
+        assert!(Acao::CloseAll.destrutiva());
         assert!(Acao::Power {
             action: PowerAction::Suspend
         }
@@ -432,6 +451,18 @@ mod tests {
         assert!(json.contains(r#""wait_ms":2000"#), "{json}");
         let volta: Vec<Passo> = serde_json::from_str(&json).unwrap();
         assert_eq!(volta, passos);
+    }
+
+    #[test]
+    fn fechar_tudo_atravessa_o_json_sem_campo_nenhum() {
+        // Sem campos, a variante é serializada só pela etiqueta. Se o `serde` a
+        // escrevesse como `"CloseAll"` em vez de `"close_all"`, o app mandaria
+        // um passo que o agente recusaria - e o erro só apareceria no
+        // computador de alguém, na hora de rodar a automação.
+        let json = serde_json::to_string(&Acao::CloseAll).unwrap();
+        assert_eq!(json, r#"{"kind":"close_all"}"#);
+        let volta: Acao = serde_json::from_str(&json).unwrap();
+        assert_eq!(volta, Acao::CloseAll);
     }
 
     #[test]

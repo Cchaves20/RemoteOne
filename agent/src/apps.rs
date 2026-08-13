@@ -41,6 +41,26 @@ pub fn launch(id: &str) -> Result<(), String> {
     imp::launch(id)
 }
 
+/// Fecha **todos** os programas abertos. Devolve quantos receberam o pedido.
+///
+/// "Aberto" aqui é o mesmo critério do `AppKind::Running`: processo com janela
+/// visível. É a definição que interessa a quem pediu "fecha tudo" — serviço de
+/// sistema e tarefa de fundo não são o que a pessoa vê na barra de tarefas, e
+/// encerrá-los seria estragar a máquina para cumprir o pedido ao pé da letra.
+///
+/// Duas exclusões, e a primeira não é opcional:
+///
+/// - **o próprio agente**, que tem janela e apareceria na lista. Fechar-se no
+///   meio de uma automação mataria a sessão e os passos seguintes junto;
+/// - **o Explorer**, que é a barra de tarefas e a área de trabalho.
+///
+/// E sem `/F`, como o `close_by_name`: o programa recebe o pedido e pergunta
+/// sobre o que não foi salvo. Uma automação que roda sozinha, de madrugada, não
+/// pode descartar o trabalho de ninguém.
+pub fn close_all() -> Result<usize, String> {
+    imp::close_all()
+}
+
 /// Procura um atalho pelo nome numa árvore de pastas.
 ///
 /// Existe por causa dos perfis atribuídos a **mais de um computador**: o
@@ -519,6 +539,52 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
             primeira.trim().to_string()
         })
     }
+
+    /// O nome do processo deste próprio agente, sem extensão.
+    ///
+    /// Descoberto do executável em vez de escrito à mão: quem renomeia o
+    /// binário não pode fazer o agente se fechar sozinho por causa disso.
+    fn eu_mesmo() -> String {
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.file_stem().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "deskside-agent".to_string())
+            .to_lowercase()
+    }
+
+    pub fn close_all() -> Result<usize, String> {
+        let meu_nome = eu_mesmo();
+        let abertos = list_running();
+        if abertos.is_empty() {
+            return Ok(0);
+        }
+
+        let mut pedidos = 0;
+        for app in abertos {
+            let nome = app.name.to_lowercase();
+            if nome == meu_nome || nome == "explorer" {
+                continue;
+            }
+            // Por PID, e não por nome: a lista veio com os PIDs em mãos, e
+            // fechar por nome derrubaria também as janelas que **não** estavam
+            // na lista - as sem janela visível, que é justamente o que se quer
+            // preservar.
+            //
+            // Sem `/F`: é o pedido educado, o mesmo do `close_by_name`.
+            let saiu = Command::new("taskkill")
+                .args(["/PID", &app.id])
+                .output();
+            match saiu {
+                Ok(r) if r.status.success() => pedidos += 1,
+                // Um programa que recusa (janela modal, "salvar antes?") não
+                // interrompe os outros: a automação segue e o relatório diz
+                // quantos aceitaram.
+                Ok(_) => {}
+                Err(e) => return Err(format!("não foi possível encerrar: {e}")),
+            }
+        }
+        Ok(pedidos)
+    }
 }
 
 /// Reexporta o que o resto do agente usa de dentro do `imp` do Windows: o
@@ -560,6 +626,11 @@ mod imp {
     pub fn close_by_name(name: &str) -> Result<(), String> {
         println!("[apps-stub] encerrar por nome: {name}");
         Ok(())
+    }
+
+    pub fn close_all() -> Result<usize, String> {
+        println!("[apps-stub] fechar tudo (nada a fazer fora do Windows)");
+        Ok(0)
     }
 }
 
