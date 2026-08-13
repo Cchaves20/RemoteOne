@@ -720,14 +720,23 @@ class Strings {
       _t('Abrir programa', 'Open program', '打开程序', 'Ouvrir un programme', 'Abrir programa');
   String get stepKindClose => _t('Fechar programa', 'Close program', '关闭程序',
       'Fermer un programme', 'Cerrar programa');
-  // O avulso é informação, não botão: o texto precisa dizer isso, senão um
-  // ícone que não responde ao toque parece defeito.
+  // Diz o que o toque faz, e é diferente do atalho: este já está aberto, então
+  // tocar traz para frente em vez de abrir.
   String dockOpenOnly(String programa) => _t(
-      '$programa (aberto, sem atalho na área de trabalho)',
-      '$programa (open, no desktop shortcut)',
-      '$programa（已打开，桌面没有快捷方式）',
-      '$programa (ouvert, sans raccourci sur le bureau)',
-      '$programa (abierto, sin acceso directo en el escritorio)');
+      '$programa (aberto — tocar traz para frente)',
+      '$programa (open — tap to bring to front)',
+      '$programa（已打开 — 点按可置于前台）',
+      '$programa (ouvert — appuyez pour mettre au premier plan)',
+      '$programa (abierto — toca para traer al frente)');
+  // "Trazendo", e não "pronto": o Windows pode recusar dar o foco, e nesse caso
+  // a janela pisca na barra de tarefas. Prometer o que não se controla é pior
+  // do que descrever o que se pediu.
+  String appFocusing(String programa) => _t(
+      'Trazendo $programa para frente…',
+      'Bringing $programa to front…',
+      '正在将 $programa 置于前台…',
+      'Mise au premier plan de $programa…',
+      'Trayendo $programa al frente…');
   String get stepKindCloseAll => _t(
       'Fechar tudo',
       'Close everything',

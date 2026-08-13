@@ -1730,6 +1730,17 @@ fn handle_server_text(
         Ok(ServerMessage::RunAutomation { request_id, steps }) => {
             return Some(Action::RunAutomation { request_id, steps });
         }
+        Ok(ServerMessage::FocusApp { id }) => {
+            println!("Trazendo para frente (PID {id})");
+            match id.parse::<u32>() {
+                Ok(pid) => {
+                    if let Err(e) = crate::janelas::focar(pid) {
+                        eprintln!("Falha ao trazer para frente: {e}");
+                    }
+                }
+                Err(_) => eprintln!("PID inválido: {id}"),
+            }
+        }
         Ok(ServerMessage::CloseApp { id }) => {
             println!("Encerrando aplicativo (PID {id})");
             if let Err(e) = crate::apps::close(&id) {

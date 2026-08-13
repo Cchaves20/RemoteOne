@@ -611,6 +611,10 @@ class AppState extends ChangeNotifier {
   Future<String> uploadFile(Device device, String name, Uint8List bytes) =>
       api.uploadFile(device.deviceId, name, bytes);
 
+  /// Traz a janela de um programa aberto para frente.
+  Future<void> focusApp(Device device, String id) =>
+      api.focusApp(device.deviceId, id);
+
   // --- conta -----------------------------------------------------------------
 
   /// Começa a troca de contato: manda o código para o contato **novo**.

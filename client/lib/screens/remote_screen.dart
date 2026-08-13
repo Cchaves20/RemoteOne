@@ -779,6 +779,28 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
 
+  /// Traz para frente um programa que já está aberto.
+  ///
+  /// O Windows pode recusar: só quem já está em primeiro plano tem direito de
+  /// dar foco a outro, e o agente roda em segundo plano. Quando isso acontece,
+  /// a janela pisca na barra de tarefas em vez de subir — e daqui não há como
+  /// saber, porque o pedido chegou. Por isso a mensagem diz "trazendo", e não
+  /// "pronto".
+  Future<void> _focusFromDock(RemoteApp app) async {
+    HapticFeedback.selectionClick();
+    final messenger = ScaffoldMessenger.of(context);
+    final t = widget.state.t;
+    try {
+      await widget.state.focusApp(widget.device, app.id);
+      messenger.showSnackBar(SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text(t.appFocusing(app.name)),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
   Future<void> _launchFromDock(RemoteApp app) async {
     HapticFeedback.selectionClick();
     final messenger = ScaffoldMessenger.of(context);
@@ -1476,18 +1498,19 @@ class _RemoteScreenState extends State<RemoteScreen>
         // O avulso diz **por que** está ali: sem isso, um ícone que não abre
         // nada no meio de uma fileira de botões parece defeito.
         message: avulso ? t.dockOpenOnly(app.name) : app.name,
-        child: avulso
-            // Sem `InkWell`: não há como trazer uma janela para frente ainda, e
-            // um botão que não faz nada ensina a desconfiar dos que fazem.
-            // Levemente apagado para separar informação de ação.
-            ? Opacity(opacity: 0.72, child: alvo)
-            : InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => _launchFromDock(app),
-                // Center evita que a restrição justa do eixo cruzado da lista
-                // estique o ícone (era o motivo das "barras" alongadas).
-                child: alvo,
-              ),
+        // Os dois tocam, e fazem coisas diferentes: o atalho **abre**, o
+        // avulso já está aberto e só precisa vir para frente. O avulso segue
+        // um pouco apagado - ele não é algo que a pessoa escolheu deixar na
+        // dock, e a diferença visual evita confundir o que é fixo com o que é
+        // passageiro.
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () =>
+              avulso ? _focusFromDock(app) : _launchFromDock(app),
+          // Center evita que a restrição justa do eixo cruzado da lista
+          // estique o ícone (era o motivo das "barras" alongadas).
+          child: avulso ? Opacity(opacity: 0.78, child: alvo) : alvo,
+        ),
       ),
     );
   }

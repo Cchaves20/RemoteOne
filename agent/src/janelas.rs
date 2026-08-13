@@ -141,7 +141,7 @@ pub const ESPERA_JANELA: std::time::Duration = std::time::Duration::from_secs(5)
 pub const INTERVALO_BUSCA: std::time::Duration = std::time::Duration::from_millis(150);
 
 #[cfg(windows)]
-pub use imp::{area_de_trabalho, janelas_visiveis, posicionar_nova_janela};
+pub use imp::{area_de_trabalho, focar, janelas_visiveis, posicionar_nova_janela};
 
 #[cfg(windows)]
 mod imp {
@@ -188,6 +188,8 @@ mod imp {
             flags: u32,
         ) -> i32;
         fn SystemParametersInfoW(action: u32, param: u32, data: *mut Rect, ini: u32) -> i32;
+        fn GetWindowThreadProcessId(hwnd: Hwnd, pid: *mut u32) -> u32;
+        fn SetForegroundWindow(hwnd: Hwnd) -> i32;
     }
 
     thread_local! {
@@ -230,6 +232,45 @@ mod imp {
             EnumWindows(coletar, 0);
         }
         ENCONTRADAS.with(|v| v.borrow().iter().copied().collect())
+    }
+
+    /// De qual processo é esta janela.
+    fn dono(hwnd: Hwnd) -> u32 {
+        let mut pid = 0u32;
+        unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
+        pid
+    }
+
+    /// Traz para frente a janela principal de um processo.
+    ///
+    /// Restaura antes de ativar: programa minimizado ativado sem restaurar
+    /// continua minimizado, e a pessoa veria "deu certo" sem nada acontecer.
+    ///
+    /// **O Windows pode recusar**, e isso não é defeito daqui. Só um processo
+    /// que já está em primeiro plano tem direito de dar foco a outro; o agente
+    /// roda em segundo plano, então o sistema costuma piscar o botão na barra
+    /// de tarefas em vez de trazer a janela. Existem truques para contornar
+    /// (grudar filas de entrada, minimizar e restaurar), e todos são frágeis e
+    /// mexem no foco de quem estiver usando a máquina. Aqui se pede
+    /// direitamente e se relata o que aconteceu.
+    pub fn focar(pid: u32) -> Result<(), String> {
+        let alvo = janelas_visiveis().into_iter().find(|h| dono(*h) == pid);
+        let Some(hwnd) = alvo else {
+            return Err("o programa não tem janela visível".to_string());
+        };
+        unsafe {
+            if IsIconic(hwnd) != 0 {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
+            if SetForegroundWindow(hwnd) == 0 {
+                return Err(
+                    "o Windows não deixou trazer a janela para frente (ela deve \
+                     estar piscando na barra de tarefas)"
+                        .to_string(),
+                );
+            }
+        }
+        Ok(())
     }
 
     /// A área útil da tela principal: a resolução menos a barra de tarefas.
@@ -298,7 +339,7 @@ mod imp {
 }
 
 #[cfg(not(windows))]
-pub use imp::{area_de_trabalho, janelas_visiveis, posicionar_nova_janela};
+pub use imp::{area_de_trabalho, focar, janelas_visiveis, posicionar_nova_janela};
 
 #[cfg(not(windows))]
 mod imp {
@@ -315,6 +356,10 @@ mod imp {
 
     pub fn posicionar_nova_janela(_antes: &HashSet<isize>, _zona: &Zona) -> Result<(), String> {
         Err("posicionar janela só no Windows".into())
+    }
+
+    pub fn focar(_pid: u32) -> Result<(), String> {
+        Err("trazer janela para frente só no Windows".into())
     }
 }
 

@@ -454,13 +454,22 @@ também **o que está aberto agora**, de dois jeitos:
 - **Os abertos sem atalho** — o terminal é o caso típico — entram no fim da
   fileira.
 
-### Por que os avulsos não são botões
+### Tocar num atalho abre; tocar num avulso traz para frente
 
-Eles entram levemente apagados e **não respondem ao toque**. Não é descuido: não
-existe ainda uma ação de "trazer a janela para frente" no agente, e um botão que
-não faz nada ensina a desconfiar dos que fazem. Enquanto isso eles são
-informação — e o texto ao segurar diz exatamente isso, para o ícone mudo não
-parecer defeito.
+São duas ações diferentes para o mesmo gesto, e a diferença é o estado: o atalho
+está fechado e precisa abrir, o avulso já está aberto e só precisa vir para
+frente. Os avulsos ficam um pouco apagados — eles não são algo que a pessoa
+escolheu deixar na dock, e a diferença visual separa o fixo do passageiro.
+
+**O Windows pode recusar o foco**, e isso não é defeito do agente: só um
+processo que já está em primeiro plano tem direito de dar foco a outro, e o
+agente roda em segundo plano. Quando recusa, o sistema pisca o botão na barra de
+tarefas em vez de trazer a janela. Existem truques para contornar (grudar filas
+de entrada, minimizar e restaurar) e todos são frágeis e mexem no foco de quem
+estiver na frente da máquina — aqui se pede direitamente e se relata.
+
+Por isso a mensagem no celular diz *"trazendo para frente…"*, e não "pronto":
+prometer o que não se controla é pior do que descrever o que se pediu.
 
 Ficam **no fim**, depois dos atalhos, e não intercalados: a ordem que a pessoa
 montou na área de trabalho é estável, e o que está aberto muda o tempo todo.

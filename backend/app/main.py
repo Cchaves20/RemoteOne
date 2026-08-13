@@ -107,6 +107,7 @@ FEATURES = [
     "session-revocation",
     "contact-verification",
     "close-all",
+    "focus-app",
 ]
 
 

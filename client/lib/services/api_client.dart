@@ -253,6 +253,24 @@ class ApiClient {
     }
   }
 
+  /// Traz a janela de um aplicativo para frente (id = PID).
+  ///
+  /// O Windows pode recusar — só um processo que já está em primeiro plano tem
+  /// direito de dar foco a outro. Quando recusa, a janela pisca na barra de
+  /// tarefas em vez de subir, e o agente registra o motivo. Daqui não dá para
+  /// distinguir os dois casos: a resposta é 204 nos dois, porque o pedido
+  /// chegou.
+  Future<void> focusApp(String deviceId, String id) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/apps/focus'),
+      headers: _authHeaders,
+      body: jsonEncode({'id': id}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
   /// A conta de quem está logado.
   ///
   /// Substituiu o antigo `fetchTwoFactorEnabled`, que lia o `/me` inteiro para

@@ -383,6 +383,13 @@ pub enum ServerMessage {
     CloseApp {
         id: String,
     },
+    /// Traz a janela de um aplicativo para frente (id = PID).
+    ///
+    /// Existe para a dock: os programas abertos que não têm atalho na área de
+    /// trabalho apareciam como enfeite, porque não havia o que fazer ao tocar.
+    FocusApp {
+        id: String,
+    },
     /// Abre vários aplicativos de uma vez — o "abrir todos" de um perfil.
     ///
     /// Uma mensagem só, e não N pedidos de `launch_app`, por causa do iOS: quem

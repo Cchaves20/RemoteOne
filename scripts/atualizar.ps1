@@ -596,7 +596,8 @@ $esperado = @(
     "ice-servers", "clipboard", "monitors", "control-profiles",
     "keep-awake", "brightness", "launch-many", "window-zones",
     "automations", "signup-verification", "session-revocation",
-    "contact-verification", "close-all"
+    "contact-verification", "close-all",
+    "focus-app"
 )
 
 Titulo "Conferência"

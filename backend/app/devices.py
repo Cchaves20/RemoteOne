@@ -826,6 +826,27 @@ async def close_app(
         )
 
 
+@router.post("/devices/{device_id}/apps/focus", status_code=status.HTTP_204_NO_CONTENT)
+async def focus_app(
+    device_id: str,
+    body: AppActionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Traz a janela de um aplicativo para frente (id = PID).
+
+    Sem espera por resposta, como o `close_app`: o efeito é visível na tela do
+    computador, e o app não tem o que fazer com um "deu certo" que chegaria
+    depois de a pessoa já estar olhando o resultado.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    message = {"type": "focus_app", "id": body.id}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
 @router.post("/devices/{device_id}/wake", status_code=status.HTTP_204_NO_CONTENT)
 async def wake_device(
     device_id: str,
