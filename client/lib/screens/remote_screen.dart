@@ -103,6 +103,12 @@ class _RemoteScreenState extends State<RemoteScreen>
   // dele, os gestos controlam o mouse. Como o GestureDetector fica DENTRO do
   // InteractiveViewer, o mapeamento do cursor continua correto mesmo ampliado.
   bool _zoomMode = false;
+
+  // Modo apresentação: a tela do computador não apaga e as notificações não
+  // aparecem. Guardado aqui porque o botão da barra precisa mostrar o estado, e
+  // o estado mora no computador — a detecção automática pode tê-lo ligado sem
+  // este app pedir nada.
+  bool _apresentando = false;
   final TransformationController _transform = TransformationController();
   Size _viewBox = Size.zero;
 
@@ -235,6 +241,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     });
     // A dock de aplicativos carrega em segundo plano, sem travar a tela.
     _loadDockApps();
+    // O modo apresentação pode já estar ligado quando esta tela abre: a
+    // detecção automática age no computador sem passar por aqui.
+    _lerApresentacao();
     // Quem está na frente do computador, para os ícones dos perfis.
     _startForegroundPolling();
     _loadIceServers();
@@ -342,6 +351,43 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// toque para o iOS suspender o app e a lista parar no meio — com o primeiro
   /// programa aberto e o resto não.
   ///
+  /// Lê o modo apresentação do computador, uma vez, ao abrir a tela.
+  ///
+  /// Em silêncio quando falha: o modo é um extra, e um aviso de erro ao abrir a
+  /// tela de controle assustaria por causa de um botão. O botão fica apagado,
+  /// que é o estado seguro — e um toque nele mostra o erro de verdade.
+  Future<void> _lerApresentacao() async {
+    try {
+      final estado = await widget.state.api.presentation(widget.device.deviceId);
+      if (!mounted) return;
+      setState(() => _apresentando = estado.on);
+    } catch (_) {
+      // Computador desligado ou agente velho: o botão continua utilizável.
+    }
+  }
+
+  /// Liga ou desliga o modo apresentação naquele computador.
+  ///
+  /// Manda **só** `on`. O automático pertence à área de perfis, e reenviá-lo
+  /// daqui com um valor lido há dez minutos desfaria, sem querer, a escolha que
+  /// foi feita lá.
+  Future<void> _apresentar(bool ligar) async {
+    // Otimista: a chave acende no toque. O agente aplica em até três segundos,
+    // e esperar por isso faria um botão que parece travado.
+    setState(() => _apresentando = ligar);
+    try {
+      await widget.state.api
+          .setPresentation(widget.device.deviceId, on: ligar);
+    } catch (e) {
+      if (!mounted) return;
+      // Desfaz: uma chave que ficou acesa sem o modo ter ligado é pior que o
+      // erro, porque some com a única pista de que algo falhou.
+      setState(() => _apresentando = !ligar);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
   /// O resultado é anunciado sempre, e nomeia quem falhou. O efeito acontece
   /// **no computador**, e de longe não se vê nada: sem o aviso, um toque que
   /// funcionou e um que não fez nada seriam idênticos.
@@ -2289,6 +2335,8 @@ class _RemoteScreenState extends State<RemoteScreen>
                 selected: _profile,
                 appIcons: _profileIcons,
                 automations: _automacoes(),
+                presentationOn: _apresentando,
+                onPresentation: _apresentar,
                 // O mesmo caminho da tela de perfis, e de propósito: a mesma
                 // confirmação para os passos destrutivos e o mesmo relatório
                 // por passo. `emQual` poupa a pergunta de computador — aqui a

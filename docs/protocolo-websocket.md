@@ -117,6 +117,34 @@ dispara na hora com **2 min** de folga, e **não dispara** se passou disso — l
 o computador às 19h e ver o "fim de expediente" das 18h fechar tudo seria pior do
 que ele não ter rodado. Cancelar vale só para hoje.
 
+## Modo apresentação: quem decide e quem aplica
+
+| type | Campos | Sentido |
+|---|---|---|
+| `presentation` | `on?`, `auto?` | backend → agente. Mexe na escolha, no automático, ou nos dois |
+| `presentation_info` | `request_id` | backend → agente |
+| `presentation_state` | `request_id`, `on`, `auto`, `detected?`, `supported` | agente → backend |
+
+Os dois campos de `presentation` são **opcionais e independentes**, e essa é a
+parte que erra calado: eles vêm de lugares diferentes da tela — o botão da barra
+de perfis manda `on`, a área de perfis manda `auto`. Se cada lado tivesse de
+mandar ambos, mandaria junto um valor lido há dez minutos, desfazendo sem querer
+a escolha que o outro acabou de fazer.
+
+No agente (`apresentacao.rs`) a escolha explícita vale sobre a detecção, e só é
+esquecida quando a apresentação começa ou termina — senão a detecção religaria o
+modo três segundos depois de a pessoa desligá-lo, e o botão pareceria não
+obedecer. Com o automático desligado, a detecção não mexe na escolha de jeito
+nenhum.
+
+Quem aplica é uma tarefa só (`vigiar_apresentacao`), fora do laço da conexão. O
+laço apenas mexe no `Modo`. Dois donos mandando no mesmo pedido ao Windows, de
+threads diferentes, dariam um resultado que depende de quem chega primeiro.
+
+`supported` volta falso quando aquele Windows não tem o `PresentationSettings`:
+a tela continua acesa — isso o agente garante sozinho — mas as notificações não
+são silenciadas.
+
 ## O heartbeat é um contrato dos dois lados
 
 O agente manda `heartbeat` a cada **10 s** e o servidor responde `ack`. As duas

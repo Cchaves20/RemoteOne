@@ -11,6 +11,7 @@ import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
 import '../models/keep_awake.dart';
+import '../models/presentation.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
@@ -577,6 +578,38 @@ class ApiClient {
         .get(_uri('/api/v1/devices/$deviceId/keep-awake'), headers: _authHeaders)
         .timeout(const Duration(seconds: 10));
     return KeepAwakeState.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Como está o modo apresentação naquele computador.
+  ///
+  /// Perguntado a cada vez, como o "manter pronto": a detecção automática liga
+  /// e desliga o modo sozinha a cada três segundos, e um valor guardado aqui
+  /// estaria errado justamente quando alguém abre a tela para conferir.
+  Future<PresentationState> presentation(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/presentation'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return PresentationState.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Mexe no modo apresentação: a escolha, o automático, ou os dois.
+  ///
+  /// Os dois são opcionais e **é para mandar só o que mudou**. O botão da barra
+  /// de perfis manda `on`; a área de perfis manda `auto`. Mandar os dois
+  /// sempre faria um lado sobrescrever, com um valor lido há dez minutos, a
+  /// escolha que o outro acabou de fazer.
+  Future<void> setPresentation(String deviceId, {bool? on, bool? auto}) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/presentation'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        if (on != null) 'on': on,
+        if (auto != null) 'auto': auto,
+      }),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
   }
 
   /// Liga ou desliga o "manter pronto". O agente grava a escolha em disco.

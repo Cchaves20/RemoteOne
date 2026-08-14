@@ -31,6 +31,8 @@ class ProfileBar extends StatefulWidget {
     this.appIcons = const {},
     this.automations = const [],
     this.onRunAutomation,
+    this.presentationOn = false,
+    this.onPresentation,
   });
 
   /// Barra em pé (celular deitado). Deitada quando o celular está em pé.
@@ -63,6 +65,18 @@ class ProfileBar extends StatefulWidget {
   final List<Automation> automations;
 
   final ValueChanged<Automation>? onRunAutomation;
+
+  /// Se o modo apresentação está valendo naquele computador.
+  ///
+  /// A barra de perfis é o lugar dele: quem vai apresentar está olhando para o
+  /// computador, e não para Configurações. Aqui só se liga e desliga — a
+  /// detecção automática se configura na área de perfis, que é onde moram as
+  /// escolhas que valem para sempre.
+  final bool presentationOn;
+
+  /// Nulo = o botão não aparece. É o que mantém a barra igual à de antes nos
+  /// testes que não têm nada a ver com apresentação.
+  final ValueChanged<bool>? onPresentation;
 
   @override
   State<ProfileBar> createState() => _ProfileBarState();
@@ -142,6 +156,7 @@ class _ProfileBarState extends State<ProfileBar>
           // perfil de sistema à mão, e empurrar tudo um lugar para o lado
           // mudaria de posição um botão que a mão já decorou.
           if (automacoes.isNotEmpty) _automationsButton(),
+          if (widget.onPresentation != null) _presentationButton(),
         ],
       ),
       if (mostrandoAutomacoes) ...[
@@ -367,6 +382,45 @@ class _ProfileBarState extends State<ProfileBar>
               ),
               child: Icon(
                 Icons.auto_awesome_motion,
+                size: 21,
+                color: aceso ? Colors.white : Colors.white70,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Liga e desliga o modo apresentação, num toque.
+  ///
+  /// Sem segunda pista e sem confirmação: é uma chave, e o efeito dela aparece
+  /// no próprio botão. Perguntar "tem certeza?" para algo que se desfaz com o
+  /// mesmo toque só custaria o toque.
+  Widget _presentationButton() {
+    final aceso = widget.presentationOn;
+    return Padding(
+      padding: const EdgeInsets.all(3),
+      child: Tooltip(
+        message: widget.strings.presentationMode,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            widget.onPresentation?.call(!aceso);
+          },
+          child: Center(
+            child: Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: aceso ? auroraGradient : null,
+                color: aceso ? null : Colors.white10,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.co_present,
                 size: 21,
                 color: aceso ? Colors.white : Colors.white70,
               ),

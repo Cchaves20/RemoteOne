@@ -783,6 +783,44 @@ class Strings {
       '全部关闭',
       'Tout fermer',
       'Cerrar todo');
+  String get presentationMode => _t('Modo apresentação', 'Presentation mode',
+      '演示模式', 'Mode présentation', 'Modo presentación');
+  /// O que a chave faz, dito na própria linha: "detecção automática" sozinho
+  /// não diz o que ela detecta nem o que acontece depois.
+  String get presentationAutoDetect => _t(
+      'Ligar sozinho quando algo abrir em tela cheia',
+      'Turn on by itself when something goes fullscreen',
+      '当有程序全屏时自动开启',
+      "S'active tout seul quand une fenêtre passe en plein écran",
+      'Se activa solo cuando algo se abre en pantalla completa');
+  String get presentationAutoHint => _t(
+      'Com o modo ligado, a tela do computador não apaga e as notificações '
+          'não aparecem. Ligar e desligar na hora é pela barra de perfis, ao '
+          'controlar o computador.',
+      "With the mode on, the computer's screen stays awake and notifications "
+          'stay hidden. Turning it on and off is done from the profile bar '
+          'while controlling the computer.',
+      '开启后，电脑屏幕不会熄灭，通知也不会弹出。即时开关请在控制电脑时的配置栏中操作。',
+      "Avec le mode actif, l'écran de l'ordinateur ne s'éteint pas et les "
+          'notifications ne apparaissent pas. Pour activer sur le moment, '
+          'utilisez la barre de profils pendant le contrôle.',
+      'Con el modo activo, la pantalla del equipo no se apaga y las '
+          'notificaciones no aparecen. Para activarlo en el momento, usa la '
+          'barra de perfiles mientras controlas el equipo.');
+  String get presentationNoDevices => _t(
+      'Nenhum computador pareado ainda.',
+      'No computers paired yet.',
+      '还没有配对的电脑。',
+      'Aucun ordinateur appairé pour le moment.',
+      'Aún no hay equipos emparejados.');
+  /// Dito no lugar da chave, e não junto dela: uma chave apagada e uma chave
+  /// que não pôde ser lida se parecem, e são coisas opostas.
+  String get presentationUnreachable => _t(
+      'Computador desligado — não deu para ler o ajuste.',
+      "Computer is off — couldn't read the setting.",
+      '电脑已关机，无法读取设置。',
+      "Ordinateur éteint — impossible de lire le réglage.",
+      'Equipo apagado: no se pudo leer el ajuste.');
   String get stepKindSaveAll => _t(
       'Salvar o trabalho',
       'Save open work',

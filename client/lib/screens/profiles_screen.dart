@@ -232,6 +232,39 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                       ),
                     ),
                   ),
+                // O modo apresentação em si se liga na barra da tela de
+                // controle, olhando para o computador. O que fica aqui é só a
+                // **detecção automática**: uma escolha que vale para sempre, e
+                // que não pode estar a um toque de distância de quem só queria
+                // silenciar as notificações desta reunião.
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 24, 18, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(t.presentationMode,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 17)),
+                        const SizedBox(height: 4),
+                        Text(t.presentationAutoHint,
+                            style: const TextStyle(
+                                color: Colors.white38, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+                SliverList.list(children: [
+                  for (final d in widget.state.devices)
+                    _AutoApresentacao(state: widget.state, device: d),
+                  if (widget.state.devices.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+                      child: Text(t.presentationNoDevices,
+                          style: const TextStyle(
+                              color: Colors.white38, fontSize: 12)),
+                    ),
+                ]),
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
               ],
             ),
@@ -673,6 +706,94 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// A chave da detecção automática de um computador.
+///
+/// Um widget próprio porque cada computador tem o seu estado, e ele mora **na
+/// máquina** — não há como saber daqui sem perguntar. Carregar tudo no pai
+/// faria a tela de perfis esperar por uma resposta de rede por computador antes
+/// de mostrar os perfis, que é o que ela existe para mostrar.
+class _AutoApresentacao extends StatefulWidget {
+  const _AutoApresentacao({required this.state, required this.device});
+
+  final AppState state;
+  final Device device;
+
+  @override
+  State<_AutoApresentacao> createState() => _AutoApresentacaoState();
+}
+
+class _AutoApresentacaoState extends State<_AutoApresentacao> {
+  bool? _auto;
+
+  /// Por que não deu para ler. Mostrado no lugar da chave: uma chave apagada e
+  /// uma chave que não pôde ser lida se parecem, e são coisas opostas.
+  String? _erro;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    try {
+      final estado =
+          await widget.state.api.presentation(widget.device.deviceId);
+      if (!mounted) return;
+      setState(() {
+        _auto = estado.auto;
+        _erro = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _erro = e.toString());
+    }
+  }
+
+  Future<void> _trocar(bool valor) async {
+    final antes = _auto;
+    setState(() => _auto = valor);
+    try {
+      // Só `auto`. O modo em si pertence à barra da tela de controle, e
+      // reenviá-lo daqui desligaria uma apresentação em andamento.
+      await widget.state.api
+          .setPresentation(widget.device.deviceId, auto: valor);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _auto = antes);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.state.t;
+    if (_erro != null) {
+      return ListTile(
+        title: Text(widget.device.name,
+            style: const TextStyle(color: Colors.white54)),
+        subtitle: Text(t.presentationUnreachable,
+            style: const TextStyle(color: Colors.white38, fontSize: 12)),
+        trailing: IconButton(
+          icon: const Icon(Icons.refresh, color: Colors.white38),
+          onPressed: _carregar,
+        ),
+      );
+    }
+    return SwitchListTile(
+      value: _auto ?? false,
+      // Enquanto não chegou resposta, a chave não aceita toque: aceitar
+      // mandaria ao computador um valor que ninguém leu.
+      onChanged: _auto == null ? null : _trocar,
+      title:
+          Text(widget.device.name, style: const TextStyle(color: Colors.white)),
+      subtitle: Text(t.presentationAutoDetect,
+          style: const TextStyle(color: Colors.white38, fontSize: 12)),
     );
   }
 }

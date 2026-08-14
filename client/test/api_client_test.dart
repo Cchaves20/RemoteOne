@@ -36,6 +36,51 @@ void main() {
     expect(seenAuth, 'Bearer tok');
   });
 
+  test('setPresentation manda só o campo que mudou', () async {
+    // A armadilha deste recurso: o botão da barra de perfis mexe em `on` e a
+    // área de perfis mexe em `auto`. Se cada um mandasse os dois, mandaria
+    // junto um valor lido há dez minutos — e desfaria, sem querer, a escolha
+    // que o outro acabou de fazer.
+    final corpos = <Map<String, dynamic>>[];
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        corpos.add(jsonDecode(req.body) as Map<String, dynamic>);
+        return http.Response('', 204);
+      }),
+    );
+
+    await client.setPresentation('dev-1', on: true);
+    await client.setPresentation('dev-1', auto: false);
+
+    expect(corpos[0], {'on': true});
+    expect(corpos[1], {'auto': false});
+  });
+
+  test('presentation lê o que o computador respondeu', () async {
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async => http.Response(
+            jsonEncode({
+              'on': true,
+              'auto': true,
+              'detected': 'Slides',
+              'supported': false,
+            }),
+            200,
+          )),
+    );
+
+    final estado = await client.presentation('dev-1');
+    expect(estado.on, isTrue);
+    // `detected` é o que explica um modo que ligou sozinho, e `supported` é o
+    // que impede o app de prometer um silêncio que aquele Windows não faz.
+    expect(estado.detected, 'Slides');
+    expect(estado.supported, isFalse);
+  });
+
   test('sendInput usa o device_id na URL e aceita 204', () async {
     Uri? seenUrl;
     final client = ApiClient(
