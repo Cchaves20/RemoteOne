@@ -141,7 +141,9 @@ pub const ESPERA_JANELA: std::time::Duration = std::time::Duration::from_secs(5)
 pub const INTERVALO_BUSCA: std::time::Duration = std::time::Duration::from_millis(150);
 
 #[cfg(windows)]
-pub use imp::{area_de_trabalho, focar, janelas_visiveis, posicionar_nova_janela};
+pub use imp::{
+    area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela,
+};
 
 #[cfg(windows)]
 mod imp {
@@ -190,6 +192,88 @@ mod imp {
         fn SystemParametersInfoW(action: u32, param: u32, data: *mut Rect, ini: u32) -> i32;
         fn GetWindowThreadProcessId(hwnd: Hwnd, pid: *mut u32) -> u32;
         fn SetForegroundWindow(hwnd: Hwnd) -> i32;
+        fn GetForegroundWindow() -> Hwnd;
+        fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+        fn GetWindowTextW(hwnd: Hwnd, texto: *mut u16, tamanho: i32) -> i32;
+        fn GetClassNameW(hwnd: Hwnd, texto: *mut u16, tamanho: i32) -> i32;
+        fn MonitorFromWindow(hwnd: Hwnd, flags: u32) -> isize;
+        fn GetMonitorInfoW(monitor: isize, info: *mut MonitorInfo) -> i32;
+    }
+
+    /// O que o `GetMonitorInfoW` devolve. Só os campos importam, na ordem certa.
+    #[repr(C)]
+    #[derive(Default)]
+    struct MonitorInfo {
+        tamanho: u32,
+        monitor: Rect,
+        trabalho: Rect,
+        flags: u32,
+    }
+
+    const MONITOR_DEFAULTTONEAREST: u32 = 0x0000_0002;
+
+    /// As classes de janela que **são** a área de trabalho, e não um programa.
+    ///
+    /// Sem este filtro a detecção acusaria apresentação o tempo todo: a janela
+    /// do Explorer que desenha o papel de parede cobre a tela inteira, tem
+    /// título ("Program Manager") e às vezes está em primeiro plano — basta
+    /// clicar no fundo da área de trabalho.
+    const CASCA_DO_SISTEMA: &[&str] = &["Progman", "WorkerW", "Shell_TrayWnd"];
+
+    fn texto(hwnd: Hwnd, ler: unsafe extern "system" fn(Hwnd, *mut u16, i32) -> i32) -> String {
+        let mut buffer = [0u16; 256];
+        let n = unsafe { ler(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+        if n <= 0 {
+            return String::new();
+        }
+        String::from_utf16_lossy(&buffer[..n as usize])
+    }
+
+    /// O título da janela em primeiro plano, se ela cobre o monitor inteiro.
+    ///
+    /// **Em primeiro plano, e não "existe alguma".** Uma janela em tela cheia
+    /// atrás de outras não é uma apresentação — é um vídeo esquecido noutra
+    /// área de trabalho. É a mesma pergunta que o próprio Windows faz para
+    /// decidir se você está num jogo.
+    ///
+    /// **O monitor da janela, e não o principal.** Apresentar quase sempre
+    /// significa um projetor ligado, e comparar com o monitor principal daria
+    /// "não é tela cheia" justamente no caso que o recurso existe para atender.
+    pub fn em_tela_cheia() -> Option<String> {
+        let hwnd = unsafe { GetForegroundWindow() };
+        if hwnd == 0 {
+            return None;
+        }
+        let classe = texto(hwnd, GetClassNameW);
+        if CASCA_DO_SISTEMA.iter().any(|c| *c == classe) {
+            return None;
+        }
+
+        let mut janela = Rect::default();
+        if unsafe { GetWindowRect(hwnd, &mut janela) } == 0 {
+            return None;
+        }
+        let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+        let mut info = MonitorInfo {
+            tamanho: std::mem::size_of::<MonitorInfo>() as u32,
+            ..Default::default()
+        };
+        if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+            return None;
+        }
+
+        // Cobrir **pelo menos** o monitor, e não exatamente: alguns programas
+        // pedem um pixel a mais para fora em tela cheia, e a igualdade exata
+        // perderia esses. Uma janela maximizada continua de fora, porque ela
+        // para na área de trabalho e deixa a barra de tarefas à mostra.
+        let cobre = janela.left <= info.monitor.left
+            && janela.top <= info.monitor.top
+            && janela.right >= info.monitor.right
+            && janela.bottom >= info.monitor.bottom;
+        if !cobre {
+            return None;
+        }
+        Some(texto(hwnd, GetWindowTextW))
     }
 
     thread_local! {
@@ -339,7 +423,9 @@ mod imp {
 }
 
 #[cfg(not(windows))]
-pub use imp::{area_de_trabalho, focar, janelas_visiveis, posicionar_nova_janela};
+pub use imp::{
+    area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela,
+};
 
 #[cfg(not(windows))]
 mod imp {
@@ -360,6 +446,10 @@ mod imp {
 
     pub fn focar(_pid: u32) -> Result<(), String> {
         Err("trazer janela para frente só no Windows".into())
+    }
+
+    pub fn em_tela_cheia() -> Option<String> {
+        None
     }
 }
 

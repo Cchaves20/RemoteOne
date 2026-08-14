@@ -37,6 +37,7 @@ from app.protocol import (
     MonitorList,
     PairCode,
     Paired,
+    PresentationState,
     SystemStats,
     WebrtcAnswer,
     WebrtcIce,
@@ -111,6 +112,7 @@ FEATURES = [
     "focus-app",
     "automation-schedule",
     "save-all",
+    "presentation-mode",
 ]
 
 
@@ -396,6 +398,16 @@ async def agent_ws(websocket: WebSocket) -> None:
                 pending.resolve(
                     message.request_id,
                     {"results": [r.model_dump() for r in message.results]},
+                )
+            elif isinstance(message, PresentationState):
+                pending.resolve(
+                    message.request_id,
+                    {
+                        "on": message.on,
+                        "auto": message.auto,
+                        "detected": message.detected,
+                        "supported": message.supported,
+                    },
                 )
             elif isinstance(message, BrightnessState):
                 # O erro vai junto em vez de virar exceção: quem pediu precisa

@@ -72,17 +72,32 @@ pub struct Keeper {
 }
 
 impl Keeper {
+    /// Segura o **sistema**: a máquina não suspende, mas a tela apaga.
     pub fn new() -> Self {
+        Self::criar(false)
+    }
+
+    /// Segura o sistema **e a tela**. É o que uma apresentação precisa.
+    ///
+    /// Um segundo `Keeper` e não uma opção no primeiro: cada um vive na sua
+    /// thread, e no Windows o `SetThreadExecutionState` vale por thread. São
+    /// dois pedidos independentes, que é exatamente o que se quer — desligar o
+    /// modo apresentação não pode soltar o "manter pronto" de quem o ligou.
+    pub fn da_tela() -> Self {
+        Self::criar(true)
+    }
+
+    fn criar(tela: bool) -> Self {
         let (tx, rx) = std::sync::mpsc::channel::<bool>();
         let thread = std::thread::Builder::new()
             .name("deskside-awake".into())
             .spawn(move || {
                 for want in rx {
-                    imp::set(want);
+                    imp::set(want, tela);
                 }
                 // O canal fechou: o agente está saindo. Solta o pedido antes de
                 // morrer para não depender de o Windows limpar a thread.
-                imp::set(false);
+                imp::set(false, tela);
             });
         match thread {
             Ok(_) => Self {
@@ -139,6 +154,9 @@ mod imp {
     // backlight que responde por quase todo o consumo.
     const ES_CONTINUOUS: u32 = 0x8000_0000;
     const ES_SYSTEM_REQUIRED: u32 = 0x0000_0001;
+    /// A exceção à regra acima: numa apresentação, a tela apagar **é** o
+    /// problema. Ninguém encosta no mouse durante vinte minutos de fala.
+    const ES_DISPLAY_REQUIRED: u32 = 0x0000_0002;
 
     #[repr(C)]
     struct SystemPowerStatus {
@@ -156,12 +174,16 @@ mod imp {
         fn GetSystemPowerStatus(status: *mut SystemPowerStatus) -> i32;
     }
 
-    pub fn set(hold: bool) {
+    pub fn set(hold: bool, tela: bool) {
         // Sem `ES_CONTINUOUS` a chamada valeria uma vez só, como "estou ocupado
         // agora"; com ele, vale até alguém dizer o contrário. Soltar é mandar
         // `ES_CONTINUOUS` sozinho.
         let flags = if hold {
-            ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+            let mut f = ES_CONTINUOUS | ES_SYSTEM_REQUIRED;
+            if tela {
+                f |= ES_DISPLAY_REQUIRED;
+            }
+            f
         } else {
             ES_CONTINUOUS
         };
@@ -217,8 +239,8 @@ mod imp {
 mod imp {
     use super::PowerSource;
 
-    pub fn set(hold: bool) {
-        println!("[awake-stub] manter acordado = {hold} (ignorado fora do Windows)");
+    pub fn set(hold: bool, tela: bool) {
+        println!("[awake-stub] manter acordado = {hold} (tela: {tela})");
     }
 
     pub fn power_source() -> PowerSource {

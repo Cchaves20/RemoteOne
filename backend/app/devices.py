@@ -37,6 +37,8 @@ from app.schemas import (
     MonitorIn,
     MonitorsOut,
     PowerRequest,
+    PresentationOut,
+    PresentationRequest,
     RenameDeviceRequest,
     SystemStatsOut,
 )
@@ -442,6 +444,67 @@ async def set_keep_awake(
     """Liga ou desliga o "manter pronto". O agente grava a escolha em disco."""
     _owned_device_or_404(db, device_id, current_user)
     message = {"type": "keep_awake", "enabled": body.enabled}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.get("/devices/{device_id}/presentation", response_model=PresentationOut)
+async def presentation_state(
+    device_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PresentationOut:
+    """Como está o modo apresentação naquele computador.
+
+    Perguntado ao agente e não guardado aqui, pelo mesmo motivo do "manter
+    pronto": o estado muda sem passar por este servidor. A detecção liga e
+    desliga o modo sozinha a cada três segundos, e um valor guardado no banco
+    estaria errado justamente quando alguém abre a tela para conferir.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    request_id, future = pending.create()
+    message = {"type": "presentation_info", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return PresentationOut(**reply)
+
+
+@router.post(
+    "/devices/{device_id}/presentation", status_code=status.HTTP_204_NO_CONTENT
+)
+async def set_presentation(
+    device_id: str,
+    body: PresentationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Liga/desliga o modo, e/ou a deteccao automatica.
+
+    Os dois campos viajam separados de propósito: o botão da barra de perfis
+    manda só `on`, e a área de perfis manda só `auto`. Mandar os dois sempre
+    faria um lado sobrescrever, com um valor lido há dez minutos, a escolha que
+    o outro acabou de fazer.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    message: dict = {"type": "presentation"}
+    if body.on is not None:
+        message["on"] = body.on
+    if body.auto is not None:
+        message["auto"] = body.auto
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"

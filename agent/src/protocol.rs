@@ -124,6 +124,25 @@ pub enum ClientMessage {
         /// Por que não está, quando não está.
         source: crate::awake::PowerSource,
     },
+    /// Como está o modo apresentação neste computador.
+    ///
+    /// `detected` é o título da janela em tela cheia, quando há uma. Vai junto
+    /// porque é o que explica um modo que ligou sozinho: sem ele, a pessoa vê
+    /// a chave ligada e não faz ideia de quem a ligou.
+    PresentationState {
+        request_id: String,
+        /// Se o modo está valendo agora.
+        on: bool,
+        /// Se a detecção automática está ligada.
+        auto: bool,
+        /// O que a detecção está vendo, se algo.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detected: Option<String>,
+        /// Falso quando este Windows não tem o `PresentationSettings`: a tela
+        /// continua acesa, mas as notificações não são silenciadas. Dizer isso
+        /// é melhor que mostrar um botão que faz metade do que promete.
+        supported: bool,
+    },
     /// Resposta a um `launch_many`: o que aconteceu com cada programa.
     ///
     /// A lista volta na **mesma ordem** do pedido, e cada item carrega o
@@ -317,6 +336,24 @@ pub enum ServerMessage {
     /// Pergunta se o computador está sendo mantido pronto. O agente responde
     /// com `keep_awake_state` carregando o mesmo `request_id`.
     KeepAwakeInfo {
+        request_id: String,
+    },
+    /// Mexe no modo apresentação: a escolha, o automático, ou os dois.
+    ///
+    /// Os dois campos são opcionais e independentes porque vêm de lugares
+    /// diferentes da tela: o botão da barra de perfis manda só `on`, e a área
+    /// de perfis manda só `auto`. Um campo obrigatório obrigaria cada lado a
+    /// reenviar o valor do outro — e reenviar um valor que se leu há dez
+    /// minutos é como se desfaz, sem querer, a escolha de quem mexeu no meio.
+    Presentation {
+        #[serde(default)]
+        on: Option<bool>,
+        #[serde(default)]
+        auto: Option<bool>,
+    },
+    /// Pergunta como está o modo apresentação. O agente responde com
+    /// `presentation_state` carregando o mesmo `request_id`.
+    PresentationInfo {
         request_id: String,
     },
     /// Roda uma automação: a sequência inteira numa mensagem só.

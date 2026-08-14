@@ -459,6 +459,45 @@ class KeepAwakeRequest(BaseModel):
     enabled: bool
 
 
+class PresentationOut(BaseModel):
+    """Como está o modo apresentação no computador.
+
+    `detected` é o título da janela em tela cheia, quando há uma. Vai junto
+    porque é o que explica um modo que ligou sozinho: sem ele, a pessoa vê a
+    chave ligada e não faz ideia de quem a ligou.
+    """
+
+    on: bool
+    auto: bool
+    detected: str | None = None
+    #: Falso quando o Windows daquela máquina não tem o `PresentationSettings`:
+    #: a tela continua acesa, mas as notificações não são silenciadas. O app
+    #: precisa disso para não prometer o que não vai acontecer.
+    supported: bool = True
+
+
+class PresentationRequest(BaseModel):
+    """Mexe no modo apresentação: a escolha, o automático, ou os dois.
+
+    Os dois campos são opcionais e independentes porque vêm de lugares
+    diferentes da tela: o botão da barra de perfis manda só `on`, e a área de
+    perfis manda só `auto`. Obrigar os dois faria cada lado reenviar o valor do
+    outro - e reenviar um valor lido há dez minutos é como se desfaz, sem
+    querer, a escolha de quem mexeu no meio.
+    """
+
+    on: bool | None = None
+    auto: bool | None = None
+
+    @model_validator(mode="after")
+    def algo_para_fazer(self) -> "PresentationRequest":
+        # Um corpo vazio chegaria ao computador como uma mensagem que não muda
+        # nada, e o app receberia 204 achando que mudou.
+        if self.on is None and self.auto is None:
+            raise ValueError("mande on, auto, ou os dois")
+        return self
+
+
 class FileEntryOut(BaseModel):
     """Um item de uma pasta do computador."""
 

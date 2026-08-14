@@ -188,6 +188,17 @@ impl AgentIdentity {
     }
 }
 
+/// O que sobrevive à conexão: o que a janela mostra, a agenda e a apresentação.
+///
+/// Um punhado só, e não três parâmetros, porque a lista tende a crescer: todo
+/// recurso que precisa continuar valendo enquanto o socket cai e volta acaba
+/// aqui.
+pub struct Compartilhados {
+    pub estado: crate::gui::Compartilhado,
+    pub agenda: crate::agenda::Compartilhada,
+    pub apresentacao: crate::apresentacao::Compartilhado,
+}
+
 /// Conecta ao backend e mantém a sessão viva com heartbeats.
 ///
 /// Retorna `Err` se a conexão cair; o chamador decide se tenta reconectar.
@@ -197,9 +208,16 @@ pub async fn run(
     heartbeat: Duration,
     stream: StreamConfig,
     keep_awake: bool,
-    estado: crate::gui::Compartilhado,
-    agenda: crate::agenda::Compartilhada,
+    compartilhados: &Compartilhados,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Os três chegam juntos porque têm a mesma natureza: vivem **fora** desta
+    // função e sobrevivem a ela. Passá-los soltos fazia a assinatura crescer a
+    // cada recurso que precisa durar mais que uma conexão.
+    let Compartilhados {
+        estado,
+        agenda,
+        apresentacao,
+    } = compartilhados;
     let (mut ws, _response) = connect_async(url).await?;
     println!("Conectado ao backend em {url}");
     // A janela precisa saber daqui: é este o instante em que a conexão existe,
@@ -787,6 +805,51 @@ pub async fn run(
                                 if let Err(e) = crate::save_config(&cfg) {
                                     eprintln!("Não consegui gravar a escolha: {e}");
                                 }
+                            }
+                            Some(Action::Presentation { on, auto }) => {
+                                // Só mexe no `Modo`. Quem aplica é a tarefa que
+                                // vigia — ver `vigiar_apresentacao`.
+                                if let Ok(mut m) = apresentacao.lock() {
+                                    if let Some(v) = on {
+                                        m.escolher(v);
+                                    }
+                                    if let Some(v) = auto {
+                                        m.definir_auto(v);
+                                    }
+                                }
+                                // O automático é uma preferência da máquina e
+                                // precisa valer no próximo login; a escolha do
+                                // momento, não - ela morre com a apresentação.
+                                if let Some(v) = auto {
+                                    let mut cfg = crate::load_config();
+                                    cfg.set(
+                                        "DESKSIDE_PRESENTATION_AUTO",
+                                        if v { "1" } else { "0" },
+                                    );
+                                    if let Err(e) = crate::save_config(&cfg) {
+                                        eprintln!("Não consegui gravar a escolha: {e}");
+                                    }
+                                }
+                            }
+                            Some(Action::PresentationInfo { request_id }) => {
+                                let resposta = match apresentacao.lock() {
+                                    Ok(m) => ClientMessage::PresentationState {
+                                        request_id,
+                                        on: m.ativo(),
+                                        auto: m.auto(),
+                                        detected: m.titulo().map(str::to_string),
+                                        supported: m.suportado(),
+                                    },
+                                    Err(_) => ClientMessage::PresentationState {
+                                        request_id,
+                                        on: false,
+                                        auto: false,
+                                        detected: None,
+                                        supported: false,
+                                    },
+                                };
+                                let texto = serde_json::to_string(&resposta)?;
+                                ws.send(Message::Text(texto)).await?;
                             }
                             Some(Action::KeepAwakeInfo { request_id }) => {
                                 let estado = ClientMessage::KeepAwakeState {
@@ -1425,6 +1488,59 @@ pub async fn vigiar_agenda(agenda: crate::agenda::Compartilhada, estado: crate::
     }
 }
 
+/// Vigia a tela e aplica o modo apresentação. Nunca retorna.
+///
+/// **Quem aplica é só esta tarefa**, e o laço da conexão apenas mexe no `Modo`.
+/// Poderia ser o contrário — o laço aplicando na hora do toque —, e aí dois
+/// donos mandariam no mesmo `Keeper` e no mesmo processo do Windows, de threads
+/// diferentes, com o resultado dependendo de quem chegasse primeiro. Com um dono
+/// só, o preço é um atraso de até `RITMO` entre o toque e o efeito; o app mostra
+/// o estado certo na hora, porque o `Modo` muda em seguida ao toque.
+///
+/// Fora do laço da conexão pelo mesmo motivo da agenda: uma apresentação não
+/// pode parar de ser detectada porque o Wi-Fi trocou de rede.
+pub async fn vigiar_apresentacao(modo: crate::apresentacao::Compartilhado) {
+    let mut relogio = interval(crate::apresentacao::RITMO);
+    // O pedido de manter a tela acesa vive aqui, e não no `Modo`: é um recurso
+    // do sistema operacional, não um valor.
+    let mut tela = crate::awake::Keeper::da_tela();
+    // O que já foi **aplicado**, que não é o mesmo que o que o `Modo` quer: o
+    // toque na barra de perfis muda o `Modo` de outra thread, e comparar aqui é
+    // o que faz esta tarefa perceber sozinha.
+    let mut aplicado = false;
+    loop {
+        relogio.tick().await;
+        let visto = crate::apresentacao::detectar();
+        let quer = match modo.lock() {
+            Ok(mut m) => {
+                m.avaliar(visto.as_deref());
+                m.ativo()
+            }
+            Err(_) => continue,
+        };
+        if quer == aplicado {
+            continue;
+        }
+        aplicado = quer;
+        tela.set(quer);
+        match crate::apresentacao::silenciar(quer) {
+            Ok(()) => println!(
+                "Modo apresentação: {}",
+                if quer { "ligado" } else { "desligado" }
+            ),
+            Err(motivo) => {
+                // A tela continua acesa — isso é nosso. O que falhou foi só o
+                // silêncio, e o app precisa saber para não prometer o que não
+                // vai acontecer.
+                eprintln!("Modo apresentação: {motivo}");
+                if let Ok(mut m) = modo.lock() {
+                    m.sem_suporte();
+                }
+            }
+        }
+    }
+}
+
 /// Tira o aviso da bandeja, se ele for **desta** automação.
 ///
 /// A conferência do identificador importa: com duas automações próximas, apagar
@@ -1581,6 +1697,8 @@ enum Action {
     ClipboardSync { enabled: bool },
     /// Ligar/desligar o "manter o computador pronto", gravando a escolha.
     KeepAwake { enabled: bool },
+    Presentation { on: Option<bool>, auto: Option<bool> },
+    PresentationInfo { request_id: String },
     /// Responder ao backend se o computador está sendo mantido pronto.
     KeepAwakeInfo { request_id: String },
     /// Abrir vários programas e responder com o resultado de cada um.
@@ -1859,6 +1977,12 @@ fn handle_server_text(
         }
         Ok(ServerMessage::SetSchedule { items }) => {
             return Some(Action::SetSchedule { items });
+        }
+        Ok(ServerMessage::Presentation { on, auto }) => {
+            return Some(Action::Presentation { on, auto });
+        }
+        Ok(ServerMessage::PresentationInfo { request_id }) => {
+            return Some(Action::PresentationInfo { request_id });
         }
         Ok(ServerMessage::FocusApp { id }) => {
             println!("Trazendo para frente (PID {id})");

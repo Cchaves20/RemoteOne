@@ -139,6 +139,26 @@ class KeepAwakeState(BaseModel):
     source: Literal["ac", "battery", "unknown"]
 
 
+class PresentationState(BaseModel):
+    """Resposta do agente a um `presentation_info`.
+
+    `detected` é o título da janela em tela cheia, quando há uma. Vai junto
+    porque é o que explica um modo que ligou sozinho: sem ele, a pessoa vê a
+    chave ligada e não faz ideia de quem a ligou.
+    """
+
+    type: Literal["presentation_state"] = "presentation_state"
+    request_id: str
+    #: Se o modo está valendo agora.
+    on: bool
+    #: Se a detecção automática está ligada.
+    auto: bool
+    detected: str | None = None
+    #: Falso quando aquele Windows não tem o `PresentationSettings`: a tela
+    #: continua acesa, mas as notificações não são silenciadas.
+    supported: bool = True
+
+
 class LaunchResult(BaseModel):
     """O que aconteceu com um programa do "abrir todos"."""
 
@@ -331,6 +351,7 @@ ClientMessage = Annotated[
     | Clipboard
     | ClipboardChanged
     | KeepAwakeState
+    | PresentationState
     | BrightnessState
     | LaunchManyResult
     | AutomationResult

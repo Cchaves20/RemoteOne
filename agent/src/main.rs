@@ -102,6 +102,7 @@ async fn laco_de_conexao(
     identity: AgentIdentity,
     stream: StreamConfig,
     keep_awake: bool,
+    auto_apresentacao: bool,
     estado: deskside_agent::gui::Compartilhado,
 ) {
     // A agenda nasce aqui, e não dentro de `client::run`: ela precisa
@@ -109,6 +110,19 @@ async fn laco_de_conexao(
     // levar junto as dezoito horas.
     let agenda = deskside_agent::agenda::Compartilhada::default();
     tokio::spawn(client::vigiar_agenda(agenda.clone(), estado.clone()));
+
+    // O modo apresentação também vive fora da conexão: uma apresentação não
+    // pode parar de ser detectada porque o Wi-Fi trocou de rede.
+    let apresentacao = deskside_agent::apresentacao::Compartilhado::new(
+        std::sync::Mutex::new(deskside_agent::apresentacao::Modo::novo(auto_apresentacao)),
+    );
+    tokio::spawn(client::vigiar_apresentacao(apresentacao.clone()));
+
+    let compartilhados = client::Compartilhados {
+        estado: estado.clone(),
+        agenda,
+        apresentacao,
+    };
 
     loop {
         // `stream` é clonado a cada tentativa: a config carrega a lista de
@@ -119,8 +133,7 @@ async fn laco_de_conexao(
             Duration::from_secs(HEARTBEAT_SECS),
             stream.clone(),
             keep_awake,
-            estado.clone(),
-            agenda.clone(),
+            &compartilhados,
         )
         .await
         .err();
@@ -241,6 +254,12 @@ fn main() {
     // padrão, o recurso só serviria a quem já sabia que ele existe.
     let keep_awake = cfg_bool(&cfg, "DESKSIDE_KEEP_AWAKE", true);
 
+    // Ao contrário do "manter pronto", **desligado** por padrão. Silenciar
+    // notificações sozinho, sem ninguém ter pedido, faria a pessoa perder uma
+    // mensagem sem entender por quê - e um recurso que some com avisos precisa
+    // ter sido escolhido.
+    let auto_apresentacao = cfg_bool(&cfg, "DESKSIDE_PRESENTATION_AUTO", false);
+
     println!(
         "Deskside Agent {AGENT_VERSION} — sistema: {}",
         plat.os_name()
@@ -299,7 +318,14 @@ fn main() {
                     return;
                 }
             };
-            rt.block_on(laco_de_conexao(url, identity, stream, keep_awake, do_agente));
+            rt.block_on(laco_de_conexao(
+                url,
+                identity,
+                stream,
+                keep_awake,
+                auto_apresentacao,
+                do_agente,
+            ));
         })
         .expect("não consegui criar a thread do agente");
 
