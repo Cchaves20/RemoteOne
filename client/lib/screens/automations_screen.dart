@@ -148,6 +148,14 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             for (final e in <(String, String, IconData)>[
               (AutomationStep.kindLaunch, t.stepKindLaunch, Icons.launch),
               (AutomationStep.kindClose, t.stepKindClose, Icons.close),
+              // "Salvar" vem **antes** de "fechar tudo" na lista, e é de
+              // propósito: é a ordem em que os dois se usam, e a lista é o
+              // único lugar onde essa dica cabe sem virar um aviso.
+              (
+                AutomationStep.kindSaveAll,
+                t.stepKindSaveAll,
+                Icons.save_outlined
+              ),
               (
                 AutomationStep.kindCloseAll,
                 t.stepKindCloseAll,
@@ -189,6 +197,11 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
         // quem já sabe o que pediu. O aviso de passo destrutivo continua
         // valendo na hora de rodar.
         _acrescentar(AutomationStep.closeAll());
+      case AutomationStep.kindSaveAll:
+        // Uma folha só para explicar o alcance. Sem ela, a pessoa põe o passo
+        // achando que ele salva tudo que está aberto — e descobriria o
+        // contrário na noite em que perdesse algo.
+        await _passoSalvar();
       case AutomationStep.kindInput:
         await _passoTeclas();
       case AutomationStep.kindMedia:
@@ -332,6 +345,49 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
     );
     if (escolhida == null) return;
     _acrescentar(AutomationStep.input(keys: escolhida.input));
+  }
+
+  /// O passo de salvar, com o alcance dito antes de entrar na lista.
+  ///
+  /// Não há o que escolher — como o "fechar tudo", ele pergunta ao computador o
+  /// que está aberto na hora de rodar. A folha existe só para uma frase, e essa
+  /// frase é o recurso: sem ela a pessoa põe o passo achando que ele salva
+  /// **tudo**, e descobriria o contrário na noite em que perdesse algo.
+  Future<void> _passoSalvar() async {
+    final t = widget.state.t;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: const Color(0xFF14162C),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheet) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(t.stepKindSaveAll,
+                  style: const TextStyle(color: Colors.white, fontSize: 16)),
+              const SizedBox(height: 8),
+              Text(t.stepSaveAllHint,
+                  style: const TextStyle(color: Colors.white54, fontSize: 13)),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.of(sheet).pop(true),
+                  child: Text(t.automationAddStep),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (ok != true) return;
+    _acrescentar(AutomationStep.saveAll());
   }
 
   Future<void> _passoMidia() async {

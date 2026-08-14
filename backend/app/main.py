@@ -110,6 +110,7 @@ FEATURES = [
     "close-all",
     "focus-app",
     "automation-schedule",
+    "save-all",
 ]
 
 

@@ -171,6 +171,32 @@ void main() {
     });
   });
 
+  group('salvar o trabalho', () {
+    test('vai sem campo nenhum, e com espera antes do que vem depois', () {
+      // Sem campo porque quem responde "o que está aberto" é o computador na
+      // hora de rodar. Com espera porque ele vem quase sempre antes de um passo
+      // que fecha, e gravar arquivo grande não é instantâneo — fechar em cima
+      // da gravação desfaria o que este passo acabou de fazer.
+      final json = AutomationStep.saveAll().toJson();
+      expect(json, {'kind': 'save_all', 'wait_ms': 2000});
+    });
+
+    test('salvar não pede confirmação; fechar pede', () {
+      // A confirmação existe para o que não se desfaz. Salvar é o oposto disso,
+      // e pedir confirmação nele treinaria a pessoa a tocar "sim" sem ler —
+      // inclusive no passo em que ler importa.
+      expect(AutomationStep.saveAll().isDestructive, isFalse);
+      expect(AutomationStep.closeAll().isDestructive, isTrue);
+
+      final rotina = Automation(
+        id: 'u-7',
+        name: 'Fim do expediente',
+        steps: [AutomationStep.saveAll()],
+      );
+      expect(rotina.hasDestructive, isFalse);
+    });
+  });
+
   group('o que a tela precisa saber', () {
     test('fechar programa e mexer na energia pedem confirmação', () {
       // Fechar pode perder o que não foi salvo; suspender tira a máquina do ar.

@@ -93,6 +93,24 @@ Três consequências que o formato registra:
   não aparece na lista é um problema visível; uma que dispara na madrugada por
   causa de um `parse` falho é um problema que ninguém liga à causa.
 
+### O passo `save_all`, e por que ele tem uma lista escrita à mão
+
+O par do `close_all`, e o que torna o agendamento seguro: fechar tudo às 18h com
+a pessoa longe do computador é uma promessa de perder trabalho.
+
+A tentação é mandar Ctrl+S em tudo que está aberto, e não dá — **Ctrl+S não
+significa "salvar" em toda parte.** Num navegador ele abre "salvar página como",
+uma caixa modal esperando um nome; a automação seguiria em frente e o computador
+passaria a noite com ela no meio da tela. Por isso `salvar.rs` tem uma lista de
+**permissão** (`EDITORES`). Uma lista de exclusão erraria por omissão: todo
+programa novo do mundo entraria nela sozinho, e o erro só apareceria na noite em
+que alguém deixasse a automação rodando.
+
+O que resta de risco é conhecido e falha para o lado seguro: um arquivo novo e
+nunca salvo abre "salvar como" mesmo num editor de verdade, e aí o `close_all`
+seguinte simplesmente não consegue fechar aquele programa — que é o desfecho
+certo, porque o que estava lá não tinha sido gravado.
+
 O que o agente faz sozinho, em `agenda.rs`: avisa **5 min antes** (na janela ou,
 em máquina sem placa de vídeo, numa caixa do Windows com "Cancelar por hoje"),
 dispara na hora com **2 min** de folga, e **não dispara** se passou disso — ligar

@@ -602,8 +602,19 @@ class StepIn(BaseModel):
     #: `close_all` não leva campo nenhum: ele pergunta ao computador o que está
     #: aberto na hora de rodar. Uma lista escrita à mão envelheceria - o que
     #: está aberto hoje não é o que estava ontem.
+    #: `save_all` também não leva campo, e pelo mesmo motivo. Quais programas
+    #: recebem o Ctrl+S é decisão do agente (`salvar.rs`), e é uma lista de
+    #: permissão: num navegador o atalho abre "salvar página como" e deixa uma
+    #: caixa modal aberta.
     kind: Literal[
-        "launch", "close", "close_all", "input", "media", "brightness", "power"
+        "launch",
+        "close",
+        "close_all",
+        "save_all",
+        "input",
+        "media",
+        "brightness",
+        "power",
     ]
     #: Pausa depois do passo. O teto de 10 s é o mesmo do agente.
     wait_ms: int | None = Field(default=None, ge=0, le=10_000)

@@ -783,6 +783,12 @@ class Strings {
       '全部关闭',
       'Tout fermer',
       'Cerrar todo');
+  String get stepKindSaveAll => _t(
+      'Salvar o trabalho',
+      'Save open work',
+      '保存工作',
+      'Enregistrer le travail',
+      'Guardar el trabajo');
   String get stepKindKeys => _t('Atalho de teclado', 'Keyboard shortcut', '键盘快捷键',
       'Raccourci clavier', 'Atajo de teclado');
   String get stepKindMedia => _t('Som', 'Sound', '声音', 'Son', 'Sonido');
@@ -801,6 +807,27 @@ class Strings {
       '关闭所有已打开的程序',
       'Fermer tous les programmes ouverts',
       'Cerrar todos los programas abiertos');
+  String get stepSaveAll => _t(
+      'Salvar o trabalho aberto (Ctrl+S nos editores)',
+      'Save open work (Ctrl+S in editors)',
+      '保存已打开的工作（在编辑器中按 Ctrl+S）',
+      'Enregistrer le travail ouvert (Ctrl+S dans les éditeurs)',
+      'Guardar el trabajo abierto (Ctrl+S en los editores)');
+  /// Por que o passo não alcança tudo que está aberto. Dito na tela porque a
+  /// alternativa é a pessoa supor que o navegador também foi salvo.
+  String get stepSaveAllHint => _t(
+      'Vale para editores de texto, código, imagem e vídeo. Em outros '
+          'programas o Ctrl+S abre uma janela de salvar, e a automação ficaria '
+          'parada nela.',
+      'Applies to text, code, image and video editors. Elsewhere Ctrl+S opens '
+          'a save dialog, and the automation would sit waiting on it.',
+      '适用于文本、代码、图像和视频编辑器。在其他程序中，Ctrl+S 会打开保存窗口，自动化会卡在那里。',
+      "S'applique aux éditeurs de texte, de code, d'image et de vidéo. Ailleurs, "
+          "Ctrl+S ouvre une fenêtre d'enregistrement, et l'automatisation "
+          'resterait bloquée dessus.',
+      'Se aplica a editores de texto, código, imagen y vídeo. En otros programas '
+          'Ctrl+S abre una ventana de guardado, y la automatización se quedaría '
+          'esperando en ella.');
   String stepKeys(String atalho) => _t('Teclas: $atalho', 'Keys: $atalho',
       '按键：$atalho', 'Touches : $atalho', 'Teclas: $atalho');
   String stepBrightness(int nivel) => _t('Brilho em $nivel%', 'Brightness at $nivel%',

@@ -32,6 +32,7 @@ pub mod pairing;
 pub mod platform;
 pub mod power;
 pub mod protocol;
+pub mod salvar;
 pub mod setup;
 pub mod system_info;
 pub mod webrtc;

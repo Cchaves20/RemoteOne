@@ -551,6 +551,31 @@ def test_fechar_tudo_nao_precisa_de_campo_nenhum():
     assert passos[0] == {"kind": "close_all"}
 
 
+def test_salvar_tudo_atravessa_sem_campo_nenhum():
+    """O par do `close_all`, e o que torna o agendamento seguro.
+
+    Mesmo caminho pelo validador: é o segundo passo sem campo obrigatório, e um
+    `.get(kind)` sem o padrão certo o recusaria — devolvendo 422 na automação
+    inteira, sem dizer qual passo.
+
+    A ordem em que ele aparece aqui é a de uso: salvar **antes** de fechar. Ao
+    contrário, o Ctrl+S chegaria a programas que já não existem.
+    """
+    headers, _ = _auth("salva1@example.com")
+    resp = client.post(
+        "/api/v1/automations",
+        json={
+            "name": "Fim do expediente",
+            "steps": [{"kind": "save_all", "wait_ms": 2000}, {"kind": "close_all"}],
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    passos = resp.json()["steps"]
+    assert passos[0] == {"kind": "save_all", "wait_ms": 2000}
+    assert passos[1] == {"kind": "close_all"}
+
+
 def test_fechar_tudo_ignora_campos_que_nao_lhe_dizem_respeito():
     """Mandar `name` num `close_all` não é erro: o passo simplesmente não usa.
 

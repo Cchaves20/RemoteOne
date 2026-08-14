@@ -60,6 +60,17 @@ class AutomationStep {
   AutomationStep.closeAll({int? waitMs})
       : this(kind: kindCloseAll, waitMs: waitMs);
 
+  /// Manda Ctrl+S nos editores abertos, e só neles.
+  ///
+  /// O par do `closeAll`, e o que torna o agendamento seguro: fechar tudo às
+  /// 18h com a pessoa longe do computador é uma promessa de perder trabalho.
+  ///
+  /// Dois segundos de espera por padrão porque ele vem quase sempre antes de um
+  /// passo que fecha, e gravar arquivo grande não é instantâneo — fechar em
+  /// cima da gravação desfaria o que o passo acabou de fazer.
+  AutomationStep.saveAll({int? waitMs})
+      : this(kind: kindSaveAll, waitMs: waitMs ?? 2000);
+
   /// Mandar um atalho de teclado, no mesmo formato do teclado remoto.
   AutomationStep.input({required Map<String, dynamic> keys, int? waitMs})
       : this(kind: kindInput, action: keys, waitMs: waitMs);
@@ -84,6 +95,7 @@ class AutomationStep {
   static const kindLaunch = 'launch';
   static const kindClose = 'close';
   static const kindCloseAll = 'close_all';
+  static const kindSaveAll = 'save_all';
   static const kindInput = 'input';
   static const kindMedia = 'media';
   static const kindBrightness = 'brightness';
@@ -167,6 +179,8 @@ class AutomationStep {
         return t.stepClose(processName ?? '');
       case kindCloseAll:
         return t.stepCloseAll;
+      case kindSaveAll:
+        return t.stepSaveAll;
       case kindBrightness:
         return t.stepBrightness(level ?? 0);
       case kindMedia:
@@ -203,6 +217,10 @@ class AutomationStep {
         return Icons.launch;
       case kindClose:
         return Icons.close;
+      case kindCloseAll:
+        return Icons.clear_all;
+      case kindSaveAll:
+        return Icons.save_outlined;
       case kindBrightness:
         return Icons.brightness_6;
       case kindMedia:

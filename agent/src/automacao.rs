@@ -107,6 +107,17 @@ pub enum Acao {
     /// virariam uma lista para manter, com o mesmo problema de envelhecer - e
     /// quem quer isso põe o `CloseAll` antes e um `Launch` depois.
     CloseAll,
+    /// Manda Ctrl+S nos editores abertos, e só neles.
+    ///
+    /// O par natural do `CloseAll`, e a razão de o agendamento ser seguro:
+    /// fechar tudo às 18h com a pessoa longe do computador é uma promessa de
+    /// perder trabalho. Salvar antes é o que muda isso.
+    ///
+    /// Sem campo nenhum, como o `CloseAll`: quem responde "o que está aberto" é
+    /// o computador na hora de rodar. A lista de quais programas aceitam o
+    /// atalho está em `salvar.rs`, e é uma lista de permissão — num navegador,
+    /// Ctrl+S abre "salvar página como" e deixa uma caixa aberta a noite toda.
+    SaveAll,
     /// Manda uma tecla, um atalho ou um texto.
     Input { action: InputAction },
     /// Tecla de mídia: tocar/pausar, próxima, volume, silenciar.

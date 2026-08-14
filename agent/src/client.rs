@@ -1471,6 +1471,31 @@ fn executar_passo(acao: &crate::automacao::Acao) -> crate::automacao::Desfecho {
             Ok(quantos) => Desfecho::ComAviso(format!("{quantos} programa(s) fechado(s)")),
             Err(motivo) => Desfecho::Falhou(motivo),
         },
+        Acao::SaveAll => {
+            let abertos = crate::apps::list(crate::apps::AppKind::Running);
+            let fila = crate::salvar::alvos(&abertos);
+            let mut injetor = crate::injector::controller();
+            let desfecho = crate::salvar::salvar(
+                &fila,
+                crate::janelas::focar,
+                || {
+                    injetor.apply(&crate::input::InputAction::KeyCombo {
+                        modifiers: vec![crate::input::Modifier::Ctrl],
+                        key: "s".to_string(),
+                    })
+                },
+                std::thread::sleep,
+            );
+            // Sempre `ComAviso`, mesmo com tudo certo, e mesmo com zero: "0
+            // editor(es) salvo(s)" é a informação que diz que o passo rodou e
+            // não tinha o que salvar. Um `Ok` mudo deixaria a dúvida de o passo
+            // ter funcionado ou ter sido pulado.
+            let mut relato = format!("{} editor(es) salvo(s)", desfecho.salvos);
+            if !desfecho.falhas.is_empty() {
+                relato.push_str(&format!("; falhou em {}", desfecho.falhas.join(", ")));
+            }
+            Desfecho::ComAviso(relato)
+        },
         Acao::Input { action } => {
             match crate::injector::controller().apply(action) {
                 Ok(()) => Desfecho::Ok,
