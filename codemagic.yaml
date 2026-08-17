@@ -91,7 +91,14 @@ workflows:
           flutter test
       - name: Build iOS sem assinatura e empacotar .ipa
         script: |
-          flutter build ios --release --no-codesign
+          # O `--dart-define` é o que aponta o app para o servidor. Sem ele
+          # vale o padrão embutido em `lib/config.dart` — que hoje é o mesmo
+          # endereço, então esquecer aqui não quebra nada. A linha existe para o
+          # endereço ficar **visível no build**: ele era `localhost`, e num
+          # celular localhost é o próprio celular. O defeito passou meses sem
+          # aparecer porque quem desenvolve tinha a URL salva na tela de login.
+          flutter build ios --release --no-codesign \
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br
           mkdir -p build/ipa/Payload
           cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
           cd build/ipa
@@ -251,7 +258,15 @@ workflows:
         # Sem assinatura de loja: o Flutter assina com a chave de depuração, o
         # que basta para instalar no aparelho. E **não expira**, ao contrário
         # do sideload do iPhone.
-        script: flutter build apk --release --no-shrink
+        script: |
+          # O `--dart-define` é o que aponta o app para o servidor. Sem ele
+          # vale o padrão embutido em `lib/config.dart` — que hoje é o mesmo
+          # endereço, então esquecer aqui não quebra nada. A linha existe para o
+          # endereço ficar **visível no build**: ele era `localhost`, e num
+          # celular localhost é o próprio celular. O defeito passou meses sem
+          # aparecer porque quem desenvolve tinha a URL salva na tela de login.
+          flutter build apk --release --no-shrink \
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       - client/build/app/outputs/flutter-apk/*.apk

@@ -54,6 +54,11 @@ use std::path::PathBuf;
 /// hora de haver mais de um, isto vira uma escolha na instalação em vez de uma
 /// constante.
 ///
+/// **Trocar este valor não mexe em quem já instalou.** A ordem é: variável de
+/// ambiente, depois `agent.conf`, e só então esta constante — e o `install` grava
+/// a URL no arquivo. O endereço antigo (`caio-remoteone.duckdns.org`) continua
+/// atendido pelo servidor, então nenhuma instalação existente precisa ser tocada.
+///
 /// `option_env!` para quem desenvolve não precisar editar este arquivo:
 ///
 /// ```text
@@ -64,7 +69,7 @@ use std::path::PathBuf;
 /// `DESKSIDE_BACKEND_URL`, depois o `agent.conf`, e só então este padrão.
 pub const DEFAULT_BACKEND_URL: &str = match option_env!("DESKSIDE_DEFAULT_BACKEND") {
     Some(url) => url,
-    None => "wss://caio-remoteone.duckdns.org/ws/agent",
+    None => "wss://deskside.com.br/ws/agent",
 };
 
 /// Diretório onde ficam o `device_id` e a configuração.

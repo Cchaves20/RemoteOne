@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'config.dart';
 import 'screens/devices_screen.dart';
 import 'screens/lock_gate.dart';
 import 'screens/login_screen.dart';
@@ -7,17 +8,10 @@ import 'services/api_client.dart';
 import 'services/app_state.dart';
 import 'theme.dart';
 
-/// URL padrão do backend. Pode ser sobrescrita no build com
-/// --dart-define=DESKSIDE_BACKEND=http://SEU_IP:8000 ou editada na tela de
-/// login (útil para apontar o celular ao computador na mesma rede).
-const _defaultBackend = String.fromEnvironment(
-  'DESKSIDE_BACKEND',
-  defaultValue: 'http://localhost:8000',
-);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final state = AppState(ApiClient(baseUrl: _defaultBackend));
+  final state = AppState(ApiClient(baseUrl: backendPadrao));
   // Só o carregamento local (rápido) roda antes de desenhar a tela.
   await state.loadPreferences();
   // Mostra a UI imediatamente; a restauração da sessão (rede) roda depois,

@@ -893,7 +893,7 @@ mod tests {
             autostart_por_tarefa: true,
             exe: install_dir(&caminho(&["C:", "Users", "eu", "AppData", "Local"]))
                 .join("deskside-agent.exe"),
-            backend: "wss://caio-remoteone.duckdns.org/ws/agent".into(),
+            backend: "wss://deskside.com.br/ws/agent".into(),
             backend_from_env: false,
             device_id: Some("abc123".into()),
         });
@@ -901,7 +901,7 @@ mod tests {
         // A linha agora diz **por qual mecanismo**, porque um deles é
         // muito mais rápido e é a primeira coisa a olhar numa queixa de demora.
         assert!(linhas[1].contains("sim") && linhas[1].contains("tarefa agendada"));
-        assert!(linhas[2].contains("duckdns"));
+        assert!(linhas[2].contains("deskside.com.br"));
         assert!(linhas[3].contains("abc123"));
     }
 

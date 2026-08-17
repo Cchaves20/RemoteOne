@@ -4,7 +4,28 @@
 # certificado sozinho, desde que o domínio aponte para o IP do VPS e as portas
 # 80/443 estejam abertas. O reverse_proxy repassa também as conexões WebSocket
 # (/ws/agent e /ws/viewer) automaticamente.
-
+#
+# ## $DOMAIN aceita mais de um nome, separados por vírgula
+#
+# E é isso que torna a troca de domínio indolor. O endereço do servidor fica
+# **compilado dentro dos binários**: o agente instalado tem a URL no
+# `agent.conf`, e o app novo vem com ela embutida pelo `--dart-define`. Se o
+# servidor passasse a atender só o nome novo, todo agente já instalado ficaria
+# falando com um endereço que não responde mais — e a pessoa veria "Sem conexão"
+# sem nada explicando.
+#
+# Atendendo os dois, nada precisa ser tocado: instalações antigas continuam pelo
+# nome antigo, e as novas usam o novo. O nome antigo pode sair daqui quando não
+# houver mais agente em campo apontando para ele.
+#
+# No `.env` do VPS:
+#
+#   DOMAIN=deskside.com.br, www.deskside.com.br, caio-remoteone.duckdns.org
+#
+# O Caddy pede um certificado **por nome**. Um nome cujo DNS ainda não aponta
+# para o VPS falha só a si mesmo — ele registra o erro, segue tentando, e os
+# outros continuam atendidos. Então acrescentar o nome novo antes de o DNS
+# propagar não tira o serviço do ar.
 {$DOMAIN} {
 	reverse_proxy api:8000
 }
