@@ -21,12 +21,12 @@ produzem a identidade e reaproveitam a mesma emissão de tokens.
 from datetime import UTC, date, datetime
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import entrega, telefone, verificacao
+from app import entrega, limite, telefone, verificacao
 from app import senha as politica_de_senha
 from app.config import settings
 from app.db import get_db
@@ -226,8 +226,14 @@ def countries() -> list[CountryOut]:
 @router.post(
     "/signup/start", response_model=SignupPending, status_code=status.HTTP_201_CREATED
 )
-def signup_start(body: SignupStart, db: Session = Depends(get_db)) -> SignupPending:
+def signup_start(
+    body: SignupStart, request: Request, db: Session = Depends(get_db)
+) -> SignupPending:
     """Valida o formulário e manda o código. **Não cria conta nenhuma.**"""
+    # Antes da validação. Cobrar só quando o formulário passa daria um jeito de
+    # sondar de graça — e a validação inteira também custa CPU. Vinte por IP a
+    # cada quinze minutos não incomoda ninguém real.
+    limite.cobrar_envio(limite.ip_do_pedido(request))
     faltando = politica_de_senha.problemas(body.password)
     if faltando:
         raise _erro(
@@ -382,7 +388,7 @@ def _pendente(db: Session, destino: str) -> PendingSignup:
 
 @router.post("/password/forgot", response_model=SignupPending)
 def forgot_password(
-    body: ForgotPasswordRequest, db: Session = Depends(get_db)
+    body: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)
 ) -> SignupPending:
     """Manda um código para quem esqueceu a senha.
 
@@ -395,6 +401,12 @@ def forgot_password(
     Por isso, quando o contato não existe: nada é criado, nada é enviado, e a
     resposta é a mesma — inclusive o tempo até poder pedir de novo.
     """
+    # O limite entra **antes** da busca, e por isso ele também é igual para conta
+    # que existe e conta que não existe. Cobrar só quando a conta existe daria de
+    # volta, pela porta dos fundos, o oráculo que esta rota inteira foi escrita
+    # para fechar: o 429 apareceria só nos endereços cadastrados.
+    limite.cobrar_envio(limite.ip_do_pedido(request))
+
     destino, canal = _destino(body)
     coluna = User.email if canal == "email" else User.phone
     user = db.scalar(select(User).where(coluna == destino))
@@ -513,11 +525,21 @@ def reset_password(
 
 
 @router.post("/login", response_model=TokenPair)
-def login(body: Credentials, db: Session = Depends(get_db)) -> TokenPair:
+def login(
+    body: Credentials, request: Request, db: Session = Depends(get_db)
+) -> TokenPair:
     destino, canal = _destino(body)
+    ip = limite.ip_do_pedido(request)
+    # **Antes** de tocar no banco e no bcrypt. Cobrar depois de conferir a senha
+    # deixaria metade do problema de pé: o hash é caro de propósito, e uma
+    # varredura que chega até ele já consumiu a CPU do servidor mesmo sendo
+    # recusada no passo seguinte.
+    limite.cobrar_login(destino, ip)
+
     coluna = User.email if canal == "email" else User.phone
     user = db.scalar(select(User).where(coluna == destino))
     if user is None or not verify_password(body.password, user.hashed_password):
+        limite.punir_login(destino, ip)
         # Uma mensagem só para "não existe" e "senha errada": distinguir as duas
         # diria a um estranho quais contas existem.
         raise HTTPException(
@@ -532,9 +554,15 @@ def login(body: Credentials, db: Session = Depends(get_db)) -> TokenPair:
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="two_factor_required"
             )
         if not verify_totp(user.totp_secret or "", body.totp_code):
+            # Conta como falha, e aqui importa mais que no erro de senha: quem
+            # chegou até este ponto **já tem a senha certa**. Sem contabilizar, o
+            # segundo fator seriam seis dígitos com tentativas infinitas — um
+            # milhão de combinações que um laço percorre numa tarde.
+            limite.punir_login(destino, ip)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="two_factor_invalid"
             )
+    limite.perdoar_login(destino, ip)
     return _tokens_for(user)
 
 

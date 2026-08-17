@@ -113,6 +113,7 @@ FEATURES = [
     "automation-schedule",
     "save-all",
     "presentation-mode",
+    "rate-limit",
 ]
 
 

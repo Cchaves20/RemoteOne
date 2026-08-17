@@ -12,7 +12,7 @@ os.environ.setdefault("DESKSIDE_JWT_SECRET", "test-secret")
 
 import pytest  # noqa: E402
 
-from app import entrega  # noqa: E402
+from app import entrega, limite  # noqa: E402
 from app.db import Base, engine  # noqa: E402
 
 #: A senha que a suíte inteira usa. Cumpre as cinco regras da política — sem o
@@ -49,6 +49,14 @@ class EntregadorEspiao(entrega.Entregador):
 def fresh_db():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    # O limite de tentativas vive **na memória do processo**, e não no banco:
+    # apagar as tabelas não o zera. Sem esta linha, a suíte inteira compartilha um
+    # IP só (o do cliente de teste) e o vigésimo primeiro cadastro passa a receber
+    # 429 — quebrando testes que não têm nada a ver com o limite, com uma falha
+    # que aponta para o `criar_conta` em vez de para a causa.
+    #
+    # Descobri isto do jeito certo: escrevi o limite, rodei a suíte, e ela caiu.
+    limite.zerar_tudo()
     yield
     Base.metadata.drop_all(bind=engine)
 

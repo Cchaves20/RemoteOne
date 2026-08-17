@@ -597,7 +597,7 @@ $esperado = @(
     "keep-awake", "brightness", "launch-many", "window-zones",
     "automations", "signup-verification", "session-revocation",
     "contact-verification", "close-all",
-    "focus-app", "automation-schedule", "save-all", "presentation-mode"
+    "focus-app", "automation-schedule", "save-all", "presentation-mode", "rate-limit"
 )
 
 Titulo "Conferência"
