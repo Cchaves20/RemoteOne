@@ -783,8 +783,61 @@ class Strings {
       '全部关闭',
       'Tout fermer',
       'Cerrar todo');
-  String get presentationMode => _t('Modo apresentação', 'Presentation mode',
-      '演示模式', 'Mode présentation', 'Modo presentación');
+  // --- erros do servidor ------------------------------------------------------
+  // Ver `services/erros.dart`: o servidor responde 422 com uma lista de objetos,
+  // e antes disso ia crua para a tela.
+  String erroGenerico(int status) => _t(
+      'Algo deu errado no servidor (erro $status).',
+      'Something went wrong on the server (error $status).',
+      '服务器出错（错误 $status）。',
+      "Une erreur s'est produite sur le serveur (erreur $status).",
+      'Algo salió mal en el servidor (error $status).');
+  String erroCampoFaltando(String campo) => _t(
+      'Falta preencher: $campo.',
+      'Missing: $campo.',
+      '缺少填写：$campo。',
+      'À remplir : $campo.',
+      'Falta completar: $campo.');
+  String erroCampoInvalido(String campo) => _t(
+      'O servidor não aceitou o campo $campo.',
+      "The server didn't accept the $campo field.",
+      '服务器不接受 $campo 字段。',
+      "Le serveur n'a pas accepté le champ $campo.",
+      'El servidor no aceptó el campo $campo.');
+  String erroCampoCurto(String campo) => _t(
+      'O campo $campo está curto demais.',
+      'The $campo field is too short.',
+      '$campo 字段太短。',
+      'Le champ $campo est trop court.',
+      'El campo $campo es demasiado corto.');
+  String erroCampoLongo(String campo) => _t(
+      'O campo $campo está longo demais.',
+      'The $campo field is too long.',
+      '$campo 字段太长。',
+      'Le champ $campo est trop long.',
+      'El campo $campo es demasiado largo.');
+  String erroCampoForaDoIntervalo(String campo) => _t(
+      'O valor de $campo está fora do que o servidor aceita.',
+      'The $campo value is outside what the server accepts.',
+      '$campo 的值超出服务器接受的范围。',
+      "La valeur de $campo est hors de ce que le serveur accepte.",
+      'El valor de $campo está fuera de lo que el servidor acepta.');
+  /// O diagnóstico que estava escondido no despejo: uma lista fechada recusando
+  /// um valor que o próprio app mandou significa servidor mais velho que o app.
+  String erroServidorAntigo(String campo) => _t(
+      'O servidor não conhece este valor de $campo. Ele provavelmente está '
+          'desatualizado — atualize o servidor e tente de novo.',
+      "The server doesn't know this $campo value. It's likely out of date — "
+          'update the server and try again.',
+      '服务器不认识这个 $campo 值，可能版本过旧——请更新服务器后重试。',
+      "Le serveur ne connaît pas cette valeur de $campo. Il est probablement "
+          'obsolète : mettez-le à jour et réessayez.',
+      'El servidor no conoce este valor de $campo. Probablemente está '
+          'desactualizado: actualízalo e inténtalo de nuevo.');
+  String get erroCampoSemNome =>
+      _t('um dos campos', 'one of the fields', '其中一个字段',
+          "l'un des champs", 'uno de los campos');
+  String get presentationMode => _t('Modo apresentação', 'Presentation mode',      '演示模式', 'Mode présentation', 'Modo presentación');
   /// O que a chave faz, dito na própria linha: "detecção automática" sozinho
   /// não diz o que ela detecta nem o que acontece depois.
   String get presentationAutoDetect => _t(
@@ -802,7 +855,7 @@ class Strings {
           'while controlling the computer.',
       '开启后，电脑屏幕不会熄灭，通知也不会弹出。即时开关请在控制电脑时的配置栏中操作。',
       "Avec le mode actif, l'écran de l'ordinateur ne s'éteint pas et les "
-          'notifications ne apparaissent pas. Pour activer sur le moment, '
+          'notifications n'apparaissent pas. Pour activer sur le moment, '
           'utilisez la barre de profils pendant le contrôle.',
       'Con el modo activo, la pantalla del equipo no se apaga y las '
           'notificaciones no aparecen. Para activarlo en el momento, usa la '

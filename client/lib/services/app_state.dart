@@ -24,6 +24,11 @@ import 'word_suggester.dart';
 /// Estado global do app: autenticação, dispositivos e preferências.
 class AppState extends ChangeNotifier {
   AppState(this.api) {
+    // O idioma dos erros do servidor sai daqui. Uma função e não um valor: o
+    // idioma muda durante a sessão, e um `Strings` entregue uma vez ficaria no
+    // idioma de quando o app abriu.
+    api.textos = () => t;
+
     // Quando o servidor recusa o refresh, a sessão acabou de verdade: alguém
     // trocou a senha noutro aparelho, ou a conta foi excluída. O cliente já
     // descartou os tokens; aqui se apaga o resto e se avisa a interface, que

@@ -16,6 +16,8 @@ import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
 import '../models/window_zone.dart';
+import '../l10n/strings.dart';
+import 'erros.dart';
 import 'token_store.dart';
 
 /// Erro de API com o código HTTP e uma mensagem amigável.
@@ -52,6 +54,17 @@ class ApiClient {
   /// Avisado quando a sessão acabou de verdade e os tokens foram descartados.
   /// O `AppState` usa isto para limpar a conta e voltar à tela de login.
   void Function()? aoEncerrarSessao;
+
+  /// De onde sai o idioma das mensagens de erro.
+  ///
+  /// Uma função e não um valor: o idioma pode mudar durante a sessão, e um
+  /// `Strings` guardado aqui ficaria no idioma de quando o app abriu.
+  ///
+  /// Nulo nos testes que não olham a mensagem — aí valem os textos em
+  /// português, que é o idioma do código.
+  Strings Function()? textos;
+
+  Strings get _t => textos?.call() ?? const Strings(AppLanguage.ptBr);
 
   String? _accessToken;
   String? _refreshToken;
@@ -1054,11 +1067,16 @@ class ApiClient {
     String message;
     try {
       final decoded = jsonDecode(res.body);
-      message = (decoded is Map && decoded['detail'] != null)
-          ? decoded['detail'].toString()
-          : 'Erro ${res.statusCode}';
+      // O `detail` de um 422 do FastAPI é uma **lista de objetos**, e era isso
+      // que ia cru para a tela. Ver `erros.dart`.
+      message = traduzirErro(
+        res.statusCode,
+        decoded is Map ? decoded['detail'] : null,
+        _t,
+      );
     } catch (_) {
-      message = 'Erro ${res.statusCode}';
+      // Corpo que não é JSON: um 502 do Caddy, uma página de erro do proxy.
+      message = _t.erroGenerico(res.statusCode);
     }
     return ApiException(res.statusCode, message);
   }
