@@ -59,7 +59,9 @@ O que o comando faz:
 1. Encerra qualquer agente que já esteja rodando.
 2. Copia o executável para `%LOCALAPPDATA%\Programs\Deskside`.
 3. Grava a URL do backend em `%APPDATA%\deskside\agent.conf`.
-4. Põe um atalho oculto na pasta Inicializar do seu usuário.
+4. Cria uma **tarefa agendada** que sobe o agente oculto ao fazer logon. Se ela
+   não puder ser criada, cai para um atalho oculto na pasta Inicializar — ver
+   "Por que uma tarefa agendada" abaixo.
 5. Cria atalhos no **Menu Iniciar** e na **área de trabalho**.
 6. Registra o programa em **Aplicativos instalados**, com botão de desinstalar.
 7. Inicia o agente agora, sem esperar o próximo login.
@@ -90,6 +92,39 @@ device_id: 6f3a…
 comum — alguém limpou a pasta Inicializar, ou um otimizador desativou a entrada.
 É por isso que as duas linhas são separadas: juntas, elas esconderiam
 exatamente o caso em que o computador some do app sem explicação.
+
+A linha também diz **por qual mecanismo** ele sobe, e isso importa porque um dos
+dois é muito mais rápido. Numa queixa de "o agente demora a ficar disponível
+depois que eu ligo o notebook", esta é a primeira linha a olhar.
+
+### Por que uma tarefa agendada, e não a pasta Inicializar
+
+A pasta Inicializar é a forma mais lenta que existe de subir no logon. Quem a
+processa é o Explorer, **depois** de terminar de carregar, e o Windows 10/11
+ainda aplica um retardo próprio ao que está nela. Num notebook isso são dezenas
+de segundos entre entrar na conta e o computador ficar alcançável — e nesse
+intervalo o app mostra o computador offline, que é indistinguível de defeito.
+
+Uma tarefa com disparo "ao fazer logon" não espera o Explorer.
+
+Quatro ajustes da tarefa não são enfeite. Os padrões do Agendador foram pensados
+para tarefas de manutenção, e três deles quebrariam este agente em silêncio:
+
+- **não iniciar na bateria** é o padrão. Num notebook fora da tomada — o caso
+  mais comum — o agente simplesmente não subiria, e nada diria por quê;
+- **encerrar ao sair da tomada** também é o padrão, e mataria o agente no meio
+  do uso;
+- **limite de execução de três dias**: ao fim dele a tarefa é morta, e um
+  computador que fica ligado a semana toda perderia o agente;
+- **prioridade 7** (o padrão) o Windows traduz em prioridade *abaixo do normal*
+  para o processo — justamente no logon, quando há disputa por disco e CPU.
+
+**Uma das duas, nunca as duas.** Com os dois mecanismos ativos, dois agentes
+subiriam a cada logon. A guarda de instância única faria o segundo sair, mas ela
+também pede que o primeiro **mostre a janela** — e uma janela abrindo sozinha a
+cada vez que se liga o computador seria uma troca terrível por alguns segundos
+de partida. Por isso, quando a tarefa é criada, o `install` apaga o atalho da
+pasta Inicializar.
 
 ### Desinstalar
 
@@ -185,8 +220,9 @@ Depois feche e abra o terminal: a variável só some para processos novos.
 `setx DESKSIDE_BACKEND_URL ""` **não** serve — o `setx` recusa valor vazio com
 "sintaxe inválida". Ele grava variáveis; quem apaga é o registro.
 
-O atalho antigo na pasta Inicializar tem o mesmo nome do atual
-(`DesksideAgent.vbs`) e é substituído pelo `install`. Para conferir, abra-o no
+O `DesksideAgent.vbs` agora mora **ao lado do executável**, em
+`AppData\Local\Programs\Deskside`: é ele que a tarefa agendada chama. Uma cópia
+na pasta Inicializar só existe quando a tarefa não pôde ser criada. Para conferir, abra-o no
 Bloco de Notas: o caminho lá dentro tem que apontar para
 `AppData\Local\Programs\Deskside`, e não para `target\release`.
 

@@ -55,6 +55,63 @@ pub fn launcher_script(exe: &Path) -> String {
     )
 }
 
+/// Nome da tarefa agendada que inicia o agente no logon.
+pub const TASK_NAME: &str = "Deskside";
+
+/// O comando do PowerShell que cria a tarefa agendada do logon.
+///
+/// ## Por que uma tarefa, e não a pasta Inicializar
+///
+/// A pasta Inicializar é a forma mais lenta que existe de subir no logon, e não
+/// por acaso: quem a processa é o Explorer, **depois** de terminar de carregar,
+/// e o Windows 10/11 ainda aplica um retardo próprio ao que está nela. O
+/// resultado, num notebook, são dezenas de segundos entre entrar na conta e o
+/// computador ficar alcançável — e nesse intervalo o app mostra o computador
+/// offline, que é indistinguível de defeito.
+///
+/// Uma tarefa com disparo "ao fazer logon" não espera o Explorer. É o mesmo
+/// mecanismo que os programas que sobem rápido usam.
+///
+/// ## Os quatro ajustes que não são enfeite
+///
+/// Os padrões do Agendador de Tarefas foram pensados para tarefas de manutenção,
+/// e três deles quebrariam este agente em silêncio:
+///
+/// - **`AllowStartIfOnBatteries`**: o padrão é *não iniciar* na bateria. Num
+///   notebook fora da tomada — o caso mais comum — o agente simplesmente não
+///   subiria, e nada diria por quê.
+/// - **`DontStopIfGoingOnBatteries`**: sem isto, tirar o notebook da tomada
+///   **encerra** o agente no meio do uso.
+/// - **`ExecutionTimeLimit = PT0S`** (sem limite): o padrão é três dias, e ao
+///   fim deles a tarefa é morta. Um computador que fica ligado a semana toda
+///   perderia o agente sem motivo aparente.
+/// - **`Priority = 5`**: o padrão é 7, que o Windows traduz em prioridade
+///   *abaixo do normal* para o processo. Justamente no logon, quando há disputa
+///   por disco e CPU, isso é o oposto do que se quer.
+///
+/// ## O escape
+///
+/// O caminho entra num literal de aspas simples do PowerShell, onde a aspa
+/// simples se escapa **dobrando**. Sem isso, um usuário chamado `O'Brien` (ou
+/// qualquer pasta com apóstrofo) quebraria o comando — e o sintoma seria "a
+/// tarefa não foi criada nesta máquina", sem ninguém ligar à causa.
+pub fn script_da_tarefa(launcher: &Path, usuario: &str) -> String {
+    let ps = |t: String| t.replace('\'', "''");
+    let vbs = ps(launcher.display().to_string());
+    let quem = ps(usuario.to_string());
+    format!(
+        "$ErrorActionPreference='Stop'; \
+         $acao = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument '\"{vbs}\"'; \
+         $disparo = New-ScheduledTaskTrigger -AtLogOn -User '{quem}'; \
+         $ajustes = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries \
+         -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew; \
+         $ajustes.ExecutionTimeLimit = 'PT0S'; \
+         $ajustes.Priority = 5; \
+         Register-ScheduledTask -TaskName '{TASK_NAME}' -Action $acao -Trigger $disparo \
+         -Settings $ajustes -Force | Out-Null"
+    )
+}
+
 /// Onde o agente passa a morar.
 ///
 /// `%LOCALAPPDATA%\Programs` é o lugar que o Windows reserva para instalação
@@ -84,7 +141,14 @@ pub struct Plan {
     pub dir: PathBuf,
     /// Executável instalado.
     pub exe: PathBuf,
-    /// Atalho na pasta Inicializar.
+    /// O `.vbs` que inicia o agente oculto, ao lado do executável.
+    ///
+    /// Mora na pasta de instalação, e não na Inicializar, porque agora ele é
+    /// **alvo da tarefa agendada**. A cópia na pasta Inicializar continua
+    /// existindo, mas só como reserva — ver `install`.
+    pub launcher: PathBuf,
+    /// Atalho na pasta Inicializar. A **reserva**, quando a tarefa não pode ser
+    /// criada.
     pub startup: PathBuf,
     /// Atalho no Menu Iniciar.
     pub start_menu: PathBuf,
@@ -111,6 +175,7 @@ pub fn plan(exe_atual: &Path, lugares: &Places) -> Plan {
     let exe = dir.join("deskside-agent.exe");
     let copy = !already_installed(exe_atual, &exe);
     Plan {
+        launcher: dir.join(STARTUP_FILE),
         dir,
         exe,
         startup: lugares.startup.join(STARTUP_FILE),
@@ -126,6 +191,13 @@ pub fn plan(exe_atual: &Path, lugares: &Places) -> Plan {
 pub struct Status {
     pub installed: bool,
     pub autostart: bool,
+    /// Por qual mecanismo ele sobe no logon.
+    ///
+    /// Vale dizer porque os dois funcionam e **um é muito mais rápido**. Quando
+    /// alguém reclamar que o agente demora a ficar disponível depois de ligar o
+    /// computador, esta linha é a primeira coisa a olhar — e sem ela a resposta
+    /// começaria por dedução.
+    pub autostart_por_tarefa: bool,
     pub exe: PathBuf,
     pub backend: String,
     /// Se o backend veio de uma variável de ambiente em vez do arquivo.
@@ -149,10 +221,16 @@ pub fn status_lines(s: &Status) -> Vec<String> {
     } else {
         linhas.push("Não instalado (rodando de onde está).".to_string());
     }
-    linhas.push(format!(
-        "Inicia com o Windows: {}",
-        if s.autostart { "sim" } else { "não" }
-    ));
+    linhas.push(match (s.autostart, s.autostart_por_tarefa) {
+        (false, _) => "Inicia com o Windows: não".to_string(),
+        (true, true) => "Inicia com o Windows: sim (tarefa agendada — a forma rápida)".to_string(),
+        // A reserva. Funciona, e é a razão de o agente demorar a subir: a pasta
+        // Inicializar é processada pelo Explorer depois de ele carregar, e o
+        // Windows ainda atrasa de propósito o que está nela.
+        (true, false) => {
+            "Inicia com o Windows: sim (pasta Inicializar — sobe mais devagar)".to_string()
+        }
+    });
     if s.backend_from_env {
         linhas.push(format!(
             "Backend: {} (da variável de ambiente, que vence o arquivo)",
@@ -341,6 +419,73 @@ mod imp {
         Ok(())
     }
 
+    /// Roda um comando do PowerShell sem perfil e sem interação.
+    ///
+    /// `-ExecutionPolicy Bypass` porque a política de execução da máquina não
+    /// tem nada a dizer sobre isto: é um comando na linha, não um arquivo, e
+    /// numa máquina com política restritiva a instalação falharia por um motivo
+    /// que não é dela.
+    fn powershell(comando: &str) -> Result<std::process::Output, String> {
+        Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                comando,
+            ])
+            .output()
+            .map_err(|e| format!("não consegui chamar o PowerShell: {e}"))
+    }
+
+    /// Cria a tarefa agendada que inicia o agente no logon.
+    fn criar_tarefa(launcher: &Path) -> Result<(), String> {
+        // `USERDOMAIN` é o nome da máquina em conta local e em conta Microsoft;
+        // só num domínio corporativo ele é outra coisa. Nos dois casos é o que
+        // o Agendador espera.
+        let dominio = std::env::var("USERDOMAIN").unwrap_or_default();
+        let nome = std::env::var("USERNAME")
+            .map_err(|_| "não descobri o nome do usuário do Windows".to_string())?;
+        let usuario = if dominio.is_empty() {
+            nome
+        } else {
+            format!("{dominio}\\{nome}")
+        };
+
+        let saida = powershell(&script_da_tarefa(launcher, &usuario))?;
+        if saida.status.success() {
+            return Ok(());
+        }
+        // A mensagem do PowerShell vai junto: "a tarefa não foi criada" sozinho
+        // não diz se foi política de grupo, serviço desligado ou nome de
+        // usuário estranho — e são consertos diferentes.
+        let motivo = String::from_utf8_lossy(&saida.stderr)
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("o PowerShell recusou sem dizer o motivo")
+            .trim()
+            .to_string();
+        Err(motivo)
+    }
+
+    fn remover_tarefa() {
+        let _ = powershell(&format!(
+            "Unregister-ScheduledTask -TaskName '{TASK_NAME}' \
+             -Confirm:$false -ErrorAction SilentlyContinue"
+        ));
+    }
+
+    /// Se a tarefa agendada existe. Usado pelo `status`.
+    pub fn tem_tarefa() -> bool {
+        powershell(&format!(
+            "if (Get-ScheduledTask -TaskName '{TASK_NAME}' \
+             -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}"
+        ))
+        .map(|s| s.status.success())
+        .unwrap_or(false)
+    }
+
     pub fn install(backend: Option<&str>) -> Result<(), String> {
         let exe_atual = current_exe()?;
         let plano = plan(&exe_atual, &lugares()?);
@@ -390,8 +535,31 @@ mod imp {
             }
         }
 
-        std::fs::write(&plano.startup, launcher_script(&plano.exe))
-            .map_err(|e| format!("não consegui criar o atalho de início: {e}"))?;
+        // O `.vbs` fica ao lado do executável: é ele que a tarefa agendada
+        // chama, e é dele que sai a cópia de reserva.
+        std::fs::write(&plano.launcher, launcher_script(&plano.exe))
+            .map_err(|e| format!("não consegui criar o iniciador oculto: {e}"))?;
+
+        // Tarefa agendada primeiro; pasta Inicializar só se ela falhar.
+        //
+        // **Uma das duas, nunca as duas.** Com as duas ativas, dois agentes
+        // subiriam a cada logon; a guarda de instância única faria o segundo
+        // sair, mas ela também pede que o primeiro **mostre a janela** — e uma
+        // janela abrindo sozinha a cada vez que se liga o computador seria uma
+        // troca terrível por alguns segundos de partida.
+        match criar_tarefa(&plano.launcher) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(&plano.startup);
+                println!("Início automático: tarefa agendada no logon (a forma rápida).");
+            }
+            Err(motivo) => {
+                std::fs::write(&plano.startup, launcher_script(&plano.exe))
+                    .map_err(|e| format!("não consegui criar o atalho de início: {e}"))?;
+                println!("Início automático: pasta Inicializar.");
+                println!("  (não deu para criar a tarefa agendada: {motivo})");
+                println!("  Funciona igual, só demora mais para subir ao ligar o computador.");
+            }
+        }
 
         // Atalhos são conveniência, não requisito: sem eles o agente roda
         // igual. Uma área de trabalho redirecionada para uma pasta de rede
@@ -418,7 +586,7 @@ mod imp {
 
         // Sobe agora, sem esperar o próximo login.
         Command::new("wscript.exe")
-            .arg(&plano.startup)
+            .arg(&plano.launcher)
             .spawn()
             .map_err(|e| format!("instalei, mas não consegui iniciar: {e}"))?;
 
@@ -437,7 +605,9 @@ mod imp {
         let plano = plan(&exe_atual, &lugares()?);
 
         stop_running();
+        remover_tarefa();
         let _ = std::fs::remove_file(&plano.startup);
+        let _ = std::fs::remove_file(&plano.launcher);
         let _ = std::fs::remove_file(&plano.start_menu);
         let _ = std::fs::remove_file(&plano.desktop);
         let _ = Command::new("reg")
@@ -474,9 +644,13 @@ mod imp {
         let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
             .map(|v| !v.trim().is_empty())
             .unwrap_or(false);
+        // A tarefa é o caminho preferido; a pasta Inicializar é a reserva. Os
+        // dois entram no cálculo porque uma instalação antiga tem só o segundo.
+        let tarefa = tem_tarefa();
         Status {
             installed: exe.is_file(),
-            autostart: startup.is_file(),
+            autostart: tarefa || startup.is_file(),
+            autostart_por_tarefa: tarefa,
             exe,
             backend: crate::config::resolve(&cfg, "DESKSIDE_BACKEND_URL")
                 .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
@@ -512,6 +686,7 @@ mod imp {
         Status {
             installed: false,
             autostart: false,
+            autostart_por_tarefa: false,
             exe: std::env::current_exe().unwrap_or_default(),
             backend: crate::config::resolve(&cfg, "DESKSIDE_BACKEND_URL")
                 .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
@@ -570,6 +745,43 @@ mod tests {
         let vbs = launcher_script(&p(r#"C:\a"b\x.exe"#));
         assert!(!vbs.contains(r#"a"b"#), "aspas não foram dobradas:\n{vbs}");
         assert!(vbs.contains(r#"a""b"#));
+    }
+
+    #[test]
+    fn a_tarefa_aponta_para_o_iniciador_oculto_e_dispara_no_logon() {
+        let script = script_da_tarefa(&p(r"C:\App\DesksideAgent.vbs"), r"PC\eu");
+        // `wscript` e não o `.exe` direto: é o que evita um console preto
+        // piscando a cada logon.
+        assert!(script.contains("-Execute 'wscript.exe'"), "{script}");
+        assert!(script.contains(r"C:\App\DesksideAgent.vbs"), "{script}");
+        assert!(script.contains("-AtLogOn"), "{script}");
+        assert!(script.contains(r"-User 'PC\eu'"), "{script}");
+    }
+
+    #[test]
+    fn a_tarefa_desliga_os_padroes_que_matariam_o_agente() {
+        // Os padrões do Agendador foram feitos para tarefas de manutenção, e
+        // três deles quebrariam este agente **em silêncio**: não iniciar na
+        // bateria, encerrar ao sair da tomada, e matar a tarefa depois de três
+        // dias. Num notebook, o primeiro sozinho já significa "nunca sobe".
+        let script = script_da_tarefa(&p(r"C:\App\x.vbs"), "PC\\eu");
+        assert!(script.contains("-AllowStartIfOnBatteries"), "{script}");
+        assert!(script.contains("-DontStopIfGoingOnBatteries"), "{script}");
+        assert!(script.contains("ExecutionTimeLimit = 'PT0S'"), "{script}");
+        // E a prioridade: o padrão 7 vira "abaixo do normal" para o processo,
+        // justamente no logon, quando há disputa por disco e CPU.
+        assert!(script.contains("Priority = 5"), "{script}");
+    }
+
+    #[test]
+    fn o_caminho_com_apostrofo_nao_quebra_o_comando() {
+        // `C:\Users\O'Brien\...` é um caminho legítimo, e no PowerShell a aspa
+        // simples se escapa dobrando. Sem isto o comando terminaria no meio do
+        // caminho e a tarefa não seria criada - com o sintoma "não funciona
+        // nesta máquina" e nada ligando à causa.
+        let script = script_da_tarefa(&p(r"C:\Users\O'Brien\x.vbs"), "PC\\O'Brien");
+        assert!(script.contains("O''Brien"), "{script}");
+        assert!(!script.contains("O'Brien"), "sobrou uma aspa solta: {script}");
     }
 
     #[test]
@@ -662,6 +874,7 @@ mod tests {
         let linhas = status_lines(&Status {
             installed: false,
             autostart: false,
+            autostart_por_tarefa: false,
             exe: p(r"C:\x\a.exe"),
             backend: "ws://127.0.0.1:8000/ws/agent".into(),
             backend_from_env: false,
@@ -677,6 +890,7 @@ mod tests {
         let linhas = status_lines(&Status {
             installed: true,
             autostart: true,
+            autostart_por_tarefa: true,
             exe: install_dir(&caminho(&["C:", "Users", "eu", "AppData", "Local"]))
                 .join("deskside-agent.exe"),
             backend: "wss://caio-remoteone.duckdns.org/ws/agent".into(),
@@ -684,7 +898,9 @@ mod tests {
             device_id: Some("abc123".into()),
         });
         assert!(linhas[0].contains("Deskside"));
-        assert!(linhas[1].ends_with("sim"));
+        // A linha agora diz **por qual mecanismo**, porque um deles é
+        // muito mais rápido e é a primeira coisa a olhar numa queixa de demora.
+        assert!(linhas[1].contains("sim") && linhas[1].contains("tarefa agendada"));
         assert!(linhas[2].contains("duckdns"));
         assert!(linhas[3].contains("abc123"));
     }
@@ -698,6 +914,7 @@ mod tests {
         let linhas = status_lines(&Status {
             installed: true,
             autostart: true,
+            autostart_por_tarefa: true,
             exe: p("x"),
             backend: "wss://antigo/ws/agent".into(),
             backend_from_env: true,
@@ -716,6 +933,7 @@ mod tests {
         let linhas = status_lines(&Status {
             installed: true,
             autostart: true,
+            autostart_por_tarefa: true,
             exe: p("x"),
             backend: "wss://novo/ws/agent".into(),
             backend_from_env: false,
@@ -732,6 +950,7 @@ mod tests {
         let linhas = status_lines(&Status {
             installed: true,
             autostart: false,
+            autostart_por_tarefa: false,
             exe: p(r"C:\x\a.exe"),
             backend: "x".into(),
             backend_from_env: false,
