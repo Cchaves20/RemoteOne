@@ -8,7 +8,8 @@ use deskside_agent::{device_id_path, load_config, setup, DEFAULT_BACKEND_URL};
 
 const AGENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const HEARTBEAT_SECS: u64 = 10;
-const RECONNECT_SECS: u64 = 5;
+// A regra da espera entre tentativas mora em `client::proxima_espera`, com a
+// explicação e os testes. Aqui só se aplica.
 
 /// O que a linha de comando pediu.
 ///
@@ -124,6 +125,8 @@ async fn laco_de_conexao(
         apresentacao,
     };
 
+    let mut espera = client::RECONEXAO_MINIMA;
+
     loop {
         // `stream` é clonado a cada tentativa: a config carrega a lista de
         // servidores STUN, então não é mais `Copy`.
@@ -138,6 +141,12 @@ async fn laco_de_conexao(
         .await
         .err();
 
+        // Lido **antes** de marcar como desconectado: é a única forma de saber
+        // se esta volta chegou a conectar. `run` devolve `Err` nos dois casos —
+        // "não consegui conectar" e "conectei e caiu depois" —, e tratar os dois
+        // igual faria a espera crescer numa conexão que estava funcionando.
+        let conectou = estado.lock().map(|s| s.conectado).unwrap_or(false);
+
         if let Some(e) = erro {
             eprintln!("Conexão perdida: {e}");
             // A janela mostra o motivo. "Sem conexão" sozinho manda a pessoa
@@ -147,8 +156,15 @@ async fn laco_de_conexao(
                 s.ultimo_erro = Some(e.to_string());
             }
         }
-        println!("Reconectando em {RECONNECT_SECS}s ...");
-        tokio::time::sleep(Duration::from_secs(RECONNECT_SECS)).await;
+
+        espera = client::proxima_espera(espera, conectou);
+        // No diário e não em `println!`: com o agente oculto, é esta linha que
+        // conta quantas tentativas houve antes de a conexão pegar.
+        deskside_agent::diario(&format!(
+            "reconectando em {}s",
+            espera.as_secs()
+        ));
+        tokio::time::sleep(espera).await;
     }
 }
 
@@ -181,6 +197,17 @@ fn main() {
         }
         Cmd::Run => {}
     }
+
+    // A **primeira** linha do diário, antes de qualquer outra coisa. Ela é a
+    // metade que faltava para responder "por que o agente demora a ficar
+    // disponível depois de ligar o computador?": comparada com a linha de
+    // "conectado", separa as duas causas possíveis.
+    //
+    // Se esta linha sai em `boot+40s`, o tempo foi gasto **antes** de o agente
+    // existir — é o mecanismo que o inicia no logon, e nada de rede ajuda. Se
+    // sai cedo e a de "conectado" sai tarde, é rede ou servidor. Sem esta
+    // medida, escolher entre as duas seria adivinhação.
+    deskside_agent::diario(&format!("agente {AGENT_VERSION} iniciando"));
 
     // Uma instância só por usuário. Sem isto, clicar no atalho do Menu
     // Iniciar com o agente já rodando subiria um segundo agente com o mesmo
@@ -288,7 +315,7 @@ fn main() {
             "não"
         }
     );
-    println!("Conectando a {url} ...");
+    deskside_agent::diario(&format!("agente de pé; conectando a {url}"));
 
     let estado = deskside_agent::gui::compartilhar(deskside_agent::gui::Estado {
         hostname: identity.hostname.clone(),

@@ -96,6 +96,37 @@ impl StreamConfig {
 /// isto o laço acordaria 60 vezes por segundo com o computador ocioso.
 const IDLE_INTERVAL: Duration = Duration::from_millis(500);
 
+/// Prazo para a conexão se estabelecer.
+///
+/// Ver o comentário em `run`: sem prazo, quem decide é o TCP do sistema, e ele
+/// leva uns vinte segundos para desistir de uma rede que ainda não terminou de
+/// subir - o caso normal logo depois de ligar o computador.
+pub const ESPERA_DE_CONEXAO: Duration = Duration::from_secs(8);
+
+/// Espera mínima e máxima entre tentativas de conexão.
+pub const RECONEXAO_MINIMA: Duration = Duration::from_secs(1);
+pub const RECONEXAO_MAXIMA: Duration = Duration::from_secs(30);
+
+/// Quanto esperar antes da próxima tentativa de conexão.
+///
+/// Era fixo em cinco segundos, e cinco é a escolha errada nos **dois** extremos.
+/// Logo depois de ligar o computador a rede chega em um ou dois segundos, e
+/// esperar cinco é atraso puro — parte da demora que se sente ao ligar o
+/// notebook. Numa queda longa do servidor, tentar a cada cinco segundos é um
+/// agente batendo doze vezes por minuto, vezes todos os computadores instalados.
+///
+/// `conectou` é o que separa os dois casos, e é por isso que ele entra aqui: uma
+/// conexão que se estabeleceu e caiu depois **zera** a espera, porque o problema
+/// era momentâneo. Sem esse zeramento, uma única queda deixaria o agente lento
+/// para sempre — e o sintoma seria "às vezes ele demora meio minuto para voltar",
+/// que é o tipo de queixa que ninguém consegue reproduzir.
+pub fn proxima_espera(atual: Duration, conectou: bool) -> Duration {
+    if conectou {
+        return RECONEXAO_MINIMA;
+    }
+    (atual * 2).min(RECONEXAO_MAXIMA)
+}
+
 /// Quanto tempo sem **nenhuma** resposta do servidor antes de desistir da
 /// conexão e reconectar.
 ///
@@ -218,8 +249,31 @@ pub async fn run(
         agenda,
         apresentacao,
     } = compartilhados;
-    let (mut ws, _response) = connect_async(url).await?;
-    println!("Conectado ao backend em {url}");
+    // Com prazo, e o prazo é o conserto de uma demora real. Sem ele, `connect_async`
+    // fica na mão do sistema operacional: um Windows que acabou de ligar tem a
+    // placa de rede de pé mas ainda sem rota, e nesse estado o TCP não falha -
+    // ele **retransmite**, por volta de vinte segundos, antes de desistir. Somado
+    // à espera entre tentativas, o computador ficava quase meio minuto
+    // indisponível justamente depois de ligar, que é quando alguém está olhando.
+    //
+    // Oito segundos é folga larga para uma conexão que vai dar certo (o aperto de
+    // mão TLS mais lento observado deste projeto fica em dois) e curto o
+    // suficiente para a próxima tentativa acontecer enquanto a pessoa espera.
+    let (mut ws, _response) =
+        match tokio::time::timeout(ESPERA_DE_CONEXAO, connect_async(url)).await {
+            Ok(resultado) => resultado?,
+            Err(_) => {
+                return Err(format!(
+                    "o servidor não respondeu em {}s",
+                    ESPERA_DE_CONEXAO.as_secs()
+                )
+                .into())
+            }
+        };
+    // Pelo diário, e não por `println!`: o agente instalado roda oculto, e este é
+    // o instante que responde "quanto tempo depois do boot o computador ficou
+    // alcançável?". Num `println!` a resposta cai no vazio.
+    crate::diario(&format!("conectado ao backend em {url}"));
     // A janela precisa saber daqui: é este o instante em que a conexão existe,
     // e nenhum outro lugar tem essa informação sem adivinhar.
     if let Ok(mut e) = estado.lock() {
@@ -2076,6 +2130,34 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_primeira_tentativa_depois_de_uma_falha_e_quase_imediata() {
+        // É o caso de ligar o computador: a rede chega em um ou dois segundos, e
+        // esperar cinco era metade da demora que se sentia.
+        assert_eq!(proxima_espera(RECONEXAO_MINIMA, false), Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_espera_cresce_e_para_no_teto() {
+        // Sem teto, uma noite de servidor fora do ar levaria a espera a horas, e
+        // o computador não voltaria sozinho quando o servidor voltasse.
+        let mut espera = RECONEXAO_MINIMA;
+        for _ in 0..20 {
+            espera = proxima_espera(espera, false);
+        }
+        assert_eq!(espera, RECONEXAO_MAXIMA);
+    }
+
+    #[test]
+    fn conectar_zera_a_espera() {
+        // O erro que isto evita: `run` devolve `Err` tanto para "não consegui
+        // conectar" como para "conectei e caiu depois". Tratando os dois igual,
+        // uma única queda deixaria o agente lento para sempre - e o sintoma
+        // seria "às vezes ele demora meio minuto para voltar", que é a queixa
+        // que ninguém consegue reproduzir.
+        assert_eq!(proxima_espera(RECONEXAO_MAXIMA, true), RECONEXAO_MINIMA);
+    }
 
     #[test]
     fn hello_is_built_from_identity() {

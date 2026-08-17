@@ -143,12 +143,24 @@ pub fn load_config() -> config::Config {
 /// haver falha que só acontece na máquina instalada - e sem registro nenhum a
 /// investigação vira adivinhação.
 ///
-/// Sem data e sem níveis: o valor está em existir, e um formato elaborado só
-/// adiaria a primeira linha útil. Falha ao gravar é ignorada de propósito - um
-/// diário que derruba o programa que ele deveria explicar seria o pior dos
-/// dois mundos.
+/// Sem data e sem níveis, mas **com o tempo desde que a máquina ligou**.
+///
+/// A data seria enfeite; esse número não é. Ele responde a pergunta que não
+/// dava para responder antes: "o agente demora a ficar disponível depois do
+/// boot — a demora é antes ou depois de ele começar a rodar?". Se a primeira
+/// linha do diário sai em `boot+45s`, o problema é o mecanismo que inicia o
+/// agente, e mexer em rede não muda nada. Se sai em `boot+6s` e a conexão só
+/// aparece em `boot+50s`, é o contrário.
+///
+/// Sem essa medida a investigação seria por dedução, e já foi: três defeitos
+/// deste projeto foram rastreados até uma peça desatualizada, cada um depois de
+/// um palpite errado.
+///
+/// Falha ao gravar é ignorada de propósito - um diário que derruba o programa
+/// que ele deveria explicar seria o pior dos dois mundos.
 pub fn diario(linha: &str) {
     use std::io::Write;
+    let linha = format!("[{}] {linha}", relogio::marca());
     println!("{linha}");
     let caminho = config_dir().join("agent.log");
     if let Some(pai) = caminho.parent() {
@@ -160,6 +172,46 @@ pub fn diario(linha: &str) {
         .open(&caminho)
     {
         let _ = writeln!(f, "{linha}");
+    }
+}
+
+/// De onde sai a marca de tempo do diário.
+pub mod relogio {
+    /// Quanto tempo passou desde que a máquina ligou, para o diário.
+    ///
+    /// Do **boot**, e não do início do processo, porque a pergunta é justamente
+    /// quanto tempo o Windows levou para chegar até aqui. Um relógio contado do
+    /// início do processo mediria só o que vem depois - e a demora suspeita
+    /// está, em parte, antes.
+    ///
+    /// Fora do Windows não há `GetTickCount64`, e a medida vira o tempo desde o
+    /// início do processo. É honesta e o prefixo diz qual das duas é.
+    pub fn marca() -> String {
+        match desde_o_boot() {
+            Some(ms) => format!("boot+{:.1}s", ms as f64 / 1000.0),
+            None => format!("+{:.1}s", desde_o_inicio().as_secs_f64()),
+        }
+    }
+
+    /// Quando este processo começou. `OnceLock` porque a primeira leitura é a
+    /// que define o zero, e ela acontece na primeira linha do diário.
+    fn desde_o_inicio() -> std::time::Duration {
+        static INICIO: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+        INICIO.get_or_init(std::time::Instant::now).elapsed()
+    }
+
+    #[cfg(windows)]
+    fn desde_o_boot() -> Option<u64> {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetTickCount64() -> u64;
+        }
+        Some(unsafe { GetTickCount64() })
+    }
+
+    #[cfg(not(windows))]
+    fn desde_o_boot() -> Option<u64> {
+        None
     }
 }
 
