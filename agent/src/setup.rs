@@ -55,6 +55,35 @@ pub fn launcher_script(exe: &Path) -> String {
     )
 }
 
+/// O caminho do fluxo alternativo que marca um arquivo como vindo da internet.
+///
+/// ## O defeito que isto conserta
+///
+/// No Windows, todo arquivo baixado ganha um fluxo alternativo chamado
+/// `Zone.Identifier` — a "marca da web". É ele que faz o sistema perguntar "o
+/// fornecedor não pôde ser verificado, tem certeza?" ao executar.
+///
+/// E o `CopyFile` do Windows **copia os fluxos alternativos junto**. Então o
+/// `install`, ao copiar o executável baixado para a pasta de instalação, levava
+/// a marca junto — e a cópia instalada passava a perguntar isso para sempre.
+///
+/// O susto seria o menor dos problemas. O agente instalado sobe **oculto**, pela
+/// tarefa agendada do logon: um diálogo modal esperando um clique numa sessão
+/// onde nada é visível é um agente que **nunca sobe**, sem nada na tela
+/// explicando. O computador simplesmente não apareceria no aplicativo.
+///
+/// Um instalador de verdade não deixa marca: quem escreveu o arquivo no destino
+/// foi ele, não o navegador. É o mesmo que o botão "Desbloquear" das
+/// propriedades do arquivo faz, e é o que se faz aqui — só que sem depender de
+/// alguém saber que precisa fazê-lo.
+///
+/// Separado da chamada ao sistema para poder ser testado: montar o caminho errado
+/// falharia em silêncio (não há fluxo com aquele nome, "apagar" não faz nada) e
+/// a marca continuaria lá.
+pub fn caminho_da_marca(exe: &Path) -> String {
+    format!("{}:Zone.Identifier", exe.display())
+}
+
 /// Nome da tarefa agendada que inicia o agente no logon.
 pub const TASK_NAME: &str = "Deskside";
 
@@ -497,6 +526,11 @@ mod imp {
         if plano.copy {
             std::fs::copy(&exe_atual, &plano.exe)
                 .map_err(|e| format!("não consegui copiar para {}: {e}", plano.exe.display()))?;
+            // Tira a marca de "veio da internet" que o `CopyFile` trouxe junto.
+            // Ver `caminho_da_marca`. Falha ignorada de propósito: o caso comum é
+            // não haver marca nenhuma (executável compilado na própria máquina),
+            // e aí "apagar" devolve um erro que não é erro.
+            let _ = std::fs::remove_file(caminho_da_marca(&plano.exe));
             println!("Copiado para {}", plano.exe.display());
         } else {
             println!("Já estava em {} — só reconfigurando.", plano.exe.display());
@@ -745,6 +779,25 @@ mod tests {
         let vbs = launcher_script(&p(r#"C:\a"b\x.exe"#));
         assert!(!vbs.contains(r#"a"b"#), "aspas não foram dobradas:\n{vbs}");
         assert!(vbs.contains(r#"a""b"#));
+    }
+
+    #[test]
+    fn a_marca_da_web_e_apagada_no_lugar_certo() {
+        // Montar o caminho errado falharia **em silêncio**: não existe fluxo com
+        // aquele nome, "apagar" não faz nada, e a marca continuaria no
+        // executável instalado. O sintoma seria o pior possível — o agente sobe
+        // oculto pela tarefa do logon, e um diálogo modal invisível esperando um
+        // clique é um computador que nunca aparece no aplicativo.
+        assert_eq!(
+            caminho_da_marca(&p(r"C:\App\deskside-agent.exe")),
+            r"C:\App\deskside-agent.exe:Zone.Identifier"
+        );
+        // O nome do fluxo vai **depois** do caminho inteiro, e não antes da
+        // extensão: `...\deskside-agent:Zone.Identifier.exe` seria um arquivo
+        // comum com nome esquisito, e apagá-lo não tiraria marca nenhuma.
+        let caminho = caminho_da_marca(&p(r"C:\Users\Ana Maria\App\a.exe"));
+        assert!(caminho.ends_with(":Zone.Identifier"), "{caminho}");
+        assert!(caminho.contains("Ana Maria"), "{caminho}");
     }
 
     #[test]
