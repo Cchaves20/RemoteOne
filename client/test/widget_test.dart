@@ -53,7 +53,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Meus computadores'), findsOneWidget);
-    expect(find.textContaining('Nenhum computador pareado'), findsOneWidget);
+    // A tela de primeiro uso, e não só o título dela: o que importa é que ela
+    // diga **o que fazer**. O texto anterior ("toque em + e informe o código
+    // exibido pelo agente") supunha um programa já instalado no computador e
+    // nunca mencionava que havia algo a instalar — era um beco sem saída, e
+    // este teste passava do mesmo jeito.
+    expect(find.textContaining('Nenhum computador'), findsOneWidget);
+    expect(find.textContaining('baixe o Deskside'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Tenho um código'), findsOneWidget);
   });
 
   testWidgets('erro de login exibe mensagem', (tester) async {

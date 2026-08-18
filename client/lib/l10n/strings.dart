@@ -145,12 +145,53 @@ class Strings {
   String get pair => _t('Parear', 'Pair', '配对', 'Associer', 'Vincular');
   String get computerPaired => _t('Computador pareado!', 'Computer paired!', '电脑已配对！',
       'Ordinateur associé !', '¡Equipo vinculado!');
+  // --- primeiro uso -----------------------------------------------------------
+  // O texto anterior era "Nenhum computador pareado. Toque em + e informe o
+  // código exibido pelo agente" — e supunha duas coisas que quem chega aqui não
+  // tem: saber o que é "o agente", e tê-lo já instalado. Nunca dizia que existe
+  // um programa a instalar no computador, que é justamente o passo que falta.
   String get noComputers => _t(
-      'Nenhum computador pareado.\nToque em + e informe o código exibido pelo agente.',
-      'No computers paired.\nTap + and enter the code shown by the agent.',
-      '没有已配对的电脑。\n点击 + 并输入代理显示的代码。',
-      "Aucun ordinateur associé.\nAppuyez sur + et saisissez le code affiché par l'agent.",
-      'No hay equipos vinculados.\nToca + e introduce el código que muestra el agente.');
+      'Nenhum computador ainda',
+      'No computers yet',
+      '还没有电脑',
+      'Aucun ordinateur pour le moment',
+      'Aún no hay equipos');
+  String primeiroPassoBaixar(String site) => _t(
+      'No computador que você quer controlar, abra $site e baixe o Deskside.',
+      'On the computer you want to control, open $site and download Deskside.',
+      '在你想控制的电脑上，打开 $site 并下载 Deskside。',
+      "Sur l'ordinateur à contrôler, ouvrez $site et téléchargez Deskside.",
+      'En el equipo que quieres controlar, abre $site y descarga Deskside.');
+  String get primeiroPassoCodigo => _t(
+      'Ele vai mostrar um código de 6 dígitos.',
+      'It will show a 6-digit code.',
+      '它会显示一个 6 位数的代码。',
+      'Il affichera un code à 6 chiffres.',
+      'Mostrará un código de 6 dígitos.');
+  String get primeiroPassoDigitar => _t(
+      'Toque no botão abaixo e digite esse código.',
+      'Tap the button below and enter that code.',
+      '点击下面的按钮并输入该代码。',
+      'Touchez le bouton ci-dessous et saisissez ce code.',
+      'Toca el botón de abajo e introduce ese código.');
+  String get tenhoUmCodigo => _t('Tenho um código', 'I have a code', '我有代码',
+      "J'ai un code", 'Tengo un código');
+  /// A dúvida que aparece na hora: a pessoa instalou e não sabe onde olhar. Os
+  /// três lugares porque o primeiro pode não existir — numa máquina virtual sem
+  /// placa de vídeo a janela não abre, e aí vale o ícone ao lado do relógio.
+  String get ondeAchoOCodigo => _t(
+      'Onde acho o código? Na janela do Deskside, no ícone ao lado do relógio, '
+          'ou no arquivo %APPDATA%\\deskside\\pairing-code.txt',
+      'Where is the code? In the Deskside window, in the icon next to the clock, '
+          'or in the file %APPDATA%\\deskside\\pairing-code.txt',
+      '代码在哪里？在 Deskside 窗口、时钟旁的图标，'
+          '或文件 %APPDATA%\\deskside\\pairing-code.txt 中。',
+      'Où est le code ? Dans la fenêtre Deskside, dans l\'icône près de '
+          'l\'horloge, ou dans le fichier %APPDATA%\\deskside\\pairing-code.txt',
+      '¿Dónde está el código? En la ventana de Deskside, en el icono junto al '
+          'reloj, o en el archivo %APPDATA%\\deskside\\pairing-code.txt');
+  String get enderecoCopiado => _t('Endereço copiado', 'Address copied',
+      '地址已复制', 'Adresse copiée', 'Dirección copiada');
   String get online => _t('Online', 'Online', '在线', 'En ligne', 'En línea');
   String get offline => _t('Offline', 'Offline', '离线', 'Hors ligne', 'Desconectado');
   String get wake => _t('Ligar (Wake-on-LAN)', 'Turn on (Wake-on-LAN)', '开机 (Wake-on-LAN)',

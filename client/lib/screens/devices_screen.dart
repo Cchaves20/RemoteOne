@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../config.dart';
 import '../models/device.dart';
 import '../services/app_state.dart';
 import '../theme.dart';
@@ -320,22 +322,119 @@ class _DevicesScreenState extends State<DevicesScreen> {
     );
   }
 
+  /// A tela de primeiro uso.
+  ///
+  /// Era um ícone e uma frase: "Nenhum computador pareado. Toque em + e informe
+  /// o código exibido pelo agente." Um beco sem saída para quem chega aqui pela
+  /// primeira vez, porque supunha duas coisas que essa pessoa não tem — saber o
+  /// que é "o agente", e tê-lo já instalado. **Nunca dizia que existe um
+  /// programa a instalar no computador**, que é justamente o passo que falta.
+  ///
+  /// Três passos e um botão, e não um assistente de várias telas: o que faltava
+  /// era informação, não cerimônia.
+  ///
+  /// Rolável de propósito: são três parágrafos mais o rodapé, e num telefone
+  /// pequeno com a fonte do sistema aumentada isso não cabe na altura da tela.
+  /// Um `Center` fixo cortaria justamente o botão, que é o único elemento que
+  /// precisa ser alcançado.
   Widget _emptyState(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.devices_other,
-                size: 72, color: theme.colorScheme.primary.withAlpha(140)),
-            const SizedBox(height: 16),
-            Text(widget.state.t.noComputers,
-                textAlign: TextAlign.center, style: theme.textTheme.bodyLarge),
-          ],
-        ),
+    final t = widget.state.t;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 40, 28, 120),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Icon(Icons.devices_other,
+              size: 56, color: theme.colorScheme.primary.withAlpha(140)),
+          const SizedBox(height: 20),
+          Text(t.noComputers,
+              textAlign: TextAlign.center, style: theme.textTheme.titleLarge),
+          const SizedBox(height: 28),
+          _passo(1, Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(t.primeiroPassoBaixar(siteDeskside),
+                  style: theme.textTheme.bodyMedium),
+              const SizedBox(height: 6),
+              // Copiar em vez de abrir: abrir exigiria o `url_launcher`, e uma
+              // dependência nova para um toque não se paga. E copiar é o que
+              // serve melhor ao caso real — o endereço tem que ser digitado no
+              // **computador**, não aberto no celular.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: _copiarEndereco,
+                  icon: const Icon(Icons.copy, size: 16),
+                  label: Text(siteDeskside),
+                ),
+              ),
+            ],
+          )),
+          _passo(2, Text(t.primeiroPassoCodigo, style: theme.textTheme.bodyMedium)),
+          _passo(3, Text(t.primeiroPassoDigitar, style: theme.textTheme.bodyMedium)),
+          const SizedBox(height: 12),
+          // O botão grande **além** do botão flutuante, e não em vez dele. O
+          // flutuante tem um ícone de elo de corrente e a palavra "Parear" —
+          // quem nunca pareou nada não lê nenhum dos dois como "é aqui que eu
+          // começo".
+          FilledButton.icon(
+            onPressed: _showPairDialog,
+            icon: const Icon(Icons.dialpad),
+            label: Text(t.tenhoUmCodigo),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            t.ondeAchoOCodigo,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
       ),
+    );
+  }
+
+  /// Um passo numerado: o círculo com o número e o conteúdo ao lado.
+  Widget _passo(int numero, Widget conteudo) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$numero',
+              style: TextStyle(
+                color: theme.colorScheme.onPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(child: conteudo),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _copiarEndereco() async {
+    await Clipboard.setData(const ClipboardData(text: siteDeskside));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(widget.state.t.enderecoCopiado)),
     );
   }
 

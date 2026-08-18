@@ -30,6 +30,16 @@ const backendPadrao = String.fromEnvironment(
   defaultValue: 'https://deskside.com.br',
 );
 
+/// O endereço da página onde se baixa o programa do computador.
+///
+/// **Separado do `backendPadrao` de propósito**, mesmo que hoje os dois sejam o
+/// mesmo texto. São coisas diferentes: o backend é editável na tela de login
+/// (apontar o celular a um servidor na mesma rede é caso legítimo), e o site é
+/// sempre o mesmo. Se fossem um só, quem apontasse o app para
+/// `http://192.168.0.10:8000` veria a tela de primeiro uso mandando baixar o
+/// programa daquele endereço — que não serve página nenhuma.
+const siteDeskside = 'deskside.com.br';
+
 /// Se este endereço só funcionaria na máquina de quem compilou.
 ///
 /// A regra que o teste cobra. Espelha a que o agente já tem em Rust
