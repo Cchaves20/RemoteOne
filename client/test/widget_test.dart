@@ -13,9 +13,15 @@ import 'package:deskside_client/services/token_store.dart';
 
 /// Constrói um AppState com um http.Client falso, roteado por [handler]. Fixa o
 /// idioma em pt-BR para as asserções de texto serem determinísticas.
+///
+/// O endereço padrão é o **de verdade**, e não um `http://test`, porque desde
+/// que o campo de servidor passou a se abrir sozinho fora do padrão, o endereço
+/// deixou de ser detalhe: com um endereço estranho, a tela de login é outra.
+/// O `MockClient` intercepta tudo de qualquer jeito — a URL nunca é buscada —,
+/// então usar a real não custa nada e faz o teste ver a tela que o usuário vê.
 AppState _stateWith(
   Future<http.Response> Function(http.Request) handler, {
-  String baseUrl = 'http://test',
+  String baseUrl = backendPadrao,
 }) {
   final mock = MockClient((req) => handler(req));
   return AppState(ApiClient(
@@ -24,6 +30,28 @@ AppState _stateWith(
     tokenStore: InMemoryTokenStore(),
   ))
     ..language = AppLanguage.ptBr;
+}
+
+/// Preenche o login e toca em Entrar, **rolando até o botão antes de tocar**.
+///
+/// O `ensureVisible` não é zelo: o formulário mora num `SingleChildScrollView`,
+/// a janela de teste tem 600 px de altura, e o botão fica perto desse limite.
+/// Um campo a mais na tela empurra o "Entrar" para fora da área visível, e aí
+/// o `tap` erra o alvo — foi assim que estes dois testes quebraram quando o
+/// botão "voltar ao servidor padrão" nasceu, sem que nada do produto estivesse
+/// errado. Rolar até o botão é o que uma pessoa faria, então é o que o teste faz.
+Future<void> _entrar(
+  WidgetTester tester, {
+  String contato = 'caio@example.com',
+  String senha = 'senhaSegura123',
+}) async {
+  await tester.enterText(find.byType(TextField).at(0), contato);
+  await tester.enterText(find.byType(TextField).at(1), senha);
+  final botao = find.widgetWithText(FilledButton, 'Entrar');
+  await tester.ensureVisible(botao);
+  await tester.pumpAndSettle();
+  await tester.tap(botao);
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -79,10 +107,7 @@ void main() {
     });
 
     await tester.pumpWidget(DesksideApp(state: state));
-    await tester.enterText(find.byType(TextField).at(0), 'caio@example.com');
-    await tester.enterText(find.byType(TextField).at(1), 'senhaSegura123');
-    await tester.tap(find.widgetWithText(FilledButton, 'Entrar'));
-    await tester.pumpAndSettle();
+    await _entrar(tester);
 
     expect(find.text('Meus computadores'), findsOneWidget);
     // A tela de primeiro uso, e não só o título dela: o que importa é que ela
@@ -101,10 +126,7 @@ void main() {
     });
 
     await tester.pumpWidget(DesksideApp(state: state));
-    await tester.enterText(find.byType(TextField).at(0), 'x@y.com');
-    await tester.enterText(find.byType(TextField).at(1), 'senhaSegura123');
-    await tester.tap(find.widgetWithText(FilledButton, 'Entrar'));
-    await tester.pumpAndSettle();
+    await _entrar(tester, contato: 'x@y.com');
 
     expect(find.text('e-mail ou senha inválidos'), findsOneWidget);
     expect(find.text('Meus computadores'), findsNothing);
