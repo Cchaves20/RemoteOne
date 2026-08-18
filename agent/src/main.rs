@@ -168,6 +168,48 @@ async fn laco_de_conexao(
     }
 }
 
+/// Pergunta se é para instalar, e instala. `true` = instalou e pode sair.
+///
+/// O `install` já sobe a cópia instalada no fim, então este processo não tem
+/// mais o que fazer.
+fn oferecer_instalacao() -> bool {
+    use std::io::Write;
+
+    println!();
+    println!("Deskside {AGENT_VERSION}");
+    println!();
+    println!("Instalar neste computador? Ele passa a subir junto com o Windows,");
+    println!("oculto, e aparece em \"Aplicativos instalados\".");
+    print!("[S/n] ");
+    let _ = std::io::stdout().flush();
+
+    let mut resposta = String::new();
+    // **`Ok(0)` é o caso que importa.** Significa fim de entrada: ninguém para
+    // responder. Acontece quando o agente sobe pela tarefa agendada, sem
+    // console. Tratar isso como "Enter vazio" instalaria sozinho, em silêncio,
+    // toda vez que a máquina liga - o oposto do que a pergunta existe para
+    // garantir.
+    let quer = match std::io::stdin().read_line(&mut resposta) {
+        Ok(0) | Err(_) => false,
+        Ok(_) => setup::quer_instalar(&resposta),
+    };
+    if !quer {
+        println!();
+        println!("Sem instalar. O agente vai rodar agora, e para até esta janela fechar.");
+        println!("Para instalar depois: deskside-agent.exe install");
+        return false;
+    }
+
+    match setup::install(None) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("Não consegui instalar: {e}");
+            println!("O agente vai rodar assim mesmo, sem instalar.");
+            false
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match parse_args(&args) {
@@ -208,6 +250,15 @@ fn main() {
     // sai cedo e a de "conectado" sai tarde, é rede ou servidor. Sem esta
     // medida, escolher entre as duas seria adivinhação.
     deskside_agent::diario(&format!("agente {AGENT_VERSION} iniciando"));
+
+    // Dois cliques no arquivo baixado: oferece instalar antes de sair rodando.
+    //
+    // `args.is_empty()` é o que separa "cliquei no ícone" de "chamei pelo
+    // terminal": quem digita `deskside-agent run` pediu para rodar, não para
+    // instalar, e perguntar ali seria atrapalhar quem sabe o que está fazendo.
+    if args.is_empty() && setup::deve_oferecer_instalacao() && oferecer_instalacao() {
+        return;
+    }
 
     // Uma instância só por usuário. Sem isto, clicar no atalho do Menu
     // Iniciar com o agente já rodando subiria um segundo agente com o mesmo

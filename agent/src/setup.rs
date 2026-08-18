@@ -55,6 +55,50 @@ pub fn launcher_script(exe: &Path) -> String {
     )
 }
 
+/// Se vale oferecer a instalação a quem acabou de abrir este executável.
+///
+/// Verdadeiro quando **este** executável não é a cópia instalada — ou seja,
+/// quando alguém deu dois cliques no arquivo que baixou.
+///
+/// ## Por que o agente passou a se instalar sozinho
+///
+/// O download era um `.zip` com o executável e um `INSTALAR.cmd`, porque dois
+/// cliques no `.exe` apenas **rodam** o agente, sem instalá-lo. Esse script
+/// custava caro:
+///
+/// - O Windows marca todo arquivo baixado, e a marca passa para o que sai do
+///   `.zip`. Executar um `.cmd` marcado abre "o fornecedor não pôde ser
+///   verificado" — sobre um **script**, que é o formato que todo mundo aprendeu
+///   a temer. E **certificado de assinatura não resolve**: o Authenticode assina
+///   `.exe`, não `.cmd`. Era o único dos avisos que dinheiro nenhum apagaria.
+/// - Extrair é um passo a mais, e era ponto de falha próprio: o Explorer abre
+///   `.zip` como se fosse pasta, o `.cmd` rodava de dentro dele e não achava o
+///   `.exe` ao lado. O `INSTALAR.cmd` precisou de uma mensagem de erro só para
+///   esse caso — precisar dela já era o sinal de que o desenho tinha uma quina.
+///
+/// Com um `.exe` só: um arquivo, sem extrair, um aviso — e esse aviso é
+/// exatamente o que o certificado remove.
+pub fn deve_oferecer_instalacao() -> bool {
+    imp::deve_oferecer_instalacao()
+}
+
+/// Interpreta a resposta à pergunta "instalar neste computador?".
+///
+/// Enter vazio é **sim**: quem deu dois cliques no instalador já disse o que
+/// queria, e obrigar a digitar mais uma letra seria cerimônia. Dizer não
+/// continua sendo uma tecla.
+///
+/// Puro para ser testado. O que erra calado aqui é o contrário: um "n" lido como
+/// sim instalaria um programa que a pessoa acabou de recusar — e instalar sem
+/// consentimento é justamente o comportamento de que este produto está tentando
+/// não parecer.
+pub fn quer_instalar(resposta: &str) -> bool {
+    !matches!(
+        resposta.trim().to_lowercase().as_str(),
+        "n" | "nao" | "não" | "no" | "0"
+    )
+}
+
 /// O caminho do fluxo alternativo que marca um arquivo como vindo da internet.
 ///
 /// ## O defeito que isto conserta
@@ -505,6 +549,12 @@ mod imp {
         ));
     }
 
+    pub fn deve_oferecer_instalacao() -> bool {
+        let Ok(atual) = current_exe() else { return false };
+        let Ok(local) = pasta("LOCALAPPDATA") else { return false };
+        !already_installed(&atual, &install_dir(&local).join("deskside-agent.exe"))
+    }
+
     /// Se a tarefa agendada existe. Usado pelo `status`.
     pub fn tem_tarefa() -> bool {
         powershell(&format!(
@@ -708,6 +758,12 @@ mod imp {
         Err(SO_WINDOWS.to_string())
     }
 
+    pub fn deve_oferecer_instalacao() -> bool {
+        // Não há instalação em segundo plano fora do Windows; oferecer seria
+        // prometer algo que a próxima linha recusaria.
+        false
+    }
+
     pub fn uninstall() -> Result<(), String> {
         Err(SO_WINDOWS.to_string())
     }
@@ -779,6 +835,22 @@ mod tests {
         let vbs = launcher_script(&p(r#"C:\a"b\x.exe"#));
         assert!(!vbs.contains(r#"a"b"#), "aspas não foram dobradas:\n{vbs}");
         assert!(vbs.contains(r#"a""b"#));
+    }
+
+    #[test]
+    fn enter_vazio_instala_e_o_nao_e_respeitado() {
+        // Enter vazio é sim: quem deu dois cliques no instalador já disse o que
+        // queria. O que **não** pode errar é o outro lado — um "n" lido como sim
+        // instalaria um programa que a pessoa acabou de recusar, e instalar sem
+        // consentimento é justamente o que este produto tenta não parecer.
+        assert!(quer_instalar(""));
+        assert!(quer_instalar("\n"));
+        assert!(quer_instalar("s"));
+        assert!(quer_instalar("S\r\n"));
+
+        for nao in ["n", "N", "nao", "Não", "NÃO", "no", "0", "  n  \r\n"] {
+            assert!(!quer_instalar(nao), "{nao} devia ser recusa");
+        }
     }
 
     #[test]

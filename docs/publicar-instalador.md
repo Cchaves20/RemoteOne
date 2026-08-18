@@ -11,56 +11,51 @@ compilou para a pasta que o Caddy serve.
 
 As GitHub Actions estão desligadas neste projeto, então a compilação é sua.
 
-## O pacote
+## Um arquivo só, e por quê
 
-Um `.zip` com dois arquivos:
+O download é o `Deskside.exe`, direto. **Não** há mais `.zip` nem `INSTALAR.cmd`,
+e a razão é um aviso que dinheiro nenhum apagaria.
 
-- `deskside-agent.exe` — o agente, compilado em release;
-- `INSTALAR.cmd` — versionado em `deploy/site/baixar/`, é ele que a pessoa clica.
+O Windows marca todo arquivo baixado, e a marca passa para o que sai de um
+`.zip`. Executar um `.cmd` marcado abre "o fornecedor não pôde ser verificado" —
+sobre um **script**, que é o formato que todo mundo aprendeu a temer. E o
+Authenticode assina `.exe`, não `.cmd`: aquele aviso continuaria de pé mesmo
+depois de comprarmos o certificado.
 
-Duas coisas nesse `.cmd` valem saber, porque as duas nasceram de erro real:
+Havia também um custo menor e real: extrair era um passo a mais e ponto de falha
+próprio. O Explorer abre `.zip` como se fosse pasta, o `.cmd` rodava de dentro
+dele e não achava o `.exe` ao lado — o script precisou de uma mensagem de erro só
+para esse caso, e precisar dela já era o sinal de que o desenho tinha uma quina.
 
-- **Ele não tem acento.** O `cmd.exe` em português abre `.cmd` na página de
-  código 850, não em UTF-8; um "instalação" sai como "instala‡Æo". Um instalador
-  que parece corrompido não ajuda quem já está desconfiado do aviso do
-  SmartScreen.
-- **Ele avisa se foi rodado de dentro do `.zip`.** O Explorer do Windows abre
-  `.zip` como se fosse pasta, mas os arquivos continuam comprimidos e não se
-  veem: o `INSTALAR.cmd` rodaria e não acharia o `.exe` ao lado. Em vez de um
-  erro seco, ele explica que é preciso extrair primeiro.
+Agora o próprio `.exe` pergunta se pode instalar quando é aberto de fora da pasta
+de instalação. Um arquivo, sem extrair, **um** aviso — e esse é exatamente o que
+o certificado remove.
 
 ## Os comandos
 
 No **MateBook**, em `C:\Users\OseasyVM\Desktop\projetos\Deskside`:
 
 ```powershell
-# 1. Compilar em release.
+git pull
 cargo build --release --manifest-path agent\Cargo.toml
+Copy-Item agent\target\release\deskside-agent.exe deploy\site\baixar\Deskside.exe -Force
 
-# 2. Montar o pacote (o INSTALAR.cmd já está versionado na pasta).
-Copy-Item agent\target\release\deskside-agent.exe deploy\site\baixar\ -Force
-Compress-Archive -Path deploy\site\baixar\deskside-agent.exe,
-                       deploy\site\baixar\INSTALAR.cmd `
-                 -DestinationPath deploy\site\baixar\Deskside-Windows.zip -Force
-
-# 3. Enviar ao VPS. A chave é a mais recente em Downloads, como no atualizar.ps1.
-$chave = (Get-ChildItem "$env:USERPROFILE\Downloads\*.key" |
-          Sort-Object LastWriteTime -Descending)[0].FullName
+$chave = (Get-ChildItem "$env:USERPROFILE\Downloads\*.key" | Sort-Object LastWriteTime -Descending)[0].FullName
 $remoto = 'ubuntu@147.15.45.45'
-$pasta  = 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; pwd'
-$raiz   = (ssh -i $chave $remoto $pasta).Trim()
-
-scp -i $chave deploy\site\baixar\Deskside-Windows.zip `
-    "${remoto}:$raiz/deploy/site/baixar/"
+$raiz = (ssh -i $chave $remoto 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; pwd').Trim()
+scp -i $chave deploy\site\baixar\Deskside.exe "${remoto}:$raiz/deploy/site/baixar/"
 ```
 
-O `.zip` fica disponível na hora: o Caddy serve a pasta direto, sem reiniciar
-nada.
+O nome do arquivo publicado é `Deskside.exe`, e não `deskside-agent.exe`: é o que
+a pessoa vê na pasta de downloads, e "deskside-agent" parece peça de dentro de
+outra coisa.
+
+Fica disponível na hora — o Caddy serve a pasta direto, sem reiniciar nada.
 
 ## Conferir
 
 ```powershell
-curl.exe -I https://deskside.com.br/baixar/Deskside-Windows.zip
+curl.exe -I https://deskside.com.br/baixar/Deskside.exe
 ```
 
 `200` e um `content-length` de alguns megabytes. `404` significa que o `scp` foi
@@ -75,8 +70,14 @@ linha que você acabou de digitar.
 
 ## O que ainda falta
 
-O `.exe` **não é assinado**. O Windows mostra a tela azul do SmartScreen dizendo
-que protegeu o PC, e a pessoa precisa clicar em "Mais informações" → "Executar
-assim mesmo". A página do site avisa isso antes de acontecer, o que ajuda — mas
-não resolve. Resolver é comprar um certificado de assinatura de código, e é a
-próxima despesa depois do domínio.
+O `.exe` **não é assinado**, e sobra um aviso por causa disso: a tela azul do
+SmartScreen ao executar. A página avisa antes de acontecer, o que ajuda, mas não
+resolve — resolver é um certificado de assinatura de código, e é a próxima
+despesa depois do domínio. O de validação estendida (EV) remove o aviso de
+imediato e exige CNPJ; o comum (OV) reduz, com a reputação acumulando ao longo
+de semanas.
+
+De graça, e vale fazer: submeter o `.exe` em
+<https://www.microsoft.com/en-us/wdsi/filesubmission> como falso positivo, na
+opção de **software** ("Software developer"). Costuma limpar o SmartScreen em
+alguns dias, e precisa ser refeito a cada versão nova do executável.
