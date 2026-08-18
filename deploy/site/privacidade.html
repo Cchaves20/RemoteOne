@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacidade — Deskside</title>
+<style>
+  :root { --fundo:#0b0c1a; --texto:#f2f3ff; --fraco:#a8abc9; --linha:#262a4a; --ciano:#35d6d0; }
+  @media (prefers-color-scheme: light) {
+    :root { --fundo:#f7f8fc; --texto:#14162c; --fraco:#5a5f80; --linha:#e2e4f0; }
+  }
+  body { margin:0; background:var(--fundo); color:var(--texto);
+    font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .caixa { max-width:720px; margin:0 auto; padding:48px 20px 72px; }
+  h1 { font-size:1.9rem; margin:0 0 6px; }
+  h2 { font-size:1.15rem; margin:32px 0 8px; }
+  .data { color:var(--fraco); font-size:0.9rem; margin:0 0 8px; }
+  .rascunho { border:1px solid var(--ciano); border-radius:12px; padding:14px 16px;
+    margin:20px 0; font-size:0.9rem; color:var(--fraco); }
+  a { color:var(--ciano); }
+  ul { padding-left:20px; }
+  li { margin-bottom:6px; }
+  footer { margin-top:48px; padding-top:20px; border-top:1px solid var(--linha);
+    font-size:0.9rem; color:var(--fraco); }
+</style>
+</head>
+<body>
+<div class="caixa">
+  <h1>Política de privacidade</h1>
+  <p class="data">Atualizado em agosto de 2026.</p>
+<div class="rascunho">
+    <strong>Rascunho.</strong> Este texto foi escrito para descrever com precisão
+    o que o Deskside faz com os seus dados, e <strong>ainda não passou por
+    revisão jurídica</strong>. Ele será revisado antes de o serviço passar a ser
+    cobrado.
+  </div>
+  <h2>1. O que guardamos</h2>
+  <p>Para manter a sua conta e os seus computadores:</p>
+  <ul>
+    <li><strong>Nome e sobrenome</strong>, para identificar a conta.</li>
+    <li><strong>Data de nascimento</strong>, para conferir a idade mínima.</li>
+    <li><strong>E-mail ou telefone</strong>, para entrar e receber os códigos de
+      verificação. Um dos dois basta.</li>
+    <li><strong>Senha</strong>, guardada apenas como hash (bcrypt). Não temos
+      como ler a sua senha.</li>
+    <li><strong>Dos computadores pareados</strong>: um identificador, o nome da
+      máquina, o sistema operacional, o endereço MAC (usado para ligar o
+      computador pela rede) e o último endereço IP público visto.</li>
+    <li><strong>O que você configurou</strong>: perfis de atalho e automações,
+      incluindo horários.</li>
+  </ul>
+
+  <h2>2. O que <em>não</em> guardamos</h2>
+  <p>Esta é a parte mais importante desta página:</p>
+  <ul>
+    <li><strong>A imagem da sua tela não é gravada.</strong> Ela viaja do
+      computador ao celular e é descartada. Sempre que possível, a conexão é
+      <strong>direta</strong> entre os dois aparelhos e não passa pelos nossos
+      servidores; quando a rede não permite, ela passa por um servidor de relay
+      que apenas repassa os pacotes, sem armazená-los.</li>
+    <li><strong>Não guardamos o que você digita</strong> nem os movimentos do
+      mouse.</li>
+    <li><strong>Não guardamos os seus arquivos.</strong> As transferências vão de
+      um aparelho ao outro.</li>
+    <li><strong>Não acessamos os seus computadores.</strong> Não temos como
+      controlar uma máquina sua.</li>
+    <li>Não vendemos nem compartilhamos dados com anunciantes. Não usamos
+      rastreadores de publicidade.</li>
+  </ul>
+
+  <h2>3. A área de transferência</h2>
+  <p>
+    O compartilhamento da área de transferência vem <strong>desligado</strong>, e
+    de propósito: o que passa por ali com frequência inclui senha. Ligá-lo é uma
+    escolha sua, nas configurações, e mesmo ligado o conteúdo não é armazenado.
+  </p>
+
+  <h2>4. Com quem compartilhamos</h2>
+  <ul>
+    <li><strong>Provedor de e-mail e SMS</strong>, apenas para entregar os
+      códigos de verificação.</li>
+    <li><strong>Provedor de hospedagem</strong>, onde os servidores rodam.</li>
+  </ul>
+  <p>Nada além disso.</p>
+
+  <h2>5. Seus direitos (LGPD)</h2>
+  <p>
+    A Lei 13.709/2018 lhe dá direito a confirmar o tratamento, acessar,
+    corrigir, portar e <strong>eliminar</strong> os seus dados, e a revogar o
+    consentimento. O aplicativo já permite corrigir o contato e
+    <strong>excluir a conta inteira</strong> — a exclusão apaga também os
+    computadores, perfis e automações. Para os demais pedidos, escreva para
+    <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>.
+  </p>
+
+  <h2>6. Por quanto tempo</h2>
+  <p>
+    Enquanto a conta existir. Excluída a conta, os dados são removidos. Cópias de
+    segurança do banco são mantidas por até 30 dias e depois descartadas.
+  </p>
+
+  <h2>7. Encarregado</h2>
+  <p>
+    Pedidos e dúvidas sobre dados pessoais:
+    <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>.
+  </p>
+
+  <footer>
+    <a href="/">Deskside</a> &middot; <a href="/termos">Termos</a> &middot;
+    <a href="/privacidade">Privacidade</a> &middot;
+    <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>
+  </footer>
+</div>
+</body>
+</html>

@@ -42,3 +42,12 @@ Thumbs.db
 # Cópias de segurança do banco, feitas na VM. Nunca versionadas: são dados
 # de usuário, e o repositório é público.
 deploy/backups/
+
+# O pacote que a página do site oferece para baixar.
+#
+# O `INSTALAR.cmd` é versionado (é texto, e é ele que documenta a instalação); o
+# `.exe` e o `.zip` não. Binário no Git incha o repositório para sempre — cada
+# versão fica no histórico —, e o executável é gerado pelo `atualizar.ps1` e vai
+# ao VPS por `scp`. Ver docs/publicar-instalador.md.
+deploy/site/baixar/*.zip
+deploy/site/baixar/*.exe

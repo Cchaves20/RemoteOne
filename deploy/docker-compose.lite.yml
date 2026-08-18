@@ -16,7 +16,15 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN}
+      # Os nomes que o Caddy atende. Aceita vários, separados por vírgula — é
+      # assim que o domínio novo entra sem o antigo parar de responder (ver o
+      # Caddyfile). Ausente, vale o `DOMAIN`, que é o caso de quem ainda não
+      # mexeu no `.env`.
+      #
+      # **Separado do `DOMAIN` de propósito.** O `DOMAIN` é um nome só e alimenta
+      # o TURN, logo abaixo; uma lista ali faria o coturn anunciar a lista inteira
+      # como endereço de relay.
+      CADDY_DOMAINS: ${CADDY_DOMAINS:-${DOMAIN}}
     volumes:
       # A **pasta**, não o arquivo. Montar um arquivo solto prende o contêiner
       # ao inode: o `git reset --hard` substitui o arquivo (inode novo) e o
@@ -25,6 +33,10 @@ services:
       # seguia no ar - e o `caddy reload`, lendo de dentro do contêiner,
       # recarregava a versão velha com sucesso.
       - ./caddy:/etc/caddy:ro
+      # A página do produto e o instalador para baixar. Somente leitura: o
+      # Caddy nunca precisa escrever aqui, e um proxy que pode escrever no que
+      # ele serve é uma porta que não precisa existir.
+      - ./site:/srv/site:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

@@ -1,11 +1,20 @@
 # Caddy: proxy reverso com HTTPS automático (Let's Encrypt) para o Deskside.
 #
-# $DOMAIN vem do docker-compose (arquivo .env). O Caddy obtém e renova o
+# $CADDY_DOMAINS vem do docker-compose (arquivo .env). O Caddy obtém e renova o
 # certificado sozinho, desde que o domínio aponte para o IP do VPS e as portas
 # 80/443 estejam abertas. O reverse_proxy repassa também as conexões WebSocket
 # (/ws/agent e /ws/viewer) automaticamente.
 #
-# ## $DOMAIN aceita mais de um nome, separados por vírgula
+# ## Por que uma variável só para o Caddy
+#
+# `$CADDY_DOMAINS` aceita **vários nomes**, e `$DOMAIN` continua sendo **um só**.
+# São coisas diferentes e juntá-las quebra o TURN: o `docker-compose` usa
+# `${DOMAIN}` para dizer ao coturn qual é o realm e ao backend qual endereço de
+# relay entregar ao app. Com uma lista ali, o TURN passaria a anunciar
+# "deskside.com.br, www..., caio..." como endereço — e o relay pararia de
+# funcionar para quem está em rede móvel, que é justamente quem mais precisa
+# dele. O sintoma seria "vídeo não conecta no 5G", sem nada apontando para o
+# arquivo de proxy.
 #
 # E é isso que torna a troca de domínio indolor. O endereço do servidor fica
 # **compilado dentro dos binários**: o agente instalado tem a URL no
@@ -20,12 +29,36 @@
 #
 # No `.env` do VPS:
 #
-#   DOMAIN=deskside.com.br, www.deskside.com.br, caio-remoteone.duckdns.org
+#   DOMAIN=deskside.com.br
+#   CADDY_DOMAINS=deskside.com.br, www.deskside.com.br, caio-remoteone.duckdns.org
 #
 # O Caddy pede um certificado **por nome**. Um nome cujo DNS ainda não aponta
 # para o VPS falha só a si mesmo — ele registra o erro, segue tentando, e os
 # outros continuam atendidos. Então acrescentar o nome novo antes de o DNS
 # propagar não tira o serviço do ar.
-{$DOMAIN} {
-	reverse_proxy api:8000
+{$CADDY_DOMAINS} {
+	# ## A ordem aqui é uma escolha de segurança, não de estilo
+	#
+	# O site estático atende uma **lista fechada** de caminhos, e todo o resto vai
+	# para a API. O contrário — site na raiz e API numa lista — parece mais
+	# natural e falha muito pior: bastaria acrescentar uma rota nova no backend
+	# para o site engolir a chamada e devolver 404. O produto pararia, e a causa
+	# estaria num arquivo de proxy que ninguém pensa em olhar.
+	#
+	# Nesta ordem, o pior caso é uma página do site cair no 404 da API: visível,
+	# inofensivo, e conserta-se acrescentando um caminho aqui.
+	@site path / /index.html /termos /privacidade /baixar/*
+	handle @site {
+		root * /srv/site
+		# `try_files` é o que faz `/termos` servir `termos.html`. Sem ele, a URL
+		# bonita daria 404 e a única forma de acessar seria com a extensão à
+		# mostra - e é exatamente essa URL que vai nos formulários da Apple e nos
+		# termos de uso, onde ela é lida por gente.
+		try_files {path} {path}.html {path}/index.html
+		file_server
+	}
+
+	handle {
+		reverse_proxy api:8000
+	}
 }
