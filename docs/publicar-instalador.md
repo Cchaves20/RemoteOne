@@ -37,7 +37,31 @@ No **MateBook**, em `C:\Users\OseasyVM\Desktop\projetos\Deskside`:
 
 ```powershell
 git pull
-cargo build --release --manifest-path agent\Cargo.toml
+.\scripts\atualizar.cmd -Agente
+```
+
+**Compile pelo `atualizar`, não com `cargo build` direto.** Num Windows ARM64 o
+`cargo build` falha sozinho: o `ring` monta o assembly ARM64 com o **clang**, não
+com o `cl.exe`, e o erro é `failed to find tool "clang": program not found`. O
+`atualizar.ps1` tem um `PrepararClangArm64` que acha o clang e o põe no PATH
+antes de chamar o cargo — chamar o cargo direto passa por fora disso.
+
+Depois confira que o executável é **desta** compilação:
+
+```powershell
+(Get-Item agent\target\release\deskside-agent.exe).LastWriteTime
+```
+
+Tem que ser de agora, não de semana passada. Este passo não é zelo: quando o
+build falha, o `.exe` do build **anterior** continua onde estava, e o `Copy-Item`
+seguinte copia esse — sem erro nenhum, porque o arquivo existe. Já aconteceu, e o
+que quase foi publicado era um agente sem a remoção da marca da web e sem a
+pergunta de instalação. Um comando que dá certo copiando a coisa errada é pior
+que um que falha.
+
+Só então:
+
+```powershell
 Copy-Item agent\target\release\deskside-agent.exe deploy\site\baixar\Deskside.exe -Force
 
 $chave = (Get-ChildItem "$env:USERPROFILE\Downloads\*.key" | Sort-Object LastWriteTime -Descending)[0].FullName
