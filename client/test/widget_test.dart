@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:deskside_client/config.dart';
 import 'package:deskside_client/l10n/strings.dart';
 import 'package:deskside_client/main.dart';
 import 'package:deskside_client/services/api_client.dart';
@@ -12,10 +13,13 @@ import 'package:deskside_client/services/token_store.dart';
 
 /// Constrói um AppState com um http.Client falso, roteado por [handler]. Fixa o
 /// idioma em pt-BR para as asserções de texto serem determinísticas.
-AppState _stateWith(Future<http.Response> Function(http.Request) handler) {
+AppState _stateWith(
+  Future<http.Response> Function(http.Request) handler, {
+  String baseUrl = 'http://test',
+}) {
   final mock = MockClient((req) => handler(req));
   return AppState(ApiClient(
-    baseUrl: 'http://test',
+    baseUrl: baseUrl,
     httpClient: mock,
     tokenStore: InMemoryTokenStore(),
   ))
@@ -30,6 +34,34 @@ void main() {
     expect(find.text('Deskside'), findsOneWidget);
     expect(find.text('Entrar'), findsWidgets);
     expect(find.text('Criar uma conta'), findsOneWidget);
+  });
+
+  testWidgets('no servidor padrão, o endereço não aparece na tela', (tester) async {
+    // Enquanto o padrão embutido era `localhost`, este campo era obrigatório.
+    // Agora ele é ruído: um campo de URL na entrada de um produto para o público
+    // diz "isto é ferramenta de programador", e é mais uma coisa para preencher
+    // errado.
+    final state = _stateWith(
+      (_) async => http.Response('{}', 200),
+      baseUrl: backendPadrao,
+    );
+    await tester.pumpWidget(DesksideApp(state: state));
+
+    expect(find.text('Servidor'), findsNothing);
+    expect(find.text('Usar outro servidor'), findsOneWidget);
+  });
+
+  testWidgets('com endereço fora do padrão, ele aparece já aberto', (tester) async {
+    // O caso que a escolha precisa cobrir: quem apontou o app para a própria
+    // rede, ou ficou com um endereço que parou de responder. Escondido, o login
+    // falharia e nada na tela explicaria por quê — e o único conserto seria
+    // reinstalar o app.
+    final state = _stateWith((_) async => http.Response('{}', 200),
+        baseUrl: 'http://192.168.0.10:8000');
+    await tester.pumpWidget(DesksideApp(state: state));
+
+    expect(find.text('Servidor'), findsOneWidget);
+    expect(find.text('Voltar ao servidor padrão'), findsOneWidget);
   });
 
   testWidgets('login bem-sucedido leva à lista de dispositivos', (tester) async {

@@ -122,6 +122,22 @@ class Strings {
 
   String get server => _t('Servidor', 'Server', '服务器', 'Serveur', 'Servidor');
   String get serverHint => 'Ex.: http://192.168.0.10:8000';
+  String get usarOutroServidor => _t(
+      'Usar outro servidor',
+      'Use another server',
+      '使用其他服务器',
+      'Utiliser un autre serveur',
+      'Usar otro servidor');
+  /// A saída para quem ficou com um endereço salvo que não responde mais.
+  ///
+  /// Sem ela, o único conserto seria reinstalar o app — e a pessoa nem saberia
+  /// que era isso.
+  String get voltarAoServidorPadrao => _t(
+      'Voltar ao servidor padrão',
+      'Back to the default server',
+      '恢复默认服务器',
+      'Revenir au serveur par défaut',
+      'Volver al servidor predeterminado');
   String get signInButton => _t('Entrar', 'Sign in', '登录', 'Se connecter', 'Entrar');
   // `createAccountButton` e `haveAccount` saíram junto com o botão que
   // alternava login e cadastro na mesma tela. O cadastro tem tela própria,

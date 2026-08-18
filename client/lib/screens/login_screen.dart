@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config.dart';
 import '../models/pais.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
@@ -36,6 +37,15 @@ class _LoginScreenState extends State<LoginScreen> {
   final _code = TextEditingController();
   late final TextEditingController _server =
       TextEditingController(text: widget.state.serverUrl);
+
+  /// Se o campo do servidor está à mostra.
+  ///
+  /// Aberto de saída **quando o endereço salvo não é o padrão** — que é
+  /// exatamente quando a pessoa precisa vê-lo. É o caso de quem apontou o app
+  /// para a própria rede e voltou dias depois sem lembrar, e o de quem ficou com
+  /// um endereço que parou de responder: escondido, o login falharia e nada na
+  /// tela explicaria por quê.
+  late bool _servidorAberto = widget.state.serverUrl != backendPadrao;
 
   /// Se entra por telefone. Falso = e-mail.
   bool _porTelefone = false;
@@ -248,17 +258,54 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                             ],
-                            const SizedBox(height: 12),
-                            TextField(
-                              controller: _server,
-                              keyboardType: TextInputType.url,
-                              autocorrect: false,
-                              decoration: InputDecoration(
-                                labelText: t.server,
-                                helperText: t.serverHint,
-                                prefixIcon: const Icon(Icons.dns_outlined),
+                            // O endereço do servidor **não** fica à mostra.
+                            //
+                            // Enquanto o padrão embutido era `localhost`, este
+                            // campo era obrigatório: sem digitar um endereço, o
+                            // app não alcançava nada. Agora ele já nasce
+                            // apontando para o servidor certo, e um campo de URL
+                            // na tela de entrada de um produto para o público
+                            // diz "isto é ferramenta de programador" — além de
+                            // ser mais uma coisa que dá para preencher errado.
+                            //
+                            // Some, mas **não deixa de existir**: apontar o
+                            // celular a um servidor da mesma rede continua
+                            // legítimo, e é o que se usa para desenvolver.
+                            const SizedBox(height: 4),
+                            if (!_servidorAberto)
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton(
+                                  onPressed: () =>
+                                      setState(() => _servidorAberto = true),
+                                  child: Text(t.usarOutroServidor),
+                                ),
+                              )
+                            else ...[
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _server,
+                                keyboardType: TextInputType.url,
+                                autocorrect: false,
+                                decoration: InputDecoration(
+                                  labelText: t.server,
+                                  helperText: t.serverHint,
+                                  prefixIcon: const Icon(Icons.dns_outlined),
+                                ),
                               ),
-                            ),
+                              // A saída para quem ficou com um endereço salvo que
+                              // não responde mais. Sem ela, o único conserto seria
+                              // reinstalar o app — e ninguém adivinharia que era
+                              // isso.
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton(
+                                  onPressed: () => setState(
+                                      () => _server.text = backendPadrao),
+                                  child: Text(t.voltarAoServidorPadrao),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
