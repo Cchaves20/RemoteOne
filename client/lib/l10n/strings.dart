@@ -896,7 +896,7 @@ class Strings {
           'while controlling the computer.',
       '开启后，电脑屏幕不会熄灭，通知也不会弹出。即时开关请在控制电脑时的配置栏中操作。',
       "Avec le mode actif, l'écran de l'ordinateur ne s'éteint pas et les "
-          'notifications n'apparaissent pas. Pour activer sur le moment, '
+          "notifications n'apparaissent pas. Pour activer sur le moment, "
           'utilisez la barre de profils pendant le contrôle.',
       'Con el modo activo, la pantalla del equipo no se apaga y las '
           'notificaciones no aparecen. Para activarlo en el momento, usa la '

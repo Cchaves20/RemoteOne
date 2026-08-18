@@ -87,6 +87,11 @@ workflows:
           /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$PLIST"
       - name: Análise e testes
         script: |
+          # Antes do `analyze`, porque é mais rápido e a mensagem é melhor: uma
+          # string não fechada em `strings.dart` faz o compilador reclamar de
+          # dezenas de "getter não definido" — um por palavra da frase que virou
+          # código. Ver scripts/conferir-textos.py.
+          python3 ../scripts/conferir-textos.py lib/l10n/strings.dart
           flutter analyze
           flutter test
       - name: Build iOS sem assinatura e empacotar .ipa
@@ -246,6 +251,11 @@ workflows:
           cat "$MANIFESTO"
       - name: Análise e testes
         script: |
+          # Antes do `analyze`, porque é mais rápido e a mensagem é melhor: uma
+          # string não fechada em `strings.dart` faz o compilador reclamar de
+          # dezenas de "getter não definido" — um por palavra da frase que virou
+          # código. Ver scripts/conferir-textos.py.
+          python3 ../scripts/conferir-textos.py lib/l10n/strings.dart
           flutter analyze
           flutter test
       - name: Build do APK
