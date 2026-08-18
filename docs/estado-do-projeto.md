@@ -152,11 +152,22 @@ falta para o Deskside poder ser vendido:
   cima do volume, subir, e confirmar no app que os pareamentos sobreviveram. Um
   backup nunca restaurado é hipótese, não garantia. Ver
   [`deploy-vps-oracle.md`](deploy-vps-oracle.md).
-- **Limite de tentativas** em `/login` e no cadastro. (O código de verificação já tem o seu; a senha, não.)
+- ~~**Limite de tentativas** em `/login` e no cadastro.~~ **Feito.** Os três
+  caminhos que não exigem login (`/login`, `/signup/start`, `/password/forgot`)
+  cobram antes de tocar no banco — em `/login`, antes do bcrypt, que é o custo
+  que um atacante quer provocar. Dois contadores separados, por conta e por IP,
+  porque o IP de celular é compartilhado por operadora (CGNAT) e um limite justo
+  para conta bloquearia bairros inteiros. Ver `backend/app/limite.py`.
+- ~~**Site e instalador.**~~ **Feito.** `deskside.com.br` serve a página, os
+  termos, a privacidade e o download. O download é um `.exe` só, que pergunta se
+  pode se instalar. Ver [`publicar-instalador.md`](publicar-instalador.md).
 - **Provedor de e-mail e SMS.** O cadastro verifica por código, e a entrega está pronta atrás de uma interface — falta contratar SMTP e Twilio e pôr as credenciais no `deploy/.env`. Sem isso o código vai para o registro do servidor, e o app avisa.
 - **App Store.** Hoje é sideload que expira em sete dias por aparelho.
 - **Cobrança e planos.**
-- **Termos de uso, política de privacidade, LGPD.**
+- **Termos de uso, política de privacidade, LGPD.** Existem em
+  `deploy/site/termos.html` e `privacidade.html`, e a própria página diz que são
+  rascunho. Escritos por quem não é advogado, e o que trava a cobrança é a
+  revisão — não a redação.
 - **SQLite** onde o plano pedia PostgreSQL + Redis, e **sem Alembic** — a
   migração de esquema é remendada na mão em `db.py`.
 - **Revisão de segurança** antes de abrir para terceiros.
