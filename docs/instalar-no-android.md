@@ -29,7 +29,12 @@ Não expira. Só troca quando você instalar um APK novo por cima.
 
 ## 3. Apontar ao servidor
 
-Na tela de login, em **Servidor**: `https://caio-remoteone.duckdns.org`.
+**Não precisa.** O app já nasce apontando para `https://deskside.com.br`, e o
+campo "Servidor" nem aparece na tela de login enquanto o endereço for esse.
+
+Para apontar a um backend da própria rede, o campo continua alcançável: em
+"Usar outro servidor", na tela de login. Ele também se abre sozinho quando o
+endereço salvo não é o padrão — que é quando alguém precisa vê-lo.
 
 ## O que este APK não é
 
