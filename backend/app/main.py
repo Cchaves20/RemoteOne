@@ -4,17 +4,18 @@ import logging
 from contextlib import asynccontextmanager
 
 import jwt
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+from sqlalchemy.orm import Session
 
 from app import entrega, pairing
 from app.agents import AgentRegistry
 from app.auth import router as auth_router
-from app.auth import sessao_valida
+from app.auth import get_current_user, sessao_valida
 from app.automations import enviar_agenda
 from app.automations import router as automations_router
 from app.config import settings
 from app.connections import Viewer, manager, viewers
-from app.db import SessionLocal, init_db
+from app.db import SessionLocal, get_db, init_db
 from app.devices import router as devices_router
 from app.ice import ice_servers
 from app.models import User
@@ -142,9 +143,34 @@ def api_root() -> dict[str, str]:
 
 
 @app.get("/api/v1/agents")
-def list_agents() -> dict:
-    """Lista os agentes atualmente conectados (online)."""
-    return {"agents": [a.as_dict() for a in registry.list()]}
+def list_agents(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Os computadores **desta conta** que estão conectados agora.
+
+    Já foi público, e era o defeito mais grave que esta revisão encontrou.
+
+    O que devolvia: `device_id` e `hostname` de **todos** os agentes conectados,
+    de todas as contas, sem autenticação nenhuma. Parecia inofensivo — uma
+    listagem de diagnóstico —, mas o `device_id` é a única credencial que o
+    canal `/ws/agent` exige. Publicá-lo entregava, a quem só sabia o endereço do
+    servidor, a chave de todo computador que estivesse ligado no momento.
+
+    O encadeamento: pegar os ids aqui, abrir um `/ws/agent` com o id de outra
+    pessoa e passar a ser aquele computador aos olhos do servidor — que sobrepõe
+    o registro sem perguntar. O agente de verdade fica órfão (o dono vê o
+    computador cair) e o impostor passa a receber o que o dono manda: cada tecla
+    digitada, o conteúdo da área de transferência, os pedidos de arquivo. Podia
+    responder com a tela que quisesse.
+
+    Nada disso exigia conta, senha ou token. Só o endereço do site.
+
+    Agora exige login e mostra **apenas os aparelhos do próprio dono** — que é
+    tudo para o que a listagem servia.
+    """
+    meus = {d.device_id for d in pairing.list_devices(db, current_user)}
+    return {"agents": [a.as_dict() for a in registry.list() if a.device_id in meus]}
 
 
 async def _mandar_agenda(device_id: str) -> None:

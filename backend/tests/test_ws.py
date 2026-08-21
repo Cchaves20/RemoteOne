@@ -26,9 +26,11 @@ def test_agent_handshake_and_online_presence():
         intro = ws.receive_json()
         assert intro["type"] == "pair_code"
 
-        # Enquanto conectado, o agente aparece na listagem HTTP.
-        listed = client.get("/api/v1/agents").json()["agents"]
-        assert any(a["device_id"] == "dev-ws" for a in listed)
+        # A conferência de presença **saiu daqui**, e a razão importa: ela
+        # usava `/api/v1/agents` sem token, e esse endpoint deixou de ser
+        # público — ele entregava o `device_id` de todo computador conectado,
+        # que é a credencial do canal `/ws/agent`. A presença continua testada,
+        # agora pela conta dona do aparelho, em `test_seguranca.py`.
 
         # Heartbeat é respondido com ack.
         ws.send_json({"type": "heartbeat"})

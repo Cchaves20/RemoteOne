@@ -1,4 +1,5 @@
 import os
+import secrets
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -40,9 +41,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://deskside:deskside@localhost:5432/deskside"
     redis_url: str = "redis://localhost:6379/0"
 
-    # Autenticação. O segredo PRECISA ser trocado em produção (via
-    # DESKSIDE_JWT_SECRET); o valor padrão serve apenas para desenvolvimento.
-    jwt_secret: str = "dev-insecure-secret-change-me"
+    # Autenticação. **Sem padrão de propósito** — ver `_segredo_de_emergencia`.
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
@@ -84,4 +84,44 @@ class Settings(BaseSettings):
     idade_minima: int = 13
 
 
+#: O valor que ficava aqui como padrão, e que agora é recusado explicitamente.
+#: Está escrito no histórico do Git deste repositório, que é público — qualquer
+#: pessoa que o leia consegue assinar um token válido para qualquer conta.
+_SEGREDO_ANTIGO = "dev-insecure-secret-change-me"
+
+
+def _segredo_de_emergencia(valor: str) -> str:
+    """Devolve o segredo de assinatura, sorteando um se não houver.
+
+    O padrão anterior era uma constante escrita neste arquivo. Isso **falha
+    aberto**: esquecer `DESKSIDE_JWT_SECRET` no `.env` de produção não derrubava
+    nada — o servidor subia, o `/health` respondia "ok", e os tokens passavam a
+    ser assinados com uma senha publicada no GitHub. Ninguém erra nada visível,
+    e qualquer pessoa que leia o repositório entra em qualquer conta.
+
+    Recusar-se a subir seria a reação óbvia, mas troca um defeito silencioso por
+    uma indisponibilidade total — e um `docker compose up` que não sobe às duas
+    da manhã é a hora errada de descobrir isso.
+
+    Então: **sorteia um segredo, e o sorteio é o alarme.** O servidor funciona,
+    ninguém consegue forjar nada, e o sintoma é impossível de ignorar — todo
+    mundo é deslogado a cada reinício, e o aviso está no diário. É um defeito
+    que se anuncia em vez de esperar.
+    """
+    if valor and valor != _SEGREDO_ANTIGO:
+        return valor
+    motivo = (
+        "DESKSIDE_JWT_SECRET não está definido"
+        if not valor
+        else f"DESKSIDE_JWT_SECRET ainda é {_SEGREDO_ANTIGO!r}, que é público"
+    )
+    print(
+        f"AVISO DE SEGURANÇA: {motivo}. Sorteando um segredo temporário: "
+        "as sessões vão cair a cada reinício do servidor até que um valor "
+        "fixo seja posto no .env. Gere um com: openssl rand -base64 48"
+    )
+    return secrets.token_urlsafe(48)
+
+
 settings = Settings()
+settings.jwt_secret = _segredo_de_emergencia(settings.jwt_secret)
