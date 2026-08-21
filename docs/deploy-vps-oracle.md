@@ -145,6 +145,60 @@ do **cache de camadas** do Docker. O dia em que o cache foi invalidado - por
 uma renomeação de pacote, no caso - o build rodou inteiro e derrubou tudo. A
 falta de swap estava lá o tempo todo, esperando.
 
+### `fwupd`: 152 MB gastos com nada
+
+Medido em agosto de 2026, nesta VM de 1 GB:
+
+```
+fwupd            152 MB    <- o maior consumidor da máquina
+dockerd           51 MB
+systemd-journal   41 MB
+uvicorn           26 MB    <- a API
+caddy             20 MB
+```
+
+Os três contêineres do Deskside somam **45 MB**. O `fwupd` sozinho usa mais que
+o triplo disso — e é o daemon que atualiza **firmware**: BIOS, controladoras,
+periféricos. Numa máquina virtual não há firmware para atualizar. Ele ocupa 15%
+da memória do servidor para não fazer nada.
+
+```bash
+sudo systemctl mask --now fwupd.service fwupd-refresh.timer
+free -m
+```
+
+`mask` e não `disable`: o `fwupd` é ativado por D-Bus sob demanda, e um
+`disable` o deixaria voltar sozinho na primeira vez que alguém o chamasse. E
+`mask` em vez de `apt purge` porque é reversível com um comando
+(`sudo systemctl unmask fwupd`) e não mexe em pacote nenhum.
+
+Outros candidatos, em ordem de retorno:
+
+- **Oracle Cloud Agent** (`oci-wlp`, `gomon`, `agent`, `updater`): ~64 MB
+  somados. Os plugins que você não usa se desligam pelo console da Oracle, na
+  página da instância.
+- **`multipathd`** (27 MB): serve para storage com múltiplos caminhos. Com um
+  volume de boot só, não faz nada.
+- **`systemd-journal`** (41 MB): dá para limitar com `SystemMaxUse` em
+  `/etc/systemd/journald.conf`.
+
+**Não desligue o `iscsid`.** Ele parece candidato — 13 MB, um serviço de storage
+que "ninguém usa" — mas na Oracle o volume de boot é frequentemente anexado por
+iSCSI. Desligá-lo pode deixar a instância sem bootar, e o conserto é pelo
+console serial. Os 13 MB não pagam esse risco.
+
+### O que **não** é problema de memória
+
+Vale registrar para não gastar dinheiro à toa: nada aqui cresce com o número de
+usuários de forma relevante. O coturn usa 4 MB e cada sessão relayed custa
+alguns KB; a API usa 26 MB e cada agente conectado acrescenta dezenas de KB.
+Centenas de agentes caberiam nesta máquina.
+
+O que aperta 1 GB é o **pico do deploy**, porque `docker-compose.lite.yml` traz
+`build: ../backend` — a imagem é compilada aqui dentro. É o que o swap está
+absorvendo (221 MB em uso na medição acima, sem nenhum processo morto por falta
+de memória desde então).
+
 ## 5. Domínio grátis no DuckDNS
 
 1. Acesse <https://www.duckdns.org>, entre (Google/GitHub) e crie um subdomínio,
