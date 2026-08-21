@@ -49,18 +49,78 @@ Android em duas semanas e doze pessoas.
 Já pago. Renove em dia: domínio expirado derruba site, API e agentes ao mesmo
 tempo, porque tudo aponta para ele.
 
-### Servidor — R$ 0, com um risco que vale dizer
+### Servidor — R$ 0, e a banda não é o problema
 
-A VM da Oracle Cloud é do nível gratuito permanente, e aguenta o que temos.
+A VM da Oracle é do nível gratuito permanente. A pergunta natural é se vai ser
+preciso aumentar a banda, e a resposta é não — mas por um motivo que vale
+entender, porque ele muda **qual** peça apertar quando apertar.
 
-O risco é de política, não de técnica: o nível gratuito da Oracle pode
-**reivindicar instâncias ociosas**, e "ocioso" é definido por eles. Para um
-projeto de estudo, tudo bem. Para um produto pago, um dia de fora é um dia de
-reembolso e de gente cancelando.
+#### Por que a maior parte do vídeo não passa pelo servidor
 
-Trocar por um servidor pago quando começar a entrar dinheiro custa entre
-**US$ 5 e US$ 7 por mês** (~R$ 30 a R$ 40) num Hetzner ou DigitalOcean. Não é
-para agora; é para quando o primeiro cliente pagar.
+O Deskside usa WebRTC. Quando o celular e o computador conseguem se achar
+diretamente, **a tela vai de um para o outro sem tocar na VM** — o servidor só
+apresentou os dois. Nesses casos o tráfego do servidor é de bytes: um punhado
+de mensagens de sinalização.
+
+O relay (coturn) só entra quando os dois lados estão atrás de NAT que não
+atravessa — o caso comum em 4G/5G, onde a operadora põe milhares de assinantes
+atrás do mesmo IP. Aí sim, todo o vídeo passa pela VM.
+
+Chute conservador: **um quarto das sessões** cai no relay.
+
+#### As contas
+
+Uma sessão de tela relayed gasta por volta de 3 Mbps, o que dá **1,35 GB por
+hora**.
+
+Com 100 assinantes, cada um usando 10 horas por mês, e 25% disso no relay:
+
+```
+100 × 10 h × 25% = 250 horas relayed
+250 h × 1,35 GB  = 340 GB por mês
+```
+
+O nível gratuito da Oracle inclui **10 TB de saída por mês** — cerca de trinta
+vezes isso. Os downloads do instalador nem contam: o `.exe` tem 21 MB, e dez mil
+downloads somam 210 GB.
+
+A **velocidade** também sobra. A `E2.1.Micro` entrega 480 Mbps, e a 3 Mbps por
+sessão relayed isso são mais de cem sessões simultâneas. Você vai bater em
+outra coisa muito antes.
+
+#### O que vai apertar primeiro: a memória
+
+O gargalo real da sua VM é **1 GB de RAM** rodando Caddy, a API e o coturn ao
+mesmo tempo — é por isso que existe um `docker-compose.lite.yml` e por isso que
+o swap é obrigatório.
+
+E a boa notícia é que o conserto é de graça: a `VM.Standard.A1.Flex` (ARM,
+Ampere) também é Always Free e dá **4 OCPU e 24 GB de RAM**. Vinte e quatro
+vezes a memória, 1 Gbps por OCPU, custo zero. O que impede não é preço, é
+disponibilidade — a cota ARM vive esgotada, e a saída é insistir em outro
+Availability Domain até aparecer vaga.
+
+Ou seja: o upgrade que você precisa não é de banda, é de instância, e ele é
+gratuito.
+
+#### O risco de verdade, e como tirá-lo de graça
+
+A Oracle **reivindica instâncias ociosas** do nível gratuito. Para um projeto de
+estudo, tudo bem. Para um produto pago, um dia fora do ar é um dia de reembolso
+e de gente cancelando.
+
+O jeito de eliminar isso sem gastar: **converter a conta para Pay As You Go**.
+As contas pagas ficam de fora da política de recuperação por ociosidade, e os
+recursos Always Free continuam gratuitos — você só paga se passar dos limites,
+o que pelas contas acima não vai acontecer tão cedo. Exige um cartão cadastrado.
+
+Confirme os termos antes de fazer, que é justamente o tipo de política que
+muda; mas se continuar valendo, é o melhor negócio da lista: some o único risco
+sério da infraestrutura por R$ 0.
+
+Trocar por um servidor pago (Hetzner, DigitalOcean) custa **US$ 5 a US$ 7 por
+mês** (~R$ 30 a R$ 40) e continua sendo o plano B — não porque a banda acabou,
+mas se a Oracle mudar de ideia sobre o nível gratuito.
 
 ### Envio de e-mail — ~R$ 5/mês, na prática quase zero
 
