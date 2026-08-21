@@ -10,6 +10,7 @@ Ver `docs/revisao-de-seguranca.md`.
 import importlib
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.main import app
 from tests.conftest import SENHA, criar_conta
@@ -266,3 +267,92 @@ def test_quem_pareou_continua_recebendo_o_turn():
         assert welcome["ice_servers"][0]["urls"][0].startswith("stun:")
     finally:
         ws.close()
+
+
+# --- S6: o segredo do 2FA deixa de ficar em texto puro no banco --------------
+
+
+def test_o_segredo_do_2fa_nao_fica_legivel_no_banco():
+    """Quem obtiver o banco não gera os códigos de ninguém.
+
+    É o vazamento realista: a cópia diária sai da VM e vai parar num
+    computador, numa nuvem, num pendrive. O `.env` com a chave não vai junto.
+    """
+    import pyotp
+
+    from app import cofre
+    from app.db import SessionLocal
+    from app.models import User
+
+    token = criar_conta(client, "com-2fa@example.com")["access_token"]
+    cabecalho = {"Authorization": f"Bearer {token}"}
+    setup = client.post("/api/v1/auth/2fa/setup", headers=cabecalho)
+    assert setup.status_code == 200, setup.text
+    segredo_real = setup.json()["secret"]
+
+    with SessionLocal() as db:
+        guardado = db.scalar(
+            select(User.totp_secret).where(User.email == "com-2fa@example.com")
+        )
+    assert guardado, "o setup precisa guardar alguma coisa"
+    assert segredo_real not in guardado, "o segredo do 2FA está legível no banco"
+    assert cofre.esta_cifrado(guardado)
+    assert cofre.abrir(guardado) == segredo_real
+
+    # E continua funcionando de ponta a ponta: cifrar não pode quebrar o 2FA.
+    ligar = client.post(
+        "/api/v1/auth/2fa/enable",
+        json={"code": pyotp.TOTP(segredo_real).now()},
+        headers=cabecalho,
+    )
+    assert ligar.status_code in (200, 204), ligar.text
+
+
+def test_acrescentar_uma_chave_propria_nao_tranca_quem_ja_tinha_2fa():
+    """O erro que este desenho existe para evitar.
+
+    Cifra com uma chave e depois trocá-la transforma todo segredo guardado em
+    lixo — e quem usa 2FA não entra mais. Por isso a abertura tenta **todas**
+    as chaves configuradas, e só a gravação usa a primeira.
+    """
+    from app import cofre
+    from app.config import settings
+
+    antigo = cofre.guardar("SEGREDOBASE32AAAA")
+
+    anterior = settings.totp_key
+    settings.totp_key = "uma-chave-propria-nova"
+    try:
+        assert cofre.abrir(antigo) == "SEGREDOBASE32AAAA", (
+            "definir uma chave própria trancou quem já tinha 2FA"
+        )
+        # E o que se grava daqui em diante usa a chave nova.
+        novo = cofre.guardar("OUTROSEGREDO")
+        assert cofre.abrir(novo) == "OUTROSEGREDO"
+    finally:
+        settings.totp_key = anterior
+
+    # Sem a chave nova, o que ela cifrou não abre — é o que se espera de cifra.
+    assert cofre.abrir(novo) is None
+
+
+def test_segredo_ilegivel_reprova_o_codigo_em_vez_de_liberar():
+    """Falhar fechado.
+
+    Se a chave se perder, o 2FA precisa **barrar**, não passar. Devolver o
+    segredo vazio faria `verify_totp` reprovar; devolver "tudo bem" faria de uma
+    chave perdida um contorno do segundo fator.
+    """
+    from app import cofre
+    from app.security import verify_totp
+
+    assert cofre.abrir(cofre.MARCA + "lixo-que-nao-decifra") is None
+    assert not verify_totp(cofre.abrir(cofre.MARCA + "lixo") or "", "000000")
+
+
+def test_texto_puro_de_antes_continua_sendo_lido():
+    """A migração não pode ter um instante em que o 2FA de alguém para."""
+    from app import cofre
+
+    assert cofre.abrir("SEGREDOANTIGOEMTEXTOPURO") == "SEGREDOANTIGOEMTEXTOPURO"
+    assert not cofre.esta_cifrado("SEGREDOANTIGOEMTEXTOPURO")

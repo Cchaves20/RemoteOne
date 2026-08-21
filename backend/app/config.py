@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     # Validade do código de pareamento exibido pelo agente.
     pairing_ttl_seconds: int = 600
 
+    # Chave que cifra o segredo do 2FA no banco (ver `app/cofre.py`).
+    #
+    # Vazia deriva do `jwt_secret`, o que funciona sem mexer no `.env` de quem
+    # já está no ar. Definir uma própria é melhor — separa dois vazamentos que
+    # hoje são um só —, e é seguro fazer depois: a derivada continua na lista de
+    # chaves que abrem, então ninguém com 2FA fica trancado do lado de fora.
+    totp_key: str = ""
+
     # Recusar agentes que não apresentam segredo (ver `Device.agent_secret`).
     #
     # Falso enquanto houver agentes antigos por aí. Ligar antes de todos

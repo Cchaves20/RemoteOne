@@ -188,42 +188,94 @@ expulso continuaria vendo a tela até resolver mexer no aparelho.
 Testado em `test_sessoes.py`, com a senha trocada no meio de uma sessão aberta.
 O teste falha com a revalidação desligada.
 
-### S6 — o segredo do 2FA fica em texto puro no banco
+### S6 — o segredo do 2FA ficava em texto puro no banco
 
-**Gravidade: média.** Não corrigido.
+**Gravidade: média.** Corrigido.
 
 `User.totp_secret` é uma coluna de texto sem cifra. Quem obtiver o banco — ou um
 dos backups diários — gera os códigos de 2FA de todo mundo. O 2FA existe
 exatamente para o caso de a senha ter vazado; se as duas coisas caem no mesmo
 arquivo, ele protege menos do que parece.
 
-**Conserto:** cifrar a coluna com uma chave que **não** esteja no banco (uma
-variável de ambiente separada). E os backups deveriam ser cifrados de qualquer
-forma antes de saírem da VM.
+**Conserto:** `app/cofre.py` cifra a coluna (Fernet) com uma chave que não
+mora no banco. Isso cobre o vazamento realista — a cópia diária sai da VM e vai
+parar num computador, numa nuvem, num pendrive, e o `.env` não vai junto.
+Contra quem já está dentro da VM não protege, e nada protegeria.
+
+Três decisões que evitam trancar gente do lado de fora:
+
+**A abertura tenta todas as chaves; a gravação usa a primeira.** Cifrar com uma
+chave e depois trocá-la transformaria todo segredo guardado em lixo, e quem usa
+2FA não entraria mais. Assim, acrescentar `DESKSIDE_TOTP_KEY` depois é seguro.
+
+**Sem chave própria, deriva do `jwt_secret`** — com um prefixo, para que vazar
+um não entregue o outro. Não é o ideal, mas funciona sem mexer no `.env` de quem
+já está no ar, e a derivada continua na lista de chaves que abrem.
+
+**Cada valor leva a marca `enc1:`.** Sem marca é texto puro de antes, devolvido
+como está — é o que permite a migração sem parada. A varredura em `db._migrate`
+cifra o que já existia, porque a próxima gravação natural seria a pessoa
+reconfigurar o 2FA, o que pode nunca acontecer.
+
+E falha **fechado**: quando nenhuma chave abre, `abrir()` devolve `None`, o
+`verify_totp` reprova o código e o log explica. O contrário faria de uma chave
+perdida um contorno do segundo fator.
+
+Fica de fora, e continua valendo: **cifrar o backup** antes de ele sair da VM.
 
 ### S7 — dependências sem trava de versão
 
-**Gravidade: média.** Não corrigido.
+**Gravidade: média.** Corrigido.
 
 O `pyproject.toml` usa `>=` em tudo e não há arquivo de trava. Duas
 consequências: dois `docker build` do mesmo commit podem gerar imagens
 diferentes, e uma versão comprometida de qualquer dependência entra sozinha no
 próximo deploy. O agente tem `Cargo.lock`; o backend não tem equivalente.
 
-**Conserto:** gerar um `requirements.txt` travado (com `uv pip compile` ou
-`pip-compile`), usá-lo no Dockerfile, e passar `pip-audit` de vez em quando.
+**Conserto:** `backend/requirements.txt` travado **com hashes**, gerado por
+`pip-compile` no mesmo Python 3.12 da imagem, e o Dockerfile passou a instalar
+dele. Versão fixa diz **qual** pacote; o hash diz que é **aquele** pacote — sem
+ele, um pacote republicado com o mesmo número passaria.
 
-### S8 — o Android aceita tráfego em texto puro
+Conferido instalando o arquivo num ambiente limpo, com a checagem de hash
+ligada, e importando tudo.
 
-**Gravidade: baixa.** Não corrigido, e já está anotado no `codemagic.yaml`.
+De quebra, uma descoberta: o `RUN pip install .` do Dockerfile **nunca instalou
+o pacote**. Ele rodava antes de a pasta `app` ser copiada, e sem
+`[build-system]` o setuptools não achava nada para empacotar — o passo instalava
+uma distribuição vazia e servia só para puxar dependências. Saiu, com a
+explicação no lugar.
+
+Falta passar `pip-audit` de vez em quando.
+
+### S8 — o Android aceitava tráfego em texto puro
+
+**Gravidade: baixa.** Corrigido.
 
 `android:usesCleartextTraffic="true"` libera `http://` para **qualquer** destino.
 Existe porque o campo "Servidor" aceita `http://IP:8000` na rede local. O
 endereço padrão é `https://`, então só corre risco quem digitar um `http://` à
 mão.
 
-**Conserto:** trocar por uma *network security config* que permita texto puro
-apenas nas faixas privadas (10.x, 192.168.x, 172.16–31.x).
+**Conserto:** uma *network security config* que recusa texto puro por padrão,
+com exceções nomeadas.
+
+E aqui a proposta original não era possível: **o Android não aceita faixas de IP**
+nessa configuração — só nomes e endereços literais. Nada de `192.168.0.0/16`. A
+lista ficou curta e explícita: `localhost`, `127.0.0.1` e `10.0.2.2` (o host
+visto de dentro do emulador), mais um `debug-overrides` que libera tudo em build
+de depuração.
+
+**Consequência real:** um APK de *release* apontado para `http://192.168.x.x`
+deixa de conectar. Para desenvolver na rede local, `flutter run` (build de
+depuração) ou acrescentar o endereço à lista.
+
+Não consigo compilar Android aqui, então o que dava para verificar foi
+verificado: o passo do `codemagic.yaml` foi extraído e executado contra uma
+pasta `android/` falsa parecida com a que o `flutter create` gera. O manifesto
+saiu com `networkSecurityConfig` e sem `usesCleartextTraffic`, o XML é bem
+formado, e a guarda derruba o build se o texto puro voltar — conferido fazendo
+ele voltar.
 
 ### S9 — a redefinição de senha passa por cima do 2FA
 
@@ -292,10 +344,16 @@ pode parar de conferir:
 2. ~~**S3 + S4**~~ **Feito.** Falta apenas fechar a trava
    (`DESKSIDE_EXIGIR_SEGREDO_DO_AGENTE=true`) quando todo agente tiver
    atualizado.
-3. **S7** (travar dependências) — uma tarde, e some uma classe inteira de
-   surpresa no deploy.
-4. **S6** (cifrar o segredo do 2FA e os backups).
-5. **S8** (texto puro no Android) — antes da Play Store, que pergunta sobre isso.
+3. ~~**S7**~~ **Feito.** Falta rodar `pip-audit` periodicamente.
+4. ~~**S6**~~ **Feito** para o banco. Falta **cifrar o backup** antes de ele sair
+   da VM.
+5. ~~**S8**~~ **Feito**, e sem poder compilar Android aqui — quem confirma é o
+   Codemagic e um aparelho de verdade.
+
+O que sobrou, e nenhum é bloqueio de lançamento: `pip-audit` na rotina, backup
+cifrado, os nomes reservados do Windows no S10, e a trava
+`DESKSIDE_EXIGIR_SEGREDO_DO_AGENTE` a fechar quando todo agente tiver
+atualizado.
 
 E, antes de cobrar de estranhos: **uma revisão por alguém que não escreveu este
 código**. Tudo acima saiu de leitura minha, e há um limite conhecido para o que

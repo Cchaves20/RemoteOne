@@ -209,10 +209,40 @@ workflows:
           # câmera - e uma ficha de loja dizendo que um app de controle remoto
           # pede câmera e microfone destrói a confiança de que a venda depende.
           #
-          # usesCleartextTraffic: o campo "Servidor" aceita http://IP:8000 para
-          # uso na rede local, e o Android 9+ bloqueia texto puro por padrão.
-          # Antes da Play Store isto vira uma network security config restrita
-          # às faixas locais, em vez de liberar tudo.
+          # --- 2a. Texto puro só onde faz sentido ---------------------------
+          # Havia um `usesCleartextTraffic="true"`, que libera http:// para
+          # **qualquer** destino - inclusive um servidor hostil num Wi-Fi de
+          # aeroporto. Existia porque o campo "Servidor" aceita http://IP:8000
+          # na rede local.
+          #
+          # Agora o padrão é recusar, com exceções nomeadas. O Android não
+          # aceita faixas de IP aqui (nada de 192.168.0.0/16), só nomes e
+          # endereços literais - por isso a lista é curta e explícita.
+          #
+          # Consequência prática, e ela é real: um APK **de release** apontado
+          # para http://192.168.x.x deixa de conectar. Para desenvolver na rede
+          # local, use `flutter run` (build de depuração, coberto pelo
+          # debug-overrides) ou acrescente o endereço à lista abaixo.
+          mkdir -p android/app/src/main/res/xml
+          cat > android/app/src/main/res/xml/network_security_config.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="false"/>
+              <domain-config cleartextTrafficPermitted="true">
+                  <domain includeSubdomains="false">localhost</domain>
+                  <domain includeSubdomains="false">127.0.0.1</domain>
+                  <!-- O host visto de dentro do emulador do Android Studio. -->
+                  <domain includeSubdomains="false">10.0.2.2</domain>
+              </domain-config>
+              <debug-overrides cleartextTrafficPermitted="true"/>
+          </network-security-config>
+          XML
+          # O here-doc acima entra indentado (o YAML exige); o XML não se
+          # importa com espaços à esquerda, mas a primeira linha precisa ser a
+          # declaração. Tirar a indentação evita depender disso.
+          sed -i 's/^ *//' android/app/src/main/res/xml/network_security_config.xml
+          exigir android/app/src/main/res/xml/network_security_config.xml 'cleartextTrafficPermitted="false"'
+
           python3 - "$MANIFESTO" <<'PY'
           import re, sys
           caminho = sys.argv[1]
@@ -227,7 +257,7 @@ workflows:
               r'android:label="[^"]*"',
               'android:label="Deskside"\n        android:allowBackup="false"\n'
               '        android:fullBackupContent="false"\n'
-              '        android:usesCleartextTraffic="true"',
+              '        android:networkSecurityConfig="@xml/network_security_config"',
               texto,
               count=1,
           )
@@ -237,6 +267,12 @@ workflows:
           exigir "$MANIFESTO" 'tools:node="remove"'
           exigir "$MANIFESTO" 'android:label="Deskside"'
           exigir "$MANIFESTO" 'android:allowBackup="false"'
+          exigir "$MANIFESTO" 'networkSecurityConfig'
+          grep -q 'usesCleartextTraffic' "$MANIFESTO" && {
+            echo "FALHOU: usesCleartextTraffic voltou ao manifesto."
+            exit 1
+          }
+          true
 
           # --- 3. minSdk ----------------------------------------------------
           # O flutter_webrtc não compila abaixo da 23. O template usa Gradle

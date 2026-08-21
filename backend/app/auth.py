@@ -26,7 +26,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import entrega, limite, telefone, verificacao
+from app import cofre, entrega, limite, telefone, verificacao
 from app import senha as politica_de_senha
 from app.config import settings
 from app.db import get_db
@@ -553,7 +553,7 @@ def login(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="two_factor_required"
             )
-        if not verify_totp(user.totp_secret or "", body.totp_code):
+        if not verify_totp(cofre.abrir(user.totp_secret) or "", body.totp_code):
             # Conta como falha, e aqui importa mais que no erro de senha: quem
             # chegou até este ponto **já tem a senha certa**. Sem contabilizar, o
             # segundo fator seriam seis dígitos com tentativas infinitas — um
@@ -811,7 +811,7 @@ def two_factor_setup(
             status_code=status.HTTP_409_CONFLICT, detail="2FA já está ativo"
         )
     secret = generate_totp_secret()
-    current_user.totp_secret = secret  # pendente até confirmar o código
+    current_user.totp_secret = cofre.guardar(secret)  # pendente até confirmar
     db.commit()
     return TwoFactorSetupOut(
         secret=secret, otpauth_uri=totp_uri(secret, _rotulo(current_user))
@@ -834,7 +834,7 @@ def two_factor_enable(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="inicie a configuração do 2FA antes",
         )
-    if not verify_totp(current_user.totp_secret, body.code):
+    if not verify_totp(cofre.abrir(current_user.totp_secret) or "", body.code):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="código inválido"
         )

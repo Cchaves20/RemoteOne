@@ -103,6 +103,34 @@ def _migrate() -> None:
 
     _email_deixa_de_ser_obrigatorio()
     _sortear_chaves_de_sessao()
+    _cifrar_segredos_do_2fa()
+
+
+def _cifrar_segredos_do_2fa() -> None:
+    """Passa a cifra por cima dos segredos de 2FA que estão em texto puro.
+
+    Feito na subida, e não na próxima gravação: a próxima gravação de um segredo
+    de 2FA é quando a pessoa **reconfigura** o 2FA, o que pode nunca acontecer.
+    Sem esta varredura, quem já usava 2FA continuaria com o segredo legível no
+    banco para sempre — e é justamente quem já tem 2FA que se importa.
+    """
+    from sqlalchemy import select, update
+
+    from app import cofre
+    from app.models import User
+
+    with SessionLocal() as db:
+        linhas = db.execute(
+            select(User.id, User.totp_secret).where(User.totp_secret.is_not(None))
+        ).all()
+        pendentes = [(i, seg) for i, seg in linhas if seg and not cofre.esta_cifrado(seg)]
+        for user_id, segredo in pendentes:
+            db.execute(
+                update(User).where(User.id == user_id).values(totp_secret=cofre.guardar(segredo))
+            )
+        if pendentes:
+            db.commit()
+            print(f"migração: {len(pendentes)} segredo(s) de 2FA cifrados em repouso")
 
 
 def _sortear_chaves_de_sessao() -> None:
