@@ -102,7 +102,12 @@ def test_welcome_do_agente_leva_os_servidores():
         )
         welcome = ws.receive_json()
     assert welcome["type"] == "welcome"
-    assert welcome["ice_servers"][0]["urls"][0].startswith("stun:")
+    # **Vazio**, e é o certo: este agente não está pareado. A credencial de TURN
+    # ia em todo `welcome`, e como o canal não autenticava, qualquer pessoa
+    # abria um socket com um id inventado e recebia relay válido por 12 horas —
+    # um relay aberto pago com a banda deste servidor. Ver S4 em
+    # docs/revisao-de-seguranca.md.
+    assert welcome["ice_servers"] == []
 
 
 def test_health_anuncia_o_recurso():

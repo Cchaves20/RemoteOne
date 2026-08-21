@@ -50,6 +50,9 @@ def test_server_messages_wire_format():
         "type": "welcome",
         "server_version": "0.1.0",
         "ice_servers": [],
+        # Nulo no caso comum: o agente já tem o segredo dele, e só há o que
+        # entregar na adoção de um aparelho pareado antes de eles existirem.
+        "secret": None,
     }
     assert Ack().model_dump() == {"type": "ack"}
     assert Error(message="x").model_dump() == {"type": "error", "message": "x"}

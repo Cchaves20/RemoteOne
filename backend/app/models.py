@@ -225,6 +225,17 @@ class Device(Base):
     # na mesma rede local, para escolher um "peer" ligado que envie o pacote).
     mac_address: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_public_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: O segredo que o agente apresenta para provar que é este computador.
+    #:
+    #: Antes disto, o `device_id` fazia esse papel sozinho — sem nunca ter sido
+    #: tratado como segredo: ele aparece no diário do servidor, no banco, em
+    #: todo backup, e no caminho da URL do canal de tela. Uma linha de log
+    #: vazada bastava para alguém se passar pelo computador de outra pessoa.
+    #:
+    #: Nasce no pareamento e morre com ele: desparear apaga a linha inteira, e
+    #: parear de novo sorteia outro. É o que faz "desparear" significar alguma
+    #: coisa — antes, não havia o que invalidar.
+    agent_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="devices")
 

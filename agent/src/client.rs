@@ -204,17 +204,54 @@ pub struct AgentIdentity {
     pub os: String,
     pub agent_version: String,
     pub mac: Option<String>,
+    /// Onde mora o segredo deste computador. `None` nos testes, e nas duas
+    /// situações significa a mesma coisa: "sei guardar um, mas não tenho".
+    pub secret_path: Option<std::path::PathBuf>,
 }
 
 impl AgentIdentity {
     /// Constrói a mensagem `hello` a partir da identidade.
+    ///
+    /// O segredo é lido do disco **a cada hello**, e não guardado num campo.
+    /// A razão é a reconexão logo depois da adoção: o servidor entrega o
+    /// segredo no meio de uma conexão, e um campo preenchido na partida do
+    /// programa ainda estaria vazio na conexão seguinte. Mandar vazio a um
+    /// servidor que já emitiu significa "não tenho o segredo" — e a resposta
+    /// certa a isso é a recusa. O agente ficaria trancado do lado de fora por
+    /// não ter relido um arquivo.
     pub fn hello(&self) -> ClientMessage {
+        let secret = self
+            .secret_path
+            .as_ref()
+            .map(|p| crate::identity::load_secret(p))
+            .unwrap_or_default();
         ClientMessage::Hello {
             device_id: self.device_id.clone(),
             hostname: self.hostname.clone(),
             os: self.os.clone(),
             agent_version: self.agent_version.clone(),
             mac: self.mac.clone(),
+            secret: Some(secret),
+        }
+    }
+
+    /// Guarda o segredo que o servidor acabou de entregar.
+    ///
+    /// Falha em voz alta mas não derruba nada: sem gravar, a conexão atual
+    /// continua funcionando e a próxima é recusada — e a mensagem no diário é
+    /// a única pista que sobra para explicar por quê.
+    pub fn guardar_segredo(&self, secret: Option<String>) {
+        let (Some(caminho), Some(valor)) = (self.secret_path.as_ref(), secret) else {
+            return;
+        };
+        if valor.trim().is_empty() {
+            return;
+        }
+        match crate::identity::save_secret(caminho, &valor) {
+            Ok(()) => crate::diario(&format!("segredo do aparelho guardado em {caminho:?}")),
+            Err(e) => crate::diario(&format!(
+                "FALHA ao guardar o segredo do aparelho em {caminho:?}: {e} -                  a próxima conexão será recusada"
+            )),
         }
     }
 }
@@ -727,8 +764,8 @@ pub async fn run(
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
                         match handle_server_text(
-                            &text, injector.as_mut(), &mut streaming, &mut active,
-                            &mut last_frame,
+                            &text, identity, injector.as_mut(), &mut streaming,
+                            &mut active, &mut last_frame,
                         ) {
                             // A lista inteira, sempre. Quem avalia é a tarefa da
                             // agenda, que vive fora desta conexão: ela precisa
@@ -1817,6 +1854,7 @@ enum Action {
 /// [`Action`] para o laço principal executar.
 fn handle_server_text(
     text: &str,
+    identity: &AgentIdentity,
     injector: &mut dyn crate::injector::InputInjector,
     streaming: &mut bool,
     active: &mut StreamConfig,
@@ -1826,8 +1864,13 @@ fn handle_server_text(
         Ok(ServerMessage::Welcome {
             server_version,
             ice_servers,
+            secret,
         }) => {
             println!("Registrado no backend (servidor v{server_version})");
+            // Adoção: este computador já estava pareado antes de os segredos
+            // existirem, e o servidor acabou de emitir um. Guardar **agora** é
+            // o que evita a recusa na próxima conexão.
+            identity.guardar_segredo(secret);
             if !ice_servers.is_empty() {
                 return Some(Action::SetIceServers { servers: ice_servers });
             }
@@ -1850,7 +1893,8 @@ fn handle_server_text(
             // para quando o agente roda em segundo plano.
             crate::notify::announce_pairing_code(&code, expires_in_seconds);
         }
-        Ok(ServerMessage::Paired { user_email }) => {
+        Ok(ServerMessage::Paired { user_email, secret }) => {
+            identity.guardar_segredo(secret);
             println!("✓ Dispositivo já pareado com a conta {user_email}");
             println!(
                 "  (para gerar um novo código, remova este computador no app — \
@@ -2167,6 +2211,7 @@ mod tests {
             os: "linux".into(),
             agent_version: "0.1.0".into(),
             mac: Some("01:23:45:AB:CD:EF".into()),
+            secret_path: None,
         };
         assert_eq!(
             identity.hello(),
@@ -2176,8 +2221,71 @@ mod tests {
                 os: "linux".into(),
                 agent_version: "0.1.0".into(),
                 mac: Some("01:23:45:AB:CD:EF".into()),
+                // Vazio, e não ausente: é o pedido de adoção. Ausente diria
+                // "sou um agente antigo", e o servidor não emitiria segredo
+                // nenhum para este computador.
+                secret: Some(String::new()),
             }
         );
+    }
+
+    #[test]
+    fn o_hello_rele_o_segredo_do_disco_a_cada_conexao() {
+        // O defeito que este teste vigia: o servidor entrega o segredo **no
+        // meio** de uma conexão (adoção). Se o `hello` usasse um campo lido na
+        // partida do programa, a reconexão seguinte mandaria vazio a um
+        // servidor que já emitiu — e vazio quer dizer "não tenho", cuja
+        // resposta correta é a recusa. O computador ficaria trancado do lado de
+        // fora por não ter relido um arquivo.
+        let dir = std::env::temp_dir().join(format!("deskside-hello-{}", uuid::Uuid::new_v4()));
+        let caminho = dir.join("agent_secret");
+        let identity = AgentIdentity {
+            device_id: "dev-1".into(),
+            hostname: "pc".into(),
+            os: "linux".into(),
+            agent_version: "0.1.0".into(),
+            mac: None,
+            secret_path: Some(caminho.clone()),
+        };
+
+        // Antes de existir arquivo: vazio, que é o pedido de adoção.
+        match identity.hello() {
+            ClientMessage::Hello { secret, .. } => assert_eq!(secret, Some(String::new())),
+            outro => panic!("esperado hello, veio {outro:?}"),
+        }
+
+        // O servidor entrega o segredo agora, com o programa já rodando.
+        identity.guardar_segredo(Some("segredo-emitido".into()));
+
+        match identity.hello() {
+            ClientMessage::Hello { secret, .. } => {
+                assert_eq!(secret, Some("segredo-emitido".to_string()))
+            }
+            outro => panic!("esperado hello, veio {outro:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn segredo_vazio_do_servidor_nao_apaga_o_que_ja_existe() {
+        // Um `welcome` normal vem sem segredo. Tratar isso como "grave vazio"
+        // apagaria o segredo bom no primeiro reconecte, e o agente se trancaria
+        // do lado de fora sozinho.
+        let dir = std::env::temp_dir().join(format!("deskside-nulo-{}", uuid::Uuid::new_v4()));
+        let caminho = dir.join("agent_secret");
+        let identity = AgentIdentity {
+            device_id: "dev-1".into(),
+            hostname: "pc".into(),
+            os: "linux".into(),
+            agent_version: "0.1.0".into(),
+            mac: None,
+            secret_path: Some(caminho.clone()),
+        };
+        identity.guardar_segredo(Some("bom".into()));
+        identity.guardar_segredo(None);
+        identity.guardar_segredo(Some("   ".into()));
+        assert_eq!(crate::identity::load_secret(&caminho), "bom");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// O degrau de topo: é onde toda sessão começa, e é o estado em que estes

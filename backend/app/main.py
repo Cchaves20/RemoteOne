@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -204,6 +205,13 @@ def _paired_email(device_id: str) -> str | None:
         return device.user.email or device.user.phone or f"conta {device.user.id}"
 
 
+def _segredo_do_aparelho(device_id: str) -> str | None:
+    """O segredo guardado para este computador, para reentregá-lo ao agente."""
+    with SessionLocal() as db:
+        device = pairing.get_device(db, device_id)
+        return device.agent_secret if device else None
+
+
 def _pairing_intro(hello: Hello) -> dict:
     """Mensagem enviada logo após o welcome: `paired` se já vinculado, senão `pair_code`."""
     email = _paired_email(hello.device_id)
@@ -214,6 +222,68 @@ def _pairing_intro(hello: Hello) -> dict:
             db, hello.device_id, hello.hostname, hello.os, settings.pairing_ttl_seconds
         )
     return PairCode(code=code, expires_in_seconds=settings.pairing_ttl_seconds).model_dump()
+
+
+class SegredoRecusado(Exception):
+    """O agente não provou ser este computador."""
+
+
+def _autorizar_agente(device_id: str, apresentado: str | None) -> str | None:
+    """Confere o segredo do agente. Devolve um segredo novo quando emite um.
+
+    Antes desta conferência, o canal `/ws/agent` **não tinha autenticação**: o
+    `device_id` era a credencial, e ele nunca foi tratado como uma — aparece no
+    diário, no banco, em todo backup e no caminho da URL do canal de tela. Quem
+    o obtivesse por qualquer desses caminhos passava a ser aquele computador,
+    recebendo cada tecla que o dono digitasse.
+
+    Os três casos, e cada um existe por um motivo:
+
+    **Não pareado.** Autorizado sem segredo. É preciso: o agente precisa
+    conectar para receber o código de pareamento, e ainda não há vínculo a
+    proteger. Ele só recebe um segredo quando alguém o reivindicar.
+
+    **Pareado e sem segredo** (linha criada antes desta mudança). Se o agente
+    disser que sabe guardar um — mandando `secret: ""` —, emite. É adoção na
+    primeira conexão, e ela dura uma conexão só: da segunda em diante o segredo
+    é exigido.
+
+    **Pareado e com segredo.** Compara em tempo constante. Errar fecha a
+    conexão.
+
+    O caso que exige cuidado é o quarto, e ele é a razão de `secret` ter três
+    estados: um agente **antigo** manda `None`, porque não conhece o campo.
+    Emitir um segredo para ele seria trancá-lo do lado de fora na reconexão
+    seguinte — o computador ficaria offline para sempre, sem nada na tela
+    explicando por quê, e o dono não teria como adivinhar que precisa atualizar.
+    Então `None` não adota: é aceito enquanto `exigir_segredo_do_agente` for
+    falso, e recusado depois que essa trava se fechar.
+    """
+    with SessionLocal() as db:
+        device = pairing.get_device(db, device_id)
+        if device is None:
+            return None  # ainda não pareado: nada a proteger
+
+        if apresentado is None:
+            if settings.exigir_segredo_do_agente:
+                raise SegredoRecusado("agente sem segredo")
+            return None
+
+        if not device.agent_secret:
+            if not apresentado:
+                novo = pairing.novo_segredo_de_agente()
+                device.agent_secret = novo
+                db.commit()
+                logger.info("segredo emitido na adoção do aparelho %s", device_id)
+                return novo
+            # Apresentou um segredo que o servidor não conhece. Não é adoção —
+            # é alguém com um segredo de outro lugar, ou um banco restaurado
+            # por cima. De qualquer forma, não se aceita o que não se emitiu.
+            raise SegredoRecusado("segredo desconhecido")
+
+        if not apresentado or not hmac.compare_digest(apresentado, device.agent_secret):
+            raise SegredoRecusado("segredo inválido")
+        return None
 
 
 def _client_public_ip(websocket: WebSocket) -> str | None:
@@ -275,6 +345,20 @@ async def agent_ws(websocket: WebSocket) -> None:
         hostname = message.hostname
         os_name = message.os
         mac_addr = message.mac
+
+        # **Antes** de registrar. Registrar sobrepõe a conexão anterior daquele
+        # device_id, então fazer isso antes de conferir o segredo entregaria a
+        # arma pela culatra: bastaria um hello inválido para derrubar o agente
+        # de verdade, mesmo sendo recusado logo em seguida.
+        try:
+            segredo_emitido = _autorizar_agente(device_id, message.secret)
+        except SegredoRecusado as recusa:
+            logger.warning("agente recusado (%s): %s", recusa, device_id)
+            await websocket.send_json(Error(message=str(recusa)).model_dump())
+            await websocket.close(code=4401)
+            return
+
+        pareado = _paired_email(device_id) is not None
         public_ip = _client_public_ip(websocket)
         registry.register(message)
         manager.register(device_id, websocket, public_ip)
@@ -283,7 +367,14 @@ async def agent_ws(websocket: WebSocket) -> None:
         await websocket.send_json(
             Welcome(
                 server_version=settings.version,
-                ice_servers=ice_servers(f"agent-{device_id}"),
+                # Credencial de TURN **só para quem está pareado**. Ela ia junto
+                # com todo welcome, e como o canal não autenticava, qualquer
+                # pessoa abria um socket com um id inventado e recebia relay
+                # válido por 12 horas — um relay aberto pago com a banda deste
+                # servidor. Quem ainda não pareou não transmite nada, então não
+                # precisa dela.
+                ice_servers=ice_servers(f"agent-{device_id}") if pareado else [],
+                secret=segredo_emitido,
             ).model_dump()
         )
 
@@ -486,7 +577,16 @@ async def agent_ws(websocket: WebSocket) -> None:
                 now_paired = _paired_email(device_id) is not None
                 if now_paired and not paired_notified:
                     email = _paired_email(device_id)
-                    await websocket.send_json(Paired(user_email=email).model_dump())
+                    # O segredo vai junto do aviso de pareamento: é o instante
+                    # em que ele nasce (`pairing.claim` o sorteia), e é a única
+                    # vez que o servidor pode entregá-lo. Guardar para depois
+                    # deixaria o aparelho pareado e sem segredo por um tempo —
+                    # que é exatamente a janela de adoção por quem chegar antes.
+                    await websocket.send_json(
+                        Paired(
+                            user_email=email, secret=_segredo_do_aparelho(device_id)
+                        ).model_dump()
+                    )
                     paired_notified = True
                     # Acabou de parear: guarda MAC/IP para o Wake-on-LAN.
                     _update_device_presence(device_id, mac_addr, public_ip)

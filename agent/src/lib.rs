@@ -127,6 +127,16 @@ pub fn device_id_path() -> PathBuf {
     config_dir().join("device_id")
 }
 
+/// O segredo que prova a este servidor que somos este computador.
+///
+/// Ao lado do `device_id`, e não dentro dele: o id é público por natureza (vai
+/// no diário, no banco, na URL do canal de tela) e o segredo não é. Guardar os
+/// dois no mesmo arquivo faria com que qualquer lugar que já mostrasse o id
+/// passasse a mostrar o segredo junto.
+pub fn agent_secret_path() -> PathBuf {
+    config_dir().join("agent_secret")
+}
+
 pub fn config_path() -> PathBuf {
     config_dir().join("agent.conf")
 }

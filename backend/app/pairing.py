@@ -34,6 +34,16 @@ def generate_pairing_code() -> str:
     return "".join(secrets.choice(_ALPHABET) for _ in range(_CODE_LEN))
 
 
+def novo_segredo_de_agente() -> str:
+    """O segredo que este computador vai apresentar daqui em diante.
+
+    Sorteado **aqui**, no ato do pareamento, e não depois: enquanto um
+    dispositivo pareado estiver sem segredo, ele é adotável por quem chegar
+    primeiro. Emitir junto com o vínculo faz essa janela não existir.
+    """
+    return secrets.token_urlsafe(32)
+
+
 def _as_aware_utc(dt: datetime) -> datetime:
     # SQLite devolve datetimes ingênuos; assumimos UTC para comparar.
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
@@ -92,6 +102,7 @@ def claim(db: Session, code: str, user: User) -> Device:
         name=request.hostname,
         os=request.os,
         hostname=request.hostname,
+        agent_secret=novo_segredo_de_agente(),
     )
     db.add(device)
     db.delete(request)

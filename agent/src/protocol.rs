@@ -38,6 +38,11 @@ pub enum ClientMessage {
         /// máquina resolve; o backend guarda quando presente).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mac: Option<String>,
+        /// O segredo deste computador. `None` só existe para agentes antigos —
+        /// este manda sempre, e manda **vazio** quando ainda não tem um, que é
+        /// como se pede a adoção.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        secret: Option<String>,
     },
     Heartbeat,
     /// Resposta a um `list_apps`: a lista pedida, com o mesmo `request_id`
@@ -253,6 +258,10 @@ pub enum ServerMessage {
         /// Ausente em backends antigos, daí o `default`.
         #[serde(default)]
         ice_servers: Vec<IceServer>,
+        /// Segredo recém-emitido, na adoção de um aparelho que já estava
+        /// pareado. Ausente no caso normal.
+        #[serde(default)]
+        secret: Option<String>,
     },
     Ack,
     Error {
@@ -266,6 +275,9 @@ pub enum ServerMessage {
     /// O dispositivo foi vinculado a uma conta.
     Paired {
         user_email: String,
+        /// O segredo deste computador, entregue no instante do pareamento.
+        #[serde(default)]
+        secret: Option<String>,
     },
     /// Comando de entrada a ser injetado no computador (Etapa 6).
     Input {
@@ -523,6 +535,7 @@ mod tests {
             os: "windows".into(),
             agent_version: "0.1.0".into(),
             mac: Some("01:23:45:AB:CD:EF".into()),
+            secret: Some("abc".into()),
         };
         let value: serde_json::Value = serde_json::to_value(&hello).unwrap();
         assert_eq!(value["type"], "hello");
@@ -548,6 +561,9 @@ mod tests {
                 // Backend antigo não manda a lista; o agente segue com o STUN
                 // dele mesmo em vez de recusar a mensagem.
                 ice_servers: Vec::new(),
+                // Idem para o segredo: um `welcome` sem ele é o caso comum -
+                // o agente já tem o seu e não há nada a guardar.
+                secret: None,
             }
         );
     }
@@ -605,7 +621,8 @@ mod tests {
         assert_eq!(
             paired,
             ServerMessage::Paired {
-                user_email: "caio@example.com".into()
+                user_email: "caio@example.com".into(),
+                secret: None,
             }
         );
     }

@@ -91,9 +91,9 @@ Um defeito que se anuncia vale mais que um que espera.
 
 ## Aberto — precisa de decisão e de um lote próprio
 
-### S3 — o canal `/ws/agent` não tem autenticação
+### S3 — o canal `/ws/agent` não tinha autenticação
 
-**Gravidade: alta.** Não corrigido.
+**Gravidade: alta.** Corrigido.
 
 O agente conecta e manda `hello` com o `device_id`. Não há token, assinatura ou
 segredo. O `device_id` é um UUID v4 (122 bits, inadivinhável), o que faz dele um
@@ -109,18 +109,37 @@ segredo **de fato** — mas ele nunca foi tratado como um:
 Com o S1 fechado, não há mais como obtê-lo anonimamente. Continua sendo o caso
 de "uma linha de log vazada = um computador tomado".
 
-**Conserto proposto:** no pareamento, o backend emite um segredo por
-dispositivo; o agente guarda ao lado do `device_id` e o apresenta no `hello`. O
-servidor recusa `hello` sem segredo válido. Desparear apaga o segredo, e aí
-desparear passa a significar alguma coisa.
+**Conserto:** no pareamento o backend sorteia um segredo por dispositivo
+(`Device.agent_secret`); o agente o guarda em `agent_secret`, ao lado do
+`device_id`, e o apresenta em todo `hello`. Errar fecha a conexão com 4401.
+Desparear apaga a linha inteira, então desparear passou a significar alguma
+coisa — antes não havia o que invalidar.
 
-Custo: mexe no protocolo, no agente, no backend e na migração de quem já está
-pareado — os agentes antigos precisam de um caminho de adoção. É lote próprio,
-não remendo.
+Três detalhes que não são óbvios e que o código explica no lugar:
+
+**A conferência vem antes do registro.** Registrar sobrepõe a conexão anterior
+daquele `device_id`. Conferir depois entregaria a arma pela culatra: um `hello`
+inválido derrubaria o agente de verdade, mesmo sendo recusado em seguida.
+
+**O campo `secret` tem três estados, e o terceiro evita um desastre.** Ausente
+(`None`) é agente antigo; vazio (`""`) é agente novo pedindo adoção;
+preenchido é conferido. A distinção existe porque emitir um segredo para um
+agente que não sabe guardá-lo o trancaria do lado de fora na reconexão
+seguinte — o computador ficaria offline para sempre, sem nada na tela
+explicando, e o dono não teria como adivinhar que precisa atualizar.
+
+**O agente relê o segredo do disco a cada `hello`.** O servidor o entrega no
+meio de uma conexão; um campo lido na partida do programa ainda estaria vazio na
+conexão seguinte, e vazio quer dizer "não tenho" — cuja resposta certa é a
+recusa. O agente se trancaria sozinho por não ter relido um arquivo. Tem teste.
+
+**A compatibilidade tem prazo.** `DESKSIDE_EXIGIR_SEGREDO_DO_AGENTE=true` fecha
+a porta dos agentes antigos. Ligue quando `/api/v1/agents` não mostrar mais
+nenhuma versão velha; antes disso, deixa computadores offline sem explicação.
 
 ### S4 — credenciais de TURN para quem não se autenticou
 
-**Gravidade: média.** Não corrigido, e sai junto com o S3.
+**Gravidade: média.** Corrigido junto com o S3.
 
 O `welcome` de `/ws/agent` inclui credenciais TURN válidas por 12 horas. Como o
 canal não autentica (S3), qualquer pessoa abre um WebSocket, manda um `hello`
@@ -128,7 +147,15 @@ com um id inventado e recebe credencial de relay.
 
 Na prática: **um relay aberto de graça na sua conta da Oracle.** É a conta de
 banda que fizemos no `custos-para-distribuir.md` sendo paga para o tráfego de
-outra pessoa. Some quando o S3 for resolvido.
+outra pessoa.
+
+**Conserto:** a credencial só vai no `welcome` de aparelho **pareado**. Quem
+ainda não pareou não transmite nada, então não precisa dela.
+
+Com teste dos dois lados — e o segundo é obrigatório: cortar a credencial de
+quem não pareou só é conserto se quem pareou continuar recebendo. Sem essa
+metade, a suíte passaria com o TURN desligado para todo mundo, e o sintoma
+apareceria como vídeo que não fecha no 4G, no celular de outra pessoa.
 
 ### S5 — a sessão de tela não morria quando o token morria
 
@@ -262,8 +289,9 @@ pode parar de conferir:
 ## A ordem em que eu resolveria o que sobrou
 
 1. ~~**S5**~~ **Feito.**
-2. **S3 + S4** (segredo por dispositivo) — o lote maior, e o que mais muda a
-   postura de segurança do produto.
+2. ~~**S3 + S4**~~ **Feito.** Falta apenas fechar a trava
+   (`DESKSIDE_EXIGIR_SEGREDO_DO_AGENTE=true`) quando todo agente tiver
+   atualizado.
 3. **S7** (travar dependências) — uma tarde, e some uma classe inteira de
    surpresa no deploy.
 4. **S6** (cifrar o segredo do 2FA e os backups).

@@ -104,3 +104,165 @@ def test_segredo_ausente_nao_impede_o_servidor_de_subir():
     modulo = importlib.import_module("app.config")
     assert modulo.settings.jwt_secret
     assert modulo.settings.jwt_secret != modulo._SEGREDO_ANTIGO
+
+
+# --- S3: o canal do agente passa a exigir um segredo -------------------------
+
+
+def _conectar(device_id: str, secret=...):
+    """Abre `/ws/agent` e devolve o socket já com o hello mandado."""
+    corpo = _hello(device_id)
+    if secret is not ...:
+        corpo["secret"] = secret
+    ws = client.websocket_connect("/ws/agent").__enter__()
+    ws.send_json(corpo)
+    return ws
+
+
+def _parear(device_id: str) -> tuple[str, str]:
+    """Pareia um aparelho e devolve (token da conta, segredo entregue ao agente)."""
+    token = criar_conta(client, f"{device_id}@example.com")["access_token"]
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json({**_hello(device_id), "secret": ""})
+        ws.receive_json()  # welcome
+        intro = ws.receive_json()  # pair_code
+        resp = client.post(
+            "/api/v1/pairing/claim",
+            json={"code": intro["code"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 201, resp.text
+        # O agente descobre o pareamento no heartbeat seguinte, e é aí que o
+        # segredo chega.
+        ws.send_json({"type": "heartbeat"})
+        ws.receive_json()  # ack
+        aviso = ws.receive_json()
+        assert aviso["type"] == "paired", aviso
+        assert aviso["secret"], "o segredo precisa vir junto do aviso de pareamento"
+        return token, aviso["secret"]
+
+
+def test_o_segredo_certo_entra_e_o_errado_nao():
+    _, segredo = _parear("dev-com-segredo")
+
+    ws = _conectar("dev-com-segredo", segredo)
+    try:
+        assert ws.receive_json()["type"] == "welcome"
+    finally:
+        ws.close()
+
+    ws = _conectar("dev-com-segredo", "segredo-de-outra-pessoa")
+    try:
+        recusa = ws.receive_json()
+        assert recusa["type"] == "error", recusa
+    finally:
+        ws.close()
+
+
+def test_saber_o_device_id_deixou_de_bastar():
+    """O defeito inteiro do S3, num teste.
+
+    Antes, quem soubesse o `device_id` — do diário, de um backup, da listagem
+    que era pública — abria o canal e passava a ser aquele computador.
+    """
+    _parear("dev-alheio")
+
+    ws = _conectar("dev-alheio", "")
+    try:
+        resposta = ws.receive_json()
+        assert resposta["type"] == "error", (
+            f"só o device_id abriu o canal de um aparelho pareado: {resposta}"
+        )
+    finally:
+        ws.close()
+
+
+def test_agente_antigo_continua_entrando_e_nao_e_adotado():
+    """Compatibilidade, e ela **não** é gentileza.
+
+    Um agente antigo não conhece o campo `secret` e manda `None`. Emitir um
+    segredo para ele o trancaria do lado de fora na reconexão seguinte: o
+    computador ficaria offline para sempre, sem nada na tela explicando, e o
+    dono não teria como adivinhar que precisa atualizar.
+    """
+    from app.db import SessionLocal
+    from app.models import Device
+
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json(_hello("dev-antigo"))  # sem o campo secret
+        assert ws.receive_json()["type"] == "welcome"
+        ws.receive_json()
+
+    token = criar_conta(client, "dono-antigo@example.com")["access_token"]
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json(_hello("dev-antigo"))
+        ws.receive_json()
+        intro = ws.receive_json()
+        client.post(
+            "/api/v1/pairing/claim",
+            json={"code": intro["code"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    # Pareado por um agente antigo: a linha ganha segredo (o claim sorteia),
+    # mas o agente antigo continua entrando enquanto a trava estiver aberta.
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json(_hello("dev-antigo"))
+        assert ws.receive_json()["type"] == "welcome"
+        ws.receive_json()
+
+    with SessionLocal() as db:
+        linha = db.query(Device).filter_by(device_id="dev-antigo").one()
+        assert linha.agent_secret, "o pareamento precisa sortear o segredo"
+
+
+def test_a_trava_fecha_a_porta_dos_agentes_antigos():
+    """Quando todos tiverem atualizado, uma variável fecha a compatibilidade."""
+    from app.config import settings
+
+    _parear("dev-trava")
+    anterior = settings.exigir_segredo_do_agente
+    settings.exigir_segredo_do_agente = True
+    try:
+        ws = _conectar("dev-trava")  # sem o campo, como um agente antigo
+        try:
+            assert ws.receive_json()["type"] == "error"
+        finally:
+            ws.close()
+    finally:
+        settings.exigir_segredo_do_agente = anterior
+
+
+def test_quem_nao_pareou_nao_recebe_credencial_de_turn():
+    """S4: o relay deixa de ser aberto.
+
+    A credencial de TURN ia em todo `welcome`. Como o canal não autenticava,
+    qualquer pessoa abria um socket com um id inventado e recebia relay válido
+    por 12 horas — pago com a banda deste servidor.
+    """
+    ws = _conectar("dev-sem-par", "")
+    try:
+        welcome = ws.receive_json()
+        assert welcome["type"] == "welcome"
+        assert welcome["ice_servers"] == [], welcome
+    finally:
+        ws.close()
+
+
+def test_quem_pareou_continua_recebendo_o_turn():
+    """O contrapeso do teste acima, e ele é obrigatório.
+
+    Cortar a credencial de quem não pareou só é um conserto se quem pareou
+    continuar recebendo. Sem esta metade, a mesma suíte passaria com o TURN
+    desligado para todo mundo — e o sintoma seria vídeo que não fecha no 4G,
+    longe daqui, no celular de outra pessoa.
+    """
+    _, segredo = _parear("dev-com-turn")
+    ws = _conectar("dev-com-turn", segredo)
+    try:
+        welcome = ws.receive_json()
+        assert welcome["type"] == "welcome"
+        assert welcome["ice_servers"], "o aparelho pareado precisa dos servidores ICE"
+        assert welcome["ice_servers"][0]["urls"][0].startswith("stun:")
+    finally:
+        ws.close()

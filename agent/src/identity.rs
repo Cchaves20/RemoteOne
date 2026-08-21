@@ -28,9 +28,51 @@ pub fn load_or_create_device_id(path: &Path) -> io::Result<String> {
     Ok(id)
 }
 
+/// Lê o segredo deste computador, ou `String::new()` se ainda não houver.
+///
+/// Vazio **não** é a mesma coisa que ausente, e a diferença é o que impede um
+/// desastre: no `hello`, vazio significa "sei guardar um segredo, mas ainda não
+/// tenho" — o pedido de adoção. Um agente antigo não manda o campo, e o
+/// servidor sabe que não deve emitir para ele, porque emitir trancaria a
+/// máquina do lado de fora na reconexão seguinte.
+pub fn load_secret(path: &Path) -> String {
+    fs::read_to_string(path)
+        .map(|t| t.trim().to_string())
+        .unwrap_or_default()
+}
+
+/// Guarda o segredo entregue pelo servidor.
+///
+/// Perder isto custa caro: sem o segredo, o servidor recusa a conexão e o único
+/// conserto é desparear e parear de novo pelo app. Daí o erro ser devolvido em
+/// vez de ignorado — quem chama precisa poder registrar que não conseguiu.
+pub fn save_secret(path: &Path, secret: &str) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, secret.trim())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn segredo_ausente_vira_vazio_e_nao_erro() {
+        let dir = std::env::temp_dir().join(format!("deskside-seg-{}", Uuid::new_v4()));
+        assert_eq!(load_secret(&dir.join("agent_secret")), "");
+    }
+
+    #[test]
+    fn segredo_sobrevive_a_ida_e_volta() {
+        let dir = std::env::temp_dir().join(format!("deskside-seg-{}", Uuid::new_v4()));
+        let caminho = dir.join("agent_secret");
+        save_secret(&caminho, "  abc-123  ").unwrap();
+        // Aparado dos dois lados: um "\n" que sobrasse viraria um segredo
+        // diferente do que o servidor guardou, e a recusa não diria por quê.
+        assert_eq!(load_secret(&caminho), "abc-123");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn creates_when_missing_and_is_stable() {

@@ -23,6 +23,16 @@ class Hello(BaseModel):
     # MAC da placa de rede local (para Wake-on-LAN). Opcional: agentes antigos
     # ou máquinas sem MAC resolvido não enviam.
     mac: str | None = None
+    #: O segredo deste computador, e os três valores dizem coisas diferentes:
+    #:
+    #: - **ausente** (`None`): agente antigo, que não sabe o que é segredo. É
+    #:   aceito enquanto `DESKSIDE_EXIGIR_SEGREDO_DO_AGENTE` for falso, e nunca
+    #:   provoca a emissão de um — emitir para quem não sabe guardar trancaria
+    #:   a máquina do lado de fora na reconexão seguinte.
+    #: - **vazio** (`""`): agente novo que ainda não recebeu o seu. É o pedido
+    #:   de adoção.
+    #: - **preenchido**: é conferido, e errar fecha a conexão.
+    secret: str | None = None
 
 
 class Heartbeat(BaseModel):
@@ -379,6 +389,10 @@ class Welcome(BaseModel):
     type: Literal["welcome"] = "welcome"
     server_version: str
     ice_servers: list[dict] = []
+    #: Segredo a guardar, quando o servidor acabou de emitir um (adoção de um
+    #: aparelho que já estava pareado antes de os segredos existirem). Ausente
+    #: no caso normal — o agente já tem o dele.
+    secret: str | None = None
 
 
 class Ack(BaseModel):
@@ -421,6 +435,9 @@ class Paired(BaseModel):
 
     type: Literal["paired"] = "paired"
     user_email: str
+    #: O segredo deste computador, entregue no mesmo instante em que o vínculo
+    #: nasce. Opcional só por causa de agentes antigos, que ignoram o campo.
+    secret: str | None = None
 
 
 def parse_client_message(raw: dict) -> ClientMessage:

@@ -56,6 +56,11 @@ def _migrate() -> None:
         "devices": {
             "mac_address": "VARCHAR(32)",
             "last_public_ip": "VARCHAR(64)",
+            # Nula de propósito nos aparelhos que já estavam pareados: eles
+            # ganham o segredo na primeira reconexão de um agente que saiba
+            # guardá-lo. Preencher aqui com um valor qualquer trancaria todo
+            # mundo do lado de fora — o agente não teria como adivinhá-lo.
+            "agent_secret": "VARCHAR(64)",
         },
         # Agendamento das automações. As duas com padrão, porque `ADD COLUMN`
         # com `NOT NULL` e sem padrão é recusado em tabela que já tem linhas.

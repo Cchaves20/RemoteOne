@@ -70,7 +70,13 @@ def test_full_pairing_flow():
         # O agente é avisado no próximo heartbeat.
         ws.send_json({"type": "heartbeat"})
         assert ws.receive_json()["type"] == "ack"
-        assert ws.receive_json() == {"type": "paired", "user_email": CREDS["email"]}
+        aviso = ws.receive_json()
+        assert aviso["type"] == "paired"
+        assert aviso["user_email"] == CREDS["email"]
+        # E o segredo do aparelho vem junto: é o instante em que ele nasce, e a
+        # única vez que o servidor pode entregá-lo. Ver S3 em
+        # docs/revisao-de-seguranca.md.
+        assert aviso["secret"], "o pareamento precisa entregar o segredo do agente"
 
 
 def test_already_paired_agent_receives_paired_on_connect():

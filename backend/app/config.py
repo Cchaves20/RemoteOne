@@ -50,6 +50,17 @@ class Settings(BaseSettings):
     # Validade do código de pareamento exibido pelo agente.
     pairing_ttl_seconds: int = 600
 
+    # Recusar agentes que não apresentam segredo (ver `Device.agent_secret`).
+    #
+    # Falso enquanto houver agentes antigos por aí. Ligar antes de todos
+    # atualizarem deixa computadores offline sem explicação nenhuma na tela —
+    # o agente tentaria reconectar para sempre contra um servidor que o recusa.
+    #
+    # Vira verdadeiro quando `/api/v1/agents` não mostrar mais nenhum aparelho
+    # com versão antiga. Até lá, a proteção vale para todo aparelho pareado
+    # depois desta mudança, que é a maioria dos que vão existir.
+    exigir_segredo_do_agente: bool = False
+
     # ICE: STUN sempre, TURN quando configurado (Fase 5 do plano de WebRTC).
     # Sem turn_host/turn_secret o backend entrega só o STUN, como antes.
     stun_urls: list[str] = ["stun:stun.l.google.com:19302"]
