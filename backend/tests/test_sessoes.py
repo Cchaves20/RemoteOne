@@ -13,6 +13,8 @@ rotas HTTP, o refresh — que é o que mantinha a sessão viva — e o WebSocket
 tela, que é o que de fato dá teclado, mouse e imagem do computador.
 """
 
+import time
+
 from conftest import SENHA, criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -351,3 +353,74 @@ def test_o_login_recusado_nao_traz_o_cabecalho():
     )
     assert resp.status_code == 401
     assert "www-authenticate" not in resp.headers
+
+
+def test_a_sessao_de_tela_ja_aberta_cai_quando_a_senha_muda(monkeypatch):
+    """O canal fecha **sozinho**, sem o app precisar mandar nada.
+
+    O teste acima cobria a porta de entrada: com o token cancelado, o canal não
+    abre mais. Faltava o caso que assusta — o canal que **já estava aberto**
+    quando a senha mudou. Ele continuava de pé, porque a autenticação acontecia
+    uma vez só, na conexão. Ou seja: alguém entrou na sua conta, você troca a
+    senha para expulsar, e a sessão de controle dele segue mostrando a tela e
+    aceitando teclado.
+
+    E a expulsão não pode depender de o app mandar alguma coisa: os frames vão
+    no sentido contrário, e um espectador pode passar minutos calado. Por isso o
+    laço acorda sozinho — é isso que este teste exercita, ao não enviar nada
+    depois da troca.
+    """
+    import threading
+
+    from app import main
+
+    monkeypatch.setattr(main, "REVALIDAR_VIEWER_SEGUNDOS", 0.2)
+
+    dono = criar_conta(client, email="tela-viva@example.com")
+    with SessionLocal() as db:
+        user_id = db.scalar(select(User.id).where(User.email == "tela-viva@example.com"))
+    _parear(user_id, "dev-tela-viva")
+
+    agente = AgenteFalso()
+    manager.register("dev-tela-viva", agente)
+    try:
+        with client.websocket_connect("/ws/viewer/dev-tela-viva") as ws:
+            ws.send_json({"token": dono["access_token"]})
+            # A oferta atravessa: o canal está mesmo aberto e autenticado.
+            ws.send_json({"type": "webrtc_offer", "sdp": "v=0"})
+            for _ in range(100):
+                if any(m.get("type") == "webrtc_offer" for m in agente.enviados):
+                    break
+                time.sleep(0.01)
+            assert any(m.get("type") == "webrtc_offer" for m in agente.enviados), (
+                "o canal precisa estar aberto antes da troca de senha"
+            )
+
+            _trocar_senha(dono["access_token"])
+
+            # Espera o servidor fechar — **num prazo**, e não num `receive()`
+            # nu. Se a revalidação regredir, o teste falha dizendo o que houve;
+            # sem o prazo, ele ficaria pendurado para sempre, e um teste que
+            # trava é pior que nenhum: não diz o que está errado.
+            recebido = {}
+
+            def esperar_fechamento():
+                recebido["pacote"] = ws.receive()
+
+            # Thread **daemon**, e não um ThreadPoolExecutor: se o servidor não
+            # fechar, esta thread fica presa no `receive()` para sempre, e um
+            # executor esperaria por ela no fim do `with` — o teste travaria em
+            # vez de falhar, que é exatamente o defeito que o prazo existe para
+            # evitar. Daemon o interpretador abandona ao sair.
+            leitor = threading.Thread(target=esperar_fechamento, daemon=True)
+            leitor.start()
+            leitor.join(timeout=10)
+            if leitor.is_alive():
+                raise AssertionError(
+                    "a sessão de tela continuou aberta depois de a senha mudar"
+                )
+            fechamento = recebido["pacote"]
+            assert fechamento["type"] == "websocket.close", fechamento
+            assert fechamento.get("code") == 4401, fechamento
+    finally:
+        manager.unregister("dev-tela-viva", agente)

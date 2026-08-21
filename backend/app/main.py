@@ -541,24 +541,59 @@ def encerrar_agente(device_id: str, websocket) -> bool:
     return True
 
 
-def _authenticate_viewer(token: str, device_id: str) -> bool:
-    """Valida o token e a posse do dispositivo para assistir à tela."""
-    try:
-        payload = decode_token(token)
-    except jwt.PyJWTError:
-        return False
-    if payload.get("type") != "access":
-        return False
+#: De quanto em quanto tempo uma sessão de tela **já aberta** reconfere se ainda
+#: pode existir.
+#:
+#: Meio minuto é o atraso máximo entre "expulsar alguém" e a expulsão acontecer
+#: de fato. Mais curto não melhora nada perceptível e multiplica consultas ao
+#: banco por espectador; mais longo deixa uma janela grande justamente no
+#: momento em que a pessoa está com pressa.
+REVALIDAR_VIEWER_SEGUNDOS = 30
+
+
+def _vinculo_do_viewer_vale(payload: dict, device_id: str) -> bool:
+    """A conta do token ainda pode ver este dispositivo?
+
+    Separado do `_authenticate_viewer` porque a reconferência **não** olha a
+    validade do token, e isso é deliberado.
+
+    O `exp` do access token dura 15 minutos e existe para limitar o estrago de
+    um token roubado — ou seja, para limitar quantas conexões **novas** ele
+    abre. Aplicá-lo a uma conexão já autenticada derrubaria toda sessão de
+    controle no meio, a cada quinze minutos, e trocaria um problema de segurança
+    por um defeito que qualquer usuário encontra no primeiro uso longo.
+
+    O que precisa ser reconferido é **revogação**, e é o que esta função faz: a
+    conta ainda existe, o aparelho ainda é dela, e a geração de sessão do token
+    ainda é a atual. Trocar a senha, desparear o computador ou apagar a conta
+    passam a fechar a tela em até `REVALIDAR_VIEWER_SEGUNDOS`.
+    """
     with SessionLocal() as db:
         device = pairing.get_device(db, device_id)
         if device is None or str(device.user_id) != str(payload.get("sub")):
             return False
-        # A mesma conferência de geração que o `get_current_user` faz nas rotas
-        # HTTP. Esta é a que não pode faltar: sem ela, trocar a senha fecharia
-        # as rotas e deixaria aberto justamente o canal que mostra a tela do
-        # computador e recebe teclado e mouse.
         user = db.get(User, device.user_id)
         return user is not None and sessao_valida(payload, user)
+
+
+def _authenticate_viewer(token: str, device_id: str) -> dict | None:
+    """Valida o token e a posse do dispositivo para assistir à tela.
+
+    Devolve o conteúdo do token quando vale, e `None` quando não — quem chama
+    precisa guardá-lo para reconferir o vínculo enquanto a sessão durar, sem ter
+    de reabrir o token a cada meio minuto.
+
+    A conferência de geração (`sessao_valida`) é a que não pode faltar: sem ela,
+    trocar a senha fecharia as rotas HTTP e deixaria aberto justamente o canal
+    que mostra a tela do computador e recebe teclado e mouse.
+    """
+    try:
+        payload = decode_token(token)
+    except jwt.PyJWTError:
+        return None
+    if payload.get("type") != "access":
+        return None
+    return payload if _vinculo_do_viewer_vale(payload, device_id) else None
 
 
 # Paradas de transmissão agendadas por dispositivo. Ao sair o último viewer,
@@ -626,7 +661,8 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
     sender_task: asyncio.Task | None = None
     try:
         auth = await websocket.receive_json()
-        if not _authenticate_viewer(auth.get("token", ""), device_id):
+        credencial = _authenticate_viewer(auth.get("token", ""), device_id)
+        if credencial is None:
             await websocket.close(code=4401)  # não autorizado
             return
 
@@ -654,8 +690,34 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
         # Daqui em diante os frames são empurrados pelo sender. O que chega do
         # app é sinalização de WebRTC, repassada ao agente com o `session_id`
         # desta conexão.
+        proxima_conferencia = (
+            asyncio.get_running_loop().time() + REVALIDAR_VIEWER_SEGUNDOS
+        )
         while True:
-            packet = await websocket.receive()
+            # Com prazo, e não um `receive()` nu, por um motivo de segurança e
+            # não de rede: o app pode ficar minutos sem mandar nada (os frames
+            # vão no outro sentido), e sem acordar sozinho a sessão nunca
+            # reconferiria se ainda pode existir. Quem foi expulso continuaria
+            # vendo a tela até resolver mexer no aparelho.
+            agora = asyncio.get_running_loop().time()
+            try:
+                packet = await asyncio.wait_for(
+                    websocket.receive(), timeout=max(0.5, proxima_conferencia - agora)
+                )
+            except TimeoutError:
+                packet = None
+
+            if asyncio.get_running_loop().time() >= proxima_conferencia:
+                if not _vinculo_do_viewer_vale(credencial, device_id):
+                    logger.info("sessão de tela revogada: %s", device_id)
+                    await websocket.close(code=4401)
+                    break
+                proxima_conferencia = (
+                    asyncio.get_running_loop().time() + REVALIDAR_VIEWER_SEGUNDOS
+                )
+
+            if packet is None:
+                continue
             if packet["type"] == "websocket.disconnect":
                 break
             text = packet.get("text")

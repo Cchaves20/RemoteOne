@@ -130,9 +130,9 @@ Na prática: **um relay aberto de graça na sua conta da Oracle.** É a conta de
 banda que fizemos no `custos-para-distribuir.md` sendo paga para o tráfego de
 outra pessoa. Some quando o S3 for resolvido.
 
-### S5 — a sessão de tela não morre quando o token morre
+### S5 — a sessão de tela não morria quando o token morria
 
-**Gravidade: média.** Não corrigido.
+**Gravidade: média.** Corrigido.
 
 `/ws/viewer/{device_id}` valida o token **uma vez**, na conexão. O access token
 dura 15 minutos; uma sessão de controle dura horas. Trocar a senha revoga os
@@ -143,8 +143,23 @@ mouse.
 Cenário: alguém entrou na sua conta, você troca a senha para expulsar, e a
 sessão de controle dele continua de pé.
 
-**Conserto:** revalidar o token periodicamente dentro do laço (a cada minuto
-basta) e fechar o socket quando a `token_key` mudar. É pequeno e isolado.
+**Conserto:** o laço do viewer acorda a cada 30 segundos e reconfere o
+vínculo; quando ele cai, fecha o socket com o código 4401.
+
+Uma decisão embutida aí, que vale explicar: a reconferência **ignora o `exp` do
+token**, de propósito. O prazo de 15 minutos do access token existe para limitar
+quantas conexões **novas** um token roubado abre; aplicá-lo a uma conexão já
+autenticada derrubaria toda sessão de controle a cada quinze minutos, e trocaria
+um problema de segurança por um defeito que qualquer pessoa encontra no primeiro
+uso longo. O que se reconfere é **revogação**: a conta existe, o aparelho ainda
+é dela, e a geração de sessão do token ainda é a atual.
+
+O prazo no `receive()` também não é detalhe: sem ele o laço só acordaria quando
+o app mandasse alguma coisa — e os frames vão no sentido contrário. Quem fosse
+expulso continuaria vendo a tela até resolver mexer no aparelho.
+
+Testado em `test_sessoes.py`, com a senha trocada no meio de uma sessão aberta.
+O teste falha com a revalidação desligada.
 
 ### S6 — o segredo do 2FA fica em texto puro no banco
 
@@ -246,8 +261,7 @@ pode parar de conferir:
 
 ## A ordem em que eu resolveria o que sobrou
 
-1. **S5** (revalidar o token na sessão de tela) — pequeno, isolado, e fecha um
-   buraco de revogação.
+1. ~~**S5**~~ **Feito.**
 2. **S3 + S4** (segredo por dispositivo) — o lote maior, e o que mais muda a
    postura de segurança do produto.
 3. **S7** (travar dependências) — uma tarde, e some uma classe inteira de
