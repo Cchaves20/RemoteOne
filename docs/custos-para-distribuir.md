@@ -7,17 +7,66 @@ virar algo que um estranho instala, usa e paga.
 de 2026 e mudam — confirme cada um antes de gastar. E o câmbio usado é
 **US$ 1 = R$ 5,50**; se estiver diferente, os valores em real mudam junto.
 
-## O resumo, para quem quer o número
+## A tabela, item por item
 
-| | Uma vez | Por mês |
-|---|---|---|
-| **Mínimo para cobrar** | ~R$ 140 | ~R$ 130 |
-| **Com os avisos do Windows resolvidos** | ~R$ 140 | ~R$ 185 a R$ 320 |
-| **Mais a revisão jurídica** | ~R$ 1.140 a R$ 3.140 | igual |
+| Item | Uma vez | Por mês | Obrigatório? |
+|---|---:|---:|---|
+| Google Play Console (US$ 25) | R$ 138 | — | sim |
+| Revisão jurídica dos termos | R$ 1.000 a 3.000 | — | sim, antes de cobrar |
+| Abertura do CNPJ (MEI) | R$ 0 | — | sim |
+| Apple Developer (US$ 99/ano) | — | R$ 45 | sim |
+| DAS do MEI | — | R$ 78 | sim |
+| Domínio `.com.br` (R$ 40/ano) | — | R$ 3 | sim |
+| Envio de e-mail (Amazon SES) | — | R$ 5 | sim |
+| Servidor (Oracle Always Free) | — | R$ 0 | sim |
+| Azure Trusted Signing (US$ 9,99/mês) | — | R$ 55 | não |
+| — *ou* certificado EV (~US$ 500/ano) | — | R$ 229 | não |
+| SMS (Twilio) | — | — | **não faça** |
 
-E o custo que não aparece em nenhuma tabela de assinatura: **15% de cada
-mensalidade vai para a Apple ou para o Google.** Isso é maior que todo o resto
-somado, assim que houver clientes.
+## Os totais
+
+Usando R$ 2.000 para a revisão jurídica (meio da faixa):
+
+| Cenário | Uma vez | Por mês | **Primeiro ano** |
+|---|---:|---:|---:|
+| **A — sem certificado** | R$ 2.138 | R$ 131 | **R$ 3.710** |
+| **B — com Azure Signing** | R$ 2.138 | R$ 186 | **R$ 4.370** |
+| **C — com certificado EV** | R$ 2.138 | R$ 361 | **R$ 6.470** |
+
+A partir do segundo ano cai para 12 × a mensalidade: **R$ 1.572**, **R$ 2.232**
+ou **R$ 4.332**.
+
+**Só para pôr no ar, sem cobrar ainda**, tire a revisão jurídica: R$ 138 de
+entrada e R$ 131 por mês. Isso é o cenário A menos os R$ 2.000, e é onde dá
+para começar.
+
+## O custo que não está na tabela
+
+**15% de cada mensalidade vai para a Apple ou para o Google.** É variável, então
+não cabe nas linhas acima — mas assim que houver clientes ele passa tudo o mais.
+
+```
+R$ 30,00  mensalidade
+- R$ 4,50  15% da loja
+= R$ 25,50 líquido por assinante
+```
+
+Vendendo pelo site, a taxa do processador de pagamento fica em torno de 5% e
+sobram R$ 28,40 — R$ 3 a mais por assinante, todo mês.
+
+## Quantos assinantes fecham a conta
+
+| Cenário | Só o mensal | Primeiro ano, com o de uma vez diluído |
+|---|---:|---:|
+| A | 6 | 13 |
+| B | 8 | 15 |
+| C | 15 | 22 |
+
+A coluna da direita é a honesta para quem está começando: ela paga também os
+R$ 2.138 de entrada ao longo dos doze primeiros meses.
+
+**Treze a quinze assinantes cobrem o primeiro ano inteiro** nos cenários que eu
+escolheria. É uma barreira baixa, e é a notícia boa desta página.
 
 ## Obrigatório — sem isto ninguém além de você usa
 
@@ -231,33 +280,24 @@ lista de tarefas.
 
 É o único item da lista em que eu não economizaria.
 
-## A conta de quando isso se paga
+## De onde vem a mensalidade de cada cenário
 
-Numa assinatura de R$ 30 vendida pela loja:
-
-```
-R$ 30,00  mensalidade
-- R$ 4,50  15% da loja
-= R$ 25,50 líquido por assinante
-```
-
-Custo fixo mensal, no cenário do meio (Apple + MEI + Azure Trusted Signing +
-domínio + e-mail):
+Para conferir os totais lá de cima sem precisar refazer a soma:
 
 ```
-R$  45  Apple, diluída no mês
-R$  78  MEI
-R$  55  assinatura do certificado
-R$   3  domínio
-R$   5  e-mail
-= R$ 186 por mês
+R$  45  Apple, diluída no mês (US$ 99/ano)
+R$  78  DAS do MEI
+R$   3  domínio (R$ 40/ano)
+R$   5  e-mail (SES)
+R$   0  servidor (Oracle Always Free)
+= R$ 131  cenário A
+
++ R$  55  Azure Trusted Signing      = R$ 186  cenário B
++ R$ 229  certificado EV, no lugar   = R$ 361  cenário C
 ```
 
-**Ponto de equilíbrio: 8 assinantes.** Com certificado EV em vez do Azure, sobe
-para 13. Vendendo pelo site em vez da loja, cai para 7.
-
-Oito pessoas pagando cobrem a operação inteira. Isso é uma barreira baixa — e é
-a notícia boa desta página.
+O Google Play não aparece: são US$ 25 **uma vez só**, e diluir um pagamento
+único numa mensalidade só serviria para o número parecer pior do que é.
 
 ## A ordem em que eu gastaria
 
