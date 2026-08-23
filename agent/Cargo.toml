@@ -57,6 +57,14 @@ fast_image_resize = "6.1.0"
 # funciona menos o som do computador. Melhor perder um recurso do que não
 # existir na plataforma.
 #
+# **E há uma consequência que não é óbvia: não dá para gerar o binário x86-64
+# a partir de um Windows ARM64.** O `cfg` acima olha o **alvo**, então mirar
+# x86_64 traz o `audiopus_sys` para a compilação; mas o `build.rs` dele compila
+# para a máquina que está compilando, e ali `ARCHITECTURE` continua indefinida.
+# Falha no host, com o mesmo erro, mesmo estando tudo certo com o alvo.
+#
+# Cada arquitetura é compilada na máquina dela. Ver `docs/publicar-instalador.md`.
+#
 # Fora do Windows elas nem entram, porque o `cpal` no Linux pediria as
 # bibliotecas do ALSA para compilar.
 [target.'cfg(all(windows, any(target_arch = "x86", target_arch = "x86_64")))'.dependencies]

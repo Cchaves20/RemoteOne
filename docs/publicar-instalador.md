@@ -35,62 +35,84 @@ o certificado remove.
 
 No **MateBook**, em `C:\Users\OseasyVM\Desktop\projetos\Deskside`:
 
-### Preparar, uma vez só
+### Cada arquitetura é compilada na máquina dela
 
-```powershell
-rustup target add x86_64-pc-windows-msvc
-rustup target add aarch64-pc-windows-msvc
-```
+Não há compilação cruzada aqui, e o motivo não é preguiça: o `audiopus_sys`
+(o Opus, para mandar o som do computador ao celular) só existe para x86 e
+x86-64. O `cfg` que o inclui olha o **alvo**, então mirar x86-64 o traz para a
+compilação — mas o `build.rs` dele compila para a **máquina que compila**, e num
+host ARM64 a constante `ARCHITECTURE` fica indefinida. O build morre no host
+mesmo estando tudo certo com o alvo, e nenhum toolchain conserta isso.
 
-### Compilar as duas
+Então:
+
+| Arquivo | Onde compilar |
+|---|---|
+| `Deskside.exe` (x64) | **Dell G5** — Intel |
+| `Deskside-ARM64.exe` | **MateBook** — ARM64 |
+
+Cada máquina compila e publica a sua. É mais simples do que juntar os dois
+arquivos num lugar só, e evita o passo de copiar binário entre computadores —
+que é justamente onde se troca um pelo outro sem perceber.
+
+### No Dell, para o x64
 
 ```powershell
 git pull
-cd agent
-cargo build --release --target x86_64-pc-windows-msvc
-cargo build --release --target aarch64-pc-windows-msvc
-cd ..
+.\scripts\atualizar.cmd -Agente
+Copy-Item agent\target\release\deskside-agent.exe deploy\site\baixar\Deskside.exe -Force
+.\scripts\conferir-exe.cmd deploy\site\baixar\Deskside.exe -Esperado x64
 ```
 
-**Sempre com `--target`, mesmo para a arquitetura da própria máquina.** Sem ele,
-o cargo compila para o processador de quem está compilando — e no MateBook isso
-quer dizer ARM64. Um `.exe` ARM64 num PC Intel dá "Este aplicativo não pode ser
-executado em seu PC", uma frase que não menciona arquitetura, não diz qual é a
-certa e não diz onde procurar. Foi assim que um binário só-ARM64 chegou a ficar
-publicado no site.
+Sem `--target`: o alvo padrão é o processador da máquina, e no Dell ele já é o
+que se quer.
 
-Se o build ARM64 falhar com `failed to find tool "clang"`, use
-`.\scripts\atualizar.cmd -Agente`, que tem um `PrepararClangArm64` para pôr o
-LLVM no PATH — o `ring` monta o assembly ARM64 com clang, não com o `cl.exe`.
-Se o build x86-64 pedir `nasm`, `winget install NASM.NASM` e reabra o terminal.
-
-### Conferir antes de copiar
+### No MateBook, para o ARM64
 
 ```powershell
-Copy-Item agent\target\x86_64-pc-windows-msvc\release\deskside-agent.exe deploy\site\baixar\Deskside.exe -Force
-Copy-Item agent\target\aarch64-pc-windows-msvc\release\deskside-agent.exe deploy\site\baixar\Deskside-ARM64.exe -Force
-
-.\scripts\conferir-exe.ps1 deploy\site\baixar\Deskside.exe -Esperado x64
-.\scripts\conferir-exe.ps1 deploy\site\baixar\Deskside-ARM64.exe -Esperado ARM64
+git pull
+.\scripts\atualizar.cmd -Agente
+Copy-Item agent\target\release\deskside-agent.exe deploy\site\baixar\Deskside-ARM64.exe -Force
+.\scripts\conferir-exe.cmd deploy\site\baixar\Deskside-ARM64.exe -Esperado ARM64
 ```
 
-O `conferir-exe.ps1` lê o cabeçalho PE e diz para qual processador cada um foi
+O `atualizar.cmd`, e não `cargo build` direto: ele tem o `PrepararClangArm64`,
+que põe o LLVM no PATH antes de chamar o cargo. O `ring` monta o assembly ARM64
+com clang, não com o `cl.exe`, e sem isso o build para em
+`failed to find tool "clang"`.
+
+O `.cmd` em vez do `.ps1` também não é detalhe: a política de execução do
+Windows bloqueia `.ps1` por padrão, com a mensagem "a execução de scripts foi
+desabilitada neste sistema". O `.cmd` chama o PowerShell já com a exceção, só
+para aquele arquivo.
+
+### Por que a conferência
+
+O `conferir-exe` lê o cabeçalho PE e diz para qual processador o arquivo foi
 compilado, o tamanho e a data. **Duas armadilhas de uma vez:** um `.exe` da
 arquitetura errada é indistinguível de um certo pelo nome, pelo tamanho e pelo
 comportamento na máquina de quem compilou — o erro só aparece no computador de
 outra pessoa. E quando um build falha, o `.exe` do build anterior continua onde
-estava, então o `Copy-Item` seguinte copia esse sem erro nenhum. Já aconteceu:
-quase foi publicado um agente sem a remoção da marca da web e sem a pergunta de
-instalação. Um comando que dá certo copiando a coisa errada é pior que um que
-falha.
+estava, então o `Copy-Item` seguinte copia esse sem erro nenhum. As duas coisas
+já aconteceram neste projeto.
 
-### Publicar
+### Publicar, na mesma máquina que compilou
 
 ```powershell
 $chave = (Get-ChildItem "$env:USERPROFILE\Downloads\*.key" | Sort-Object LastWriteTime -Descending)[0].FullName
 $remoto = 'ubuntu@147.15.45.45'
 $raiz = (ssh -i $chave $remoto 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; pwd').Trim()
-scp -i $chave deploy\site\baixar\Deskside.exe deploy\site\baixar\Deskside-ARM64.exe "${remoto}:$raiz/deploy/site/baixar/"
+
+# No Dell:
+scp -i $chave deploy\site\baixar\Deskside.exe "${remoto}:$raiz/deploy/site/baixar/"
+# No MateBook:
+scp -i $chave deploy\site\baixar\Deskside-ARM64.exe "${remoto}:$raiz/deploy/site/baixar/"
+```
+
+E, de qualquer uma das duas, para a página com as duas opções chegar ao ar:
+
+```powershell
+ssh -i $chave $remoto 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; git pull'
 ```
 
 ### Por que dois, e por que o x64 é o principal
