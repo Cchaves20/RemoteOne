@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import pairing
+from app import cobranca, plano
 from app.auth import get_current_user
 from app.connections import manager
 from app.db import get_db
@@ -200,6 +201,17 @@ def list_automations(
     return AutomationsOut(automations=[_to_out(r) for r in rows])
 
 
+def _exigir_plano_para_agendar(body, current_user: User) -> None:
+    """Horário marcado é do plano pago.
+
+    Só recusa quando a automação **é** agendada: uma automação de tocar para
+    executar continua grátis, e recusar as duas juntas tiraria do plano grátis
+    o recurso que faz a pessoa conhecer o outro.
+    """
+    if getattr(body, "schedule_time", ""):
+        cobranca.exigir_recurso(current_user, plano.Recurso.AGENDAR)
+
+
 @router.post(
     "/automations",
     response_model=AutomationOut,
@@ -214,10 +226,22 @@ async def create_automation(
     """Cria uma automação. O identificador é gerado aqui e nunca muda."""
     _check_device(body, db, current_user)
 
+    _exigir_plano_para_agendar(body, current_user)
+
     quantas = len(
         db.scalars(
             select(Automation.id).where(Automation.user_id == current_user.id)
         ).all()
+    )
+    # Dois tetos, e eles dizem coisas diferentes. O do plano é uma oferta
+    # (402: dá para ter mais, pagando); o `MAX_AUTOMATIONS` é um teto técnico
+    # da conta, que ninguém compra. Misturá-los faria o app oferecer o plano
+    # pago a quem já o tem e mesmo assim bateu no limite.
+    cobranca.exigir_espaco(
+        current_user,
+        quantas,
+        plano.limite_de_automacoes(cobranca.plano_de(current_user)),
+        "automação",
     )
     if quantas >= MAX_AUTOMATIONS:
         raise HTTPException(
@@ -257,6 +281,7 @@ async def update_automation(
     """Substitui o conteúdo de uma automação. O identificador continua o mesmo."""
     row = _owned(db, automation_id, current_user)
     _check_device(body, db, current_user)
+    _exigir_plano_para_agendar(body, current_user)
 
     # O computador de antes precisa saber que perdeu a automação; o de agora,
     # que ganhou. Guardado antes da escrita, senão só sobra o novo.

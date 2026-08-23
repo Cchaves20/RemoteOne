@@ -27,6 +27,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import cofre, entrega, limite, telefone, verificacao
+from app import cobranca
+from app import plano as plano_regras
 from app import senha as politica_de_senha
 from app.config import settings
 from app.db import get_db
@@ -364,6 +366,10 @@ def signup_verify(body: SignupVerify, db: Session = Depends(get_db)) -> TokenPai
         first_name=pendente.first_name,
         last_name=pendente.last_name,
         birth_date=pendente.birth_date,
+        # Trinta dias conhecendo o produto inteiro, e depois o plano grátis —
+        # nunca uma conta bloqueada. Ver `app/plano.py`.
+        plano=plano_regras.Plano.PAGO,
+        plano_ate=plano_regras.fim_do_teste(datetime.now(UTC)),
     )
     db.add(user)
     db.delete(pendente)
@@ -589,8 +595,17 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> AccessToken:
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)) -> User:
-    return current_user
+def me(current_user: User = Depends(get_current_user)) -> UserOut:
+    """A conta, com o plano **efetivo** — não o rótulo guardado.
+
+    Uma conta com `plano="pago"` e prazo vencido está no grátis. Devolver o
+    rótulo cru faria o app oferecer recursos que o servidor recusaria em
+    seguida, e uma tela que promete o que o servidor nega é pior que uma tela
+    que não promete nada.
+    """
+    saida = UserOut.model_validate(current_user)
+    saida.plano = cobranca.plano_de(current_user)
+    return saida
 
 
 # --- trocar o contato da conta ------------------------------------------------

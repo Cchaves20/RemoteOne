@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import cobranca, plano
 from app.auth import get_current_user
 from app.db import get_db
 from app.models import ControlProfile, Device, ProfileLayout, User
@@ -107,6 +108,7 @@ def create_profile(
     db: Session = Depends(get_db),
 ) -> ProfileOut:
     """Cria um perfil. O identificador é gerado aqui e nunca muda."""
+    cobranca.exigir_recurso(current_user, plano.Recurso.PERFIS)
     meus = _owned_device_ids(db, current_user)
     _check_devices(body, meus)
 
@@ -181,7 +183,11 @@ def update_profile(
     db: Session = Depends(get_db),
 ) -> ProfileOut:
     """Substitui o conteúdo de um perfil. O identificador continua o mesmo."""
+    # A checagem de dono vem **antes**: quem edita perfil alheio recebe 404, e
+    # não uma oferta de plano — dizer "isto é pago" sobre o que é de outra
+    # pessoa confirmaria que aquilo existe.
     row = _owned_profile(db, profile_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.PERFIS)
     meus = _owned_device_ids(db, current_user)
     _check_devices(body, meus)
 

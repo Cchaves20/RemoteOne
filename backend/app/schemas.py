@@ -237,6 +237,15 @@ class UserOut(BaseModel):
     birth_date: date | None = None
     created_at: datetime
     totp_enabled: bool = False
+    #: "gratis" ou "pago" — o plano **efetivo**, já considerando a validade.
+    #:
+    #: Calculado, e não copiado da coluna: uma conta com `plano="pago"` e prazo
+    #: vencido está no grátis, e devolver o rótulo cru faria o app mostrar
+    #: recursos que o servidor vai recusar. Duas verdades sobre a mesma conta é
+    #: como se constrói uma tela que mente.
+    plano: str = "gratis"
+    #: Até quando o plano pago vale. Nulo = sem prazo (ou já no grátis).
+    plano_ate: datetime | None = None
 
     model_config = {"from_attributes": True}
 

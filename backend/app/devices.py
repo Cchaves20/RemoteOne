@@ -8,7 +8,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Res
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app import pairing
+from app import cobranca, pairing, plano
 from app.auth import get_current_user
 from app.connections import manager
 from app.db import get_db
@@ -105,6 +105,14 @@ def claim_device(
     db: Session = Depends(get_db),
 ) -> DeviceOut:
     """Vincula à conta o computador identificado pelo código de pareamento."""
+    # O limite conta **antes** de criar, e é o servidor quem conta: o app pode
+    # esconder o botão, mas esconder não é impedir.
+    cobranca.exigir_espaco(
+        current_user,
+        len(pairing.list_devices(db, current_user)),
+        plano.limite_de_dispositivos(cobranca.plano_de(current_user)),
+        "computador",
+    )
     try:
         device = pairing.claim(db, body.code.strip().upper(), current_user)
     except pairing.PairingError as exc:
@@ -362,6 +370,7 @@ async def audio_stream(
     houver conexão direta de vídeo, não há por onde o som passar.
     """
     _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.AUDIO)
     message = {"type": "audio", "enabled": body.enabled, "gain": body.gain}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -500,6 +509,7 @@ async def set_presentation(
     o outro acabou de fazer.
     """
     _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.APRESENTACAO)
     message: dict = {"type": "presentation"}
     if body.on is not None:
         message["on"] = body.on
@@ -540,6 +550,7 @@ async def list_files(
     como 400, não como pasta vazia.
     """
     _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
 
     request_id, future = pending.create()
     message = {"type": "list_files", "request_id": request_id, "path": path}
@@ -576,6 +587,7 @@ async def download_file(
     inteiro aqui. É o que torna possível mover 100 MB numa VM de 1 GB.
     """
     _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
 
     transfer_id, download = transfers.start_download()
     message = {"type": "read_file", "transfer_id": transfer_id, "path": path}
@@ -634,6 +646,7 @@ async def upload_file(
     computador não acompanha.
     """
     device = _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
 
     declared = request.headers.get("content-length")
     size = int(declared) if declared and declared.isdigit() else 0
@@ -803,6 +816,7 @@ async def set_monitor(
     na imagem. Não há o que responder que a própria tela não diga.
     """
     _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.MONITORES)
 
     message = {"type": "set_monitor", "monitor": body.monitor}
     if not await manager.send_to_agent(device_id, message):

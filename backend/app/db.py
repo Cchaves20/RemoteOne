@@ -92,6 +92,12 @@ def _migrate() -> None:
             # correto. Aceitá-los por compatibilidade manteria aberta
             # exatamente a porta que a coluna fecha.
             "token_key": "VARCHAR(32) DEFAULT '' NOT NULL",
+            # Planos. As contas que já existem nascem **pagas e sem prazo**, e
+            # não em teste: elas são de antes de haver cobrança, e rebaixá-las
+            # de um dia para o outro seria tirar recursos de quem já os usava
+            # sem nunca ter sido avisado de que eram pagos.
+            "plano": "VARCHAR(16) DEFAULT 'pago' NOT NULL",
+            "plano_ate": "TIMESTAMP",
         },
     }
     with engine.begin() as conn:

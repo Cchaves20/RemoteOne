@@ -120,6 +120,8 @@ FEATURES = [
     "rate-limit",
     # O agente sabe se tirar da conta sozinho (botão de desinstalar da janela).
     "agent-unpair",
+    # Planos: versão grátis permanente, paga sem limitação. Ver app/plano.py.
+    "planos",
 ]
 
 

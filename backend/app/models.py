@@ -45,6 +45,17 @@ class User(Base):
     # confirmar um código; só então `totp_enabled` vira verdadeiro.
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False)
+
+    #: "gratis" ou "pago". Ver `app/plano.py`.
+    #:
+    #: Nasce **pago**, com validade de 30 dias: toda conta começa conhecendo o
+    #: produto inteiro e depois cai para o grátis — nunca para bloqueada.
+    plano: Mapped[str] = mapped_column(String(16), default="pago")
+    #: Até quando o plano vale. Nulo com plano pago significa **sem prazo**, que
+    #: é como se liga uma conta à mão antes de existir cobrança automática.
+    plano_ate: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     #: Chave de sessão. Todo token carrega a que valia quando foi emitido, e só
     #: vale enquanto for igual a esta. Trocar a senha sorteia outra, e **todo
     #: token já emitido morre na mesma hora**.
