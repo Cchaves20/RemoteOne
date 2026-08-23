@@ -98,6 +98,7 @@ def _migrate() -> None:
             # sem nunca ter sido avisado de que eram pagos.
             "plano": "VARCHAR(16) DEFAULT 'pago' NOT NULL",
             "plano_ate": "TIMESTAMP",
+            "aviso_fim_teste_em": "TIMESTAMP",
         },
     }
     with engine.begin() as conn:

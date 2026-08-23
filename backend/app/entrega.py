@@ -64,6 +64,19 @@ class Entregador:
     def sms(self, destino: str, codigo: str) -> None:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def aviso(  # pragma: no cover - interface
+        self, destino: str, assunto: str, corpo: str
+    ) -> None:
+        """Um e-mail que não é código de verificação.
+
+        Separado do `email` de propósito. Aquele tem um contrato estreito — um
+        código, um assunto fixo, dez minutos de validade — e alargá-lo para
+        caber qualquer mensagem faria o caminho mais sensível do sistema aceitar
+        texto arbitrário. São dois usos, e usos diferentes merecem portas
+        diferentes.
+        """
+        raise NotImplementedError
+
 
 class NoDiario(Entregador):
     """O modo de teste: o código vai para a saída do servidor.
@@ -80,6 +93,9 @@ class NoDiario(Entregador):
 
     def sms(self, destino: str, codigo: str) -> None:
         print(f"[verificação] SMS para {destino}: {codigo}")
+
+    def aviso(self, destino: str, assunto: str, corpo: str) -> None:
+        print(f"[aviso] e-mail para {destino}: {assunto}")
 
 
 class PorSmtp(Entregador):
@@ -111,6 +127,23 @@ class PorSmtp(Entregador):
                 servidor.send_message(msg)
         except (OSError, smtplib.SMTPException) as exc:
             raise EntregaError(f"não consegui enviar o e-mail: {exc}") from exc
+
+    def aviso(self, destino: str, assunto: str, corpo: str) -> None:
+        msg = EmailMessage()
+        msg["Subject"] = assunto
+        msg["From"] = settings.smtp_from or settings.smtp_user
+        msg["To"] = destino
+        msg.set_content(corpo)
+        try:
+            with smtplib.SMTP(
+                settings.smtp_host, settings.smtp_port, timeout=self.TIMEOUT
+            ) as servidor:
+                servidor.starttls()
+                if settings.smtp_user:
+                    servidor.login(settings.smtp_user, settings.smtp_password)
+                servidor.send_message(msg)
+        except (OSError, smtplib.SMTPException) as exc:
+            raise EntregaError(f"não consegui enviar o aviso: {exc}") from exc
 
 
 class PorTwilio(Entregador):

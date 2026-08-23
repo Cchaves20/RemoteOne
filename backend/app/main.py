@@ -692,6 +692,30 @@ def encerrar_agente(device_id: str, websocket) -> bool:
 REVALIDAR_VIEWER_SEGUNDOS = 30
 
 
+async def _vigiar_vinculo(websocket: WebSocket, credencial: dict, device_id: str) -> None:
+    """Fecha a sessão de tela quando a conta deixa de poder vê-la.
+
+    Numa tarefa à parte porque o laço principal precisa de um `receive()` que
+    **nunca** seja cancelado: cancelar uma leitura de WebSocket no meio pode
+    descartar a mensagem que estava chegando, e aqui as mensagens são a
+    sinalização do WebRTC — perder uma é o vídeo não abrir.
+
+    Dorme e confere, em vez de ser acordada por um evento, porque a revogação
+    acontece noutro processo (uma troca de senha por HTTP) e não há evento a
+    escutar. Trinta segundos é o atraso máximo entre expulsar alguém e a
+    expulsão acontecer.
+    """
+    try:
+        while True:
+            await asyncio.sleep(REVALIDAR_VIEWER_SEGUNDOS)
+            if not _vinculo_do_viewer_vale(credencial, device_id):
+                logger.info("sessão de tela revogada: %s", device_id)
+                await websocket.close(code=4401)
+                return
+    except asyncio.CancelledError:
+        pass
+
+
 def _vinculo_do_viewer_vale(payload: dict, device_id: str) -> bool:
     """A conta do token ainda pode ver este dispositivo?
 
@@ -800,6 +824,7 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
     viewer = Viewer(websocket)
     registered = False
     sender_task: asyncio.Task | None = None
+    vigia: asyncio.Task | None = None
     try:
         auth = await websocket.receive_json()
         credencial = _authenticate_viewer(auth.get("token", ""), device_id)
@@ -831,34 +856,19 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
         # Daqui em diante os frames são empurrados pelo sender. O que chega do
         # app é sinalização de WebRTC, repassada ao agente com o `session_id`
         # desta conexão.
-        proxima_conferencia = (
-            asyncio.get_running_loop().time() + REVALIDAR_VIEWER_SEGUNDOS
-        )
+        # A revalidação vive numa tarefa própria, e **não** num prazo em volta
+        # do `receive()`. A primeira versão fazia isso, e estava errada:
+        # `asyncio.wait_for` **cancela** a leitura quando o prazo estoura, e uma
+        # leitura de WebSocket cancelada no meio pode levar junto a mensagem que
+        # estava chegando. O sintoma foi um teste de sinalização que falhava em
+        # duas execuções de cada três — e em produção seria uma oferta de WebRTC
+        # perdida de vez em quando, com o vídeo "às vezes não abre".
+        #
+        # Com a tarefa separada, o `receive()` nunca é interrompido: quem
+        # verifica dorme, confere e fecha o socket se o vínculo caiu.
+        vigia = asyncio.create_task(_vigiar_vinculo(websocket, credencial, device_id))
         while True:
-            # Com prazo, e não um `receive()` nu, por um motivo de segurança e
-            # não de rede: o app pode ficar minutos sem mandar nada (os frames
-            # vão no outro sentido), e sem acordar sozinho a sessão nunca
-            # reconferiria se ainda pode existir. Quem foi expulso continuaria
-            # vendo a tela até resolver mexer no aparelho.
-            agora = asyncio.get_running_loop().time()
-            try:
-                packet = await asyncio.wait_for(
-                    websocket.receive(), timeout=max(0.5, proxima_conferencia - agora)
-                )
-            except TimeoutError:
-                packet = None
-
-            if asyncio.get_running_loop().time() >= proxima_conferencia:
-                if not _vinculo_do_viewer_vale(credencial, device_id):
-                    logger.info("sessão de tela revogada: %s", device_id)
-                    await websocket.close(code=4401)
-                    break
-                proxima_conferencia = (
-                    asyncio.get_running_loop().time() + REVALIDAR_VIEWER_SEGUNDOS
-                )
-
-            if packet is None:
-                continue
+            packet = await websocket.receive()
             if packet["type"] == "websocket.disconnect":
                 break
             text = packet.get("text")
@@ -883,6 +893,8 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        if vigia is not None:
+            vigia.cancel()
         if sender_task is not None:
             sender_task.cancel()
         if registered:

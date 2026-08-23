@@ -56,6 +56,14 @@ class User(Base):
     plano_ate: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    #: Quando o aviso de "seu mês completo está acabando" foi enviado.
+    #:
+    #: Uma data e não um booleano: quando existir um segundo aviso, ou uma
+    #: renovação que precise avisar de novo, a pergunta vai ser "avisado
+    #: quando?" — e um booleano já teria jogado essa informação fora.
+    aviso_fim_teste_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     #: Chave de sessão. Todo token carrega a que valia quando foi emitido, e só
     #: vale enquanto for igual a esta. Trocar a senha sorteia outra, e **todo
     #: token já emitido morre na mesma hora**.

@@ -111,8 +111,40 @@ prazo que já nasce vencido.
 
 - **Processador de pagamento.** Nada de Stripe, Mercado Pago ou compra dentro do
   app. `pago` se liga à mão.
-- **A tela no aplicativo** que diz em que plano a pessoa está e o que fazer
-  quando esbarra num limite. Hoje o app recebe o 402 e mostra a mensagem do
-  servidor, o que é honesto mas não é uma oferta.
-- **Aviso antes de o teste acabar.** Trinta dias passam e a pessoa descobre pelo
-  limite. Um e-mail no vigésimo quinto dia é barato e converte.
+- **Um botão de assinar.** Não existe porque não há como assinar: o app mostra
+  o endereço de contato e o copia. Um botão que abrisse uma tela vazia custaria
+  mais confiança do que a ausência dele.
+## O aviso de fim do mês completo
+
+`backend/app/avisos.py`, rodado uma vez por dia pelo cron da VM:
+
+```bash
+sudo docker compose -f deploy/docker-compose.lite.yml exec -T api python -m app.avisos
+```
+
+Sai cinco dias antes: perto o bastante para ser concreto ("acaba na sexta") e
+longe o bastante para caber uma decisão. Rodar duas vezes no mesmo dia não manda
+nada duas vezes — quem já foi avisado fica marcado.
+
+Três detalhes:
+
+**O texto abre com o que continua funcionando**, e só depois diz o que fica no
+plano pago. Uma mensagem que abre com o que se perde é lida como ameaça, e a
+reação a uma ameaça de software é desinstalar.
+
+**Falha de envio não marca a conta.** Um provedor fora do ar por uma hora não
+pode custar o aviso inteiro: a tarefa de amanhã tenta de novo.
+
+**Conta criada por telefone não é marcada em silêncio.** Sem SMS contratado não
+há por onde avisar, e fingir que houve esconderia esse caso para sempre — o
+defeito só apareceria como "eu não fui avisado", meses depois.
+
+Instalar no cron, junto do backup:
+
+```bash
+( crontab -l 2>/dev/null | grep -v 'app.avisos'; \
+  echo "23 12 * * * sh -c 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; sudo docker compose -f deploy/docker-compose.lite.yml exec -T api python -m app.avisos' >> ~/avisos.log 2>&1" ) | crontab -
+```
+
+Meio-dia, e não de madrugada: um e-mail que chega às 3h fica no fim da caixa de
+entrada quando a pessoa acorda.

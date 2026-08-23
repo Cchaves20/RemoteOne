@@ -1245,6 +1245,53 @@ class Strings {
       'Confirmez le mot de passe', 'Confirma la contraseña');
 
   // 2FA
+  // --- planos ---------------------------------------------------------------
+  String get planoTitulo =>
+      _t('Seu plano', 'Your plan', '你的方案', 'Votre forfait', 'Tu plan');
+  String get planoPago =>
+      _t('Deskside completo', 'Deskside full', 'Deskside 完整版',
+          'Deskside complet', 'Deskside completo');
+  String get planoGratis =>
+      _t('Deskside grátis', 'Deskside free', 'Deskside 免费版',
+          'Deskside gratuit', 'Deskside gratis');
+  String get planoSemPrazo => _t('Sem prazo', 'No expiry date', '无期限',
+      "Sans date d'expiration", 'Sin fecha de vencimiento');
+  String planoDiasRestantes(int dias) => _t(
+      dias == 1 ? 'Termina amanhã' : 'Faltam $dias dias',
+      dias == 1 ? 'Ends tomorrow' : '$dias days left',
+      dias == 1 ? '明天结束' : '还剩 $dias 天',
+      dias == 1 ? 'Se termine demain' : 'Il reste $dias jours',
+      dias == 1 ? 'Termina mañana' : 'Quedan $dias días');
+  String get planoGratisResumo => _t(
+      'Um computador, mouse, teclado, tela ao vivo e uma automação.',
+      'One computer, mouse, keyboard, live screen and one automation.',
+      '一台电脑、鼠标、键盘、实时画面和一个自动化。',
+      "Un ordinateur, souris, clavier, écran en direct et une automatisation.",
+      'Un equipo, ratón, teclado, pantalla en vivo y una automatización.');
+  String get planoPagoResumo => _t(
+      'Computadores ilimitados, horário marcado, arquivos, apresentação, som, perfis e monitores.',
+      'Unlimited computers, scheduling, files, presentation, audio, profiles and monitors.',
+      '无限电脑、定时、文件、演示、声音、配置和显示器。',
+      "Ordinateurs illimités, horaires, fichiers, présentation, son, profils et écrans.",
+      'Equipos ilimitados, horarios, archivos, presentación, sonido, perfiles y monitores.');
+  String get planoLimiteTitulo => _t('Isto é do Deskside completo',
+      'This is part of Deskside full', '这是完整版功能',
+      'Ceci fait partie de Deskside complet', 'Esto es de Deskside completo');
+  String get planoFalarConosco => _t('Falar com a gente', 'Get in touch',
+      '联系我们', 'Nous contacter', 'Hablar con nosotros');
+  String get planoCopiarEmail => _t('Copiar e-mail', 'Copy e-mail address',
+      '复制邮箱', "Copier l'adresse e-mail", 'Copiar correo');
+  String get planoEmailCopiado => _t('Endereço copiado.', 'Address copied.',
+      '地址已复制。', 'Adresse copiée.', 'Dirección copiada.');
+  String get planoAgoraNao =>
+      _t('Agora não', 'Not now', '暂不', 'Pas maintenant', 'Ahora no');
+  String get planoComoAssinar => _t(
+      'O pagamento automático ainda está sendo montado. Por enquanto a gente ativa na mão — escreva e respondemos.',
+      'Automatic payment is still being built. For now we enable it by hand — write to us and we will reply.',
+      '自动付款仍在开发中。目前我们手动开通——写信给我们即可。',
+      "Le paiement automatique est en cours de construction. Pour l'instant nous l'activons à la main — écrivez-nous.",
+      'El pago automático aún se está construyendo. Por ahora lo activamos a mano — escríbenos y respondemos.');
+
   String get twoFactorTitle => _t('Verificação em duas etapas', 'Two-step verification',
       '两步验证', 'Vérification en deux étapes', 'Verificación en dos pasos');
   String get twoFactorSteps => _t(

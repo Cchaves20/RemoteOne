@@ -31,12 +31,19 @@ class EntregadorEspiao(entrega.Entregador):
 
     def __init__(self) -> None:
         self.enviados: list[tuple[str, str, str]] = []
+        self.avisos: list[tuple[str, str, str]] = []
 
     def email(self, destino: str, codigo: str) -> None:
         self.enviados.append(("email", destino, codigo))
 
     def sms(self, destino: str, codigo: str) -> None:
         self.enviados.append(("sms", destino, codigo))
+
+    def aviso(self, destino: str, assunto: str, corpo: str) -> None:
+        # Guarda o corpo, e não só o assunto: o que se quer conferir num aviso é
+        # se ele diz **quando** e **o quê** — um assunto certo com um corpo vazio
+        # passaria por um teste que olhasse só o título.
+        self.avisos.append((destino, assunto, corpo))
 
     def ultimo_codigo(self, destino: str | None = None) -> str:
         for canal, alvo, codigo in reversed(self.enviados):  # noqa: B007

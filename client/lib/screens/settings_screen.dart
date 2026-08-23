@@ -7,6 +7,7 @@ import '../models/stream_quality.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../widgets/brand.dart';
+import '../widgets/plano.dart';
 import '../widgets/transitions.dart';
 import 'gesture_tutorial_screen.dart';
 import 'profiles_screen.dart';
@@ -100,6 +101,10 @@ class SettingsScreen extends StatelessWidget {
                         .push(fadeThroughRoute(ProfilesScreen(state: state))),
                     subtitle: t.profilesHint),
               ])),
+              staggered(_card(
+                  context, t.planoTitulo, Icons.workspace_premium_outlined, [
+                _plano(context, state),
+              ])),
               staggered(_card(context, t.account, Icons.person_outline, [
                 // O rótulo, o ícone e o diálogo seguem **como a conta foi
                 // criada**: quem entrou por telefone não tem e-mail nenhum
@@ -189,6 +194,71 @@ class SettingsScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// Em que plano a conta está, e quanto falta.
+  ///
+  /// Lê o `plano` que o **servidor** calculou, e não a data: recalcular aqui
+  /// criaria uma segunda verdade sobre a mesma conta, e a que manda é a de lá,
+  /// porque é ela que recusa as chamadas. Duas contas dessas discordando é como
+  /// se constrói uma tela que promete o que a chamada seguinte nega.
+  Widget _plano(BuildContext context, AppState state) {
+    final t = state.t;
+    final theme = Theme.of(context);
+    final conta = state.conta;
+    final pago = conta?.ehPago ?? false;
+    final dias = conta?.diasRestantes;
+
+    // O prazo só aparece quando **existe** e quando está perto o bastante para
+    // significar alguma coisa. "Faltam 340 dias" é ruído; "faltam 3 dias" é
+    // informação, e é a diferença entre avisar e encher a tela.
+    final prazo = !pago
+        ? null
+        : dias == null
+            ? t.planoSemPrazo
+            : (dias <= 10 ? t.planoDiasRestantes(dias) : null);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              pago ? t.planoPago : t.planoGratis,
+              style: theme.textTheme.titleMedium,
+            ),
+            if (prazo != null) ...[
+              const SizedBox(width: 8),
+              Text(
+                prazo,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: (dias != null && dias <= 3)
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          pago ? t.planoPagoResumo : t.planoGratisResumo,
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        if (!pago) ...[
+          const SizedBox(height: 10),
+          // Sem botão de "assinar", porque não há como assinar ainda. Um botão
+          // que abrisse uma tela vazia custaria mais confiança do que a
+          // ausência dele.
+          Text(t.planoComoAssinar, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 6),
+          SelectableText(contatoDeskside,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.primary)),
+        ],
+      ],
     );
   }
 

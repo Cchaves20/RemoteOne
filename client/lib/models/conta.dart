@@ -12,6 +12,8 @@ class Conta {
     this.firstName = '',
     this.lastName = '',
     this.twoFactorEnabled = false,
+    this.plano = 'gratis',
+    this.planoAte,
   });
 
   final int id;
@@ -24,6 +26,30 @@ class Conta {
   final String firstName;
   final String lastName;
   final bool twoFactorEnabled;
+
+  /// `'gratis'` ou `'pago'`, **já considerando a validade**.
+  ///
+  /// O servidor calcula e manda pronto. Recalcular aqui a partir da data seria
+  /// uma segunda verdade sobre a mesma conta — e a que manda é a do servidor,
+  /// porque é ela que recusa as chamadas. Duas contas dessas discordando é
+  /// como se constrói uma tela que promete o que a chamada seguinte nega.
+  final String plano;
+
+  /// Até quando o plano pago vale. Nulo = sem prazo, ou já no grátis.
+  final DateTime? planoAte;
+
+  bool get ehPago => plano == 'pago';
+
+  /// Quantos dias faltam, arredondando para cima.
+  ///
+  /// Para cima porque é assim que uma pessoa conta: faltando 6 horas, ela diz
+  /// "termina amanhã", não "faltam zero dias". Nulo quando não há prazo.
+  int? get diasRestantes {
+    if (planoAte == null) return null;
+    final falta = planoAte!.difference(DateTime.now());
+    if (falta.isNegative) return 0;
+    return falta.inHours ~/ 24 + (falta.inHours % 24 > 0 ? 1 : 0);
+  }
 
   /// Se a conta se identifica por telefone.
   ///
@@ -49,5 +75,12 @@ class Conta {
         firstName: (json['first_name'] as String?) ?? '',
         lastName: (json['last_name'] as String?) ?? '',
         twoFactorEnabled: json['totp_enabled'] as bool? ?? false,
+        plano: (json['plano'] as String?) ?? 'gratis',
+        // `tryParse` e não `parse`: um backend antigo não manda o campo, e um
+        // formato inesperado não pode derrubar a tela da conta inteira por
+        // causa de uma data.
+        planoAte: json['plano_ate'] == null
+            ? null
+            : DateTime.tryParse(json['plano_ate'] as String)?.toLocal(),
       );
 }
