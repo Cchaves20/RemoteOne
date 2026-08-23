@@ -1,4 +1,4 @@
-# Diz para qual processador um .exe foi compilado.
+﻿# Diz para qual processador um .exe foi compilado.
 #
 # ## Por que isto existe
 #

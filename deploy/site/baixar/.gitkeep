@@ -1,0 +1,10 @@
+Este arquivo existe só para a pasta existir.
+
+O Git não versiona pasta vazia, e tudo o que mora aqui — os executáveis
+publicados — é ignorado de propósito: binário no histórico incha o repositório
+para sempre. O resultado é que num clone novo a pasta simplesmente não nascia, e
+o `Copy-Item` do fluxo de publicação falhava com "não foi possível localizar uma
+parte do caminho" — uma mensagem que fala de arquivo quando o que falta é a
+pasta.
+
+Aconteceu no Dell, na primeira vez que se compilou o agente lá.

@@ -60,6 +60,7 @@ que é justamente onde se troca um pelo outro sem perceber.
 ```powershell
 git pull
 .\scripts\atualizar.cmd -Agente
+New-Item -ItemType Directory -Force deploy\site\baixar | Out-Null
 Copy-Item agent\target\release\deskside-agent.exe deploy\site\baixar\Deskside.exe -Force
 .\scripts\conferir-exe.cmd deploy\site\baixar\Deskside.exe -Esperado x64
 ```
@@ -72,6 +73,7 @@ que se quer.
 ```powershell
 git pull
 .\scripts\atualizar.cmd -Agente
+New-Item -ItemType Directory -Force deploy\site\baixar | Out-Null
 Copy-Item agent\target\release\deskside-agent.exe deploy\site\baixar\Deskside-ARM64.exe -Force
 .\scripts\conferir-exe.cmd deploy\site\baixar\Deskside-ARM64.exe -Esperado ARM64
 ```
