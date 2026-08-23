@@ -31,6 +31,23 @@ pub const APP_NAME: &str = "Deskside";
 /// Nome do atalho na pasta Inicializar.
 pub const STARTUP_FILE: &str = "DesksideAgent.vbs";
 
+/// Os arquivos que **são** a identidade deste computador para o Deskside.
+///
+/// Separados do resto porque a decisão de apagá-los depende de quem pediu:
+///
+/// - `deskside-agent.exe uninstall`, na linha de comando, **preserva**. Ali
+///   desinstalar costuma ser etapa de reinstalar (o `atualizar.cmd` faz isso a
+///   cada build), e obrigar a parear de novo a cada atualização seria absurdo.
+/// - O botão da janela **apaga**. Quem clica ali quer sair, e deixar a
+///   identidade para trás mantém o computador na lista do celular para sempre,
+///   aparecendo offline — sem nada que explique por quê.
+///
+/// Pura de propósito: recebe a pasta em vez de descobri-la, para poder ser
+/// testada em qualquer sistema.
+pub fn arquivos_da_identidade(config: &Path) -> Vec<PathBuf> {
+    vec![config.join("device_id"), config.join("agent_secret")]
+}
+
 /// Chave de desinstalação, sob `HKCU`. Fica no usuário e não na máquina porque
 /// a instalação é por usuário — e escrever em `HKLM` exigiria administrador.
 pub const UNINSTALL_KEY: &str =
@@ -719,6 +736,18 @@ mod imp {
         Ok(())
     }
 
+    /// A desinstalação do botão da janela: tira tudo, inclusive a identidade.
+    ///
+    /// Diferente do `uninstall` da linha de comando, e a diferença é de
+    /// intenção. Na linha de comando, desinstalar costuma ser etapa de
+    /// reinstalar. No botão, é despedida.
+    pub fn uninstall_completo() -> Result<(), String> {
+        for arquivo in super::arquivos_da_identidade(&crate::config_dir()) {
+            let _ = std::fs::remove_file(&arquivo);
+        }
+        uninstall()
+    }
+
     pub fn status() -> Status {
         let exe = pasta("LOCALAPPDATA")
             .map(|p| install_dir(&p).join("deskside-agent.exe"))
@@ -758,6 +787,16 @@ mod imp {
         Err(SO_WINDOWS.to_string())
     }
 
+    pub fn uninstall_completo() -> Result<(), String> {
+        // Fora do Windows não há instalação para desfazer, mas a identidade
+        // existe — e é ela que mantém o computador na conta. Apagá-la aqui faz
+        // o botão significar a mesma coisa em qualquer sistema.
+        for arquivo in super::arquivos_da_identidade(&crate::config_dir()) {
+            let _ = std::fs::remove_file(&arquivo);
+        }
+        Err(SO_WINDOWS.to_string())
+    }
+
     pub fn deve_oferecer_instalacao() -> bool {
         // Não há instalação em segundo plano fora do Windows; oferecer seria
         // prometer algo que a próxima linha recusaria.
@@ -789,7 +828,7 @@ mod imp {
     }
 }
 
-pub use imp::{install, status, uninstall};
+pub use imp::{install, status, uninstall, uninstall_completo};
 
 #[cfg(test)]
 mod tests {
@@ -1083,5 +1122,24 @@ mod tests {
         });
         assert!(linhas[0].starts_with("Instalado em:"));
         assert!(linhas[1].ends_with("não"));
+    }
+}
+
+#[cfg(test)]
+mod testes_da_identidade {
+    use super::*;
+
+    #[test]
+    fn a_identidade_e_o_par_que_prova_quem_este_computador_e() {
+        let caminhos = arquivos_da_identidade(Path::new("C:\\cfg\\deskside"));
+        let nomes: Vec<_> = caminhos
+            .iter()
+            .filter_map(|p| p.file_name().and_then(|n| n.to_str()))
+            .collect();
+        // Os dois, e não só o device_id: o segredo sozinho no disco depois de
+        // um "removi tudo" contradiz o que o botão promete, e o device_id
+        // sozinho mantém o computador na conta.
+        assert_eq!(nomes, vec!["device_id", "agent_secret"]);
+        assert!(caminhos.iter().all(|p| p.starts_with("C:\\cfg\\deskside")));
     }
 }

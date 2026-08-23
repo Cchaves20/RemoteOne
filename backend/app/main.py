@@ -41,6 +41,8 @@ from app.protocol import (
     Paired,
     PresentationState,
     SystemStats,
+    Unpair,
+    Unpaired,
     WebrtcAnswer,
     WebrtcIce,
     Welcome,
@@ -116,6 +118,8 @@ FEATURES = [
     "save-all",
     "presentation-mode",
     "rate-limit",
+    # O agente sabe se tirar da conta sozinho (botão de desinstalar da janela).
+    "agent-unpair",
 ]
 
 
@@ -228,8 +232,20 @@ class SegredoRecusado(Exception):
     """O agente não provou ser este computador."""
 
 
-def _autorizar_agente(device_id: str, apresentado: str | None) -> str | None:
-    """Confere o segredo do agente. Devolve um segredo novo quando emite um.
+def _autorizar_agente(device_id: str, apresentado: str | None) -> tuple[str | None, bool]:
+    """Confere o segredo do agente.
+
+    Devolve `(segredo_a_entregar, autenticado)`. O segundo é o que separa "esta
+    conexão passou" de "esta conexão **provou** ser este computador", e a
+    diferença importa para as ações destrutivas: enquanto a compatibilidade com
+    agentes antigos estiver aberta, passar é fácil demais.
+
+    É verdadeiro em dois casos, e o segundo não é frouxidão: quando o segredo
+    apresentado confere, e quando **este servidor acabou de entregar** o segredo
+    nesta mesma conexão. O socket que recebeu o segredo é, por definição,
+    aquele em que o servidor confia — e sem isso, parear e desistir em seguida
+    exigiria reconectar antes de poder desparear.
+    
 
     Antes desta conferência, o canal `/ws/agent` **não tinha autenticação**: o
     `device_id` era a credencial, e ele nunca foi tratado como uma — aparece no
@@ -262,12 +278,12 @@ def _autorizar_agente(device_id: str, apresentado: str | None) -> str | None:
     with SessionLocal() as db:
         device = pairing.get_device(db, device_id)
         if device is None:
-            return None  # ainda não pareado: nada a proteger
+            return None, False  # ainda não pareado: nada a proteger
 
         if apresentado is None:
             if settings.exigir_segredo_do_agente:
                 raise SegredoRecusado("agente sem segredo")
-            return None
+            return None, False
 
         if not device.agent_secret:
             if not apresentado:
@@ -275,7 +291,7 @@ def _autorizar_agente(device_id: str, apresentado: str | None) -> str | None:
                 device.agent_secret = novo
                 db.commit()
                 logger.info("segredo emitido na adoção do aparelho %s", device_id)
-                return novo
+                return novo, True
             # Apresentou um segredo que o servidor não conhece. Não é adoção —
             # é alguém com um segredo de outro lugar, ou um banco restaurado
             # por cima. De qualquer forma, não se aceita o que não se emitiu.
@@ -283,7 +299,7 @@ def _autorizar_agente(device_id: str, apresentado: str | None) -> str | None:
 
         if not apresentado or not hmac.compare_digest(apresentado, device.agent_secret):
             raise SegredoRecusado("segredo inválido")
-        return None
+        return None, True
 
 
 def _client_public_ip(websocket: WebSocket) -> str | None:
@@ -351,7 +367,7 @@ async def agent_ws(websocket: WebSocket) -> None:
         # arma pela culatra: bastaria um hello inválido para derrubar o agente
         # de verdade, mesmo sendo recusado logo em seguida.
         try:
-            segredo_emitido = _autorizar_agente(device_id, message.secret)
+            segredo_emitido, autenticado = _autorizar_agente(device_id, message.secret)
         except SegredoRecusado as recusa:
             logger.warning("agente recusado (%s): %s", recusa, device_id)
             await websocket.send_json(Error(message=str(recusa)).model_dump())
@@ -423,7 +439,25 @@ async def agent_ws(websocket: WebSocket) -> None:
                 await websocket.send_json(Error(message="mensagem inválida").model_dump())
                 continue
 
-            if isinstance(message, AppList):
+            if isinstance(message, Unpair):
+                # **Exige segredo provado**, e não a mera conexão. Enquanto a
+                # compatibilidade com agentes antigos estiver aberta, qualquer
+                # um que soubesse o `device_id` conseguiria conectar — e sem
+                # esta guarda conseguiria também apagar o pareamento de outra
+                # pessoa. Um botão de sabotagem, do lado errado da porta.
+                if not autenticado:
+                    await websocket.send_json(
+                        Error(message="desparear exige o segredo do aparelho").model_dump()
+                    )
+                    continue
+                with SessionLocal() as db:
+                    device = pairing.get_device(db, device_id)
+                    if device is not None:
+                        pairing.remove_device(db, device_id, device.user)
+                logger.info("aparelho desparelhado pelo próprio agente: %s", device_id)
+                await websocket.send_json(Unpaired().model_dump())
+                paired_notified = False
+            elif isinstance(message, AppList):
                 # Resposta a um pedido de lista de aplicativos: entrega a quem
                 # está esperando (o endpoint HTTP que fez a pergunta).
                 pending.resolve(
@@ -587,6 +621,11 @@ async def agent_ws(websocket: WebSocket) -> None:
                             user_email=email, secret=_segredo_do_aparelho(device_id)
                         ).model_dump()
                     )
+                    # O servidor acabou de entregar o segredo por este socket:
+                    # daqui em diante ele é uma conexão autenticada. Sem isto,
+                    # parear e desistir em seguida exigiria reconectar antes de
+                    # poder desparear — e ninguém entenderia por quê.
+                    autenticado = True
                     paired_notified = True
                     # Acabou de parear: guarda MAC/IP para o Wake-on-LAN.
                     _update_device_presence(device_id, mac_addr, public_ip)

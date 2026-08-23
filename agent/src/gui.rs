@@ -60,6 +60,15 @@ pub struct Estado {
     /// porque a bandeja nasce antes do laço e sobrevive às reconexões dele —
     /// um canal teria que ser recriado a cada uma.
     pub cancelar: Option<String>,
+    /// A pessoa clicou em desinstalar (e confirmou).
+    ///
+    /// O laço de rede lê, avisa o servidor e marca `desparear_ok`. Quem de
+    /// fato desinstala é a thread que a própria janela abriu — e isso é
+    /// deliberado: se o computador estiver sem internet, o laço de rede nem
+    /// está rodando, e um botão que só funciona online seria pior que nenhum.
+    pub desinstalar: bool,
+    /// O servidor confirmou que o computador saiu da conta.
+    pub desparear_ok: bool,
 }
 
 /// O aviso de que uma automação vai rodar.
@@ -155,6 +164,38 @@ mod imp {
     /// Uma vez visível, a janela volta a receber `WM_PAINT` e o `eframe`
     /// retoma o comando. Os comandos de viewport continuam sendo enviados
     /// depois, para o estado interno do `egui` concordar com a realidade.
+    /// Espera o servidor confirmar e desinstala — mas **não espera para sempre**.
+    ///
+    /// Quem desinstala é esta thread, e não o laço de rede, por causa do caso
+    /// que mais precisa do botão: o computador sem internet. Ali o laço nem
+    /// está rodando, e um botão que só funciona online seria pior que nenhum —
+    /// falharia calado, exatamente para quem já está desconfiado.
+    ///
+    /// A ordem é avisar primeiro e apagar depois. O contrário deixa o pior dos
+    /// dois mundos se a rede cair no meio: o programa some do disco e o
+    /// computador continua na conta, sem ninguém para desfazer o vínculo.
+    ///
+    /// Seis segundos de espera, e depois vai assim mesmo. Um botão de sair que
+    /// depende de o servidor responder não é uma saída — é um pedido.
+    fn desinstalar_em_segundo_plano(estado: Compartilhado) {
+        use std::time::{Duration, Instant};
+
+        std::thread::spawn(move || {
+            if let Ok(mut e) = estado.lock() {
+                e.desinstalar = true;
+            }
+            let limite = Instant::now() + Duration::from_secs(6);
+            while Instant::now() < limite {
+                if estado.lock().map(|e| e.desparear_ok).unwrap_or(false) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            let _ = crate::setup::uninstall_completo();
+            std::process::exit(0);
+        });
+    }
+
     pub fn mostrar_janela() {
         match achar_janela() {
             Some(janela) => unsafe {
@@ -199,6 +240,10 @@ mod imp {
         id_abrir: MenuId,
         id_sair: MenuId,
         copiado: bool,
+        /// A confirmação de desinstalar está à mostra.
+        confirmando_saida: bool,
+        /// Já clicou em desinstalar: a thread de saída está trabalhando.
+        saindo: bool,
     }
 
     impl App {
@@ -273,6 +318,8 @@ mod imp {
                 id_abrir,
                 id_sair,
                 copiado: false,
+                confirmando_saida: false,
+                saindo: false,
             }
         }
     }
@@ -441,6 +488,87 @@ mod imp {
                 .small()
                 .weak(),
             );
+
+            ui.add_space(20.0);
+            self.desenhar_desinstalar(ui);
+        }
+
+        /// Sair de vez, e por que este botão existe.
+        ///
+        /// Um programa que roda escondido no logon, controla mouse e teclado e
+        /// é difícil de remover é **comportamentalmente idêntico** a um vírus
+        /// de acesso remoto. A coisa mais tranquilizadora que um software
+        /// destes pode fazer é tornar a saída fácil e visível — e é aqui que a
+        /// pessoa está quando decide.
+        ///
+        /// Já dava para desinstalar por "Aplicativos instalados", mas mandar
+        /// alguém procurar em Configurações no momento em que ela desconfia do
+        /// programa é atrito suficiente para ela desistir e continuar
+        /// desconfiando.
+        fn desenhar_desinstalar(&mut self, ui: &mut egui::Ui) {
+            let vermelho = egui::Color32::from_rgb(0xd1, 0x24, 0x2f);
+
+            if !self.confirmando_saida {
+                // Discreto de propósito: é a única ação desta janela que não
+                // pode ser clicada por engano, e o lugar de um botão perigoso
+                // é no fim, pequeno, longe do resto.
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("Desinstalar o Deskside").small(),
+                    ))
+                    .clicked()
+                {
+                    self.confirmando_saida = true;
+                }
+                return;
+            }
+
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    egui::RichText::new("Desinstalar o Deskside?")
+                        .strong()
+                        .color(vermelho),
+                );
+                ui.add_space(4.0);
+                // O que vai acontecer, item a item. Um "tem certeza?" seco faz
+                // a pessoa clicar em sim sem saber o que perde.
+                ui.label(
+                    egui::RichText::new(
+                        "• este computador sai da sua conta\n                         • o programa para de iniciar com o Windows\n                         • os arquivos do Deskside são apagados",
+                    )
+                    .small(),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(
+                        "Seus arquivos e programas não são tocados. \
+                         Para voltar, é só instalar de novo e parear.",
+                    )
+                    .small()
+                    .weak(),
+                );
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Agora não").clicked() {
+                        self.confirmando_saida = false;
+                    }
+                    if ui
+                        .add(egui::Button::new(
+                            egui::RichText::new("Desinstalar").color(egui::Color32::WHITE),
+                        )
+                        .fill(vermelho))
+                        .clicked()
+                    {
+                        self.saindo = true;
+                        desinstalar_em_segundo_plano(self.estado.clone());
+                    }
+                });
+                if self.saindo {
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new("Desinstalando...").small().weak());
+                }
+            });
         }
 
         /// A automação que vai rodar em instantes, com a saída de emergência.

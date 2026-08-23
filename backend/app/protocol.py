@@ -41,6 +41,22 @@ class Heartbeat(BaseModel):
     type: Literal["heartbeat"] = "heartbeat"
 
 
+class Unpair(BaseModel):
+    """O agente avisa que este computador saiu da conta.
+
+    Sai de um botão na janela do agente. Existe porque desinstalar sem avisar
+    o servidor deixa o computador na lista do celular para sempre, aparecendo
+    offline — a pessoa removeu o programa e o Deskside continua listando a
+    máquina dela, que é justamente a sensação que o botão existe para evitar.
+
+    Só passou a ser possível quando o canal ganhou autenticação: aceitar
+    "apague este dispositivo" de quem apenas soubesse o `device_id` seria
+    entregar um botão de sabotagem a qualquer um.
+    """
+
+    type: Literal["unpair"] = "unpair"
+
+
 class AppInfo(BaseModel):
     """Um aplicativo: `id` é o caminho do atalho (instalado) ou o PID (aberto).
 
@@ -354,6 +370,7 @@ class WebrtcIce(BaseModel):
 ClientMessage = Annotated[
     Hello
     | Heartbeat
+    | Unpair
     | AppList
     | MonitorList
     | SystemStats
@@ -406,6 +423,18 @@ class Error(BaseModel):
 
     type: Literal["error"] = "error"
     message: str
+
+
+class Unpaired(BaseModel):
+    """Confirma ao agente que o vínculo com a conta acabou.
+
+    O agente espera por isto antes de apagar a própria identidade: apagar
+    primeiro e avisar depois deixaria o pior dos dois mundos se a rede
+    falhasse no meio — o computador some do disco e continua na conta, sem
+    ninguém para desfazer o vínculo.
+    """
+
+    type: Literal["unpaired"] = "unpaired"
 
 
 class KeepAwake(BaseModel):

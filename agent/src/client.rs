@@ -371,6 +371,12 @@ pub async fn run(
     // computador.
     let mut clipboard = crate::clipboard::Clipboard::new();
     let mut clipboard_sync = false;
+    // Um segundo, e não a batida do heartbeat: entre clicar em desinstalar e o
+    // servidor saber, dez segundos de nada acontecendo seriam lidos como
+    // "travou". Uma trava por segundo não custa nada.
+    let mut saida_ticker = interval(Duration::from_secs(1));
+    let mut avisou_que_sai = false;
+
     let mut clipboard_ticker = interval(Duration::from_secs(1));
     clipboard_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -509,6 +515,17 @@ pub async fn run(
                         &ClientMessage::ClipboardChanged { text: texto },
                     )?;
                     ws.send(Message::Text(aviso)).await?;
+                }
+            }
+            _ = saida_ticker.tick(), if !avisou_que_sai => {
+                let pedido = estado.lock().map(|e| e.desinstalar).unwrap_or(false);
+                if pedido {
+                    // Uma vez só: a guarda do `select!` desliga este braço
+                    // depois, e sem ela o agente mandaria um `unpair` por
+                    // segundo até o processo morrer.
+                    avisou_que_sai = true;
+                    let msg = serde_json::to_string(&ClientMessage::Unpair)?;
+                    let _ = ws.send(Message::Text(msg)).await;
                 }
             }
             _ = ticker.tick() => {
@@ -767,6 +784,14 @@ pub async fn run(
                             &text, identity, injector.as_mut(), &mut streaming,
                             &mut active, &mut last_frame,
                         ) {
+                            Some(Action::Desparelhado) => {
+                                // Quem desinstala é a thread da janela; aqui só
+                                // se registra que o servidor confirmou, para ela
+                                // parar de esperar.
+                                if let Ok(mut e) = estado.lock() {
+                                    e.desparear_ok = true;
+                                }
+                            }
                             // A lista inteira, sempre. Quem avalia é a tarefa da
                             // agenda, que vive fora desta conexão: ela precisa
                             // sobreviver ao socket que cai.
@@ -1763,6 +1788,8 @@ fn abrir_e_posicionar(item: &crate::lote::Item) -> crate::lote::Passo {
 /// Algo que o laço principal precisa fazer depois de tratar uma mensagem —
 /// tarefas que exigem `await` (recriar o ticker, responder ao servidor).
 enum Action {
+    /// O servidor confirmou que o vínculo com a conta acabou.
+    Desparelhado,
     /// A agenda mudou: trocar a lista do que dispara sozinho.
     ///
     /// Volta como ação em vez de ser aplicada onde chega porque quem guarda a
@@ -1892,6 +1919,9 @@ fn handle_server_text(
             // Também mostra o código sem depender do terminal (arquivo + janela),
             // para quando o agente roda em segundo plano.
             crate::notify::announce_pairing_code(&code, expires_in_seconds);
+        }
+        Ok(ServerMessage::Unpaired) => {
+            return Some(Action::Desparelhado);
         }
         Ok(ServerMessage::Paired { user_email, secret }) => {
             identity.guardar_segredo(secret);

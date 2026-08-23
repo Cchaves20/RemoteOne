@@ -45,6 +45,13 @@ pub enum ClientMessage {
         secret: Option<String>,
     },
     Heartbeat,
+    /// Este computador está saindo da conta.
+    ///
+    /// Sai do botão de desinstalar. O agente espera o `unpaired` antes de
+    /// apagar a própria identidade: apagar primeiro e avisar depois deixaria o
+    /// pior dos dois mundos se a rede falhasse no meio — o computador some do
+    /// disco e continua na conta, sem ninguém para desfazer o vínculo.
+    Unpair,
     /// Resposta a um `list_apps`: a lista pedida, com o mesmo `request_id`
     /// para o backend casar com quem está esperando.
     AppList {
@@ -273,6 +280,8 @@ pub enum ServerMessage {
         expires_in_seconds: u64,
     },
     /// O dispositivo foi vinculado a uma conta.
+    /// O servidor confirma que o vínculo com a conta acabou.
+    Unpaired,
     Paired {
         user_email: String,
         /// O segredo deste computador, entregue no instante do pareamento.

@@ -356,3 +356,109 @@ def test_texto_puro_de_antes_continua_sendo_lido():
 
     assert cofre.abrir("SEGREDOANTIGOEMTEXTOPURO") == "SEGREDOANTIGOEMTEXTOPURO"
     assert not cofre.esta_cifrado("SEGREDOANTIGOEMTEXTOPURO")
+
+
+# --- Desparear pelo próprio agente (botão de desinstalar) --------------------
+
+
+def _esperar(ws, tipo: str, limite: int = 6) -> dict:
+    """Lê até chegar a mensagem procurada, pulando o que vier no caminho.
+
+    O servidor manda a agenda logo depois do `paired`, e ela chega no meio de
+    qualquer conversa. Um teste que lesse uma mensagem só falharia com
+    `set_schedule != unpaired` — apontando para o lugar errado.
+    """
+    for _ in range(limite):
+        msg = ws.receive_json()
+        if msg.get("type") in (tipo, "error"):
+            return msg
+    raise AssertionError(f"não veio nenhum {tipo} em {limite} mensagens")
+
+
+
+def test_o_agente_com_segredo_desfaz_o_proprio_pareamento():
+    """O botão de desinstalar precisa tirar o computador da conta.
+
+    Sem isto, quem desinstala continua vendo a máquina na lista do celular,
+    para sempre, aparecendo offline — que é exatamente a sensação que o botão
+    existe para evitar.
+    """
+    from app.db import SessionLocal
+    from app.models import Device
+
+    token, segredo = _parear("dev-que-sai")
+
+    ws = _conectar("dev-que-sai", segredo)
+    try:
+        assert ws.receive_json()["type"] == "welcome"
+        ws.receive_json()  # paired
+        ws.send_json({"type": "unpair"})
+        resposta = _esperar(ws, "unpaired")
+        assert resposta["type"] == "unpaired", resposta
+    finally:
+        ws.close()
+
+    with SessionLocal() as db:
+        assert db.query(Device).filter_by(device_id="dev-que-sai").one_or_none() is None
+
+    listados = client.get(
+        "/api/v1/devices", headers={"Authorization": f"Bearer {token}"}
+    ).json()
+    assert all(d["device_id"] != "dev-que-sai" for d in listados)
+
+
+def test_desparear_sem_provar_o_segredo_e_recusado():
+    """A guarda que impede o botão de virar sabotagem.
+
+    Enquanto a compatibilidade com agentes antigos está aberta, quem souber o
+    `device_id` **consegue conectar**. Sem esta recusa, conseguiria também
+    apagar o pareamento de outra pessoa — um botão de sabotagem do lado errado
+    da porta.
+    """
+    from app.db import SessionLocal
+    from app.models import Device
+
+    _parear("dev-alvo-de-sabotagem")
+
+    # Um agente antigo: conecta sem o campo `secret`, o que é aceito hoje.
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json(_hello("dev-alvo-de-sabotagem"))
+        assert ws.receive_json()["type"] == "welcome"
+        ws.receive_json()  # paired
+        ws.send_json({"type": "unpair"})
+        resposta = _esperar(ws, "unpaired")
+        assert resposta["type"] == "error", resposta
+
+    with SessionLocal() as db:
+        assert db.query(Device).filter_by(device_id="dev-alvo-de-sabotagem").one() is not None
+
+
+def test_quem_acabou_de_parear_pode_desistir_sem_reconectar():
+    """Parear e desistir em seguida, na mesma conexão.
+
+    O segredo nasce no meio desta conexão — o agente nunca o apresentou num
+    `hello`. Recusar aqui seria correto pela letra e absurdo na prática: a
+    pessoa clicaria em desinstalar e nada aconteceria, sem explicação.
+    """
+    from app.db import SessionLocal
+    from app.models import Device
+
+    token = criar_conta(client, "arrependido@example.com")["access_token"]
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json({**_hello("dev-arrependido"), "secret": ""})
+        ws.receive_json()  # welcome
+        intro = ws.receive_json()  # pair_code
+        client.post(
+            "/api/v1/pairing/claim",
+            json={"code": intro["code"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        ws.send_json({"type": "heartbeat"})
+        ws.receive_json()  # ack
+        assert ws.receive_json()["type"] == "paired"
+
+        ws.send_json({"type": "unpair"})
+        assert _esperar(ws, "unpaired")["type"] == "unpaired"
+
+    with SessionLocal() as db:
+        assert db.query(Device).filter_by(device_id="dev-arrependido").one_or_none() is None

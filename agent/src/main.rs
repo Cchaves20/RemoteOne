@@ -380,6 +380,8 @@ fn main() {
         segurando: false,
         aviso: None,
         cancelar: None,
+        desinstalar: false,
+        desparear_ok: false,
     });
 
     // O agente sobe **antes** da interface e independe dela. Se a janela não
