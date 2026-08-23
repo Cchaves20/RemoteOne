@@ -40,6 +40,10 @@
   }
   .baixar:hover { filter: brightness(1.08); }
   .miudo { font-size: 0.85rem; color: var(--fraco); }
+  .outra-arq {
+    max-width: 34em; margin: 18px auto 0; line-height: 1.55;
+  }
+  .outra-arq a { color: var(--ciano); }
   section { padding: 28px 0; border-top: 1px solid var(--linha); }
   h2 { font-size: 1.3rem; margin: 0 0 16px; }
   ol.passos { margin: 0; padding-left: 0; list-style: none; counter-reset: p; }
@@ -81,7 +85,15 @@
       e rotinas que rodam sozinhas na hora marcada.
     </p>
     <a class="baixar" href="/baixar/Deskside.exe">Baixar para Windows</a>
-    <p class="miudo">Windows 10 ou 11 &middot; não precisa de administrador</p>
+    <p class="miudo">Windows 10 ou 11 &middot; Intel ou AMD &middot; não precisa de administrador</p>
+    <p class="miudo outra-arq">
+      Computador com processador <strong>ARM</strong> (Snapdragon, Surface Pro X)?
+      <a href="/baixar/Deskside-ARM64.exe">Baixe a versão ARM64</a>, que é mais
+      rápida e gasta menos bateria.
+      <br>
+      Na dúvida, use o botão de cima: ele funciona nos dois. Para conferir,
+      <em>Configurações &rsaquo; Sistema &rsaquo; Sobre &rsaquo; Tipo de sistema</em>.
+    </p>
   </header>
 
   <section>

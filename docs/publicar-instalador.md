@@ -35,40 +35,77 @@ o certificado remove.
 
 No **MateBook**, em `C:\Users\OseasyVM\Desktop\projetos\Deskside`:
 
+### Preparar, uma vez só
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+rustup target add aarch64-pc-windows-msvc
+```
+
+### Compilar as duas
+
 ```powershell
 git pull
-.\scripts\atualizar.cmd -Agente
+cd agent
+cargo build --release --target x86_64-pc-windows-msvc
+cargo build --release --target aarch64-pc-windows-msvc
+cd ..
 ```
 
-**Compile pelo `atualizar`, não com `cargo build` direto.** Num Windows ARM64 o
-`cargo build` falha sozinho: o `ring` monta o assembly ARM64 com o **clang**, não
-com o `cl.exe`, e o erro é `failed to find tool "clang": program not found`. O
-`atualizar.ps1` tem um `PrepararClangArm64` que acha o clang e o põe no PATH
-antes de chamar o cargo — chamar o cargo direto passa por fora disso.
+**Sempre com `--target`, mesmo para a arquitetura da própria máquina.** Sem ele,
+o cargo compila para o processador de quem está compilando — e no MateBook isso
+quer dizer ARM64. Um `.exe` ARM64 num PC Intel dá "Este aplicativo não pode ser
+executado em seu PC", uma frase que não menciona arquitetura, não diz qual é a
+certa e não diz onde procurar. Foi assim que um binário só-ARM64 chegou a ficar
+publicado no site.
 
-Depois confira que o executável é **desta** compilação:
+Se o build ARM64 falhar com `failed to find tool "clang"`, use
+`.\scripts\atualizar.cmd -Agente`, que tem um `PrepararClangArm64` para pôr o
+LLVM no PATH — o `ring` monta o assembly ARM64 com clang, não com o `cl.exe`.
+Se o build x86-64 pedir `nasm`, `winget install NASM.NASM` e reabra o terminal.
+
+### Conferir antes de copiar
 
 ```powershell
-(Get-Item agent\target\release\deskside-agent.exe).LastWriteTime
+Copy-Item agent\target\x86_64-pc-windows-msvc\release\deskside-agent.exe deploy\site\baixar\Deskside.exe -Force
+Copy-Item agent\target\aarch64-pc-windows-msvc\release\deskside-agent.exe deploy\site\baixar\Deskside-ARM64.exe -Force
+
+.\scripts\conferir-exe.ps1 deploy\site\baixar\Deskside.exe -Esperado x64
+.\scripts\conferir-exe.ps1 deploy\site\baixar\Deskside-ARM64.exe -Esperado ARM64
 ```
 
-Tem que ser de agora, não de semana passada. Este passo não é zelo: quando o
-build falha, o `.exe` do build **anterior** continua onde estava, e o `Copy-Item`
-seguinte copia esse — sem erro nenhum, porque o arquivo existe. Já aconteceu, e o
-que quase foi publicado era um agente sem a remoção da marca da web e sem a
-pergunta de instalação. Um comando que dá certo copiando a coisa errada é pior
-que um que falha.
+O `conferir-exe.ps1` lê o cabeçalho PE e diz para qual processador cada um foi
+compilado, o tamanho e a data. **Duas armadilhas de uma vez:** um `.exe` da
+arquitetura errada é indistinguível de um certo pelo nome, pelo tamanho e pelo
+comportamento na máquina de quem compilou — o erro só aparece no computador de
+outra pessoa. E quando um build falha, o `.exe` do build anterior continua onde
+estava, então o `Copy-Item` seguinte copia esse sem erro nenhum. Já aconteceu:
+quase foi publicado um agente sem a remoção da marca da web e sem a pergunta de
+instalação. Um comando que dá certo copiando a coisa errada é pior que um que
+falha.
 
-Só então:
+### Publicar
 
 ```powershell
-Copy-Item agent\target\release\deskside-agent.exe deploy\site\baixar\Deskside.exe -Force
-
 $chave = (Get-ChildItem "$env:USERPROFILE\Downloads\*.key" | Sort-Object LastWriteTime -Descending)[0].FullName
 $remoto = 'ubuntu@147.15.45.45'
 $raiz = (ssh -i $chave $remoto 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; pwd').Trim()
-scp -i $chave deploy\site\baixar\Deskside.exe "${remoto}:$raiz/deploy/site/baixar/"
+scp -i $chave deploy\site\baixar\Deskside.exe deploy\site\baixar\Deskside-ARM64.exe "${remoto}:$raiz/deploy/site/baixar/"
 ```
+
+### Por que dois, e por que o x64 é o principal
+
+O Windows em ARM **emula x64**, então o `Deskside.exe` funciona nas duas
+arquiteturas. Se fosse para ter um só, seria ele.
+
+O ARM64 nativo existe porque emular custa: roda mais devagar e gasta mais
+bateria, justamente num aparelho comprado por causa da bateria. Quem tem um PC
+ARM ganha de verdade com a versão nativa.
+
+Na página, o botão grande é o x64 e o ARM64 é uma linha abaixo. É de propósito:
+perguntar "qual é o seu processador?" na porta de entrada é um lugar a mais para
+a pessoa errar, e errar aqui produz exatamente a tela azul sem explicação. O
+padrão precisa ser o que funciona sempre.
 
 O nome do arquivo publicado é `Deskside.exe`, e não `deskside-agent.exe`: é o que
 a pessoa vê na pasta de downloads, e "deskside-agent" parece peça de dentro de
@@ -80,10 +117,11 @@ Fica disponível na hora — o Caddy serve a pasta direto, sem reiniciar nada.
 
 ```powershell
 curl.exe -I https://deskside.com.br/baixar/Deskside.exe
+curl.exe -I https://deskside.com.br/baixar/Deskside-ARM64.exe
 ```
 
-`200` e um `content-length` de alguns megabytes. `404` significa que o `scp` foi
-para a pasta errada — confira o caminho que o `$raiz` descobriu.
+`200` e um `content-length` de alguns megabytes nos dois. `404` significa que o
+`scp` foi para a pasta errada — confira o caminho que o `$raiz` descobriu.
 
 ## Quando automatizar
 
