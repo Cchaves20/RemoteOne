@@ -57,6 +57,17 @@ param(
     # Sozinha, faz **só** isso - nada de git, compilação ou deploy.
     [switch]$Backup,
 
+    # Publica o instalador: copia o executável compilado para a pasta do site,
+    # confere a arquitetura e o manda para o VPS.
+    #
+    # Publica **a arquitetura desta máquina**, com o nome que ela merece - e é
+    # essa a razão de existir. Não há compilação cruzada aqui (o `audiopus_sys`
+    # não compila com host ARM64), então o x64 sai de um PC Intel e o ARM64 do
+    # MateBook. Derivar o nome do cabeçalho do binário, em vez de digitá-lo,
+    # torna impossível repetir o que já aconteceu: publicar o ARM64 com o nome
+    # do x64 e descobrir no computador de outra pessoa.
+    [switch]$Publicar,
+
     # Deixa o agente rodando à vista no fim, para acompanhar as mensagens.
     [switch]$Rodar,
 
@@ -90,7 +101,7 @@ $ErrorActionPreference = "Stop"
 # Nenhuma etapa escolhida = todas. O -Backup fica de fora desta conta de
 # propósito: baixar o banco é uma tarefa separada, e não faria sentido ela
 # acontecer toda vez que alguém compila o agente.
-if (-not ($Agente -or $App -or $Vps -or $Backup)) {
+if (-not ($Agente -or $App -or $Vps -or $Backup -or $Publicar)) {
     $Agente = $true; $App = $true; $Vps = $true
 }
 
@@ -544,7 +555,11 @@ if ($Backup) {
         # **shell do Linux** e não daqui. Com aspas duplas o PowerShell a
         # substituiria antes de mandar, e o servidor receberia o caminho do
         # Windows - um erro que não parece erro de citação.
-        $achar = 'cd ~/Deskside/deploy 2>/dev/null || cd ~/RemoteOne/deploy; ls -1d "$PWD"/backups/deskside-*.db 2>/dev/null | tail -1'
+        # `deskside-*.db*` pega as duas formas: em claro e cifrada (`.db.enc`).
+        # Sem o asterisco no fim, ligar a cifra no servidor faria este passo
+        # dizer "nenhuma cópia no servidor" com catorze cópias na pasta - e a
+        # conclusão natural seria que o backup parou de rodar.
+        $achar = 'cd ~/Deskside/deploy 2>/dev/null || cd ~/RemoteOne/deploy; ls -1d "$PWD"/backups/deskside-*.db* 2>/dev/null | tail -1'
         Passo "procurando a cópia mais recente no servidor"
         $remoto = (& ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $achar | Select-Object -Last 1)
 
@@ -572,15 +587,31 @@ if ($Backup) {
                 Write-Host "  O arquivo não chegou." -ForegroundColor Red
             } else {
                 $tamanho = (Get-Item $local).Length
-                # Todo banco SQLite começa com "SQLite format 3" e um zero.
                 $cabecalho = [System.IO.File]::ReadAllBytes($local) | Select-Object -First 15
                 $texto = -join ($cabecalho | ForEach-Object { [char]$_ })
-                if ($texto -ne "SQLite format 3") {
+
+                if ($nome -like "*.enc") {
+                    # Cópia cifrada. Não dá para conferir se é um banco sem a
+                    # chave — o que dá para conferir é se é um envelope de
+                    # verdade: todo token Fernet começa com o byte de versão
+                    # 0x80, que em base64 vira "gAAAAA". Um arquivo de zero byte
+                    # ou uma mensagem de erro gravada no lugar não passam.
+                    if (-not $texto.StartsWith("gAAAAA")) {
+                        $falhas += "backup (arquivo cifrado invalido)"
+                        Write-Host "  Baixou $tamanho bytes, mas nao parece uma copia cifrada." -ForegroundColor Red
+                        Write-Host "  Comeco do arquivo: $texto" -ForegroundColor Red
+                    } else {
+                        Write-Host "  Copia cifrada salva em $local ($tamanho bytes)." -ForegroundColor Green
+                        Write-Host "  Para abrir, na VM: docker compose exec api python -m app.backup --abrir /backups/$nome" -ForegroundColor DarkGray
+                    }
+                } elseif ($texto -ne "SQLite format 3") {
+                    # Todo banco SQLite começa com "SQLite format 3" e um zero.
                     $falhas += "backup (arquivo não é um banco)"
                     Write-Host "  Baixou $tamanho bytes, mas não é um banco SQLite." -ForegroundColor Red
                     Write-Host "  Comeco do arquivo: $texto" -ForegroundColor Red
                 } else {
                     Write-Host "  Copia salva em $local ($tamanho bytes)." -ForegroundColor Green
+                    Write-Host "  Sem cifra: defina DESKSIDE_BACKUP_KEY no deploy/.env da VM." -ForegroundColor DarkYellow
                 }
             }
         }
@@ -682,6 +713,71 @@ if ($falhas.Count -eq 0) {
     Write-Host "  Tudo atualizado." -ForegroundColor Green
 } else {
     Write-Host "  Pendências: $($falhas -join ', ')" -ForegroundColor Yellow
+}
+
+if ($Publicar) {
+    Titulo "Publicar o instalador"
+    . (Join-Path $PSScriptRoot "lib-arquitetura.ps1")
+
+    $exe = Join-Path $raiz "agent\target\release\deskside-agent.exe"
+    $arq = ArquiteturaDoExe $exe
+    $nomePublicado = if ($arq) { NomePublicadoPara $arq } else { $null }
+
+    if (-not (Test-Path $exe)) {
+        $falhas += "publicar (sem executável)"
+        Write-Host "  Nao existe $exe. Compile antes: scripts\atualizar.cmd -Agente" -ForegroundColor Red
+    } elseif (-not $nomePublicado) {
+        $falhas += "publicar (arquitetura $arq)"
+        Write-Host "  O executavel e '$arq', e so publicamos x64 e ARM64." -ForegroundColor Red
+    } else {
+        $ChaveSsh = AcharChave $ChaveSsh
+        if ($ChaveSsh -eq "" -or -not (Test-Path $ChaveSsh)) {
+            $falhas += "publicar (chave SSH não encontrada)"
+            Write-Host "  Nao achei a chave SSH. Rode com -ChaveSsh C:\caminho\sua-chave.key" -ForegroundColor Red
+        } else {
+            $pastaSite = Join-Path $raiz "deploy\site\baixar"
+            New-Item -ItemType Directory -Force -Path $pastaSite | Out-Null
+            $local = Join-Path $pastaSite $nomePublicado
+
+            # O nome vem da arquitetura do binário, e não de um parâmetro: é o
+            # que impede publicar o ARM64 como se fosse o x64.
+            Passo "$arq -> $nomePublicado"
+            Copy-Item $exe $local -Force
+
+            $item = Get-Item $local
+            $mb = [math]::Round($item.Length / 1MB, 1)
+            Write-Host "  $nomePublicado : $arq, $mb MB, de $($item.LastWriteTime)" -ForegroundColor DarkGray
+
+            # A data é a segunda conferência, e ela já salvou uma publicação:
+            # quando o build falha, o .exe do build anterior continua no disco e
+            # a cópia seguinte o leva sem erro nenhum. Um comando que da certo
+            # copiando a coisa errada e pior que um que falha.
+            $horas = ((Get-Date) - $item.LastWriteTime).TotalHours
+            if ($horas -gt 24) {
+                Write-Host "  AVISO: este executavel tem mais de um dia. A compilacao de agora falhou?" -ForegroundColor Yellow
+            }
+
+            $achar = 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; pwd'
+            $raizRemota = (& ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $achar | Select-Object -Last 1)
+            if (-not $raizRemota) {
+                $falhas += "publicar (não achei o projeto no servidor)"
+                Write-Host "  Nao achei o clone no servidor." -ForegroundColor Red
+            } else {
+                Passo "enviando para $Servidor"
+                & scp -i $ChaveSsh -o StrictHostKeyChecking=accept-new $local "${Servidor}:$raizRemota/deploy/site/baixar/"
+                if ($LASTEXITCODE -ne 0) {
+                    $falhas += "publicar (scp)"
+                    Write-Host "  O envio falhou." -ForegroundColor Red
+                } else {
+                    # A pagina do site e versionada; o binario nao. Sem este
+                    # `git pull`, um texto novo na pagina nunca chega ao ar.
+                    Passo "atualizando a pagina no servidor"
+                    & ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor "cd $raizRemota; git pull --ff-only" | Out-Null
+                    Write-Host "  Publicado: https://$Dominio/baixar/$nomePublicado" -ForegroundColor Green
+                }
+            }
+        }
+    }
 }
 
 # Sem executável, `-Ocultar` e `-Rodar` só produziriam um "termo não

@@ -58,6 +58,19 @@ class Settings(BaseSettings):
     # chaves que abrem, então ninguém com 2FA fica trancado do lado de fora.
     totp_key: str = ""
 
+    # Chave que cifra a cópia de segurança antes de ela sair da VM.
+    #
+    # **Vazia significa sem cifra, de propósito**, e é a única configuração
+    # deste arquivo que falha aberta por escolha. A assimetria é o argumento:
+    # um backup sem cifra corre risco de ser lido; um backup que não abre está
+    # destruído, com certeza. Cifrar por padrão, com chave derivada de outra
+    # coisa, transformaria "perdi o .env" em "perdi todos os backups".
+    #
+    # Ligue escrevendo uma chave no `deploy/.env` **e guardando-a em outro
+    # lugar** — um gerenciador de senhas, um papel. Ela não pode viver só na VM,
+    # senão perder a VM perde as duas metades ao mesmo tempo.
+    backup_key: str = ""
+
     # Recusar agentes que não apresentam segredo (ver `Device.agent_secret`).
     #
     # Falso enquanto houver agentes antigos por aí. Ligar antes de todos

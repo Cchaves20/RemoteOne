@@ -22,6 +22,10 @@ dev = [
     "pytest>=8.0",
     "httpx>=0.27",
     "ruff>=0.6",
+    # Gera o requirements.txt travado e confere as dependências contra os
+    # avisos de vulnerabilidade publicados. Ver scripts/auditar.sh.
+    "pip-tools>=7.4",
+    "pip-audit>=2.7",
 ]
 
 [tool.ruff]

@@ -221,7 +221,20 @@ E falha **fechado**: quando nenhuma chave abre, `abrir()` devolve `None`, o
 `verify_totp` reprova o código e o log explica. O contrário faria de uma chave
 perdida um contorno do segundo fator.
 
-Fica de fora, e continua valendo: **cifrar o backup** antes de ele sair da VM.
+A segunda metade também foi feita: **a cópia de segurança sai cifrada da VM**,
+quando `DESKSIDE_BACKUP_KEY` está no `.env`.
+
+Aqui a escolha se inverte, e de propósito: sem chave configurada, **não cifra**.
+A assimetria é o argumento — um backup sem cifra corre risco de ser lido; um
+backup que não abre está destruído, com certeza. Cifrar por padrão com uma chave
+derivada de outra coisa transformaria "perdi o `.env`" em "perdi todos os
+backups". Guarde a chave fora da VM: um gerenciador de senhas, um papel.
+
+Dois detalhes que teriam mordido depois: cifrar **apaga o original** (a cópia
+cifrada ao lado da legível não protege nada), e a limpeza das catorze mais
+antigas passou a enxergar `.db.enc` — com o filtro antigo, nenhuma cifrada seria
+apagada nunca, e um backup que enche o disco derruba o servidor que ele existe
+para proteger.
 
 ### S7 — dependências sem trava de versão
 
@@ -246,7 +259,13 @@ o pacote**. Ele rodava antes de a pasta `app` ser copiada, e sem
 uma distribuição vazia e servia só para puxar dependências. Saiu, com a
 explicação no lugar.
 
-Falta passar `pip-audit` de vez em quando.
+E `backend/scripts/auditar.sh` faz as duas conferências que faltavam: se o
+arquivo travado ainda corresponde ao `pyproject.toml` (senão o Docker instala um
+conjunto que ninguém escolheu) e se alguma dependência tem falha conhecida.
+Na primeira execução: nenhuma.
+
+"De vez em quando" não é uma frequência — um comando com nome é o que vira
+hábito, e é o que se põe numa CI no dia em que houver uma.
 
 ### S8 — o Android aceitava tráfego em texto puro
 
@@ -290,16 +309,22 @@ decisão, e não um descuido.
 
 **Gravidade: baixa.**
 
-`files::safe_name` derruba corretamente separadores de caminho, caracteres
-ilegais e caracteres de controle — a travessia de diretório está fechada, com
-teste. O que ele não filtra são os nomes de dispositivo do DOS (`CON`, `NUL`,
-`PRN`, `COM1`…). Mandar um arquivo chamado `NUL` faz a escrita se comportar de
-forma estranha em vez de falhar limpo. É defeito de robustez, não porta de
-entrada.
+**Corrigido.**
 
-Junto dele, um defeito de correção que apareceu na leitura: `Incoming::create`
-usa `with_extension("parte")` para o arquivo temporário, então `a.png` e `a.txt`
-chegando ao mesmo tempo disputam o mesmo `a.parte`.
+`files::safe_name` já derrubava separadores de caminho, caracteres ilegais e
+caracteres de controle. Faltavam os nomes de dispositivo do DOS: `CON`, `NUL`,
+`PRN`, `AUX`, `COM1`..`COM9`, `LPT1`..`LPT9`. `NUL` não é arquivo — é o buraco
+onde os bytes somem —, então a transferência terminava dizendo que deu certo com
+nada no disco. Agora ganham um sublinhado na frente, e não uma recusa: o arquivo
+chegou, alguém quis mandá-lo, e negar por causa de um nome seria perder o
+conteúdo por uma herança do MS-DOS. A reserva vale com qualquer extensão, então
+a comparação olha só até o primeiro ponto — e `CONTA.pdf` e `COM10.txt` passam
+intactos, porque renomear arquivo legítimo também é estrago.
+
+Junto, o defeito de correção: `Incoming::create` usava `with_extension("parte")`,
+então `a.png` e `a.txt` chegando juntos disputavam o mesmo `a.parte`. Agora o
+sufixo é **acrescentado**, e o temporário herda a unicidade que o `free_path` já
+garantia ao nome final.
 
 ---
 
@@ -350,10 +375,14 @@ pode parar de conferir:
 5. ~~**S8**~~ **Feito**, e sem poder compilar Android aqui — quem confirma é o
    Codemagic e um aparelho de verdade.
 
-O que sobrou, e nenhum é bloqueio de lançamento: `pip-audit` na rotina, backup
-cifrado, os nomes reservados do Windows no S10, e a trava
-`DESKSIDE_EXIGIR_SEGREDO_DO_AGENTE` a fechar quando todo agente tiver
-atualizado.
+**Todos os achados estão fechados.** O que resta não é achado, é operação:
+
+- Ligar `DESKSIDE_EXIGIR_SEGREDO_DO_AGENTE=true` quando todo agente tiver
+  atualizado.
+- Pôr `DESKSIDE_BACKUP_KEY` no `.env` da VM — e guardar a chave fora dela.
+- Rodar `backend/scripts/auditar.sh` de tempos em tempos.
+- E o que nenhuma dessas linhas substitui: **uma revisão por alguém que não
+  escreveu este código**, antes de cobrar de estranhos.
 
 E, antes de cobrar de estranhos: **uma revisão por alguém que não escreveu este
 código**. Tudo acima saiu de leitura minha, e há um limite conhecido para o que

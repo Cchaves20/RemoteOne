@@ -38,6 +38,8 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from cryptography.fernet import Fernet, InvalidToken
+
 #: Quantas cópias diárias ficam na VM.
 #:
 #: Catorze porque o erro que este backup mais protege — um esquema quebrado, um
@@ -50,6 +52,9 @@ MANTER_POR_PADRAO = 14
 #: que esteja na mesma pasta.
 PREFIXO = "deskside-"
 SUFIXO = ".db"
+
+#: O que se acrescenta ao nome quando a cópia sai cifrada.
+SUFIXO_CIFRADO = ".enc"
 
 
 def nome_do_arquivo(quando: datetime | None = None) -> str:
@@ -105,7 +110,7 @@ def limpar_antigos(pasta: Path, manter: int = MANTER_POR_PADRAO) -> list[Path]:
     if not pasta.is_dir():
         return []
     copias = sorted(
-        (p for p in pasta.iterdir() if p.name.startswith(PREFIXO) and p.suffix == SUFIXO),
+        (p for p in pasta.iterdir() if p.name.startswith(PREFIXO) and _e_copia(p)),
         key=lambda p: p.name,
     )
     apagar = copias[:-manter] if len(copias) > manter else []
@@ -114,9 +119,66 @@ def limpar_antigos(pasta: Path, manter: int = MANTER_POR_PADRAO) -> list[Path]:
     return apagar
 
 
+def _e_copia(p: Path) -> bool:
+    """`deskside-....db` ou `deskside-....db.enc`.
+
+    A limpeza precisa enxergar as duas formas. Com o filtro antigo
+    (`p.suffix == ".db"`), uma cópia cifrada — cujo sufixo é `.enc` — nunca
+    seria apagada: as catorze mais novas ficariam, e todas as outras também,
+    até o disco encher. Um backup que enche o disco derruba o servidor que ele
+    existe para proteger.
+    """
+    return p.name.endswith(SUFIXO) or p.name.endswith(SUFIXO + SUFIXO_CIFRADO)
+
+
+def cifrar(caminho: Path, chave: str) -> Path:
+    """Cifra a cópia e **apaga** o original, devolvendo o caminho novo.
+
+    Apagar o original é o ponto: uma cópia cifrada ao lado da mesma cópia em
+    claro não protege nada, e é exatamente o que acontece quando se acrescenta
+    a cifra sem pensar no que fica para trás.
+    """
+    from app import cofre
+
+    destino = caminho.with_name(caminho.name + SUFIXO_CIFRADO)
+    fernet = Fernet(cofre._chave_de(chave))
+    destino.write_bytes(fernet.encrypt(caminho.read_bytes()))
+    caminho.unlink()
+    return destino
+
+
+def decifrar(caminho: Path, chave: str) -> Path:
+    """Abre uma cópia cifrada, gravando o `.db` ao lado. Mantém o `.enc`."""
+    from app import cofre
+
+    if not caminho.name.endswith(SUFIXO_CIFRADO):
+        raise SystemExit(f"{caminho} não é uma cópia cifrada")
+    destino = caminho.with_name(caminho.name[: -len(SUFIXO_CIFRADO)])
+    try:
+        aberto = Fernet(cofre._chave_de(chave)).decrypt(caminho.read_bytes())
+    except InvalidToken:
+        raise SystemExit(
+            "a chave não abre esta cópia. Confira DESKSIDE_BACKUP_KEY — é a "
+            "que estava no .env no dia em que a cópia foi feita, e não "
+            "necessariamente a de hoje."
+        ) from None
+    destino.write_bytes(aberto)
+    return destino
+
+
 def rodar(origem: Path, pasta: Path, manter: int = MANTER_POR_PADRAO) -> Path:
     """Faz a cópia e limpa as antigas. É o que a tarefa agendada chama."""
+    from app.config import settings
+
     destino = fazer_backup(origem, pasta / nome_do_arquivo())
+    if settings.backup_key:
+        destino = cifrar(destino, settings.backup_key)
+    else:
+        print(
+            "aviso: DESKSIDE_BACKUP_KEY não está definida — a cópia sai em "
+            "claro. Ela vai sair desta VM (scripts/atualizar.cmd -Backup) e "
+            "contém contas, pareamentos e segredos de 2FA."
+        )
     limpar_antigos(pasta, manter)
     return destino
 
@@ -142,8 +204,23 @@ def _caminho_do_banco() -> Path:
 
 
 def main() -> None:
-    """`python -m app.backup [pasta]` — o que o cron da VM roda."""
+    """`python -m app.backup [pasta]` — o que o cron da VM roda.
+
+    Com `--abrir arquivo.db.enc`, decifra em vez de copiar. A ferramenta de
+    abrir mora aqui, e não num script à parte, porque é aqui que a dependência
+    da cifra já existe: quem precisa restaurar está na VM, dentro do contêiner,
+    e não vai instalar nada às pressas.
+    """
     import sys
+
+    from app.config import settings
+
+    if len(sys.argv) > 2 and sys.argv[1] == "--abrir":
+        if not settings.backup_key:
+            raise SystemExit("DESKSIDE_BACKUP_KEY não está definida neste ambiente")
+        aberto = decifrar(Path(sys.argv[2]), settings.backup_key)
+        print(f"aberto: {aberto} ({aberto.stat().st_size} bytes)")
+        return
 
     pasta = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/backups")
     destino = rodar(_caminho_do_banco(), pasta)

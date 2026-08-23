@@ -196,3 +196,77 @@ def test_rodar_faz_a_copia_e_limpa(tmp_path):
     assert _emails(destino) == _emails(origem)
     # Sobrou só a nova: as duas de 2020 vêm antes na ordem do nome.
     assert [p.name for p in pasta.iterdir()] == [destino.name]
+
+
+# --- Cifra em repouso (S6, segunda metade) -----------------------------------
+
+
+def test_a_copia_cifrada_nao_deixa_o_original_para_tras(tmp_path):
+    """Cifrar sem apagar o original não protege nada.
+
+    É o erro que se comete acrescentando a cifra sem pensar no que fica para
+    trás: a pasta passa a ter as duas versões, e quem copia a pasta leva a
+    legível junto.
+    """
+    from app import backup
+
+    banco = tmp_path / "origem.db"
+    _banco(banco)
+    copia = backup.fazer_backup(banco, tmp_path / "copias" / "deskside-1.db")
+
+    cifrada = backup.cifrar(copia, "uma-chave-guardada-em-outro-lugar")
+
+    assert cifrada.exists()
+    assert not copia.exists(), "o banco em claro ficou ao lado do cifrado"
+    assert not cifrada.read_bytes().startswith(b"SQLite format 3")
+
+
+def test_a_copia_cifrada_volta_a_ser_um_banco(tmp_path):
+    """Um backup que não abre está destruído, então isto é o teste que importa."""
+    from app import backup
+
+    banco = tmp_path / "origem.db"
+    _banco(banco)
+    copia = backup.fazer_backup(banco, tmp_path / "deskside-2.db")
+    cifrada = backup.cifrar(copia, "chave-boa")
+
+    aberta = backup.decifrar(cifrada, "chave-boa")
+    assert aberta.read_bytes().startswith(b"SQLite format 3")
+    assert _emails(aberta) == _emails(banco)
+
+
+def test_chave_errada_nao_produz_arquivo_pela_metade(tmp_path):
+    """Falhar alto, e sem deixar lixo com cara de banco.
+
+    Gravar o que quer que seja com o nome `.db` seria pior que o erro: no dia
+    da restauração, alguém acharia um arquivo e o usaria.
+    """
+    import pytest
+
+    from app import backup
+
+    banco = tmp_path / "origem.db"
+    _banco(banco)
+    cifrada = backup.cifrar(backup.fazer_backup(banco, tmp_path / "deskside-3.db"), "certa")
+
+    with pytest.raises(SystemExit):
+        backup.decifrar(cifrada, "errada")
+    assert not (tmp_path / "deskside-3.db").exists()
+
+
+def test_a_limpeza_enxerga_as_copias_cifradas(tmp_path):
+    """Senão elas ficam para sempre e enchem o disco.
+
+    O filtro antigo olhava `p.suffix == ".db"`; o sufixo de uma cópia cifrada é
+    `.enc`. Nenhuma seria apagada — e um backup que enche o disco derruba o
+    servidor que ele existe para proteger.
+    """
+    from app import backup
+
+    for i in range(20):
+        (tmp_path / f"deskside-2026010{i:02d}-000000.db.enc").write_bytes(b"x")
+
+    apagados = backup.limpar_antigos(tmp_path, manter=14)
+
+    assert len(apagados) == 6, f"apagou {len(apagados)}"
+    assert len(list(tmp_path.iterdir())) == 14

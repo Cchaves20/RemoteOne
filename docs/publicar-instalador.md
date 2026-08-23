@@ -147,12 +147,29 @@ curl.exe -I https://deskside.com.br/baixar/Deskside-ARM64.exe
 `200` e um `content-length` de alguns megabytes nos dois. `404` significa que o
 `scp` foi para a pasta errada — confira o caminho que o `$raiz` descobriu.
 
-## Quando automatizar
+## O caminho curto
 
-Isto vira um `-Publicar` no `atualizar.ps1` depois de funcionar à mão pelo menos
-uma vez. Automatizar antes disso é embutir num script um passo que ninguém viu
-dar certo — e quando falhar, falha dentro de um script de 700 linhas em vez de na
-linha que você acabou de digitar.
+Depois de funcionar à mão — o que aconteceu, com quatro tropeços pelo caminho —
+os passos acima viraram um comando:
+
+```powershell
+.\scripts\atualizar.cmd -Agente -Publicar
+```
+
+Compila, descobre a arquitetura **lendo o cabeçalho do binário**, escolhe o nome
+a partir dela, copia, avisa se o executável tem mais de um dia (sinal de build
+que falhou e deixou o anterior no lugar), manda por `scp` e atualiza a página no
+servidor.
+
+O que ele **não** faz, de propósito: escolher a arquitetura. Ele publica a da
+máquina em que está rodando. Não existe compilação cruzada aqui, então mandar no
+Dell publica o x64 e mandar no MateBook publica o ARM64 — e o nome sai do
+cabeçalho, nunca de um parâmetro. É o que torna impossível repetir o erro de
+publicar o ARM64 com o nome do x64.
+
+Automatizar **antes** de o fluxo funcionar à mão teria sido embutir num script
+de 800 linhas um passo que ninguém viu dar certo. Os quatro tropeços de ontem
+teriam acontecido lá dentro, e não na linha que se acabou de digitar.
 
 ## O que ainda falta
 

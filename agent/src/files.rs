@@ -314,10 +314,40 @@ pub fn safe_name(name: &str) -> String {
         .filter(|c| !matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') && !c.is_control())
         .collect();
     if limpo.is_empty() {
-        "arquivo".to_string()
-    } else {
-        limpo
+        return "arquivo".to_string();
     }
+    if e_dispositivo(&limpo) {
+        // Um sublinhado na frente, e não uma recusa: o arquivo chegou, a pessoa
+        // do outro lado quis mandá-lo, e negar por causa de um nome seria
+        // perder o conteúdo por uma herança do MS-DOS.
+        return format!("_{limpo}");
+    }
+    limpo
+}
+
+/// Os nomes que o Windows trata como **aparelho**, e não como arquivo.
+///
+/// `CON`, `NUL`, `PRN`, `AUX`, `COM1`..`COM9`, `LPT1`..`LPT9` vêm do MS-DOS e
+/// continuam reservados. Abrir `NUL` para escrita não cria arquivo nenhum: o
+/// sistema entrega o dispositivo, os bytes somem, e a transferência termina
+/// dizendo que deu certo com nada no disco.
+///
+/// A reserva vale **com qualquer extensão** — `CON.txt` também é o console —, e
+/// é por isso que a comparação olha só o pedaço antes do primeiro ponto.
+fn e_dispositivo(nome: &str) -> bool {
+    const RESERVADOS: [&str; 5] = ["CON", "PRN", "AUX", "NUL", "CONIN$"];
+    let raiz = nome.split('.').next().unwrap_or(nome).trim_end();
+    let maiusculo = raiz.to_ascii_uppercase();
+    if RESERVADOS.contains(&maiusculo.as_str()) {
+        return true;
+    }
+    // COM1..COM9 e LPT1..LPT9. O dígito é sempre um só; `COM10` é nome válido.
+    let porta = |prefixo: &str| {
+        maiusculo
+            .strip_prefix(prefixo)
+            .is_some_and(|resto| resto.len() == 1 && matches!(resto.as_bytes()[0], b'1'..=b'9'))
+    };
+    porta("COM") || porta("LPT")
 }
 
 /// Escolhe um caminho livre na caixa de entrada: `foto.png`, `foto (2).png`…
@@ -347,6 +377,17 @@ pub fn free_path(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     dir.join(format!("{stem} ({}){ext}", std::process::id()))
 }
 
+/// O arquivo temporário de uma transferência: o final com `.parte` no fim.
+///
+/// **Acrescentado**, e não trocado pela extensão. Com `with_extension`,
+/// `foto.png` e `foto.txt` viravam os dois `foto.parte` — duas transferências
+/// ao mesmo tempo escreviam no mesmo arquivo e cada uma achava que era dona
+/// dele. O `free_path` garante que o nome final é único; o temporário não
+/// herdava essa garantia.
+fn caminho_temporario(final_path: &std::path::Path) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("{}.parte", final_path.display()))
+}
+
 /// Um arquivo sendo recebido do celular, escrito pedaço a pedaço.
 ///
 /// Grava num arquivo temporário (`.parte`) e só renomeia no fim: uma
@@ -364,7 +405,7 @@ impl Incoming {
     pub fn create(name: &str, limit: u64) -> Result<Self, String> {
         let dir = inbox()?;
         let final_path = free_path(&dir, &safe_name(name));
-        let temp = final_path.with_extension("parte");
+        let temp = caminho_temporario(&final_path);
         let file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
         Ok(Self {
             file,
@@ -522,6 +563,50 @@ mod tests {
         // Sem isso o app mostraria um "voltar" que sai da área permitida e
         // devolve erro — um beco sem saída visível na tela.
         assert!(list("").unwrap().parent.is_none());
+    }
+
+    #[test]
+    fn arquivos_de_nomes_diferentes_nao_disputam_o_mesmo_temporario() {
+        // Com `with_extension`, `foto.png` e `foto.txt` viravam os dois
+        // `foto.parte` — e uma transferência corrompia a outra em silêncio.
+        let dir = std::env::temp_dir().join(format!("deskside-parte-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = free_path(&dir, "foto.png");
+        let b = free_path(&dir, "foto.txt");
+        assert_ne!(
+            caminho_temporario(&a),
+            caminho_temporario(&b),
+            "dois envios disputariam o mesmo .parte"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nomes_de_aparelho_do_dos_ganham_um_prefixo() {
+        // `NUL` não é arquivo: é o buraco onde os bytes somem. Escrever nele
+        // termina "com sucesso" e não deixa nada no disco — a transferência
+        // diria que deu certo e a pessoa procuraria o arquivo para sempre.
+        for reservado in ["NUL", "CON", "PRN", "AUX", "COM1", "LPT9", "nul", "Con"] {
+            let saida = safe_name(reservado);
+            assert_eq!(saida, format!("_{reservado}"), "{reservado} passou inteiro");
+        }
+    }
+
+    #[test]
+    fn a_reserva_vale_com_extensao_e_so_ate_o_primeiro_ponto() {
+        // `CON.txt` continua sendo o console para o Windows. E o espaço antes
+        // do ponto também: `CON .txt` abre o mesmo dispositivo.
+        assert_eq!(safe_name("CON.txt"), "_CON.txt");
+        assert_eq!(safe_name("con.tar.gz"), "_con.tar.gz");
+    }
+
+    #[test]
+    fn nomes_parecidos_com_reservados_passam_intactos() {
+        // O risco do lado oposto: renomear arquivo legítimo é perder o nome que
+        // a pessoa escolheu. `CONTA` começa com CON, `COM10` não é porta.
+        for comum in ["CONTA.pdf", "COM10.txt", "console.log", "auxiliar.doc", "NULO.txt"] {
+            assert_eq!(safe_name(comum), comum, "{comum} foi renomeado à toa");
+        }
     }
 
     #[test]
