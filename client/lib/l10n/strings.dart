@@ -178,12 +178,18 @@ class Strings {
       '在你想控制的电脑上，打开 $site 并下载 Deskside。',
       "Sur l'ordinateur à contrôler, ouvrez $site et téléchargez Deskside.",
       'En el equipo que quieres controlar, abre $site y descarga Deskside.');
+  // Nove caracteres, com letras — e **não** seis dígitos, que era o que este
+  // texto dizia. Seis dígitos é o código de verificação do cadastro, que é
+  // outra coisa: são dois códigos diferentes no produto, e trocar um pelo outro
+  // faz a pessoa procurar na tela um número que não existe. O alfabeto do
+  // pareamento não tem O, 0, I, 1 nem L, justamente para ser lido em voz alta
+  // sem ambiguidade.
   String get primeiroPassoCodigo => _t(
-      'Ele vai mostrar um código de 6 dígitos.',
-      'It will show a 6-digit code.',
-      '它会显示一个 6 位数的代码。',
-      'Il affichera un code à 6 chiffres.',
-      'Mostrará un código de 6 dígitos.');
+      'Ele vai mostrar um código de 9 caracteres, com letras e números.',
+      'It will show a 9-character code with letters and numbers.',
+      '它会显示一个 9 位代码，包含字母和数字。',
+      'Il affichera un code de 9 caractères, avec des lettres et des chiffres.',
+      'Mostrará un código de 9 caracteres, con letras y números.');
   String get primeiroPassoDigitar => _t(
       'Toque no botão abaixo e digite esse código.',
       'Tap the button below and enter that code.',
