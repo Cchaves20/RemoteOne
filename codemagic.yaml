@@ -92,6 +92,11 @@ workflows:
           # dezenas de "getter não definido" — um por palavra da frase que virou
           # código. Ver scripts/conferir-textos.py.
           python3 ../scripts/conferir-textos.py lib/l10n/strings.dart
+          # A ordem das diretivas. Um `library;` abaixo dos imports é erro de
+          # compilação, e o Flutter o denuncia como "loading test/algum_test.dart"
+          # — sem citar o arquivo quebrado, sem citar a diretiva. Ver
+          # scripts/conferir-dart.py.
+          python3 ../scripts/conferir-dart.py lib test
           flutter analyze
           flutter test
       - name: Build iOS sem assinatura e empacotar .ipa
@@ -292,6 +297,11 @@ workflows:
           # dezenas de "getter não definido" — um por palavra da frase que virou
           # código. Ver scripts/conferir-textos.py.
           python3 ../scripts/conferir-textos.py lib/l10n/strings.dart
+          # A ordem das diretivas. Um `library;` abaixo dos imports é erro de
+          # compilação, e o Flutter o denuncia como "loading test/algum_test.dart"
+          # — sem citar o arquivo quebrado, sem citar a diretiva. Ver
+          # scripts/conferir-dart.py.
+          python3 ../scripts/conferir-dart.py lib test
           flutter analyze
           flutter test
       - name: Build do APK

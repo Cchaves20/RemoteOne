@@ -1,12 +1,3 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-
-import '../l10n/strings.dart';
-import '../services/api_client.dart';
-
-/// Para onde escrever enquanto o pagamento é feito à mão.
-const contatoDeskside = 'contato@deskside.com.br';
-
 /// O que o app faz quando o servidor recusa por causa do plano.
 ///
 /// ## Por que existe um arquivo só para isto
@@ -30,6 +21,15 @@ const contatoDeskside = 'contato@deskside.com.br';
 /// recusa inteira. Enquanto o pagamento for feito à mão, o caminho honesto é
 /// dizer isso e abrir o e-mail.
 library;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../l10n/strings.dart';
+import '../services/api_client.dart';
+
+/// Para onde escrever enquanto o pagamento é feito à mão.
+const contatoDeskside = 'contato@deskside.com.br';
 
 /// O `402` do servidor: "você poderia, pagando".
 ///
