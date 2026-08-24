@@ -29,10 +29,10 @@
   <h1>Política de privacidade</h1>
   <p class="data">Atualizado em agosto de 2026.</p>
 <div class="rascunho">
-    <strong>Rascunho.</strong> Este texto foi escrito para descrever com precisão
-    o que o Deskside faz com os seus dados, e <strong>ainda não passou por
-    revisão jurídica</strong>. Ele será revisado antes de o serviço passar a ser
-    cobrado.
+    <strong>Rascunho.</strong> Este texto foi conferido linha a linha contra o
+    código que está no ar — o que ele descreve é o que o programa faz de verdade.
+    Mas <strong>ainda não passou por revisão jurídica</strong>, e será revisado
+    antes de existir cobrança automática.
   </div>
   <h2>1. O que guardamos</h2>
   <p>Para manter a sua conta e os seus computadores:</p>
@@ -40,30 +40,57 @@
     <li><strong>Nome e sobrenome</strong>, para identificar a conta.</li>
     <li><strong>Data de nascimento</strong>, para conferir a idade mínima.</li>
     <li><strong>E-mail ou telefone</strong>, para entrar e receber os códigos de
-      verificação. Um dos dois basta.</li>
+      verificação. Um dos dois basta — mas hoje só o <strong>e-mail</strong>
+      recebe códigos: o envio por SMS ainda não está contratado. Se você criar a
+      conta por telefone, fale com a gente para concluir a verificação.</li>
     <li><strong>Senha</strong>, guardada apenas como hash (bcrypt). Não temos
       como ler a sua senha.</li>
     <li><strong>Dos computadores pareados</strong>: um identificador, o nome da
       máquina, o sistema operacional, o endereço MAC (usado para ligar o
-      computador pela rede) e o último endereço IP público visto.</li>
+      computador pela rede), o último endereço IP público visto e um segredo
+      sorteado no pareamento — é ele que prova ao servidor que aquele computador
+      é mesmo o seu.</li>
     <li><strong>O que você configurou</strong>: perfis de atalho e automações,
       incluindo horários.</li>
+    <li><strong>Do seu plano</strong>: se a conta está no Deskside grátis ou no
+      pago, até quando o plano vale, e se já avisamos que o seu mês completo
+      está acabando.</li>
+    <li><strong>Se você ligou a verificação em duas etapas</strong>: a chave que
+      o seu aplicativo autenticador usa, guardada cifrada. Ela não vale nada sem
+      a chave de cifra, que fica fora do banco.</li>
   </ul>
 
   <h2>2. O que <em>não</em> guardamos</h2>
   <p>Esta é a parte mais importante desta página:</p>
   <ul>
     <li><strong>A imagem da sua tela não é gravada.</strong> Ela viaja do
-      computador ao celular e é descartada. Sempre que possível, a conexão é
-      <strong>direta</strong> entre os dois aparelhos e não passa pelos nossos
-      servidores; quando a rede não permite, ela passa por um servidor de relay
-      que apenas repassa os pacotes, sem armazená-los.</li>
+      computador ao celular e é descartada — nunca vai para disco. O servidor
+      mantém, no máximo, o <em>último</em> quadro em memória, para a tela
+      aparecer no instante em que você abre o aplicativo em vez de você olhar
+      para um retângulo preto; ele some assim que o computador se desconecta.
+      <br>
+      Sempre que possível a conexão é <strong>direta</strong> entre os dois
+      aparelhos e não passa pelos nossos servidores. Quando a rede não permite,
+      ela passa por um servidor de relay — e aí vale a parte forte: o vídeo é
+      cifrado de ponta a ponta pelo próprio WebRTC, então
+      <strong>o relay não tem como ler o que repassa</strong>. Não é uma promessa
+      nossa, é como o protocolo funciona.</li>
     <li><strong>Não guardamos o que você digita</strong> nem os movimentos do
       mouse.</li>
     <li><strong>Não guardamos os seus arquivos.</strong> As transferências vão de
       um aparelho ao outro.</li>
-    <li><strong>Não acessamos os seus computadores.</strong> Não temos como
-      controlar uma máquina sua.</li>
+    <li><strong>Não acessamos os seus computadores.</strong> E aqui preferimos
+      ser exatos, porque o contrário seria fácil de escrever e falso: um
+      servidor do Deskside <em>conseguiria</em> mandar comandos a um computador
+      pareado — é assim que o seu próprio celular o controla. Não existe mágica
+      que impeça isso do lado de cá.
+      <br>
+      Por isso o compromisso aqui é de conduta e de operação, e não de
+      impossibilidade: pouquíssimas pessoas alcançam o servidor, o acesso é por
+      chave e com verificação em duas etapas, e usar essa capacidade para entrar
+      no computador de alguém sem pedido dele é violação destes termos
+      <em>por nós</em>. Se algum dia lermos ou controlarmos uma máquina sua sem
+      que você tenha pedido, estaremos quebrando o nosso próprio contrato.</li>
     <li>Não vendemos nem compartilhamos dados com anunciantes. Não usamos
       rastreadores de publicidade.</li>
   </ul>
@@ -77,7 +104,7 @@
 
   <h2>4. Com quem compartilhamos</h2>
   <ul>
-    <li><strong>Provedor de e-mail e SMS</strong>, apenas para entregar os
+    <li><strong>Provedor de e-mail</strong>, apenas para entregar os
       códigos de verificação.</li>
     <li><strong>Provedor de hospedagem</strong>, onde os servidores rodam.</li>
   </ul>
@@ -95,8 +122,14 @@
 
   <h2>6. Por quanto tempo</h2>
   <p>
-    Enquanto a conta existir. Excluída a conta, os dados são removidos. Cópias de
-    segurança do banco são mantidas por até 30 dias e depois descartadas.
+    Enquanto a conta existir. Excluída a conta, os dados são removidos.
+    <br><br>
+    As cópias de segurança do banco são <strong>catorze</strong>, uma por dia, e
+    as mais antigas são descartadas automaticamente. Uma cópia cifrada pode ser
+    guardada fora da nossa infraestrutura, para o caso de o servidor ser perdido
+    por inteiro — é o que faz um backup ser backup. Isso significa que dados de
+    uma conta excluída podem sobreviver alguns dias dentro dessas cópias, até
+    serem substituídas.
   </p>
 
   <h2>7. Encarregado</h2>
