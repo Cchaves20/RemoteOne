@@ -5,6 +5,7 @@ import '../config.dart';
 import '../models/device.dart';
 import '../services/app_state.dart';
 import '../theme.dart';
+import '../widgets/plano.dart';
 import '../widgets/pulse.dart';
 import '../widgets/transitions.dart';
 import 'apps_screen.dart';
@@ -74,10 +75,16 @@ class _DevicesScreenState extends State<DevicesScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+      if (!mounted) return;
+      // O limite de plano sai do aviso vermelho e vira conversa. É o caminho
+      // mais provável de esbarrar nele: a pessoa gostou e foi instalar no
+      // segundo computador.
+      if (ehLimiteDePlano(e)) {
+        await mostrarLimiteDePlano(context, t, e.toString());
+        return;
       }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 

@@ -9,6 +9,7 @@ import '../models/window_zone.dart';
 import '../services/app_state.dart';
 import '../theme.dart';
 import '../widgets/layout_picker.dart';
+import '../widgets/plano.dart';
 import 'app_picker_screen.dart';
 
 /// Criação e edição de uma automação.
@@ -105,6 +106,14 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _salvando = false);
+      // O outro caminho comum: a pessoa descobriu o horário marcado, montou a
+      // automação inteira e só na hora de salvar é recusada. Mostrar isso em
+      // vermelho, depois do trabalho todo, faria parecer que o app perdeu o
+      // que ela fez — e a automação continua na tela, intacta.
+      if (ehLimiteDePlano(e)) {
+        await mostrarLimiteDePlano(context, t, e.toString());
+        return;
+      }
       _avisar(e.toString());
     }
   }

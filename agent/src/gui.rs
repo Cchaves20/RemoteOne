@@ -239,6 +239,7 @@ mod imp {
         _bandeja: Option<TrayIcon>,
         id_abrir: MenuId,
         id_sair: MenuId,
+        id_desinstalar: MenuId,
         copiado: bool,
         /// A confirmação de desinstalar está à mostra.
         confirmando_saida: bool,
@@ -251,12 +252,23 @@ mod imp {
             let _ = CONTEXTO.set(cc.egui_ctx.clone());
 
             let abrir = MenuItem::new("Abrir o Deskside", true, None);
+            // Desinstalar mora **na bandeja**, e não só na janela.
+            //
+            // A janela não abre em máquina sem placa de vídeo — é o caso do
+            // MateBook, e é um caso que este arquivo já conhecia: o comentário
+            // do campo `aviso` diz, com todas as letras, que "um aviso que só
+            // funciona em computador com GPU não serve para um produto de
+            // acesso remoto". O botão de sair do produto foi parar exatamente
+            // ali, e nessas máquinas não havia como removê-lo pela interface.
+            let desinstalar = MenuItem::new("Desinstalar o Deskside", true, None);
             let sair = MenuItem::new("Sair", true, None);
             let (id_abrir, id_sair) = (abrir.id().clone(), sair.id().clone());
+            let id_desinstalar = desinstalar.id().clone();
 
             let menu = Menu::new();
             let _ = menu.append(&abrir);
             let _ = menu.append(&tray_icon::menu::PredefinedMenuItem::separator());
+            let _ = menu.append(&desinstalar);
             let _ = menu.append(&sair);
 
             let mut construtor = TrayIconBuilder::new()
@@ -317,6 +329,7 @@ mod imp {
                 _bandeja: bandeja,
                 id_abrir,
                 id_sair,
+                id_desinstalar,
                 copiado: false,
                 confirmando_saida: false,
                 saindo: false,
@@ -396,6 +409,10 @@ mod imp {
             while let Ok(evento) = MenuEvent::receiver().try_recv() {
                 if evento.id == self.id_abrir {
                     mostrar_janela();
+                } else if evento.id == self.id_desinstalar {
+                    if caixa_de_desinstalar() {
+                        desinstalar_em_segundo_plano(self.estado.clone());
+                    }
                 } else if evento.id == self.id_sair {
                     // O agente vive numa thread solta; encerrar o processo é o
                     // jeito honesto de parar tudo de uma vez.
@@ -699,12 +716,17 @@ mod imp {
     /// tinham.
     fn bandeja_sem_placa_de_video(estado: Compartilhado) {
         let abrir = MenuItem::new("Estado do Deskside", true, None);
+        // Aqui é o **único** lugar de onde dá para desinstalar pela interface:
+        // esta máquina não abre janela nenhuma.
+        let desinstalar = MenuItem::new("Desinstalar o Deskside", true, None);
         let sair = MenuItem::new("Sair", true, None);
         let (id_abrir, id_sair) = (abrir.id().clone(), sair.id().clone());
+        let id_desinstalar = desinstalar.id().clone();
 
         let menu = Menu::new();
         let _ = menu.append(&abrir);
         let _ = menu.append(&tray_icon::menu::PredefinedMenuItem::separator());
+        let _ = menu.append(&desinstalar);
         let _ = menu.append(&sair);
 
         let mut construtor = TrayIconBuilder::new()
@@ -730,6 +752,10 @@ mod imp {
                 while let Ok(evento) = MenuEvent::receiver().recv() {
                     if evento.id == id_abrir {
                         caixa_de_estado(&do_menu);
+                    } else if evento.id == id_desinstalar {
+                        if caixa_de_desinstalar() {
+                            desinstalar_em_segundo_plano(do_menu.clone());
+                        }
                     } else if evento.id == id_sair {
                         std::process::exit(0);
                     }
@@ -945,6 +971,41 @@ mod imp {
                 "em instantes".to_string()
             }
         );
+        let texto: Vec<u16> = texto.encode_utf16().chain(std::iter::once(0)).collect();
+        let titulo: Vec<u16> = "Deskside"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let resposta = unsafe {
+            MessageBoxW(
+                0,
+                texto.as_ptr(),
+                titulo.as_ptr(),
+                MB_YESNO
+                    | MB_ICONWARNING
+                    | MB_DEFBUTTON2
+                    | MB_SETFOREGROUND
+                    | MB_TOPMOST,
+            )
+        };
+        resposta == ID_YES
+    }
+
+    /// Pergunta se o Deskside deve se desinstalar. `true` = sim.
+    ///
+    /// Bloqueia quem chama, como a `caixa_de_aviso`: quem pergunta é a thread
+    /// do menu da bandeja, e a resposta é o motivo da pergunta existir.
+    ///
+    /// O `MB_DEFBUTTON2` põe o foco no "Não". Um Enter distraído no menu não
+    /// pode desinstalar o programa — o padrão de uma pergunta destrutiva é
+    /// sempre não fazer nada.
+    fn caixa_de_desinstalar() -> bool {
+        let texto = "Desinstalar o Deskside deste computador?\n\n\
+             • este computador sai da sua conta\n\
+             • o programa para de iniciar com o Windows\n\
+             • os arquivos do Deskside são apagados\n\n\
+             Seus arquivos e programas não são tocados.\n\
+             Para voltar, é só instalar de novo e parear.";
         let texto: Vec<u16> = texto.encode_utf16().chain(std::iter::once(0)).collect();
         let titulo: Vec<u16> = "Deskside"
             .encode_utf16()
