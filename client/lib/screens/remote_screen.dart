@@ -24,6 +24,7 @@ import '../services/teclado_fisico.dart';
 import '../services/video_session.dart';
 import '../theme.dart';
 import '../widgets/profile_bar.dart';
+import '../widgets/ditado.dart';
 import '../widgets/remote_keyboard.dart';
 import '../widgets/transitions.dart';
 import 'automations_screen.dart' show runAutomationFlow;
@@ -86,6 +87,14 @@ class _RemoteScreenState extends State<RemoteScreen>
   bool _aspectResolved = false;
   String? _error;
   bool _keyboardVisible = false;
+
+  /// Caixa de ditado no lugar do teclado desenhado.
+  ///
+  /// Um modo, e não um painel a mais: as duas coisas ocupam a mesma faixa
+  /// embaixo da tela, e altura é o recurso mais escasso aqui — somar as duas
+  /// empurraria a tela do computador para fora da vista, que é justamente o
+  /// que a pessoa veio olhar.
+  bool _ditando = false;
 
   double _pendingScroll = 0;
   DateTime _lastMove = DateTime.fromMillisecondsSinceEpoch(0);
@@ -1130,6 +1139,41 @@ class _RemoteScreenState extends State<RemoteScreen>
       // Silencioso por padrão: comandos de controle são de alta frequência.
       messenger?.showSnackBar(SnackBar(content: Text(e.toString())));
     }
+  }
+
+  /// Entrega ao computador o texto que saiu da caixa de ditado.
+  ///
+  /// **Não aperta Enter.** Um bloco de texto chegando com Enter no fim enviaria
+  /// o formulário, rodaria a linha do terminal ou mandaria a mensagem — sem
+  /// que ninguém tenha pedido. Quem quiser Enter tem a tecla ao lado, e aí é
+  /// uma decisão, não um efeito colateral do ditado.
+  ///
+  /// Não passa pelo `_send` porque este é o caso em que a confirmação importa.
+  /// Lá, falha é silenciosa por padrão (comandos de mouse são de alta
+  /// frequência) e, com `avisarFalha`, o erro aparece mas a função volta como
+  /// se nada tivesse acontecido — o que aqui viraria um "texto enviado" em
+  /// cima de um texto que não foi. A pessoa acabou de falar uma frase inteira:
+  /// ela precisa saber se aquilo chegou.
+  Future<void> _ditar(String texto) async {
+    // Um bloco inteiro entrando de uma vez desfaz o rastro que o app mantinha
+    // da palavra em digitação — sugerir a partir dele seria sugerir sobre nada.
+    _typedWord.reset();
+    final messenger = ScaffoldMessenger.of(context);
+    final Map<String, dynamic> acao = {'kind': 'key_text', 'text': texto};
+    if (_video?.sendInput(acao) != true) {
+      try {
+        await widget.state.api.sendInput(widget.device.deviceId, acao);
+      } catch (e) {
+        if (mounted) {
+          messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+        }
+        return;
+      }
+    }
+    if (!mounted) return;
+    messenger.showSnackBar(
+      SnackBar(content: Text(widget.state.t.ditadoEnviado)),
+    );
   }
 
   ({double x, double y}) _norm(Offset local, Size box) => (
@@ -2403,8 +2447,15 @@ class _RemoteScreenState extends State<RemoteScreen>
                     ),
             ),
             if (isPortrait) _mediaStrip(atBottom: true),
-            if (showKeyboard)
+            if (showKeyboard && _ditando)
+              CaixaDeDitado(
+                t: widget.state.t,
+                onEnviar: _ditar,
+                onFechar: () => setState(() => _ditando = false),
+              ),
+            if (showKeyboard && !_ditando)
               RemoteKeyboard(
+                onDitar: () => setState(() => _ditando = true),
                 onText: (text) => _send({'kind': 'key_text', 'text': text}),
                 onKey: (key) => _send({'kind': 'key_press', 'key': key}),
                 onCombo: (mods, key) =>
@@ -2976,8 +3027,15 @@ class _RemoteScreenState extends State<RemoteScreen>
                   _keyboardVisible ? Icons.keyboard_hide : Icons.keyboard,
                   color: Colors.white,
                 ),
-                onPressed: () =>
-                    setState(() => _keyboardVisible = !_keyboardVisible),
+                onPressed: () {
+                  // Fechar a faixa também sai do ditado: o ícone da barra diz
+                  // "teclado", e reabrir tem de devolver o teclado — não a
+                  // caixa em que a pessoa estava três minutos atrás.
+                  setState(() {
+                    _keyboardVisible = !_keyboardVisible;
+                    if (!_keyboardVisible) _ditando = false;
+                  });
+                },
               ),
           ],
         ],

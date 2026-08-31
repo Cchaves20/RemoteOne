@@ -408,6 +408,41 @@ class Strings {
       "Affiche des mots au-dessus du clavier. Ne corrige jamais tout seul : rien ne change sans un appui.",
       'Muestra palabras sobre el teclado. Nunca corrige solo: solo cambia si tocas.');
 
+  // Ditado por voz. O reconhecimento é do próprio aparelho — o Deskside só
+  // recebe o texto pronto e o entrega ao computador.
+  String get ditadoTitulo =>
+      _t('Ditar texto', 'Dictate text', '语音输入', 'Dicter du texte', 'Dictar texto');
+  String get ditadoComo => _t(
+      'Toque no microfone do teclado do seu aparelho e fale. Confira o texto antes de enviar — é aqui que dá para corrigir.',
+      'Tap the microphone on your device keyboard and speak. Check the text before sending — here is where you can fix it.',
+      '点击设备键盘上的麦克风并说话。发送前请检查文字——这里才方便修改。',
+      "Touchez le microphone du clavier de votre appareil et parlez. Vérifiez le texte avant de l'envoyer — c'est ici qu'on peut le corriger.",
+      'Toca el micrófono del teclado de tu dispositivo y habla. Revisa el texto antes de enviarlo — aquí es donde puedes corregirlo.');
+  String get ditadoCampo => _t(
+      'O que escrever no computador',
+      'What to type on the computer',
+      '要在电脑上输入的内容',
+      "Ce qu'il faut écrire sur l'ordinateur",
+      'Qué escribir en el equipo');
+  String get ditadoEnviar =>
+      _t('Enviar', 'Send', '发送', 'Envoyer', 'Enviar');
+  String get ditadoLimpar =>
+      _t('Limpar', 'Clear', '清空', 'Effacer', 'Borrar');
+  String get ditadoTeclado => _t('Voltar ao teclado', 'Back to keyboard', '返回键盘',
+      'Revenir au clavier', 'Volver al teclado');
+  String get ditadoEnviado => _t(
+      'Texto enviado ao computador.',
+      'Text sent to the computer.',
+      '文字已发送到电脑。',
+      "Texte envoyé à l'ordinateur.",
+      'Texto enviado al equipo.');
+  String get ditadoSemEnter => _t(
+      'O envio não aperta Enter. Use a tecla Enter do teclado quando quiser.',
+      'Sending does not press Enter. Use the keyboard Enter key when you want to.',
+      '发送不会按回车。需要时请用键盘上的回车键。',
+      "L'envoi n'appuie pas sur Entrée. Utilisez la touche Entrée du clavier quand vous voulez.",
+      'El envío no pulsa Intro. Usa la tecla Intro del teclado cuando quieras.');
+
   // Arquivos
   String get files => _t('Arquivos', 'Files', '文件', 'Fichiers', 'Archivos');
   String get refresh =>

@@ -13,6 +13,13 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Teclado customizado** (`remote_keyboard.dart`): campo de texto + teclas
   que o celular não tem (Ctrl, Alt, Shift, Tab, Esc, setas, Enter, Del). Os
   modificadores são grudentos: Ctrl e depois C envia Ctrl+C.
+- **Ditado por voz** (`ditado.dart`): a tecla de microfone troca o teclado por
+  uma caixa de texto **nativa**, onde o botão de microfone do próprio aparelho
+  já funciona. O app não grava áudio nem pede permissão de microfone — quem
+  reconhece é o sistema, e o Deskside recebe texto pronto. O texto passa por
+  uma conferência no celular antes de ir: ditado erra alguns por cento das
+  palavras, e corrigir aqui custa um toque, enquanto corrigir do outro lado
+  custa setas e backspaces atravessando a rede. O envio **não aperta Enter**.
 - **Tela em tempo real**: os frames chegam por WebSocket (`/ws/viewer/{id}`),
   empurrados pelo backend, com borda visível, indicador de fps e vibração ao
   clicar.

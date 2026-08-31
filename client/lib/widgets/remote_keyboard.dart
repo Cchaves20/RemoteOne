@@ -41,6 +41,7 @@ class RemoteKeyboard extends StatefulWidget {
     required this.onKey,
     required this.onCombo,
     this.onReplace,
+    this.onDitar,
     this.typed,
     this.suggester,
   });
@@ -48,6 +49,12 @@ class RemoteKeyboard extends StatefulWidget {
   final void Function(String text) onText;
   final void Function(String specialKey) onKey;
   final void Function(List<String> modifiers, String key) onCombo;
+
+  /// Troca este teclado pela caixa de ditado. `null` esconde a tecla.
+  ///
+  /// A tecla fica na linha de baixo, à esquerda, porque é onde o microfone
+  /// mora nos teclados de sistema — e o dedo já vai para lá sem pensar.
+  final VoidCallback? onDitar;
 
   /// Apaga `backspaces` caracteres e digita `text` numa ação só. Sem isto a
   /// barra de sugestões não aparece — trocar a palavra em várias mensagens
@@ -370,11 +377,18 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
               Row(
                 children: [
                   _key(Text(_layerLabel), _cycleLayer, flex: 3),
+                  if (widget.onDitar != null)
+                    _key(const Icon(Icons.mic_none, size: 16), widget.onDitar!,
+                        flex: 3),
                   _key(const Text('Ctrl'), () => _toggleMod('ctrl'),
                       flex: 3, active: _mods.contains('ctrl')),
                   _key(const Text('Alt'), () => _toggleMod('alt'),
                       flex: 3, active: _mods.contains('alt')),
-                  _key(const Icon(Icons.space_bar, size: 16), () => _typeChar(' '), flex: 8),
+                  // Sete e não oito quando há microfone: a barra de espaço
+                  // devolve parte da largura em vez de espremer Ctrl e Alt,
+                  // que são as teclas que ninguém acerta por engano.
+                  _key(const Icon(Icons.space_bar, size: 16), () => _typeChar(' '),
+                      flex: widget.onDitar == null ? 8 : 7),
                   _key(const Text('.'), () => _typeChar('.')),
                   _key(const Icon(Icons.keyboard_return, size: 16),
                       () => _special('enter'),
