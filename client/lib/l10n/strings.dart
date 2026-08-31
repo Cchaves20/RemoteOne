@@ -408,18 +408,11 @@ class Strings {
       "Affiche des mots au-dessus du clavier. Ne corrige jamais tout seul : rien ne change sans un appui.",
       'Muestra palabras sobre el teclado. Nunca corrige solo: solo cambia si tocas.');
 
-  // A caixa de escrita: o teclado do próprio aparelho, com tudo o que ele traz
-  // (correção, previsão, dicionário pessoal, deslize, emoji e o microfone). O
-  // Deskside não reconhece voz nem corrige nada — recebe texto pronto e o
-  // entrega ao computador.
-  String get ditadoTitulo => _t('Escrever ou ditar', 'Type or dictate', '输入或口述',
-      'Écrire ou dicter', 'Escribir o dictar');
-  String get ditadoComo => _t(
-      'Digite com o teclado do seu aparelho, que tem correção, previsão e o seu dicionário — ou toque no microfone dele e fale. Confira antes de enviar: é aqui que dá para corrigir.',
-      'Type with your device keyboard — it has autocorrect, prediction and your own dictionary — or tap its microphone and speak. Check the text before sending: here is where you can fix it.',
-      '用设备自带的键盘输入，它有自动更正、联想和你的个人词库——或者点击键盘上的麦克风说话。发送前请检查：这里才方便修改。',
-      "Écrivez avec le clavier de votre appareil — il a la correction, la prédiction et votre propre dictionnaire — ou touchez son microphone et parlez. Vérifiez le texte avant de l'envoyer : c'est ici qu'on peut le corriger.",
-      'Escribe con el teclado de tu dispositivo — tiene corrección, predicción y tu propio diccionario — o toca su micrófono y habla. Revisa el texto antes de enviarlo: aquí es donde puedes corregirlo.');
+  // O outro teclado: um campo nativo, onde o aparelho põe o que já tem —
+  // correção, previsão, dicionário pessoal, deslize, emoji e o microfone. Sem
+  // título nem texto de ajuda de propósito: é um teclado que substitui o
+  // outro, e teclado não se apresenta. Só o aviso do Enter fica, embaixo do
+  // campo, porque não é descobrível de nenhum outro jeito.
   String get ditadoCampo => _t(
       'O que escrever no computador',
       'What to type on the computer',
@@ -439,11 +432,11 @@ class Strings {
       "Texte envoyé à l'ordinateur.",
       'Texto enviado al equipo.');
   String get ditadoSemEnter => _t(
-      'O envio não aperta Enter. Use a tecla Enter do teclado quando quiser.',
-      'Sending does not press Enter. Use the keyboard Enter key when you want to.',
-      '发送不会按回车。需要时请用键盘上的回车键。',
-      "L'envoi n'appuie pas sur Entrée. Utilisez la touche Entrée du clavier quand vous voulez.",
-      'El envío no pulsa Intro. Usa la tecla Intro del teclado cuando quieras.');
+      'O envio não aperta Enter.',
+      'Sending does not press Enter.',
+      '发送不会按回车。',
+      "L'envoi n'appuie pas sur Entrée.",
+      'El envío no pulsa Intro.');
 
   // Arquivos
   String get files => _t('Arquivos', 'Files', '文件', 'Fichiers', 'Archivos');

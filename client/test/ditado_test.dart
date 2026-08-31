@@ -126,12 +126,26 @@ void main() {
       expect(campo.enableSuggestions, isTrue);
     });
 
-    testWidgets('o botão de voltar devolve o teclado', (tester) async {
+    testWidgets('o interruptor devolve o teclado desenhado', (tester) async {
+      // A outra metade da troca. O microfone leva para cá; esta tecla, no
+      // mesmo canto da linha de baixo, leva de volta. Uma tecla só, sempre no
+      // mesmo lugar, nos dois sentidos.
       var fechou = false;
       await _montar(tester, aoFechar: () => fechou = true);
       await tester.tap(find.byKey(chaveDitadoTeclado));
       await tester.pump();
       expect(fechou, isTrue);
+    });
+
+    testWidgets('o aviso de que não aperta Enter está sempre à vista',
+        (tester) async {
+      // Não é decoração: é a diferença entre escrever um comando e executá-lo,
+      // e não há como descobrir isso tentando — quem tentar, executou. Saiu do
+      // topo da caixa para debaixo do campo quando o cabeçalho foi removido, e
+      // este teste existe para não sumir junto na próxima limpeza.
+      await _montar(tester);
+      expect(find.text(const Strings(AppLanguage.ptBr).ditadoSemEnter),
+          findsOneWidget);
     });
 
     testWidgets('o envio não manda Enter junto', (tester) async {

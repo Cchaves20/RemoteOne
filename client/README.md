@@ -14,7 +14,8 @@ Aplicativo usado no celular/tablet para controlar os computadores.
   que o celular não tem (Ctrl, Alt, Shift, Tab, Esc, setas, Enter, Del). Os
   modificadores são grudentos: Ctrl e depois C envia Ctrl+C.
 - **Caixa de escrita e ditado** (`ditado.dart`): a tecla de microfone troca o
-  teclado desenhado por um campo de texto **nativo** — e com ele vem tudo o que
+  teclado desenhado por um campo de texto **nativo**, e a tecla de teclado — no
+  mesmo canto da linha de baixo — troca de volta. Com o campo nativo vem o que
   o aparelho já tem: correção automática, previsão de palavra, digitação por
   deslize, emoji, o microfone e o **dicionário pessoal** de quem digita. Nada
   disso é alcançável pelo teclado desenhado: o iOS não expõe o QuickType por

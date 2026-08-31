@@ -14,6 +14,14 @@
 /// isso que esta caixa existe como um segundo teclado, e não como um detalhe
 /// do ditado.
 ///
+/// A troca é simétrica e mora sempre no mesmo canto da linha de baixo: o
+/// microfone leva o teclado desenhado para cá, e a tecla de teclado leva de
+/// volta. Por isso esta caixa não tem título, ícone nem texto de apresentação:
+/// ela **substitui** um teclado, e teclado não se apresenta. O único texto que
+/// ficou é o aviso de que enviar não aperta Enter, embaixo do campo, porque
+/// essa é a única coisa aqui que ninguém descobre tentando — quem tentar, já
+/// executou o comando.
+///
 /// A divisão com o `remote_keyboard.dart` cabe numa frase: **texto vem aqui,
 /// comando vai lá.** O teclado desenhado é insubstituível no que esta caixa
 /// não faz — Ctrl, Alt, Esc, Tab, setas, atalhos, tecla a tecla. Num terminal,
@@ -130,7 +138,6 @@ class _CaixaDeDitadoState extends State<CaixaDeDitado> {
   Widget build(BuildContext context) {
     final t = widget.t;
     final cores = Theme.of(context).colorScheme;
-    final textos = Theme.of(context).textTheme;
 
     return Material(
       color: cores.surfaceContainerHighest,
@@ -142,31 +149,6 @@ class _CaixaDeDitadoState extends State<CaixaDeDitado> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Icon(Icons.mic_none, size: 18, color: cores.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(t.ditadoTitulo, style: textos.titleSmall),
-                  ),
-                  TextButton.icon(
-                    key: chaveDitadoTeclado,
-                    onPressed: widget.onFechar,
-                    icon: const Icon(Icons.keyboard, size: 18),
-                    label: Text(t.ditadoTeclado),
-                  ),
-                ],
-              ),
-              Text(t.ditadoComo, style: textos.bodySmall),
-              // Fica **acima** do campo, junto da outra explicação, e não na
-              // linha dos botões: ali dentro de um `Expanded`, ao lado de dois
-              // botões, esta frase quebraria em quatro linhas num celular e
-              // comeria a altura que a tela do computador precisa.
-              Text(
-                t.ditadoSemEnter,
-                style: textos.bodySmall?.copyWith(color: cores.outline),
-              ),
-              const SizedBox(height: 8),
               TextField(
                 key: chaveDitadoCampo,
                 controller: _controle,
@@ -196,6 +178,13 @@ class _CaixaDeDitadoState extends State<CaixaDeDitado> {
                   hintText: t.ditadoCampo,
                   border: const OutlineInputBorder(),
                   isDense: true,
+                  // Embaixo do campo, e não como texto explicativo em cima: é
+                  // a única coisa que **precisa** estar sempre visível (não é
+                  // descobrível de nenhum outro jeito, e é a diferença entre
+                  // escrever um comando e executá-lo), e ali ela ocupa a
+                  // altura que o `helperText` já reservava.
+                  helperText: t.ditadoSemEnter,
+                  helperMaxLines: 2,
                   // O contador só interessa perto do teto; mostrá-lo sempre
                   // seria um número aceso embaixo de um campo que quase nunca
                   // passa de uma frase.
@@ -204,9 +193,19 @@ class _CaixaDeDitadoState extends State<CaixaDeDitado> {
                       : '',
                 ),
               ),
-              const SizedBox(height: 4),
               Row(
                 children: [
+                  // O interruptor de volta, no mesmo canto em que o microfone
+                  // fica na linha de baixo do teclado desenhado. É a metade
+                  // que faltava: uma tecla só, sempre no mesmo lugar, que
+                  // troca de teclado nos dois sentidos — em vez de uma tecla
+                  // para ir e um botão de texto no cabeçalho para voltar.
+                  IconButton(
+                    key: chaveDitadoTeclado,
+                    tooltip: t.ditadoTeclado,
+                    onPressed: widget.onFechar,
+                    icon: const Icon(Icons.keyboard),
+                  ),
                   const Spacer(),
                   TextButton(
                     key: chaveDitadoLimpar,
