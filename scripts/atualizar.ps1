@@ -629,13 +629,14 @@ if ($Backup) {
 # com sucesso: parece verificação, e não é.
 $esperado = @(
     "pairing", "input", "screen-jpeg", "apps",
-    "wake-on-lan", "totp", "webrtc-signaling", "system-stats",
+    "totp", "webrtc-signaling", "system-stats",
     "media-keys", "file-transfer", "foreground-app", "audio-stream",
     "ice-servers", "clipboard", "monitors", "control-profiles",
     "keep-awake", "brightness", "launch-many", "window-zones",
     "automations", "signup-verification", "session-revocation",
     "contact-verification", "close-all",
-    "focus-app", "automation-schedule", "save-all", "presentation-mode", "rate-limit"
+    "focus-app", "automation-schedule", "save-all", "presentation-mode",
+    "rate-limit", "agent-unpair", "planos"
 )
 
 Titulo "Conferência"

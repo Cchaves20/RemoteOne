@@ -216,8 +216,6 @@ class Strings {
       '地址已复制', 'Adresse copiée', 'Dirección copiada');
   String get online => _t('Online', 'Online', '在线', 'En ligne', 'En línea');
   String get offline => _t('Offline', 'Offline', '离线', 'Hors ligne', 'Desconectado');
-  String get wake => _t('Ligar (Wake-on-LAN)', 'Turn on (Wake-on-LAN)', '开机 (Wake-on-LAN)',
-      'Allumer (Wake-on-LAN)', 'Encender (Wake-on-LAN)');
   String get control => _t('Controlar', 'Control', '控制', 'Contrôler', 'Controlar');
   String get rename => _t('Renomear', 'Rename', '重命名', 'Renommer', 'Renombrar');
   String get shutdown => _t('Desligar', 'Shut down', '关机', 'Éteindre', 'Apagar');
@@ -255,12 +253,6 @@ class Strings {
       '已发送：${powerLabel(action)}。',
       '${powerLabel(action)} envoyé.',
       '${powerLabel(action)} enviado.');
-  String get wakeSent => _t(
-      'Sinal enviado. O computador deve ligar em instantes.',
-      'Signal sent. The computer should turn on shortly.',
-      '信号已发送。电脑应该很快开机。',
-      "Signal envoyé. L'ordinateur devrait s'allumer sous peu.",
-      'Señal enviada. El equipo debería encenderse en breve.');
 
   // Aplicativos do computador
   String get apps => _t('Aplicativos', 'Apps', '应用', 'Applications', 'Aplicaciones');
@@ -356,11 +348,6 @@ class Strings {
       '如何控制（手势）', 'Comment contrôler (gestes)', 'Cómo controlar (gestos)');
   String get howToControlSub => _t('Toque, arrastar, segurar, rolar', 'Tap, drag, hold, scroll',
       '点按、拖动、长按、滚动', 'Toucher, glisser, maintenir, défiler', 'Tocar, arrastrar, mantener, desplazar');
-  String get turnOnPc => _t('Ligar o PC (Wake-on-LAN)', 'Turn on the PC (Wake-on-LAN)',
-      '开机 (Wake-on-LAN)', 'Allumer le PC (Wake-on-LAN)', 'Encender el PC (Wake-on-LAN)');
-  String get turnOnPcSub => _t('Como acordar um computador desligado',
-      'How to wake a computer that is off', '如何唤醒已关机的电脑',
-      'Comment réveiller un ordinateur éteint', 'Cómo despertar un equipo apagado');
   String version(String v) =>
       _t('Versão $v', 'Version $v', '版本 $v', 'Version $v', 'Versión $v');
 
@@ -1421,55 +1408,7 @@ class Strings {
         ),
       ];
 
-  // Wake-on-LAN (ajuda)
-  String get wolTitle => _t('Ligar o PC à distância', 'Turn on the PC remotely', '远程开机',
-      'Allumer le PC à distance', 'Encender el PC a distancia');
-  String get wolHowTitle =>
-      _t('Como funciona', 'How it works', '工作原理', 'Comment ça marche', 'Cómo funciona');
-  String get wolHowBody => _t(
-      'Um computador desligado não consegue receber comandos sozinho. Mas, se você tem outro computador seu ligado na mesma casa (na mesma internet), o Deskside usa esse que está ligado para "acordar" o que está desligado.\n\nResumindo: se você tem dois ou mais computadores na mesma rede e pelo menos um está ligado, o botão "Ligar" acende os outros — sem você precisar configurar nada.',
-      'A computer that is off cannot receive commands on its own. But if you have another computer of yours turned on in the same house (same network), Deskside uses that one to "wake" the one that is off.\n\nIn short: if you have two or more computers on the same network and at least one is on, the "Turn on" button wakes the others — with no setup.',
-      '关机的电脑无法自行接收命令。但如果你在同一处（同一网络）还有另一台开着的电脑，Deskside 会用它来"唤醒"已关机的那台。\n\n简单说：只要同一网络里有两台以上电脑，且至少一台开着，"开机"按钮就能唤醒其他电脑——无需任何配置。',
-      "Un ordinateur éteint ne peut pas recevoir de commandes seul. Mais si vous avez un autre de vos ordinateurs allumé dans la même maison (même réseau), Deskside l'utilise pour « réveiller » celui qui est éteint.\n\nEn bref : si vous avez deux ordinateurs ou plus sur le même réseau et qu'au moins un est allumé, le bouton « Allumer » réveille les autres — sans aucune configuration.",
-      'Un equipo apagado no puede recibir comandos por sí solo. Pero si tienes otro equipo tuyo encendido en la misma casa (misma red), Deskside usa ese para "despertar" al que está apagado.\n\nEn resumen: si tienes dos o más equipos en la misma red y al menos uno encendido, el botón "Encender" despierta a los demás — sin configurar nada.');
-  String get wolNote => _t(
-      'Se todos os seus computadores dessa casa estiverem desligados ao mesmo tempo, não dá para ligar nenhum à distância. É preciso deixar pelo menos um ligado.',
-      'If all your computers on that network are off at the same time, none can be turned on remotely. Keep at least one on.',
-      '如果那处的所有电脑同时关机，就无法远程开机。请至少保持一台开着。',
-      "Si tous vos ordinateurs de cette maison sont éteints en même temps, aucun ne peut être allumé à distance. Gardez-en au moins un allumé.",
-      'Si todos tus equipos de esa casa están apagados a la vez, no se puede encender ninguno a distancia. Deja al menos uno encendido.');
-  String get wolPrepareTitle => _t('Preparar o computador', 'Prepare the computer', '准备电脑',
-      "Préparer l'ordinateur", 'Preparar el equipo');
-  String get wolPrepareBody => _t(
-      'Para um computador poder ser aceso à distância, esse recurso precisa estar ativado nele. Em geral:\n\n•  Ligue a opção "Wake on LAN" (ligar pela rede) nas configurações do computador. Ela costuma ficar numa tela de configurações que aparece logo quando o PC liga. Se não achar, pesquise na internet "ativar Wake on LAN" com o modelo do seu computador.\n\n•  Se puder, conecte o computador por cabo de rede — por Wi-Fi esse recurso costuma não funcionar.\n\n•  Desligue o computador normalmente, mas deixe-o na tomada.',
-      'For a computer to be turned on remotely, this feature must be enabled on it. Usually:\n\n•  Turn on the "Wake on LAN" option in the computer settings. It is often on a settings screen that appears right when the PC turns on. If you cannot find it, search online for "enable Wake on LAN" with your computer model.\n\n•  If possible, connect the computer with a network cable — over Wi-Fi this feature often does not work.\n\n•  Turn the computer off normally, but keep it plugged in.',
-      '要让电脑能被远程开机，需要先在它上面启用该功能。通常：\n\n•  在电脑设置中启用"Wake on LAN"（网络唤醒）。它通常在开机时出现的设置界面里。如果找不到，可在网上搜索"启用 Wake on LAN"加上你的电脑型号。\n\n•  如果可以，请用网线连接电脑——通过 Wi-Fi 该功能通常无效。\n\n•  正常关机，但保持通电。',
-      "Pour qu'un ordinateur puisse être allumé à distance, cette fonction doit y être activée. En général :\n\n•  Activez l'option « Wake on LAN » dans les paramètres de l'ordinateur. Elle se trouve souvent sur un écran de configuration qui apparaît au démarrage du PC. Si vous ne la trouvez pas, cherchez en ligne « activer Wake on LAN » avec le modèle de votre ordinateur.\n\n•  Si possible, connectez l'ordinateur par câble réseau — en Wi-Fi cette fonction ne marche souvent pas.\n\n•  Éteignez l'ordinateur normalement, mais laissez-le branché.",
-      'Para que un equipo pueda encenderse a distancia, esta función debe estar activada en él. En general:\n\n•  Activa la opción "Wake on LAN" (encender por red) en la configuración del equipo. Suele estar en una pantalla de configuración que aparece al encender el PC. Si no la encuentras, busca en internet "activar Wake on LAN" con el modelo de tu equipo.\n\n•  Si puedes, conecta el equipo por cable de red — por Wi-Fi esta función suele no funcionar.\n\n•  Apaga el equipo normalmente, pero déjalo enchufado.');
-  String get wolRouterTitle => _t('Ligar de fora de casa (avançado)',
-      'Turn on from outside home (advanced)', '在外网开机（高级）',
-      "Allumer hors du domicile (avancé)", 'Encender fuera de casa (avanzado)');
-  String get wolRouterWarning => _t(
-      'Atenção: este modo "abre uma porta" no seu roteador para a internet. Isso deixa a sua rede um pouco mais exposta a riscos de segurança. Use só se tiver experiência. O modo normal (acima) é seguro e não mexe em nada da sua rede.',
-      'Warning: this mode "opens a door" on your router to the internet. That makes your network a bit more exposed to security risks. Use only if you have experience. The normal mode (above) is safe and does not touch your network.',
-      '注意：此模式会在你的路由器上向互联网"开一个端口"，会让你的网络更容易受到安全风险。仅在你有经验时使用。上面的普通模式是安全的，不会改动你的网络。',
-      "Attention : ce mode « ouvre une porte » sur votre routeur vers Internet. Cela expose un peu plus votre réseau aux risques de sécurité. À utiliser seulement si vous avez de l'expérience. Le mode normal (ci-dessus) est sûr et ne touche à rien de votre réseau.",
-      'Atención: este modo "abre una puerta" en tu router hacia internet. Eso deja tu red un poco más expuesta a riesgos de seguridad. Úsalo solo si tienes experiencia. El modo normal (arriba) es seguro y no toca nada de tu red.');
-  String get wolRouterBody => _t(
-      'O modo normal só funciona quando você e o computador ligado estão na mesma rede. Este modo avançado permite acender o PC mesmo estando longe de casa — mas depende do seu roteador e da sua operadora (algumas não permitem conexões de fora).',
-      'The normal mode only works when you and the computer that is on are on the same network. This advanced mode lets you turn on the PC even when away from home — but it depends on your router and your internet provider (some do not allow connections from outside).',
-      '普通模式只在你和开着的电脑处于同一网络时有效。此高级模式让你即使不在家也能开机——但取决于你的路由器和运营商（有些不允许外部连接）。',
-      "Le mode normal ne fonctionne que lorsque vous et l'ordinateur allumé êtes sur le même réseau. Ce mode avancé permet d'allumer le PC même loin de chez vous — mais cela dépend de votre routeur et de votre opérateur (certains n'autorisent pas les connexions de l'extérieur).",
-      'El modo normal solo funciona cuando tú y el equipo encendido están en la misma red. Este modo avanzado permite encender el PC incluso lejos de casa — pero depende de tu router y de tu operador (algunos no permiten conexiones desde fuera).');
-  String get wolRouterIdeaTitle =>
-      _t('Ideia geral', 'General idea', '总体思路', 'Idée générale', 'Idea general');
-  String get wolRouterIdea => _t(
-      '•  Nas configurações do roteador, cria-se uma regra que deixa o "sinal para ligar" chegar da internet até o computador em casa.\n•  Alguns roteadores já têm um botão pronto chamado "Wake on LAN".\n•  Se você não tem familiaridade com configurações de roteador, o mais seguro é ficar no modo normal (deixar um computador ligado em casa).',
-      '•  In the router settings, you create a rule that lets the "turn-on signal" reach the computer at home from the internet.\n•  Some routers already have a ready button called "Wake on LAN".\n•  If you are not familiar with router settings, the safest is to stay on the normal mode (keep a computer on at home).',
-      '•  在路由器设置中创建一条规则，让"开机信号"能从互联网到达家里的电脑。\n•  有些路由器已内置"Wake on LAN"按钮。\n•  如果你不熟悉路由器设置，最安全的做法是使用普通模式（在家保持一台电脑开着）。',
-      "•  Dans les paramètres du routeur, on crée une règle qui laisse le « signal d'allumage » atteindre l'ordinateur à la maison depuis Internet.\n•  Certains routeurs ont déjà un bouton « Wake on LAN ».\n•  Si vous n'êtes pas à l'aise avec les paramètres du routeur, le plus sûr est de rester en mode normal (garder un ordinateur allumé à la maison).",
-      '•  En la configuración del router, se crea una regla que deja que la "señal de encendido" llegue desde internet al equipo de casa.\n•  Algunos routers ya tienen un botón llamado "Wake on LAN".\n•  Si no tienes familiaridad con la configuración del router, lo más seguro es quedarte en el modo normal (dejar un equipo encendido en casa).');
-  // Manter o computador pronto (a alternativa genérica ao Wake-on-LAN)
+  // Manter o computador pronto: a única resposta genérica a um PC que dorme.
   String get keepAwakeTitle => _t('Manter pronto', 'Keep ready', '保持就绪',
       'Garder prêt', 'Mantener listo');
   String get keepAwakeSwitch => _t(
@@ -1479,11 +1418,11 @@ class Strings {
       'Ne pas laisser cet ordinateur se mettre en veille',
       'No dejar que este equipo se duerma');
   String get keepAwakeWhy => _t(
-      'Um computador que dorme só volta com Wake-on-LAN, e isso depende de configurações de fábrica que mudam de máquina para máquina. Deixando-o acordado, não há nada para acordar: ele continua alcançável de qualquer lugar, sem você configurar nada.\n\nA tela continua apagando normalmente — é dela que vem quase toda a economia de energia. Um notebook acordado com a tela apagada gasta pouco, algo como uma lâmpada fraca.',
-      'A sleeping computer only comes back with Wake-on-LAN, and that depends on factory settings that differ from machine to machine. Keeping it awake means there is nothing to wake: it stays reachable from anywhere, with no setup.\n\nThe screen still turns off normally — that is where almost all the power saving comes from. An awake laptop with the screen off uses little, about as much as a dim light bulb.',
-      '休眠的电脑只能靠网络唤醒（Wake-on-LAN）恢复，而这取决于因机器而异的出厂设置。让它保持唤醒，就没有什么需要唤醒的：它随时随地都可连接，无需任何配置。\n\n屏幕仍会正常熄灭——几乎所有的省电都来自屏幕。屏幕熄灭的笔记本耗电很少，大致相当于一盏暗灯。',
-      "Un ordinateur en veille ne revient qu'avec Wake-on-LAN, et cela dépend de réglages d'usine qui varient d'une machine à l'autre. En le gardant éveillé, il n'y a rien à réveiller : il reste joignable de partout, sans aucune configuration.\n\nL'écran continue de s'éteindre normalement — c'est de là que vient presque toute l'économie d'énergie. Un portable éveillé avec l'écran éteint consomme peu, comme une ampoule faible.",
-      'Un equipo que se duerme solo vuelve con Wake-on-LAN, y eso depende de ajustes de fábrica que cambian de una máquina a otra. Manteniéndolo despierto, no hay nada que despertar: sigue accesible desde cualquier lugar, sin configurar nada.\n\nLa pantalla se sigue apagando normalmente — de ahí viene casi todo el ahorro de energía. Un portátil despierto con la pantalla apagada gasta poco, como una bombilla tenue.');
+      'Um computador que dorme deixa de ser alcançável, e trazê-lo de volta depende de configurações de fábrica que mudam de máquina para máquina — quando existe. Deixando-o acordado, não há nada para acordar: ele continua alcançável de qualquer lugar, sem você configurar nada.\n\nA tela continua apagando normalmente — é dela que vem quase toda a economia de energia. Um notebook acordado com a tela apagada gasta pouco, algo como uma lâmpada fraca.',
+      'A sleeping computer stops being reachable, and bringing it back depends on factory settings that differ from machine to machine — when they exist at all. Keeping it awake means there is nothing to wake: it stays reachable from anywhere, with no setup.\n\nThe screen still turns off normally — that is where almost all the power saving comes from. An awake laptop with the screen off uses little, about as much as a dim light bulb.',
+      '休眠的电脑将无法连接，而把它唤醒取决于因机器而异的出厂设置——如果它有的话。让它保持唤醒，就没有什么需要唤醒的：它随时随地都可连接，无需任何配置。\n\n屏幕仍会正常熄灭——几乎所有的省电都来自屏幕。屏幕熄灭的笔记本耗电很少，大致相当于一盏暗灯。',
+      "Un ordinateur en veille n'est plus joignable, et le ramener dépend de réglages d'usine qui varient d'une machine à l'autre — quand ils existent. En le gardant éveillé, il n'y a rien à réveiller : il reste joignable de partout, sans aucune configuration.\n\nL'écran continue de s'éteindre normalement — c'est de là que vient presque toute l'économie d'énergie. Un portable éveillé avec l'écran éteint consomme peu, comme une ampoule faible.",
+      'Un equipo que se duerme deja de ser accesible, y traerlo de vuelta depende de ajustes de fábrica que cambian de una máquina a otra — cuando existen. Manteniéndolo despierto, no hay nada que despertar: sigue accesible desde cualquier lugar, sin configurar nada.\n\nLa pantalla se sigue apagando normalmente — de ahí viene casi todo el ahorro de energía. Un portátil despierto con la pantalla apagada gasta poco, como una bombilla tenue.');
   String get keepAwakeHolding => _t(
       'Ativo agora: este computador não vai dormir.',
       'Active now: this computer will not sleep.',
@@ -1497,17 +1436,17 @@ class Strings {
       "Activé, mais sans effet pour l'instant : l'ordinateur est sur batterie. Il sera de nouveau gardé éveillé dès qu'il sera branché — le maintenir sur batterie viderait l'appareil couvercle fermé.",
       'Encendido, pero sin efecto ahora: el equipo está con batería. Volverá a mantenerse despierto en cuanto se enchufe — mantenerlo con batería agotaría el aparato con la tapa cerrada.');
   String get keepAwakeOff => _t(
-      'Desligado: o computador dorme normalmente, e voltar a alcançá-lo depende de Wake-on-LAN.',
-      'Off: the computer sleeps normally, and reaching it again depends on Wake-on-LAN.',
-      '已关闭：电脑会正常休眠，再次连接需要依靠网络唤醒。',
-      "Désactivé : l'ordinateur se met en veille normalement, et le rejoindre dépend du Wake-on-LAN.",
-      'Apagado: el equipo se duerme normalmente, y volver a alcanzarlo depende de Wake-on-LAN.');
+      'Desligado: o computador dorme normalmente, e enquanto estiver dormindo você não consegue alcançá-lo.',
+      'Off: the computer sleeps normally, and while it sleeps you cannot reach it.',
+      '已关闭：电脑会正常休眠，休眠期间无法连接。',
+      "Désactivé : l'ordinateur se met en veille normalement, et pendant la veille vous ne pouvez pas le joindre.",
+      'Apagado: el equipo se duerme normalmente, y mientras duerme no puedes alcanzarlo.');
   String get keepAwakeLimits => _t(
-      'O que isto não cobre: fechar a tampa do notebook, desligar pelo menu Iniciar e queda de energia. Nesses casos o Wake-on-LAN continua sendo o caminho.',
-      'What this does not cover: closing the laptop lid, shutting down from the Start menu, and power outages. In those cases Wake-on-LAN is still the way.',
-      '本功能不涵盖：合上笔记本盖子、从开始菜单关机、断电。这些情况仍需依靠网络唤醒。',
-      "Ce que cela ne couvre pas : fermer le capot du portable, éteindre depuis le menu Démarrer et les coupures de courant. Dans ces cas, le Wake-on-LAN reste la solution.",
-      'Lo que esto no cubre: cerrar la tapa del portátil, apagar desde el menú Inicio y cortes de energía. En esos casos el Wake-on-LAN sigue siendo el camino.');
+      'O que isto não cobre: fechar a tampa do notebook, desligar pelo menu Iniciar e queda de energia. Nesses casos alguém precisa ligar o computador de novo.',
+      'What this does not cover: closing the laptop lid, shutting down from the Start menu, and power outages. In those cases someone has to turn the computer back on.',
+      '本功能不涵盖：合上笔记本盖子、从开始菜单关机、断电。这些情况需要有人重新开机。',
+      "Ce que cela ne couvre pas : fermer le capot du portable, éteindre depuis le menu Démarrer et les coupures de courant. Dans ces cas, quelqu'un doit rallumer l'ordinateur.",
+      'Lo que esto no cubre: cerrar la tapa del portátil, apagar desde el menú Inicio y cortes de energía. En esos casos alguien tiene que encender el equipo de nuevo.');
   String get keepAwakeOffline => _t(
       'O computador precisa estar ligado para mudar isto.',
       'The computer must be on to change this.',
@@ -1515,10 +1454,4 @@ class Strings {
       "L'ordinateur doit être allumé pour changer ceci.",
       'El equipo debe estar encendido para cambiar esto.');
 
-  String get wolRouterFuture => _t(
-      'Este modo avançado ainda será integrado ao botão "Ligar" numa próxima atualização.',
-      'This advanced mode will be integrated into the "Turn on" button in a future update.',
-      '此高级模式将在未来更新中集成到"开机"按钮。',
-      "Ce mode avancé sera intégré au bouton « Allumer » dans une future mise à jour.",
-      'Este modo avanzado se integrará al botón "Encender" en una próxima actualización.');
 }

@@ -30,7 +30,7 @@ Agente                          Backend
 
 | type | Campos | Quando |
 |---|---|---|
-| `hello` | `device_id`, `hostname`, `os`, `agent_version`, `mac?` | Primeira mensagem ao conectar (`mac` opcional, para Wake-on-LAN) |
+| `hello` | `device_id`, `hostname`, `os`, `agent_version`, `secret?` | Primeira mensagem ao conectar (ver "o segredo do agente") |
 | `heartbeat` | — | Periódico, mantém a sessão viva |
 | `app_list` | `request_id`, `apps[]` (`id`, `name`, `icon?`) | Resposta a um `list_apps`; `icon` é o ícone real do programa em PNG base64 (ver "pergunta e resposta" abaixo) |
 | `file_list` | `request_id`, `listing?` (`path`, `parent?`, `entries[]`), `error?` | Resposta a um `list_files`. Vem `listing` **ou** `error` — pasta sem permissão não pode chegar ao app como pasta vazia |
@@ -52,7 +52,6 @@ Agente                          Backend
 | `start_stream` | `max_fps`, `quality?`, `max_width?` | Inicia a transmissão da tela; `quality`/`max_width` (opcionais) vêm do ajuste de qualidade do app (Etapa 7) |
 | `stop_stream` | — | Encerra a transmissão da tela |
 | `power` | `action` (`shutdown`/`restart`/`suspend`) | Desliga, reinicia ou suspende o computador |
-| `wake` | `mac` | Pede a este agente que acorde (Wake-on-LAN) um vizinho da LAN pelo MAC |
 | `list_apps` | `request_id`, `kind` (`desktop`/`installed`/`running`) | Pede a lista de aplicativos; o agente responde com `app_list`. `desktop` = atalhos da área de trabalho (com ícones), usado pela dock |
 | `launch_app` | `id` (caminho do atalho) | Abre um programa no computador |
 | `close_app` | `id` (PID) | Encerra um programa em execução |

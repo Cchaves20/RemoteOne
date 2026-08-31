@@ -1,16 +1,14 @@
 # Instalar o agente (rodar sem terminal)
 
-Para usar o Deskside no dia a dia — inclusive **desligar o PC pelo app** e
-depois **acordá-lo com Wake-on-LAN** — o computador não pode depender de um
-terminal aberto. O agente precisa:
+Para usar o Deskside no dia a dia — inclusive **reiniciar o PC pelo app** — o
+computador não pode depender de um terminal aberto. O agente precisa:
 
 - iniciar sozinho quando você faz login;
 - rodar oculto, sem janela;
-- voltar sozinho depois de reiniciar, suspender ou acordar por Wake-on-LAN.
+- voltar sozinho depois de reiniciar ou de acordar da suspensão.
 
-> Por que isso importa para o desligar/WoL: se o agente só roda no terminal, ao
-> desligar o PC pelo app não há como ele voltar — e mesmo acordando com
-> Wake-on-LAN, nada reconecta.
+> Por que isso importa: se o agente só roda no terminal, ao reiniciar o PC pelo
+> app não há como ele voltar — a máquina liga e nada reconecta.
 
 ## Instalar
 
@@ -349,8 +347,8 @@ limpa pode não ter. Instale o *Microsoft Visual C++ Redistributable (x64)*, que
 1. Reinicie o PC e **não abra terminal nenhum**.
 2. `.\deskside-agent.exe status` (ou o app) deve mostrar o agente de pé.
 3. No app, o computador aparece **Online**.
-4. Desligar pelo app e depois acordar com Wake-on-LAN passa a funcionar sem
-   ninguém tocar na máquina.
+4. Reiniciar pelo app passa a funcionar sem ninguém tocar na máquina: o
+   agente volta sozinho depois do boot.
 
 Para o ciclo completo sem tocar no PC (IP fixo, backend no boot, login
 automático), veja [`pc-sempre-pronto.md`](pc-sempre-pronto.md).

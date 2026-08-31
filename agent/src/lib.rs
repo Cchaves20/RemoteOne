@@ -37,7 +37,6 @@ pub mod salvar;
 pub mod setup;
 pub mod system_info;
 pub mod webrtc;
-pub mod wol;
 
 use std::path::PathBuf;
 

@@ -35,7 +35,7 @@ Documentação por etapa:
 - [`docs/som-do-computador.md`](docs/som-do-computador.md) — ouvir no telefone o que toca no computador
 - [`docs/monitor-e-midia.md`](docs/monitor-e-midia.md) — painéis retráteis de CPU/memória/disco e de controle de mídia
 - [`docs/instalar-no-iphone.md`](docs/instalar-no-iphone.md) — instalar o app no iPhone sem Mac (sideload)
-- [`docs/rodar-sem-terminal.md`](docs/rodar-sem-terminal.md) — agente e backend em segundo plano (sem terminal; base para desligar/Wake-on-LAN)
+- [`docs/rodar-sem-terminal.md`](docs/rodar-sem-terminal.md) — agente e backend em segundo plano (sem terminal; base para o PC voltar sozinho depois de reiniciar)
 - [`docs/pc-sempre-pronto.md`](docs/pc-sempre-pronto.md) — IP fixo + backend no boot + login automático (controlar sem tocar no PC)
 - [`docs/estado-do-projeto.md`](docs/estado-do-projeto.md) — o que está pronto, o que falta e o que foi cortado do escopo
 - [`docs/plano-4.0.md`](docs/plano-4.0.md) — automações, IA e outros sistemas: arquitetura e ordem

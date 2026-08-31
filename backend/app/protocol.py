@@ -20,9 +20,6 @@ class Hello(BaseModel):
     hostname: str
     os: str
     agent_version: str
-    # MAC da placa de rede local (para Wake-on-LAN). Opcional: agentes antigos
-    # ou máquinas sem MAC resolvido não enviam.
-    mac: str | None = None
     #: O segredo deste computador, e os três valores dizem coisas diferentes:
     #:
     #: - **ausente** (`None`): agente antigo, que não sabe o que é segredo. É

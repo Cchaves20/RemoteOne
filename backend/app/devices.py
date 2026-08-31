@@ -924,58 +924,6 @@ async def focus_app(
         )
 
 
-@router.post("/devices/{device_id}/wake", status_code=status.HTTP_204_NO_CONTENT)
-async def wake_device(
-    device_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> None:
-    """Acorda um computador desligado via Wake-on-LAN (peer-to-peer).
-
-    O backend não alcança a LAN do usuário: ele escolhe outro computador da
-    conta que esteja **online na mesma rede** (mesmo IP público) e pede que ele
-    envie o pacote mágico ao MAC do alvo.
-    """
-    target = _owned_device_or_404(db, device_id, current_user)
-
-    if manager.is_online(device_id):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="o computador já está online"
-        )
-    if not target.mac_address:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="MAC do computador desconhecido — conecte o agente uma vez para registrá-lo",
-        )
-    if not target.last_public_ip:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="rede do computador desconhecida ainda",
-        )
-
-    # Procura um peer da conta, online, na mesma rede local (mesmo IP público).
-    peer_id: str | None = None
-    for device in pairing.list_devices(db, current_user):
-        if device.device_id == device_id:
-            continue
-        if manager.is_online(device.device_id) and (
-            manager.public_ip(device.device_id) == target.last_public_ip
-        ):
-            peer_id = device.device_id
-            break
-
-    if peer_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "nenhum computador ligado na mesma rede para acordar este. "
-                "Deixe outro PC ligado nessa rede ou use o modo roteador."
-            ),
-        )
-
-    await manager.send_to_agent(peer_id, {"type": "wake", "mac": target.mac_address})
-
-
 @router.post("/devices/{device_id}/screen/start", status_code=status.HTTP_204_NO_CONTENT)
 async def start_screen(
     device_id: str,

@@ -39,10 +39,9 @@ Aplicativo usado no celular/tablet para controlar os computadores.
   borda. Fica em pé à direita na horizontal e deitada embaixo na vertical;
   some no modo lupa. Os ícones são os **reais** de cada programa (o agente
   extrai do atalho); sem ícone, mostra a inicial do nome.
-- **Ligar (Wake-on-LAN)**: computadores offline mostram "Ligar" no menu — o
-  backend usa outro PC seu ligado na mesma rede para enviar o pacote mágico
-  (peer-to-peer, sem configuração). Tela de ajuda em Configurações explica o
-  modo padrão e o modo avançado (roteador) com aviso de segurança.
+- **Manter pronto** (menu do computador): impede que aquela máquina durma
+  enquanto estiver na tomada, para ela continuar alcançável sem depender de
+  ajuste nenhum de firmware. Ver [`docs/pc-sempre-pronto.md`](../docs/pc-sempre-pronto.md).
 - **Ações do computador** (menu na lista): controlar, **renomear**, **desligar/
   reiniciar/suspender** (energia) e **remover** da conta.
 - **Qualidade da tela ajustável** (Econômico/Equilibrado/Nítido): define fps,

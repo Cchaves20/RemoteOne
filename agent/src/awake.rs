@@ -1,11 +1,16 @@
 //! Manter o computador pronto para ser controlado de longe.
 //!
-//! O problema que isto resolve não é técnico, é de instalação. Acordar uma
-//! máquina adormecida exige Wake-on-LAN, e Wake-on-LAN exige a placa de rede
-//! armada no firmware e no driver - coisas que variam de computador para
-//! computador e que nenhum programa consegue configurar por conta própria.
-//! Nenhum produto resolveu isso, porque não é resolvível por software: uma
-//! máquina desligada não roda software.
+//! O problema que isto resolve não é técnico, é de instalação. Uma máquina
+//! adormecida não roda software, então nada que o agente faça a traz de volta:
+//! acordá-la depende da placa de rede armada no firmware e no driver, coisas
+//! que variam de computador para computador e que nenhum programa configura
+//! por conta própria.
+//!
+//! O Deskside já tentou esse caminho - havia um Wake-on-LAN aqui, que pedia a
+//! outro computador da mesma rede que mandasse o pacote mágico. Funcionava
+//! quando funcionava: exigia dois computadores na conta, um deles ligado, na
+//! mesma rede, com o firmware certo. Explicar tudo isso custava mais telas do
+//! que o recurso valia, e o botão falhava calado nos casos mais comuns.
 //!
 //! A saída é inverter a pergunta. Em vez de "como acordar de qualquer jeito",
 //! **não deixar adormecer** - e isso, sim, é genérico. O Windows tem uma API
@@ -13,8 +18,9 @@
 //! mexe no plano de energia de ninguém e desaparece sozinha quando o agente
 //! sai. A tela continua apagando, que é de onde vem quase toda a economia.
 //!
-//! O Wake-on-LAN continua existindo e não muda: ele cobre o que fica de fora
-//! daqui - tampa fechada, desligamento manual, queda de energia.
+//! O que fica de fora continua de fora, e o app diz isso em vez de prometer
+//! uma saída: tampa fechada, desligamento manual e queda de energia pedem
+//! alguém perto da máquina.
 
 /// De onde vem a energia do computador agora.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

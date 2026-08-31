@@ -1290,7 +1290,6 @@ dependencies = [
  "futures-util",
  "gethostname 0.5.0",
  "image",
- "mac_address",
  "mslnk",
  "openh264",
  "rand 0.8.7",
@@ -3068,16 +3067,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mac_address"
-version = "1.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0aeb26bf5e836cc1c341c8106051b573f1766dfa05aa87f0b98be5e51b02303"
-dependencies = [
- "nix 0.29.0",
- "winapi",
-]
-
-[[package]]
 name = "mach2"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3361,19 +3350,6 @@ dependencies = [
  "libc",
  "memoffset 0.7.1",
  "pin-utils",
-]
-
-[[package]]
-name = "nix"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
-dependencies = [
- "bitflags 2.13.1",
- "cfg-if",
- "cfg_aliases",
- "libc",
- "memoffset 0.9.1",
 ]
 
 [[package]]
@@ -6567,7 +6543,7 @@ dependencies = [
  "ipnet",
  "lazy_static",
  "log",
- "nix 0.26.4",
+ "nix",
  "portable-atomic",
  "rand 0.9.5",
  "thiserror 1.0.69",

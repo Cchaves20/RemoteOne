@@ -406,10 +406,6 @@ class AppState extends ChangeNotifier {
     await api.powerDevice(device.deviceId, action);
   }
 
-  Future<void> wakeDevice(Device device) async {
-    await api.wakeDevice(device.deviceId);
-  }
-
   // --- aplicativos do computador ---------------------------------------------
 
   Future<List<RemoteApp>> listApps(Device device, {String kind = 'installed'}) =>

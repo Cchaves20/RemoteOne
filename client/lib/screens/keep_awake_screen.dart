@@ -6,9 +6,9 @@ import '../services/app_state.dart';
 
 /// Manter um computador pronto para ser alcançado.
 ///
-/// A tela existe separada da ajuda do Wake-on-LAN porque a escolha é **de um
-/// computador**, e não do aplicativo: um desktop na sala e um notebook que
-/// viaja pedem respostas diferentes.
+/// A tela pende de cada computador, e não das configurações do aplicativo,
+/// porque a escolha é **de um computador**: um desktop na sala e um notebook
+/// que viaja pedem respostas diferentes.
 class KeepAwakeScreen extends StatefulWidget {
   const KeepAwakeScreen({super.key, required this.state, required this.device});
 

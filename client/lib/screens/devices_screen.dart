@@ -167,21 +167,6 @@ class _DevicesScreenState extends State<DevicesScreen> {
     );
   }
 
-  Future<void> _wake(Device device) async {
-    final t = widget.state.t;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await widget.state.wakeDevice(device);
-      if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text(t.wakeSent)));
-      }
-    } catch (e) {
-      if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
-      }
-    }
-  }
-
   Future<void> _confirmPower(Device device, String action) async {
     final t = widget.state.t;
     final ok = await showDialog<bool>(
@@ -214,8 +199,6 @@ class _DevicesScreenState extends State<DevicesScreen> {
       icon: const Icon(Icons.more_vert),
       onSelected: (value) {
         switch (value) {
-          case 'wake':
-            _wake(d);
           case 'open':
             _openControl(d);
           case 'apps':
@@ -245,14 +228,6 @@ class _DevicesScreenState extends State<DevicesScreen> {
       itemBuilder: (context) {
         final t = widget.state.t;
         return [
-          if (!d.online)
-            PopupMenuItem(
-              value: 'wake',
-              child: ListTile(
-                leading: const Icon(Icons.power),
-                title: Text(t.wake),
-              ),
-            ),
           PopupMenuItem(
             value: 'open',
             child: ListTile(

@@ -240,10 +240,6 @@ class Device(Base):
     os: Mapped[str] = mapped_column(String(32))
     hostname: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-    # Wake-on-LAN: MAC da máquina e o último IP público visto (agrupa quem está
-    # na mesma rede local, para escolher um "peer" ligado que envie o pacote).
-    mac_address: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    last_public_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     #: O segredo que o agente apresenta para provar que é este computador.
     #:
     #: Antes disto, o `device_id` fazia esse papel sozinho — sem nunca ter sido

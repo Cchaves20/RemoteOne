@@ -42,7 +42,7 @@ escolha — vai parecer dívida.
 |---|---|---|
 | MVP | login, pareamento, mouse, teclado, tela, abrir apps | ✅ completa |
 | 2.0 | arquivos, área de transferência, monitoramento, perfis, multimídia | ✅ completa |
-| 3.0 | Wake-on-LAN, áudio, webcam, microfone, gamepad | ✅ completa **como redefinida** |
+| 3.0 | ligar à distância, áudio, webcam, microfone, gamepad | ✅ completa **como redefinida** |
 | 4.0 | IA, automações, suporte completo aos SOs | ⚠️ automações ✅; IA 🚫 cortada; SOs ❌ — ver [`plano-4.0.md`](plano-4.0.md) |
 
 ## O que foi cortado, e por quê
@@ -176,7 +176,7 @@ falta para o Deskside poder ser vendido:
 
 Vale registrar, porque não aparece em nenhuma tabela acima: WebRTC com TURN
 próprio, dock de aplicativos, várias telas, teclado com sugestões e correção,
-zoom para acessibilidade, "manter pronto" (a inversão do Wake-on-LAN), biometria,
+zoom para acessibilidade, "manter pronto" (não deixar o PC dormir), biometria,
 cinco idiomas, mouse e teclado físicos no iPad, migração automática de
 configuração na troca de nome, e um script que atualiza agente, app e VPS de um
 terminal só.

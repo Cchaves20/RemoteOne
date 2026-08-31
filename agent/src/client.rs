@@ -203,7 +203,6 @@ pub struct AgentIdentity {
     pub hostname: String,
     pub os: String,
     pub agent_version: String,
-    pub mac: Option<String>,
     /// Onde mora o segredo deste computador. `None` nos testes, e nas duas
     /// situações significa a mesma coisa: "sei guardar um, mas não tenho".
     pub secret_path: Option<std::path::PathBuf>,
@@ -230,7 +229,6 @@ impl AgentIdentity {
             hostname: self.hostname.clone(),
             os: self.os.clone(),
             agent_version: self.agent_version.clone(),
-            mac: self.mac.clone(),
             secret: Some(secret),
         }
     }
@@ -1978,12 +1976,6 @@ fn handle_server_text(
                 eprintln!("Falha ao executar comando de energia: {e}");
             }
         }
-        Ok(ServerMessage::Wake { mac }) => {
-            println!("Acordando vizinho na LAN (Wake-on-LAN) → {mac}");
-            if let Err(e) = crate::wol::send_magic_packet(&mac) {
-                eprintln!("Falha ao enviar pacote mágico: {e}");
-            }
-        }
         Ok(ServerMessage::ListApps { request_id, kind }) => {
             return Some(Action::ListApps { request_id, kind });
         }
@@ -2240,7 +2232,6 @@ mod tests {
             hostname: "dell-g5".into(),
             os: "linux".into(),
             agent_version: "0.1.0".into(),
-            mac: Some("01:23:45:AB:CD:EF".into()),
             secret_path: None,
         };
         assert_eq!(
@@ -2250,7 +2241,6 @@ mod tests {
                 hostname: "dell-g5".into(),
                 os: "linux".into(),
                 agent_version: "0.1.0".into(),
-                mac: Some("01:23:45:AB:CD:EF".into()),
                 // Vazio, e não ausente: é o pedido de adoção. Ausente diria
                 // "sou um agente antigo", e o servidor não emitiria segredo
                 // nenhum para este computador.
@@ -2274,7 +2264,6 @@ mod tests {
             hostname: "pc".into(),
             os: "linux".into(),
             agent_version: "0.1.0".into(),
-            mac: None,
             secret_path: Some(caminho.clone()),
         };
 
@@ -2308,7 +2297,6 @@ mod tests {
             hostname: "pc".into(),
             os: "linux".into(),
             agent_version: "0.1.0".into(),
-            mac: None,
             secret_path: Some(caminho.clone()),
         };
         identity.guardar_segredo(Some("bom".into()));

@@ -508,18 +508,6 @@ class ApiClient {
     }
   }
 
-  /// Acorda um computador desligado via Wake-on-LAN (usa outro PC ligado na
-  /// mesma rede como "peer"). Lança ApiException(409) quando não há peer.
-  Future<void> wakeDevice(String deviceId) async {
-    final res = await _http.post(
-      _uri('/api/v1/devices/$deviceId/wake'),
-      headers: _authHeaders,
-    );
-    if (res.statusCode != 204) {
-      throw _error(res);
-    }
-  }
-
   // --- aplicativos do computador ---------------------------------------------
 
   /// Lista os aplicativos: `kind` = 'installed' (instalados) ou 'running'

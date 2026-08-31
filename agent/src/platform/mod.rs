@@ -1,7 +1,7 @@
 //! Camada de abstração de plataforma.
 //!
 //! Toda chamada específica de sistema operacional (captura de tela, injeção
-//! de mouse/teclado, Wake-on-LAN, monitoramento de hardware) deve passar por
+//! de mouse/teclado, energia, monitoramento de hardware) deve passar por
 //! este trait. O restante do agente permanece portável e testável em
 //! qualquer sistema, inclusive nos runners de CI.
 

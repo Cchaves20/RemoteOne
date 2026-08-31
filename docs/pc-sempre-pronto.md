@@ -14,12 +14,17 @@ Não precisa de administrador, de BIOS, de placa de rede nem de roteador. A
 tela continua apagando normalmente — é dela que vem quase toda a economia de
 energia.
 
-**Por que isto e não Wake-on-LAN.** Acordar uma máquina adormecida exige a
+**Por que este é o único caminho.** Acordar uma máquina adormecida exige a
 placa de rede armada no firmware e no driver, e isso varia de computador para
 computador. Não é uma limitação do Deskside: nenhum programa consegue
 configurar aquilo por conta própria, porque uma máquina desligada não roda
 programa nenhum. Já *não adormecer* é uma chamada de sistema que existe em
 qualquer Windows desde o XP.
+
+O Deskside chegou a ter um botão de Wake-on-LAN, que pedia a outro computador
+da conta na mesma rede que soltasse o pacote mágico. Saiu: dependia de dois
+computadores, um deles ligado, na mesma rede, com o firmware certo — e falhava
+calado justamente no caso mais comum, o de quem tem um computador só.
 
 No app: menu do computador → **Manter pronto**. A tela mostra três coisas
 diferentes, e a distinção importa:
@@ -28,7 +33,7 @@ diferentes, e a distinção importa:
 |---|---|
 | Ativo agora | O computador não vai dormir |
 | Ligado, mas sem efeito | Está na bateria; volta sozinho na tomada |
-| Desligado | Dorme normalmente, e voltar depende de Wake-on-LAN |
+| Desligado | Dorme normalmente, e some do app enquanto estiver dormindo |
 
 "Ligado" e "segurando" são estados diferentes de propósito. Um notebook na
 bateria com a chave ligada vai dormir do mesmo jeito, e juntar as duas
@@ -41,15 +46,15 @@ a chave do app basta. À mão, `DESKSIDE_KEEP_AWAKE=0` no `agent.conf`.
 ### O que isto não cobre
 
 Fechar a tampa do notebook, desligar pelo menu Iniciar e queda de energia. Nos
-três casos o computador vai dormir ou desligar de verdade, e aí o **Wake-on-LAN
-continua sendo o caminho** — ele não foi substituído, virou a rede de
-segurança.
+três casos o computador vai dormir ou desligar de verdade, e **alguém precisa
+ligá-lo de novo**. Não há software que resolva isso: uma máquina desligada não
+roda software.
 
-## O caminho completo (Wake-on-LAN e ligar sem ninguém em casa)
+## O caminho completo (voltar sozinho sem ninguém em casa)
 
-Se você quer poder **desligar o PC pelo app** e acordá-lo depois, ou se prefere
-suspender para economizar energia, aí sim entram os três ajustes abaixo. Eles
-também são o que faz o computador voltar sozinho depois de uma queda de luz.
+Se o computador reinicia sozinho depois de uma queda de luz, ou se você quer
+poder reiniciá-lo pelo app sem perder o acesso, aí sim entram os três ajustes
+abaixo.
 
 Três coisas precisam estar de pé sozinhas quando o Windows liga:
 
@@ -155,8 +160,8 @@ Opção B do backend, o Docker também).
 
 4. Ainda em **Opções de entrada**, ajuste *“Se você esteve ausente, quando o
    Windows deve exigir uma nova entrada?”* para **Nunca** — senão, ao acordar da
-   suspensão (ex.: por Wake-on-LAN) o PC para na tela de bloqueio e o agente não
-   consegue ver a tela nem controlar.
+   suspensão o PC para na tela de bloqueio e o agente não consegue ver a tela
+   nem controlar.
 
 Cuidado: com autologon, qualquer pessoa que ligar o PC entra direto na sua
 conta. Use só se o computador fica em local de confiança.
@@ -189,11 +194,5 @@ docker compose up -d
 Depois disso o app entra normalmente. Os passos acima fazem isso acontecer
 sozinho nas próximas vezes.
 
-> Observação sobre Wake‑on‑LAN: ele acorda o PC que está **suspenso/desligado
-> mas com energia**, e funciona **na mesma rede local** — o app usa outro
-> computador seu já ligado ali para soltar o pacote. Acordar pela internet
-> exige liberar/rotear o pacote mágico no roteador, o que a tela "Ligar o PC à
-> distância" explica.
->
-> Se os ajustes de BIOS/placa forem trabalhosos demais na sua máquina, a saída
-> é a do começo desta página: não deixar dormir. Foi para isso que ela existe.
+> Se o computador ainda assim dormir e sumir do app, a resposta é a do começo
+> desta página: **não deixar dormir**. Foi para isso que ela existe.

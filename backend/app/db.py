@@ -54,8 +54,6 @@ def _migrate() -> None:
     inspector = inspect(engine)
     por_tabela = {
         "devices": {
-            "mac_address": "VARCHAR(32)",
-            "last_public_ip": "VARCHAR(64)",
             # Nula de propósito nos aparelhos que já estavam pareados: eles
             # ganham o segredo na primeira reconexão de um agente que saiba
             # guardá-lo. Preencher aqui com um valor qualquer trancaria todo

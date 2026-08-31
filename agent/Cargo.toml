@@ -17,8 +17,6 @@ tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
 gethostname = "0.5"
-# MAC da placa de rede local, para Wake-on-LAN (multiplataforma).
-mac_address = "1"
 # Usado para passar scripts ao PowerShell via -EncodedCommand (sem problemas
 # de escape de aspas na linha de comando).
 base64 = "0.22"
