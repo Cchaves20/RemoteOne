@@ -13,13 +13,19 @@ Aplicativo usado no celular/tablet para controlar os computadores.
 - **Teclado customizado** (`remote_keyboard.dart`): campo de texto + teclas
   que o celular não tem (Ctrl, Alt, Shift, Tab, Esc, setas, Enter, Del). Os
   modificadores são grudentos: Ctrl e depois C envia Ctrl+C.
-- **Ditado por voz** (`ditado.dart`): a tecla de microfone troca o teclado por
-  uma caixa de texto **nativa**, onde o botão de microfone do próprio aparelho
-  já funciona. O app não grava áudio nem pede permissão de microfone — quem
-  reconhece é o sistema, e o Deskside recebe texto pronto. O texto passa por
-  uma conferência no celular antes de ir: ditado erra alguns por cento das
-  palavras, e corrigir aqui custa um toque, enquanto corrigir do outro lado
-  custa setas e backspaces atravessando a rede. O envio **não aperta Enter**.
+- **Caixa de escrita e ditado** (`ditado.dart`): a tecla de microfone troca o
+  teclado desenhado por um campo de texto **nativo** — e com ele vem tudo o que
+  o aparelho já tem: correção automática, previsão de palavra, digitação por
+  deslize, emoji, o microfone e o **dicionário pessoal** de quem digita. Nada
+  disso é alcançável pelo teclado desenhado: o iOS não expõe o QuickType por
+  API. O app não grava áudio nem pede permissão de microfone — quem reconhece é
+  o sistema. O texto passa por uma conferência no celular antes de ir, porque
+  corrigir aqui custa um toque e do outro lado custa setas e backspaces
+  atravessando a rede. O envio **não aperta Enter**.
+
+  A divisão entre os dois cabe numa frase: **texto vem na caixa, comando vai no
+  teclado**. Num terminal, autocorreção é o inimigo — `ls -la` virando `Is -Ia`
+  é erro que só a caixa nativa comete.
 - **Tela em tempo real**: os frames chegam por WebSocket (`/ws/viewer/{id}`),
   empurrados pelo backend, com borda visível, indicador de fps e vibração ao
   clicar.

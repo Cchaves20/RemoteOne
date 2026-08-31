@@ -1,6 +1,26 @@
-/// Ditar texto para o computador, usando o microfone do próprio aparelho.
+/// Escrever para o computador usando o teclado **do próprio aparelho**.
 ///
-/// ## Por que existe uma caixa, e não ditado direto na tela do computador
+/// O arquivo se chama `ditado` porque foi o ditado que o trouxe ao mundo, e
+/// esse continua sendo o motivo mais visível de entrar aqui — a tecla que abre
+/// esta caixa é um microfone. Mas o que ela entrega é maior que isso, e é a
+/// coisa mais valiosa deste widget: dentro de um campo de texto **nativo**, o
+/// aparelho põe tudo o que ele tem à disposição sem que a gente escreva uma
+/// linha — correção automática, previsão de próxima palavra, digitação por
+/// deslize, teclado de emoji, o microfone, e o **dicionário pessoal** de quem
+/// está segurando o telefone, com anos dos nomes próprios e do jargão dele.
+///
+/// Nada disso é acessível ao teclado desenhado do app: o iOS não empresta o
+/// QuickType por API nenhuma. Ou o campo é nativo, ou não há corretor. É por
+/// isso que esta caixa existe como um segundo teclado, e não como um detalhe
+/// do ditado.
+///
+/// A divisão com o `remote_keyboard.dart` cabe numa frase: **texto vem aqui,
+/// comando vai lá.** O teclado desenhado é insubstituível no que esta caixa
+/// não faz — Ctrl, Alt, Esc, Tab, setas, atalhos, tecla a tecla. Num terminal,
+/// autocorreção é o inimigo: `ls -la` virando `Is -Ia` é um erro que a caixa
+/// nativa introduz e o teclado desenhado nunca comete.
+///
+/// ## Por que uma caixa, e não escrever direto na tela do computador
 ///
 /// A tentação é óbvia: falar e ver as palavras aparecendo no computador. É
 /// tecnicamente possível — o `key_replace` já sabe apagar e reescrever numa
@@ -20,6 +40,11 @@
 /// erro de reconhecimento vira zero por cento de erro entregue, porque tem
 /// alguém lendo no meio — e continua muito mais rápido que tocar letra por
 /// letra no teclado de vidro, que é o ganho de verdade.
+///
+/// O mesmo raciocínio passou a valer para a correção automática, que chegou de
+/// graça junto com o campo nativo — e que erra pelos seus próprios motivos,
+/// trocando uma palavra técnica por uma comum. A conferência que já existia
+/// para a voz cobre as duas fontes sem precisar de nada novo.
 ///
 /// ## Por que não pedimos permissão de microfone
 ///
@@ -150,6 +175,13 @@ class _CaixaDeDitadoState extends State<CaixaDeDitado> {
                 // onde mora o botão de microfone. Sem isto, a pessoa vê uma
                 // caixa vazia e um convite para falar, sem nada para tocar.
                 autofocus: true,
+                // Explícitos, embora sejam o padrão do Flutter: **são o
+                // recurso**, não uma preferência. É por eles que esta caixa
+                // vale a pena mesmo para quem nunca vai ditar nada, e um
+                // padrão que muda de versão para versão não é lugar para
+                // guardar a razão de existir de uma tela.
+                autocorrect: true,
+                enableSuggestions: true,
                 maxLines: 4,
                 minLines: 2,
                 maxLength: limiteDeCaracteres,

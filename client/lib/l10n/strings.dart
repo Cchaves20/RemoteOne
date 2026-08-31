@@ -408,16 +408,18 @@ class Strings {
       "Affiche des mots au-dessus du clavier. Ne corrige jamais tout seul : rien ne change sans un appui.",
       'Muestra palabras sobre el teclado. Nunca corrige solo: solo cambia si tocas.');
 
-  // Ditado por voz. O reconhecimento é do próprio aparelho — o Deskside só
-  // recebe o texto pronto e o entrega ao computador.
-  String get ditadoTitulo =>
-      _t('Ditar texto', 'Dictate text', '语音输入', 'Dicter du texte', 'Dictar texto');
+  // A caixa de escrita: o teclado do próprio aparelho, com tudo o que ele traz
+  // (correção, previsão, dicionário pessoal, deslize, emoji e o microfone). O
+  // Deskside não reconhece voz nem corrige nada — recebe texto pronto e o
+  // entrega ao computador.
+  String get ditadoTitulo => _t('Escrever ou ditar', 'Type or dictate', '输入或口述',
+      'Écrire ou dicter', 'Escribir o dictar');
   String get ditadoComo => _t(
-      'Toque no microfone do teclado do seu aparelho e fale. Confira o texto antes de enviar — é aqui que dá para corrigir.',
-      'Tap the microphone on your device keyboard and speak. Check the text before sending — here is where you can fix it.',
-      '点击设备键盘上的麦克风并说话。发送前请检查文字——这里才方便修改。',
-      "Touchez le microphone du clavier de votre appareil et parlez. Vérifiez le texte avant de l'envoyer — c'est ici qu'on peut le corriger.",
-      'Toca el micrófono del teclado de tu dispositivo y habla. Revisa el texto antes de enviarlo — aquí es donde puedes corregirlo.');
+      'Digite com o teclado do seu aparelho, que tem correção, previsão e o seu dicionário — ou toque no microfone dele e fale. Confira antes de enviar: é aqui que dá para corrigir.',
+      'Type with your device keyboard — it has autocorrect, prediction and your own dictionary — or tap its microphone and speak. Check the text before sending: here is where you can fix it.',
+      '用设备自带的键盘输入，它有自动更正、联想和你的个人词库——或者点击键盘上的麦克风说话。发送前请检查：这里才方便修改。',
+      "Écrivez avec le clavier de votre appareil — il a la correction, la prédiction et votre propre dictionnaire — ou touchez son microphone et parlez. Vérifiez le texte avant de l'envoyer : c'est ici qu'on peut le corriger.",
+      'Escribe con el teclado de tu dispositivo — tiene corrección, predicción y tu propio diccionario — o toca su micrófono y habla. Revisa el texto antes de enviarlo: aquí es donde puedes corregirlo.');
   String get ditadoCampo => _t(
       'O que escrever no computador',
       'What to type on the computer',
@@ -428,8 +430,8 @@ class Strings {
       _t('Enviar', 'Send', '发送', 'Envoyer', 'Enviar');
   String get ditadoLimpar =>
       _t('Limpar', 'Clear', '清空', 'Effacer', 'Borrar');
-  String get ditadoTeclado => _t('Voltar ao teclado', 'Back to keyboard', '返回键盘',
-      'Revenir au clavier', 'Volver al teclado');
+  String get ditadoTeclado => _t('Teclas especiais', 'Special keys', '特殊按键',
+      'Touches spéciales', 'Teclas especiales');
   String get ditadoEnviado => _t(
       'Texto enviado ao computador.',
       'Text sent to the computer.',

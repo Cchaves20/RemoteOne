@@ -113,6 +113,19 @@ void main() {
       expect(limiteDeCaracteres, 4096);
     });
 
+    testWidgets('o corretor e a previsão do aparelho ficam ligados',
+        (tester) async {
+      // São o motivo de a caixa existir para quem nunca vai ditar: dentro de
+      // um campo nativo, o aparelho traz correção, previsão e o dicionário
+      // pessoal de quem digita — coisas que o teclado desenhado não alcança,
+      // porque o iOS não expõe o QuickType por API. Desligar qualquer um dos
+      // dois esvaziaria metade do widget sem quebrar nada visível.
+      await _montar(tester);
+      final campo = tester.widget<TextField>(find.byKey(chaveDitadoCampo));
+      expect(campo.autocorrect, isTrue);
+      expect(campo.enableSuggestions, isTrue);
+    });
+
     testWidgets('o botão de voltar devolve o teclado', (tester) async {
       var fechou = false;
       await _montar(tester, aoFechar: () => fechou = true);
