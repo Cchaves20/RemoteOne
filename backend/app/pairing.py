@@ -8,6 +8,7 @@ O backend é a fonte única do código (garante unicidade e expiração). O
 alfabeto e o tamanho espelham o gerador do agente em `agent/src/pairing.rs`.
 """
 
+import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -32,6 +33,33 @@ class PairingError(Exception):
 
 def generate_pairing_code() -> str:
     return "".join(secrets.choice(_ALPHABET) for _ in range(_CODE_LEN))
+
+
+def resumo_de_segredo(segredo: str) -> str:
+    """O que vai ao banco no lugar do segredo do agente.
+
+    SHA-256 puro, e não bcrypt: o segredo é sorteado pelo servidor com 32 bytes
+    de entropia, então não há dicionário para tentar e não há nada que um custo
+    de trabalho torne mais difícil. Bcrypt aqui só custaria CPU a cada conexão
+    de agente — e são muitas.
+
+    O que se ganha é o que importa: o banco sai desta máquina todo dia no
+    backup, e a partir daqui ele não carrega mais a credencial que controla o
+    computador de ninguém. Quem ler uma cópia lê resumos.
+    """
+    return hashlib.sha256(segredo.encode()).hexdigest()
+
+
+def e_resumo(guardado: str | None) -> bool:
+    """Distingue um resumo (64 hex) de um segredo em texto puro, de antes.
+
+    Sem ambiguidade possível: `novo_segredo_de_agente` devolve 43 caracteres de
+    base64, que nunca formam 64 dígitos hexadecimais. É o que permite a troca
+    acontecer sem parada e sem migração de uma vez só — ver `_autorizar_agente`.
+    """
+    if not guardado or len(guardado) != 64:
+        return False
+    return all(c in "0123456789abcdef" for c in guardado)
 
 
 def novo_segredo_de_agente() -> str:
@@ -96,13 +124,18 @@ def claim(db: Session, code: str, user: User) -> Device:
     if get_device(db, request.device_id) is not None:
         raise PairingError(409, "dispositivo já pareado")
 
+    # O segredo nasce em texto puro porque o agente precisa recebê-lo uma vez —
+    # e some do banco assim que ele provar que recebeu (ver `_autorizar_agente`).
+    # O que fica para sempre é o resumo.
+    segredo = novo_segredo_de_agente()
     device = Device(
         device_id=request.device_id,
         user_id=user.id,
         name=request.hostname,
         os=request.os,
         hostname=request.hostname,
-        agent_secret=novo_segredo_de_agente(),
+        agent_secret=resumo_de_segredo(segredo),
+        agent_secret_pendente=segredo,
     )
     db.add(device)
     db.delete(request)

@@ -59,6 +59,7 @@ def _migrate() -> None:
             # guardá-lo. Preencher aqui com um valor qualquer trancaria todo
             # mundo do lado de fora — o agente não teria como adivinhá-lo.
             "agent_secret": "VARCHAR(64)",
+            "agent_secret_pendente": "VARCHAR(64)",
         },
         # Agendamento das automações. As duas com padrão, porque `ADD COLUMN`
         # com `NOT NULL` e sem padrão é recusado em tabela que já tem linhas.

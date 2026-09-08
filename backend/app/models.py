@@ -115,6 +115,13 @@ class User(Base):
     contact_change: Mapped["PendingContactChange | None"] = relationship(
         cascade="all, delete-orphan"
     )
+    #: Compras feitas nas lojas. Entra nesta lista pelo mesmo motivo que as
+    #: outras: uma assinatura deixada para trás com `user_id` de uma conta
+    #: apagada é reivindicada pela próxima conta que nascer com aquele id — e
+    #: aqui isso significa alguém ganhando plano pago que não comprou.
+    assinaturas: Mapped[list["Assinatura"]] = relationship(
+        cascade="all, delete-orphan"
+    )
 
 
 class PendingSignup(Base):
@@ -250,7 +257,22 @@ class Device(Base):
     #: Nasce no pareamento e morre com ele: desparear apaga a linha inteira, e
     #: parear de novo sorteia outro. É o que faz "desparear" significar alguma
     #: coisa — antes, não havia o que invalidar.
+    #: **O resumo**, não o segredo. Ver `pairing.resumo_de_segredo`.
     agent_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: O segredo em texto puro, **só até o agente provar que recebeu**.
+    #:
+    #: Existe por causa de uma janela real: quem pareia é o aplicativo, e o
+    #: agente pode estar desligado nesse instante. O segredo precisa esperar por
+    #: ele em algum lugar, e não dá para esperar como resumo — resumo não se
+    #: reverte.
+    #:
+    #: É apagado na primeira conexão em que o agente apresenta o segredo certo,
+    #: e não no envio: se a entrega falhar no meio, o valor continua aqui para a
+    #: próxima tentativa. Apagar no envio trocaria uma exposição de segundos por
+    #: um computador trancado para fora da própria conta, sem nada explicando.
+    agent_secret_pendente: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
 
     user: Mapped[User] = relationship(back_populates="devices")
 
@@ -364,3 +386,73 @@ class ProfileLayout(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     #: JSON com a lista de ids, na ordem.
     order: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class Assinatura(Base):
+    """Uma assinatura comprada na App Store ou na Play Store.
+
+    ## Por que existe, se `User.plano` já diz se a conta é paga
+
+    Porque `User.plano` diz **o quê** e esta tabela diz **por quê**. Sem ela,
+    uma conta paga por compra na loja seria indistinguível de uma ligada à mão,
+    e não haveria como responder à notificação de renovação do mês seguinte —
+    ela chega identificando a transação da loja, não o e-mail de ninguém.
+
+    A conta continua sendo a fonte da verdade para "pode usar isto?": as rotas
+    perguntam ao `cobranca.plano_de`, não a esta tabela. Aqui é o registro que
+    permite manter aquele campo em dia sozinho.
+
+    ## O que **não** está guardado aqui, e é o ponto mais importante
+
+    Nada de cartão. Nem número, nem bandeira, nem os quatro últimos dígitos, nem
+    titular, nem CVV, nem endereço de cobrança. Quem cobra é a Apple ou o
+    Google; o Deskside nunca vê o meio de pagamento, e por isso não há o que
+    vazar daqui. Se um dia alguém propuser guardar "só os últimos quatro para
+    facilitar o suporte", esta é a linha que responde não.
+
+    ## Por que o identificador da loja vai como resumo, e não em texto
+
+    `id_hash` é o SHA-256 de `loja:identificador`. Precisamos dele para **casar**
+    uma notificação com uma conta, e casar exige só comparar — nunca reproduzir.
+    Guardar o valor original daria a quem lesse uma cópia do banco um
+    identificador consultável nas APIs das lojas, e no caso do Google o token de
+    compra é credencial de fato. Resumo custa o mesmo e não entrega nada.
+
+    O efeito colateral é bom: nenhuma consulta de suporte, nenhum log e nenhum
+    despejo de tabela expõe a transação de ninguém.
+    """
+
+    __tablename__ = "assinaturas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+    #: "apple" ou "google". Ver `app/assinatura.py`.
+    loja: Mapped[str] = mapped_column(String(16))
+    #: SHA-256 de `loja:id_original`. **Único**: é o que impede um comprovante
+    #: de valer em duas contas. Sem esta restrição, bastaria uma pessoa assinar
+    #: uma vez e passar o comprovante adiante para liberar quantas contas
+    #: quisesse — a fraude mais barata que existe contra compra em loja.
+    id_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+
+    product_id: Mapped[str] = mapped_column(String(120))
+    #: Ver `assinatura.Estado`.
+    estado: Mapped[str] = mapped_column(String(16))
+    #: "producao" ou "sandbox". Guardado, e não só conferido na hora, para uma
+    #: conta liberada por engano em sandbox poder ser encontrada depois com uma
+    #: consulta em vez de uma auditoria.
+    ambiente: Mapped[str] = mapped_column(String(16), default="producao")
+
+    expira_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: O carimbo **da loja** do último evento aplicado. É o que descarta
+    #: notificação repetida e fora de ordem — ver `assinatura.deve_aplicar`.
+    visto_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    atualizada_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )

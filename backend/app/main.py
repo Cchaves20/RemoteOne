@@ -8,12 +8,13 @@ import jwt
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from app import entrega, pairing
+from app import entrega, lojas, pairing
 from app.agents import AgentRegistry
 from app.auth import router as auth_router
 from app.auth import get_current_user, sessao_valida
 from app.automations import enviar_agenda
 from app.automations import router as automations_router
+from app.compras import router as compras_router
 from app.config import settings
 from app.connections import Viewer, manager, viewers
 from app.db import SessionLocal, get_db, init_db
@@ -75,6 +76,7 @@ app.include_router(auth_router)
 app.include_router(devices_router)
 app.include_router(profiles_router)
 app.include_router(automations_router)
+app.include_router(compras_router)
 
 # Registro de agentes conectados (em memória; ver app/agents.py).
 registry = AgentRegistry()
@@ -121,6 +123,8 @@ FEATURES = [
     "agent-unpair",
     # Planos: versão grátis permanente, paga sem limitação. Ver app/plano.py.
     "planos",
+    # Assinatura comprada na App Store / Play Store. Ver `app/compras.py`.
+    "assinatura-loja",
 ]
 
 
@@ -139,6 +143,13 @@ def health() -> dict:
         # mais velho que o `.env`, o `.env` pode ter um nome de variável
         # errado, e nada disso aparece de fora.
         "delivery": entrega.configurado(),
+        # Quais lojas verificam compra de verdade. Sem credencial, o servidor
+        # roda com o verificador de mentira — que só produz compras de sandbox,
+        # e sandbox não vale como pago. Ver `app/lojas.py`.
+        "stores": lojas.configurado(),
+        # Ligado, compra de teste vale como assinatura paga. Aparece aqui
+        # porque é o tipo de chave que se liga para um teste e se esquece.
+        "sandbox_aceito": settings.aceitar_sandbox,
     }
 
 
@@ -211,10 +222,23 @@ def _paired_email(device_id: str) -> str | None:
 
 
 def _segredo_do_aparelho(device_id: str) -> str | None:
-    """O segredo guardado para este computador, para reentregá-lo ao agente."""
+    """O segredo a entregar ao agente que acabou de ser pareado.
+
+    Vem do `agent_secret_pendente`, porque `agent_secret` guarda o **resumo** e
+    resumo não se reverte. O pendente some assim que o agente provar que
+    recebeu — ver `_autorizar_agente`.
+
+    O `or device.agent_secret` no fim atende as linhas criadas antes desta
+    mudança, onde o texto puro ainda mora na coluna definitiva. Elas se
+    convertem sozinhas na primeira conexão autenticada.
+    """
     with SessionLocal() as db:
         device = pairing.get_device(db, device_id)
-        return device.agent_secret if device else None
+        if device is None:
+            return None
+        if device.agent_secret_pendente:
+            return device.agent_secret_pendente
+        return None if pairing.e_resumo(device.agent_secret) else device.agent_secret
 
 
 def _pairing_intro(hello: Hello) -> dict:
@@ -289,7 +313,10 @@ def _autorizar_agente(device_id: str, apresentado: str | None) -> tuple[str | No
         if not device.agent_secret:
             if not apresentado:
                 novo = pairing.novo_segredo_de_agente()
-                device.agent_secret = novo
+                # Só o resumo fica: aqui o texto puro sai pela própria resposta,
+                # nesta mesma chamada, então não há nada a guardar esperando.
+                device.agent_secret = pairing.resumo_de_segredo(novo)
+                device.agent_secret_pendente = None
                 db.commit()
                 logger.info("segredo emitido na adoção do aparelho %s", device_id)
                 return novo, True
@@ -298,8 +325,32 @@ def _autorizar_agente(device_id: str, apresentado: str | None) -> tuple[str | No
             # por cima. De qualquer forma, não se aceita o que não se emitiu.
             raise SegredoRecusado("segredo desconhecido")
 
-        if not apresentado or not hmac.compare_digest(apresentado, device.agent_secret):
+        if not apresentado:
             raise SegredoRecusado("segredo inválido")
+
+        if pairing.e_resumo(device.agent_secret):
+            confere = hmac.compare_digest(
+                pairing.resumo_de_segredo(apresentado), device.agent_secret
+            )
+        else:
+            # Linha de antes desta mudança: o texto puro ainda está na coluna.
+            # Compara como antes e, acertando, **sobe sozinha** para o resumo.
+            # É migração sem parada e sem passo manual: cada agente converte a
+            # própria linha na primeira vez que se identifica, e um agente que
+            # nunca mais aparecer não tranca ninguém.
+            confere = hmac.compare_digest(apresentado, device.agent_secret)
+            if confere:
+                device.agent_secret = pairing.resumo_de_segredo(apresentado)
+                logger.info("segredo do aparelho %s convertido para resumo", device_id)
+
+        if not confere:
+            raise SegredoRecusado("segredo inválido")
+
+        # Provou que recebeu: o texto puro que esperava por ele não é mais
+        # necessário, e o que não é necessário não fica no banco.
+        if device.agent_secret_pendente:
+            device.agent_secret_pendente = None
+        db.commit()
         return None, True
 
 

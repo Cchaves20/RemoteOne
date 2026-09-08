@@ -107,6 +107,32 @@ class Settings(BaseSettings):
     twilio_token: str = ""
     twilio_from: str = ""
 
+    # Assinatura pelas lojas. Sem credencial, o servidor roda com o verificador
+    # de mentira — que só produz compras de sandbox, e sandbox não vale como
+    # pago. Ver `app/lojas.py`.
+    apple_issuer_id: str = ""
+    apple_key_id: str = ""
+    #: Caminho do `.p8`. O **caminho**, e não o conteúdo: uma chave privada numa
+    #: variável de ambiente aparece em `docker inspect`, em `ps e`, no diário de
+    #: qualquer processo que despeje o ambiente, e no `env` de qualquer shell
+    #: que alguém abra no contêiner.
+    apple_key_p8: str = ""
+    apple_bundle_id: str = ""
+    google_package: str = ""
+    google_service_account: str = ""
+
+    #: Aceitar compras de **sandbox** como plano pago.
+    #:
+    #: Falso, e o padrão aqui é a diferença entre um plano pago e um plano
+    #: opcional: o ambiente de teste das lojas emite comprovantes legítimos,
+    #: assinados de verdade, comprados com cartões que não existem. Ligar isto
+    #: em produção libera o plano completo para qualquer pessoa com um aparelho
+    #: em modo desenvolvedor.
+    #:
+    #: Só existe para o teste ponta a ponta antes de a loja estar publicada, e
+    #: o `/health` denuncia quando está ligado.
+    aceitar_sandbox: bool = False
+
     # Idade mínima para criar conta.
     #
     # Treze não é número escolhido a esmo: é o piso da LGPD para tratamento de
