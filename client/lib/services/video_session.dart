@@ -167,6 +167,19 @@ class VideoSession extends ChangeNotifier {
   String get iceSummary => 'ICE $_iceState; celular: ${_describe(_localCandidates)}; '
       'computador: ${_describe(_remoteCandidates)}';
 
+  /// As mesmas contagens do [iceSummary], mas em número em vez de frase.
+  ///
+  /// Existem porque quem monta a mensagem para o usuário precisa **decidir**
+  /// com base nelas (ver `diagnostico_video.dart`), e decidir voltando a ler a
+  /// frase pronta seria escrever um texto para depois interpretá-lo de novo —
+  /// qualquer ajuste na frase quebraria o diagnóstico em silêncio.
+  ///
+  /// Cópias, e não os mapas de dentro: quem lê não tem por que zerar o
+  /// contador de quem ainda está negociando.
+  Map<String, int> get candidatosDoCelular => Map.unmodifiable(_localCandidates);
+  Map<String, int> get candidatosDoComputador =>
+      Map.unmodifiable(_remoteCandidates);
+
   /// Se a conexão ainda existe. Falhar por falta de imagem **não** a derruba,
   /// e o som continua indo por ela.
   bool get peerAlive => _peer != null;

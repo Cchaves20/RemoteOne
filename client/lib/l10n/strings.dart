@@ -378,14 +378,84 @@ class Strings {
   String get videoDirectMode =>
       _t('direto', 'direct', '直连', 'direct', 'directo');
 
-  /// Aviso quando o vídeo não entra: a tela segue no modo antigo, então sem
-  /// dizer nada o usuário nem saberia que houve uma tentativa.
-  String get videoUnavailable => _t(
-      'Vídeo em alta eficiência indisponível; usando o modo antigo.',
-      'High-efficiency video unavailable; using the old mode.',
-      '高效视频不可用，改用旧模式。',
-      "Vidéo haute efficacité indisponible ; retour à l'ancien mode.",
-      'Vídeo de alta eficiencia no disponible; usando el modo anterior.');
+  /// A falha da conexão direta, explicada para quem segura o telefone.
+  ///
+  /// A versão anterior despejava o vocabulário do protocolo — "ICE Failed",
+  /// "srflx", "relay" — na cara de quem estava usando o produto. Era verdadeira
+  /// e inútil: dizia "quebrou" sem dizer o quê, enquanto a tela continuava
+  /// funcionando. Ver `services/diagnostico_video.dart`.
+  String get videoFalhouTitulo => _t(
+      'A conexão direta não fechou',
+      'The direct connection did not go through',
+      '直连未能建立',
+      "La connexion directe n'a pas abouti",
+      'La conexión directa no se estableció');
+
+  /// A parte que tranquiliza, e vem sempre. É o que impede a pessoa de achar
+  /// que o produto quebrou: a tela **está** funcionando enquanto ela lê isto.
+  String get videoFalhouTelaOk => _t(
+      'A tela continua funcionando normalmente, só um pouco mais pesada.',
+      'The screen keeps working normally, just a bit heavier.',
+      '画面仍可正常使用，只是流量占用略高。',
+      "L'écran continue de fonctionner normalement, juste un peu plus lourd.",
+      'La pantalla sigue funcionando normalmente, solo un poco más pesada.');
+
+  String get videoCausaComputadorMudo => _t(
+      'O computador não respondeu ao pedido. Ele pode ter sido desligado, ou o Deskside pode ter parado nele.',
+      'The computer did not answer the request. It may have been turned off, or Deskside may have stopped on it.',
+      '电脑没有响应请求。它可能已关机，或 Deskside 在上面停止了。',
+      "L'ordinateur n'a pas répondu à la demande. Il a pu être éteint, ou Deskside s'y est arrêté.",
+      'El equipo no respondió a la solicitud. Puede haberse apagado, o Deskside puede haberse detenido en él.');
+
+  String get videoCausaComputadorBloqueado => _t(
+      'O computador não conseguiu falar com o nosso servidor de conexão. Um antivírus ou o firewall do Windows costuma ser a causa.',
+      'The computer could not reach our connection server. An antivirus or the Windows firewall is the usual cause.',
+      '电脑无法连接到我们的连接服务器。通常是杀毒软件或 Windows 防火墙造成的。',
+      "L'ordinateur n'a pas pu joindre notre serveur de connexion. Un antivirus ou le pare-feu Windows en est souvent la cause.",
+      'El equipo no pudo comunicarse con nuestro servidor de conexión. Un antivirus o el firewall de Windows suele ser la causa.');
+
+  String get videoCausaCelularBloqueado => _t(
+      'Este aparelho não conseguiu falar com o nosso servidor de conexão. Costuma ser a rede em que ele está.',
+      'This device could not reach our connection server. It is usually the network it is on.',
+      '此设备无法连接到我们的连接服务器。通常是它所在的网络造成的。',
+      "Cet appareil n'a pas pu joindre notre serveur de connexion. C'est en général le réseau où il se trouve.",
+      'Este dispositivo no pudo comunicarse con nuestro servidor de conexión. Suele ser la red en la que está.');
+
+  String get videoCausaRedeBloqueia => _t(
+      'A rede em que você está bloqueia conexões diretas. Acontece em Wi-Fi de empresa, de hotel e de aeroporto.',
+      'The network you are on blocks direct connections. Common on company, hotel and airport Wi-Fi.',
+      '你所在的网络阻止直连。公司、酒店和机场的 Wi-Fi 常见此情况。',
+      "Le réseau sur lequel vous êtes bloque les connexions directes. Fréquent sur le Wi-Fi d'entreprise, d'hôtel et d'aéroport.",
+      'La red en la que estás bloquea las conexiones directas. Es común en Wi-Fi de empresa, hotel y aeropuerto.');
+
+  String get videoCausaSemRepasse => _t(
+      'O celular e o computador estão em redes que não se enxergam, e o caminho reserva não ficou disponível.',
+      'Phone and computer are on networks that cannot see each other, and the fallback path was unavailable.',
+      '手机和电脑处于互相不可见的网络中，备用路径也不可用。',
+      "Le téléphone et l'ordinateur sont sur des réseaux qui ne se voient pas, et le chemin de secours n'était pas disponible.",
+      'El teléfono y el equipo están en redes que no se ven entre sí, y la vía alternativa no estuvo disponible.');
+
+  String get videoCausaIndefinida => _t(
+      'Não deu para descobrir o motivo desta vez.',
+      'Could not determine the reason this time.',
+      '这次未能确定原因。',
+      "Impossible de déterminer la raison cette fois.",
+      'No se pudo determinar el motivo esta vez.');
+
+  /// Abre os detalhes técnicos. Existe para o **suporte**: sem isto, quem
+  /// atende um cliente depende de ele descrever de memória o que apareceu.
+  String get videoDetalhes =>
+      _t('Detalhes', 'Details', '详情', 'Détails', 'Detalles');
+
+  String get videoDetalhesCopiados => _t('Detalhes copiados',
+      'Details copied', '详情已复制', 'Détails copiés', 'Detalles copiados');
+
+  /// Fechar um diálogo que só mostra informação.
+  ///
+  /// Não é `cancel` ("Cancelar" sugere desfazer algo, e não há nada a desfazer)
+  /// nem `appClose` (aquilo encerra um programa no computador).
+  String get videoDetalhesFechar =>
+      _t('Fechar', 'Close', '关闭', 'Fermer', 'Cerrar');
 
   /// Enquanto ainda há tentativa pela frente.
   ///

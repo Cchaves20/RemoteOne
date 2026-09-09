@@ -20,6 +20,7 @@ import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
 import '../services/app_state.dart';
+import '../services/diagnostico_video.dart';
 import '../services/retentativa.dart';
 import '../services/teclado_fisico.dart';
 import '../services/video_session.dart';
@@ -699,16 +700,79 @@ class _RemoteScreenState extends State<RemoteScreen>
   void _avisarQueDesistiu() {
     if (_videoFailureShown || !mounted) return;
     _videoFailureShown = true;
+    _mostrarMotivoDaFalha();
+  }
+
+  /// A mensagem de derrota, uma só para os dois caminhos que a mostram: o
+  /// aviso automático quando as tentativas acabam, e o toque no "vídeo
+  /// direto: falhou" da barra de cima.
+  ///
+  /// Estavam separados, e por isso o texto técnico continuava saindo por um
+  /// dos dois. Uma mensagem escrita duas vezes é uma mensagem consertada pela
+  /// metade.
+  void _mostrarMotivoDaFalha() {
+    if (!mounted) return;
+    final t = widget.state.t;
+    final video = _video;
     // Falha no vídeo não pode ser silenciosa. A tela continua funcionando por
     // JPEG, então nada "quebra" visivelmente — e sem este aviso o motivo
     // ficaria só no log do aparelho, que num app instalado por sideload
     // ninguém lê.
+    //
+    // Mas o que aparecia antes era o texto técnico cru ("ICE Failed; celular:
+    // 24 host + 3 srflx + 6 relay"), e isso é pior do que silêncio: assusta
+    // sem informar, olhando para uma tela que está funcionando. Agora sai a
+    // causa provável em português, e o técnico fica atrás de "Detalhes" —
+    // continua acessível para quando eu precisar dele num suporte.
+    final causa = diagnosticar(
+      celular: video?.candidatosDoCelular ?? const <String, int>{},
+      computador: video?.candidatosDoComputador ?? const <String, int>{},
+    );
+    final tecnico = video?.error ?? video?.iceSummary ?? '';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      duration: const Duration(seconds: 8),
-      content: Text(
-        '${widget.state.t.videoUnavailable}\n${_video?.error ?? ''}'.trim(),
-      ),
+      duration: const Duration(seconds: 10),
+      content: Text('${t.videoFalhouTitulo}\n'
+          '${textoDaCausa(t, causa)}\n'
+          '${t.videoFalhouTelaOk}'),
+      action: tecnico.isEmpty
+          ? null
+          : SnackBarAction(
+              label: t.videoDetalhes,
+              onPressed: () => _mostrarDetalhesDaFalha(tecnico),
+            ),
     ));
+  }
+
+  /// O texto técnico, para quando alguém puder fazer algo com ele.
+  ///
+  /// Com botão de copiar porque o destino dele é uma mensagem de suporte, e
+  /// transcrever "srflx" à mão de um celular é onde o relato vira ruído.
+  void _mostrarDetalhesDaFalha(String tecnico) {
+    final t = widget.state.t;
+    showDialog<void>(
+      context: context,
+      builder: (dialogo) => AlertDialog(
+        title: Text(t.videoDetalhes),
+        content: SelectableText(tecnico),
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: tecnico));
+              Navigator.of(dialogo).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(t.videoDetalhesCopiados)),
+              );
+            },
+            icon: const Icon(Icons.copy_all_outlined, size: 18),
+            label: Text(t.actionCopy),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogo).pop(),
+            child: Text(t.videoDetalhesFechar),
+          ),
+        ],
+      ),
+    );
   }
 
   /// A sessão de vídeo mudou de estado: pode ser hora de trocar o que aparece.
@@ -2986,10 +3050,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       cor = Colors.orangeAccent;
       // O motivo já apareceu uma vez, num aviso que passou. Aqui ele volta
       // quando a pessoa quiser, que é quando ela está tentando entender.
-      aoTocar = () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            duration: const Duration(seconds: 8),
-            content: Text('${t.videoUnavailable}\n${video.error ?? ''}'.trim()),
-          ));
+      aoTocar = _mostrarMotivoDaFalha;
     } else if (video.state == VideoState.negotiating) {
       texto = t.videoConnecting;
     } else {
