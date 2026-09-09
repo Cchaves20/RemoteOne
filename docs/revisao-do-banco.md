@@ -174,7 +174,7 @@ mentir ou faltar. Com teste.
 A revisão do banco levou a uma medição da VM, e ela achou coisas que não eram
 do banco. O que mudou, e por quê:
 
-**Na máquina** (feito à mão, medido antes e depois):
+**Na máquina** (feito à mão, medido antes e depois — 9 de setembro):
 
 - `deploy/.env` era `-rw-rw-r--`: legível por qualquer conta do sistema, com o
   segredo do JWT, a chave do backup e o segredo do TURN dentro. Agora `600`.
@@ -188,6 +188,27 @@ do banco. O que mudou, e por quê:
 - `DESKSIDE_TOTP_KEY` não existia, então a cifra dos segredos de 2FA derivava do
   próprio segredo do JWT. Agora tem chave própria: um vazamento não entrega o
   outro.
+
+Confirmado depois do reboot: `.env` em `-rw-------`, `rpcbind` fora do ar, `ufw`
+com as seis regras, e uma ocorrência de cada variável.
+
+### O acidente do `>>`, que quase virou gente trancada fora da conta
+
+O comando que criou a chave do 2FA foi `echo "DESKSIDE_TOTP_KEY=..." >> .env`.
+Ele não é idempotente, e foi executado duas vezes: o `.env` ficou com **duas**
+linhas da mesma variável.
+
+Funcionava — o Docker lê de cima para baixo e a última vence. O perigo era o
+dia seguinte: alguém abre o arquivo para editar, acha a primeira linha, troca ou
+apaga, e a chave efetiva muda em silêncio. Aí o `cofre.py` falha **fechado**
+(que é o comportamento certo dele): um segredo de 2FA cifrado com a chave antiga
+não abre com a nova, `abrir()` devolve `None`, e o código é recusado. Quem usa
+segunda etapa fica trancado da própria conta sem nada explicando.
+
+Nada tinha sido cifrado ainda, então o estrago foi zero. Fica o registro porque
+a lição é geral: **`>>` num arquivo de configuração é uma armadilha**, e um
+comando de uma linha que "só acrescenta" é justamente o que se roda duas vezes.
+O certo é conferir antes, ou usar algo que substitua em vez de acrescentar.
 
 **No código** (`Dockerfile`, `docker-compose.lite.yml`, `Caddyfile`):
 
@@ -216,11 +237,28 @@ cobriu:
    definida, e as 14 cópias no servidor estão todas `.enc`, nenhuma em claro.
 3. **`DESKSIDE_EXIGIR_SEGREDO_DO_AGENTE` continua falso.** Enquanto for, um
    agente antigo que não conheça o campo `secret` é aceito sem provar nada.
-   Ligue depois que todos os agentes estiverem atualizados.
+   Ligue quando a contagem abaixo der zero — cada agente converte a própria
+   linha ao reconectar:
+
+   ```
+   docker compose -f docker-compose.lite.yml exec -T api python -c "
+   from app.db import SessionLocal
+   from app.models import Device
+   from app import pairing
+   with SessionLocal() as db:
+       linhas = db.query(Device).all()
+       resumo = sum(1 for d in linhas if pairing.e_resumo(d.agent_secret))
+       print('ainda em texto puro:', len(linhas) - resumo)
+   "
+   ```
 4. **O webhook não tem limite por IP.** Hoje é inofensivo (sem credencial de
    loja configurada, ele recusa tudo antes de tocar no banco), mas entra na
    lista para quando a Apple estiver ligada.
-5. **A verificação de assinatura das notificações ainda não existe** — as duas
+5. **Um banco antigo (`remoteone.db`, de agosto) segue no volume**, ao lado do
+   que está em uso. São contas de verdade que ninguém usa, não copiadas pelo
+   backup e esquecidas — e dado pessoal esquecido é o que mais aparece em
+   vazamento. Guardar uma cópia e apagar.
+6. **A verificação de assinatura das notificações ainda não existe** — as duas
    implementações reais estão escritas como `NotImplementedError` até as contas
    de loja existirem. É a peça de segurança mais importante que falta, e o
    servidor falha **fechado** sem ela: sem credencial, nenhuma notificação é
