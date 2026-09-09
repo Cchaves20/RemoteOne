@@ -387,6 +387,19 @@ class Strings {
       "Vidéo haute efficacité indisponible ; retour à l'ancien mode.",
       'Vídeo de alta eficiencia no disponible; usando el modo anterior.');
 
+  /// Enquanto ainda há tentativa pela frente.
+  ///
+  /// Separado do aviso de desistência de propósito: a primeira falha de ICE é
+  /// quase sempre passageira (a rede móvel trocou de torre, o Wi-Fi oscilou), e
+  /// anunciá-la com o texto de derrota ensina a pessoa a desconfiar de algo que
+  /// vai se resolver sozinho em três segundos.
+  String videoRetrying(int tentativa, int de) => _t(
+      'Vídeo direto caiu; tentando de novo ($tentativa de $de). A tela continua funcionando.',
+      'Direct video dropped; retrying ($tentativa of $de). The screen keeps working.',
+      '直连视频中断，正在重试（第 $tentativa 次，共 $de 次）。画面仍可正常使用。',
+      "La vidéo directe est tombée ; nouvelle tentative ($tentativa sur $de). L'écran continue de fonctionner.",
+      'El vídeo directo cayó; reintentando ($tentativa de $de). La pantalla sigue funcionando.');
+
   // Preferência do vídeo por WebRTC
   String get webrtcVideo =>
       _t('Vídeo em alta eficiência', 'High-efficiency video', '高效视频',

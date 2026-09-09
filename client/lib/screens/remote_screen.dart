@@ -20,6 +20,7 @@ import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
 import '../services/app_state.dart';
+import '../services/retentativa.dart';
 import '../services/teclado_fisico.dart';
 import '../services/video_session.dart';
 import '../theme.dart';
@@ -82,6 +83,15 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   /// Avisa uma vez por sessão, não a cada mudança de estado.
   bool _videoFailureShown = false;
+
+  /// O orçamento de tentativas do vídeo direto.
+  ///
+  /// A regra de quando parar mora em `services/retentativa.dart`, fora daqui,
+  /// para poder ser testada sem montar tela nenhuma — é onde estão os dois
+  /// defeitos que ninguém vê acontecer: tentar para sempre, e gastar as três
+  /// chances de uma vez porque a falha foi anunciada três vezes.
+  final Retentativa _videoRetry = Retentativa();
+  Timer? _videoRetryTimer;
 
   double _aspectRatio = 16 / 9;
   bool _aspectResolved = false;
@@ -586,19 +596,13 @@ class _RemoteScreenState extends State<RemoteScreen>
 
     // O mesmo socket carrega os frames JPEG (binário) e a sinalização de
     // WebRTC (texto). A sessão de vídeo é criada aqui e negocia em paralelo.
-    _video?.dispose();
+    // Socket novo, orçamento de tentativas novo: o que falhou antes falhou
+    // numa conexão que não existe mais.
+    _videoRetryTimer?.cancel();
+    _videoRetryTimer = null;
+    _videoRetry.sucesso();
     _videoFailureShown = false;
-    final video = widget.state.webrtcVideoEnabled
-        ? (VideoSession(
-            channel: channel,
-            withAudio: _audioOn,
-            // Os servidores vêm do backend (é de lá que sai a credencial
-            // temporária do TURN). Quando não dá, a sessão usa o STUN público
-            // que ela já trazia.
-            iceServers: _iceServers,
-          )..addListener(_onVideoChanged))
-        : null;
-    _video = video;
+    _criarVideo(channel);
 
     _sub = channel.stream.listen(
       (event) {
@@ -607,7 +611,11 @@ class _RemoteScreenState extends State<RemoteScreen>
         if (event is String) {
           // A sinalização de WebRTC tem prioridade; o que ela não reconhecer
           // pode ser um aviso de área de transferência.
-          if (video?.handleSignal(event) != true) _handleTextMessage(event);
+          // `_video` e não a variável local: numa retentativa a sessão é
+          // trocada, e um ouvinte preso à antiga entregaria a sinalização da
+          // nova para um objeto já descartado — a conexão nunca fecharia, sem
+          // erro nenhum aparecendo.
+          if (_video?.handleSignal(event) != true) _handleTextMessage(event);
           return;
         }
         if (event is! List<int>) return;
@@ -622,7 +630,85 @@ class _RemoteScreenState extends State<RemoteScreen>
 
     // Só depois de o ouvinte estar no ar, senão a resposta do agente poderia
     // chegar antes de haver quem a tratasse.
-    video?.start();
+    _video?.start();
+  }
+
+  /// Cria a sessão de vídeo sobre um socket que já existe.
+  ///
+  /// Separado do [_connect] porque a retentativa precisa fazer **só isto**: o
+  /// JPEG está funcionando o tempo todo, e derrubar o socket para tentar o
+  /// vídeo de novo apagaria a tela que a pessoa está usando para consertar
+  /// algo que ela nem sabe que está quebrado.
+  void _criarVideo(WebSocketChannel canal) {
+    _video?.removeListener(_onVideoChanged);
+    _video?.dispose();
+    _video = widget.state.webrtcVideoEnabled
+        ? (VideoSession(
+            channel: canal,
+            withAudio: _audioOn,
+            // Os servidores vêm do backend (é de lá que sai a credencial
+            // temporária do TURN). Quando não dá, a sessão usa o STUN público
+            // que ela já trazia.
+            iceServers: _iceServers,
+          )..addListener(_onVideoChanged))
+        : null;
+  }
+
+  /// Tenta o vídeo direto de novo, com espera crescente, algumas vezes.
+  ///
+  /// Antes disto, uma falha de ICE era definitiva: aparecia o aviso e a sessão
+  /// passava o resto da vida no JPEG, mesmo que o motivo tivesse durado dois
+  /// segundos. Quem está andando na rua troca de torre o tempo todo.
+  void _agendarRetentativaDeVideo() {
+    // Um timer por vez. A sessão avisa mais de uma vez ao falhar (estado da
+    // conexão, depois estado do ICE), e sem esta guarda cada aviso agendaria
+    // a sua própria tentativa — três avisos gastariam o orçamento inteiro de
+    // uma vez, em três segundos.
+    if (_disposed || _videoRetryTimer != null) return;
+    // Sem socket não há o que renegociar, e quem cuida disso é o
+    // `_scheduleReconnect`: ele refaz a conexão inteira, o vídeo junto.
+    if (_channel == null) return;
+
+    final espera = _videoRetry.proxima();
+    if (espera == null) {
+      _avisarQueDesistiu();
+      return;
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 4),
+        content: Text(widget.state.t
+            .videoRetrying(_videoRetry.tentativa, _videoRetry.total)),
+      ));
+    }
+
+    _videoRetryTimer = Timer(espera, () {
+      _videoRetryTimer = null;
+      if (_disposed) return;
+      final atual = _channel;
+      if (atual == null) return;
+      // Enquanto se esperava, o vídeo pode ter entrado sozinho — a sessão que
+      // falhou por falta de imagem se recupera quando o quadro-chave chega.
+      if (_video?.isLive == true) return;
+      _criarVideo(atual);
+      _video?.start();
+    });
+  }
+
+  void _avisarQueDesistiu() {
+    if (_videoFailureShown || !mounted) return;
+    _videoFailureShown = true;
+    // Falha no vídeo não pode ser silenciosa. A tela continua funcionando por
+    // JPEG, então nada "quebra" visivelmente — e sem este aviso o motivo
+    // ficaria só no log do aparelho, que num app instalado por sideload
+    // ninguém lê.
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 8),
+      content: Text(
+        '${widget.state.t.videoUnavailable}\n${_video?.error ?? ''}'.trim(),
+      ),
+    ));
   }
 
   /// A sessão de vídeo mudou de estado: pode ser hora de trocar o que aparece.
@@ -639,6 +725,10 @@ class _RemoteScreenState extends State<RemoteScreen>
       // tocando. O que desliga o botão é a conexão ter ido embora.
       if (video.state == VideoState.failed && !video.peerAlive) _audioOn = false;
       if (video.isLive) {
+        // Entrou. O orçamento de tentativas volta ao cheio: se cair de novo
+        // daqui a uma hora, é outra falha e merece as mesmas chances.
+        _videoRetry.sucesso();
+        _videoFailureShown = false;
         _hasFrame = true; // já há imagem, mesmo que nenhum JPEG tenha chegado
         _error = null;
         final ratio = video.aspectRatio;
@@ -649,20 +739,9 @@ class _RemoteScreenState extends State<RemoteScreen>
       }
     });
 
-    // Falha no vídeo não pode ser silenciosa. A tela continua funcionando por
-    // JPEG, então nada "quebra" visivelmente — e sem este aviso o motivo ficaria
-    // só no log do aparelho, que num app instalado por sideload ninguém lê.
-    if (video.state == VideoState.failed && !_videoFailureShown) {
-      _videoFailureShown = true;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 8),
-          content: Text(
-            '${widget.state.t.videoUnavailable}\n${video.error ?? ''}'.trim(),
-          ),
-        ),
-      );
-    }
+    // Falhou: tenta de novo antes de desistir. O aviso de derrota só sai
+    // quando as tentativas acabam — ver `_agendarRetentativaDeVideo`.
+    if (video.state == VideoState.failed) _agendarRetentativaDeVideo();
   }
 
   /// Reconecta automaticamente se a conexão de tela cair (#12).
@@ -747,6 +826,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _flushTimer?.cancel();
     _fpsTimer?.cancel();
     _reconnectTimer?.cancel();
+    _videoRetryTimer?.cancel();
     _sub?.cancel();
     _channel?.sink.close();
     _video?.removeListener(_onVideoChanged);
