@@ -37,6 +37,38 @@
 # outros continuam atendidos. Então acrescentar o nome novo antes de o DNS
 # propagar não tira o serviço do ar.
 {$CADDY_DOMAINS} {
+	# ## Cabeçalhos de segurança, em toda resposta — site e API
+	#
+	# Nenhum deles conserta um defeito nosso: eles instruem o **navegador** a
+	# recusar coisas que um atacante na rede tentaria.
+	header {
+		# O que mais importa aqui. Depois da primeira visita, o navegador se
+		# recusa a falar `http://` com este domínio pelo prazo abaixo — mesmo se
+		# alguém digitar, mesmo se um link mandar. Fecha o ataque de
+		# rebaixamento em Wi-Fi de aeroporto e de cafeteria, que é exatamente
+		# onde um aplicativo de acesso remoto é usado.
+		#
+		# **Sem `includeSubDomains` de propósito.** Ele valeria para qualquer
+		# subdomínio futuro, inclusive um que ainda não tenha certificado — e
+		# HSTS não se desfaz: o navegador guarda a instrução pelo `max-age`
+		# inteiro, e um subdomínio sem HTTPS ficaria inacessível por um ano sem
+		# nada explicando.
+		Strict-Transport-Security "max-age=31536000"
+		# O navegador respeita o `Content-Type` declarado em vez de adivinhar
+		# pelo conteúdo. Sem isto, um arquivo que a API devolva como texto pode
+		# ser interpretado como script.
+		X-Content-Type-Options "nosniff"
+		# Nenhuma página de fora pode embutir estas num quadro invisível e
+		# colher cliques. Os dois dizem a mesma coisa para navegadores de
+		# gerações diferentes.
+		Content-Security-Policy "frame-ancestors 'none'"
+		X-Frame-Options "DENY"
+		# O endereço completo da página não vai junto ao sair para outro site.
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Menos informação de graça sobre o que roda aqui.
+		-Server
+	}
+
 	# ## A ordem aqui é uma escolha de segurança, não de estilo
 	#
 	# O site estático atende uma **lista fechada** de caminhos, e todo o resto vai

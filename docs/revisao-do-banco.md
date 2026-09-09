@@ -169,6 +169,41 @@ Agora recusa acima de 256 KB, conferindo **duas vezes**: pelo `Content-Length`,
 para não ler à toa, e pelo tamanho real depois de ler, porque o cabeçalho pode
 mentir ou faltar. Com teste.
 
+## O endurecimento do servidor (feito depois desta revisão)
+
+A revisão do banco levou a uma medição da VM, e ela achou coisas que não eram
+do banco. O que mudou, e por quê:
+
+**Na máquina** (feito à mão, medido antes e depois):
+
+- `deploy/.env` era `-rw-rw-r--`: legível por qualquer conta do sistema, com o
+  segredo do JWT, a chave do backup e o segredo do TURN dentro. Agora `600`.
+- `rpcbind` escutava em `0.0.0.0:111` sem uso nenhum — é do NFS, que não roda
+  aqui, e é refletor conhecido de ataque de amplificação. Desligado. A Security
+  List da Oracle já o bloqueava de fora (medido: `TcpTestSucceeded: False`), mas
+  era uma camada só.
+- `ufw` estava inativo. Agora ativo, com 22, 80, 443, 3478 (TCP e UDP) e
+  **49160-49200/udp** — esta última é o relay do TURN, e sem ela quem usa rede
+  móvel para de conectar.
+- `DESKSIDE_TOTP_KEY` não existia, então a cifra dos segredos de 2FA derivava do
+  próprio segredo do JWT. Agora tem chave própria: um vazamento não entrega o
+  outro.
+
+**No código** (`Dockerfile`, `docker-compose.lite.yml`, `Caddyfile`):
+
+- A API rodava como **root** dentro do contêiner (medido: `uid=0(root)`). Agora
+  roda como 10001, com `/app` pertencendo ao root — o processo não consegue
+  reescrever o próprio programa.
+- `no-new-privileges` nos três contêineres, `cap_drop: ALL` na API.
+- Teto de memória em todos. Este é sobre disponibilidade: a VM tem 1 GB, e sem
+  teto um vazamento de memória faz o kernel matar processos a esmo — inclusive
+  o `sshd`, deixando a máquina sem ninguém para consertá-la.
+- HSTS e mais quatro cabeçalhos no Caddy.
+
+Nenhuma dessas mudanças conserta um buraco que existia; todas reduzem o que um
+buraco futuro renderia. É a diferença entre "invadiram a API" e "invadiram a API
+e levaram a máquina".
+
 ## O que continua em aberto
 
 Não é lista de defeitos — é o que uma revisão honesta precisa dizer que **não**
@@ -177,9 +212,8 @@ cobriu:
 1. **Contra quem já está dentro da VM, nada disto protege.** Quem tem o `.env`
    tem as chaves; quem tem a máquina tem o banco aberto. O que estas medidas
    cobrem é o vazamento realista: a cópia de segurança, que sai daqui todo dia.
-2. **A cifra do backup depende de `DESKSIDE_BACKUP_KEY` estar definida.** Sem
-   ela, `backup.py` não cifra — de propósito, para não trancar quem já usava.
-   **Confirme que está definida no `deploy/.env`.**
+2. ~~A cifra do backup depende de `DESKSIDE_BACKUP_KEY`.~~ **Conferido:**
+   definida, e as 14 cópias no servidor estão todas `.enc`, nenhuma em claro.
 3. **`DESKSIDE_EXIGIR_SEGREDO_DO_AGENTE` continua falso.** Enquanto for, um
    agente antigo que não conheça o campo `secret` é aceito sem provar nada.
    Ligue depois que todos os agentes estiverem atualizados.

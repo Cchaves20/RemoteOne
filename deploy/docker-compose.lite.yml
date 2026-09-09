@@ -12,6 +12,12 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Sem `cap_drop: ALL` aqui, ao contrário da API: o Caddy escuta nas portas
+    # 80 e 443, e ligar-se a porta abaixo de 1024 exige `NET_BIND_SERVICE`.
+    # Tirar todas as capacidades derrubaria o site inteiro.
+    mem_limit: 192m
     ports:
       - "80:80"
       - "443:443"
@@ -42,9 +48,56 @@ services:
     depends_on:
       - api
 
+  # Acerta o dono do volume **antes** de a API subir.
+  #
+  # Existe porque a API deixou de rodar como root, e o volume `apidata` já foi
+  # criado quando ela rodava — os arquivos lá dentro são de root, e um processo
+  # sem privilégio não escreve neles. O sintoma seria o pior tipo: o contêiner
+  # sobe, o SQLite recusa a escrita, e o servidor entra em laço de reinício
+  # depois de um `git pull` comum.
+  #
+  # A alternativa era um `chown` à mão no servidor, uma vez, na ordem certa. Um
+  # passo manual que só é necessário uma vez é exatamente o que se esquece — e
+  # o preço de esquecer é o serviço fora do ar. Aqui não há o que lembrar: roda
+  # a cada subida, custa um segundo e é idempotente.
+  #
+  # Sai do ar assim que termina; ver `deploy-init-permissoes-1` como `Exited
+  # (0)` no `docker compose ps` é o esperado, não um defeito.
+  init-permissoes:
+    image: alpine:3
+    user: "0:0"
+    command: ["chown", "-R", "10001:10001", "/data", "/backups"]
+    volumes:
+      - apidata:/data
+      - ./backups:/backups
+    restart: "no"
+
   api:
     build: ../backend
     restart: unless-stopped
+    depends_on:
+      init-permissoes:
+        condition: service_completed_successfully
+    # Endurecimento do contêiner. Nenhum destes conserta um buraco que existe
+    # hoje — os três reduzem o que um buraco futuro renderia.
+    security_opt:
+      # Bloqueia ganhar privilégio por binário setuid dentro do contêiner. É a
+      # trava que transforma "consegui executar código" em "consegui executar
+      # código como um usuário sem poder nenhum".
+      - no-new-privileges:true
+    cap_drop:
+      # A API é um processo Python numa porta alta: não precisa de capacidade
+      # nenhuma do kernel. Tirar todas custa zero e fecha uma família inteira
+      # de escapadas de contêiner.
+      - ALL
+    # Teto de memória, e este é sobre **disponibilidade**, não invasão. A VM tem
+    # 1 GB; a API usa 66 MB em operação. Sem teto, um vazamento de memória ou um
+    # pedido malicioso grande consome tudo e o kernel mata processos a esmo —
+    # inclusive o sshd, o que deixa a máquina sem ninguém para consertá-la.
+    #
+    # 512 MB é oito vezes o uso real: aperta o suficiente para o contêiner
+    # morrer sozinho antes de levar a máquina junto.
+    mem_limit: 512m
     # **Todo** o `.env` entra no contêiner, e não só as variáveis listadas
     # abaixo. A lista explícita era o caminho anterior, e ela tem um modo de
     # falhar que não deixa rastro: uma variável nova no `.env` — as de SMTP
@@ -90,6 +143,11 @@ services:
     image: coturn/coturn:4.6
     restart: unless-stopped
     network_mode: host
+    security_opt:
+      - no-new-privileges:true
+    # Idem Caddy: escuta na 3478 e usa a rede do host, então as capacidades
+    # ficam. O teto de memória vale do mesmo jeito.
+    mem_limit: 192m
     # Sem shell e sem entrypoint próprio: quem substitui as variáveis é o
     # compose, aqui, antes de o contêiner existir. A versão anterior passava
     # por `sh -c` para descobrir o IP público sozinha, e quando algo ali
