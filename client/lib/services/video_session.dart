@@ -482,6 +482,20 @@ class VideoSession extends ChangeNotifier {
     debugPrint('Deskside: vídeo por WebRTC indisponível — $reason');
     _timeout?.cancel();
     _set(VideoState.failed);
+    // **O canal de entrada sai primeiro, e é o que mais importa aqui.**
+    //
+    // Ele ficava para trás quando a conexão caía, e um canal órfão pode
+    // continuar dizendo `Open` depois de o par ter sido fechado. O `sendInput`
+    // decide pelo estado: vendo `Open`, ele envia, devolve `true`, e quem
+    // chamou volta **sem tentar o caminho HTTP**. Cada toque e cada tecla iam
+    // para o vazio, sem erro em lugar nenhum — e como a tela continua
+    // atualizando pelo JPEG, nada parecia quebrado.
+    //
+    // É a pior falha possível neste app: o que morre é a função principal, em
+    // silêncio. Zerar aqui devolve o `false` ao `sendInput`, e a entrada volta
+    // sozinha pelo servidor.
+    _input?.close();
+    _input = null;
     // Solta a conexão, mas mantém o renderizador: a tela pode estar no meio de
     // um quadro, e destruí-lo aqui arriscaria pintar em cima de nada.
     _peer?.close();
