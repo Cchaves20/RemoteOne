@@ -354,16 +354,24 @@ workflows:
           }
 
           # --- 3. minSdk ----------------------------------------------------
-          # O flutter_webrtc não compila abaixo da 23. O template usa Gradle
+          # O flutter_webrtc não compila abaixo da 23, e o flutter_secure_storage
+          # 11 exige 24 — vale o maior. 24 é Android 7, de 2016; abaixo disso o
+          # app deixa de instalar, o que é aceitável e é o que a dependência
+          # impõe de qualquer forma.
+          #
+          # Se ficasse em 23, a mesclagem de manifestos pararia o build com
+          # "minSdkVersion 23 cannot be smaller than version 24 declared in
+          # library" — barulhento, ao menos, mas depois de minutos de Gradle.
+          # O template usa Gradle
           # em Groovy ou em Kotlin conforme a versão do Flutter; os dois casos
           # entram aqui.
           APPGRADLE=$(ls android/app/build.gradle.kts android/app/build.gradle 2>/dev/null | head -1)
-          trocar "$APPGRADLE" "minSdk = flutter.minSdkVersion" "minSdk = 23"
-          trocar "$APPGRADLE" "minSdkVersion flutter.minSdkVersion" "minSdkVersion 23"
-          # Procurar só por "23" aceitaria um "2023" em qualquer lugar do
+          trocar "$APPGRADLE" "minSdk = flutter.minSdkVersion" "minSdk = 24"
+          trocar "$APPGRADLE" "minSdkVersion flutter.minSdkVersion" "minSdkVersion 24"
+          # Procurar só por "24" aceitaria um "2024" em qualquer lugar do
           # arquivo e diria que deu certo. A conferência precisa olhar para a
           # linha que interessa.
-          exigir "$APPGRADLE" "minSdk.*23"
+          exigir "$APPGRADLE" "minSdk.*24"
 
           echo "--- manifesto final ---"
           cat "$MANIFESTO"

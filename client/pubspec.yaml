@@ -12,7 +12,20 @@ dependencies:
   http: ^1.2.0
   web_socket_channel: ^3.0.0
   shared_preferences: ^2.2.0
-  flutter_secure_storage: ^9.2.0
+  # A 9.x prendia o `win32` na ^5, e o file_picker 12 pede a ^6 — o `pub get`
+  # recusava a combinação. Subir aqui era a saída que o próprio pub apontou.
+  #
+  # O que eu conferi antes de subir, porque esta biblioteca guarda o token de
+  # login: a API (`FlutterSecureStorage()`, read/write/delete) não mudou, então
+  # `token_store.dart` fica igual; no iOS o Keychain continua sendo o mesmo
+  # mecanismo; e o lado Android da 11 é Java puro, sem uma linha de Kotlin —
+  # ou seja, imune ao problema de AGP 9 que derrubou o file_picker.
+  #
+  # O preço: a 11 exige minSdk 24 (Android 7, de 2016), e o changelog avisa que
+  # dado guardado pelos algoritmos antigos do Android não é migrado num pulo
+  # direto da 9 para a 11. Não há instalação Android nossa no mundo, então não
+  # há o que migrar; no iPhone, se o login cair, é entrar de novo uma vez.
+  flutter_secure_storage: ^11.1.0
   wakelock_plus: ^1.2.0
   local_auth: ^2.3.0
   qr_flutter: ^4.1.0
