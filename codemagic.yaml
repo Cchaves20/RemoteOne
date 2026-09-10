@@ -3,8 +3,10 @@
 # Dois caminhos:
 #  - ios-sideload: gera um .ipa NÃO ASSINADO para instalar via Sideloadly com
 #    Apple ID grátis (ver docs/instalar-no-iphone.md). Não exige conta paga.
-#  - ios-testflight: build assinado para o TestFlight (exige Apple Developer
-#    Program, US$ 99/ano). Deixado comentado para o futuro.
+#  - ios-testflight: build assinado que sobe para o TestFlight, que é como
+#    outras pessoas testam sem cabo, sem Sideloadly e sem expirar em 7 dias.
+#    Exige o Apple Developer Program e a chave da App Store Connect API
+#    cadastrada no painel do Codemagic. Não dispara sozinho: você aperta.
 
 workflows:
   ios-sideload:
@@ -38,53 +40,8 @@ workflows:
         script: |
           dart run flutter_launcher_icons || echo "aviso: geração de ícone falhou"
           dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
-      - name: Requisitos do flutter_webrtc (iOS 13+ e chaves de permissão)
-        script: |
-          # O flutter_webrtc exige iOS 13 no mínimo. Como a pasta ios/ é
-          # gerada a cada build, o ajuste tem que ser por script — e antes do
-          # `flutter build`, que é quem roda o pod install.
-          if grep -q "^platform :ios" ios/Podfile; then
-            perl -pi -e "s/^platform :ios.*/platform :ios, '13.0'/" ios/Podfile
-          else
-            printf "platform :ios, '13.0'\n" | cat - ios/Podfile > ios/Podfile.novo
-            mv ios/Podfile.novo ios/Podfile
-          fi
-          perl -pi -e "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g" \
-            ios/Runner.xcodeproj/project.pbxproj
-          # O binário do WebRTC referencia câmera e microfone. O Deskside só
-          # recebe vídeo e não usa nenhum dos dois, mas sem estas chaves o iOS
-          # encerra o app caso alguma dessas APIs seja tocada.
-          PLIST=ios/Runner/Info.plist
-          MOTIVO="Nao utilizado: o Deskside apenas recebe a tela e o som do computador."
-          for KEY in NSCameraUsageDescription NSMicrophoneUsageDescription; do
-            /usr/libexec/PlistBuddy -c "Add :$KEY string $MOTIVO" "$PLIST" \
-              || /usr/libexec/PlistBuddy -c "Set :$KEY $MOTIVO" "$PLIST"
-          done
-          # Rede local: desde o iOS 14 o sistema BLOQUEIA falar com IPs da
-          # propria rede sem esta chave e sem o usuario autorizar. E por ela
-          # que passa o caminho direto celular <-> PC quando os dois estao no
-          # mesmo Wi-Fi - sem ela o WebRTC nao fecha em casa, que e justamente
-          # onde deveria ser mais facil.
-          REDE="Conectar direto ao seu computador quando os dois estao na mesma rede."
-          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string $REDE" "$PLIST" \
-            || /usr/libexec/PlistBuddy -c "Set :NSLocalNetworkUsageDescription $REDE" "$PLIST"
-          echo "--- Podfile ---"; head -3 ios/Podfile
-      - name: Permissão de Face ID no Info.plist
-        script: |
-          PLIST=ios/Runner/Info.plist
-          REASON="Desbloquear o Deskside"
-          /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string $REASON" "$PLIST" \
-            || /usr/libexec/PlistBuddy -c "Set :NSFaceIDUsageDescription $REASON" "$PLIST"
-      - name: Nome do app embaixo do ícone
-        script: |
-          # Sem isto o iPhone mostra "Deskside Client": o `flutter create` usa
-          # o `--project-name` (deskside_client) como nome visível, e ninguém
-          # nunca corrigiu. O nome do projeto continua com sufixo porque é ele
-          # que dá o identificador do pacote; o que a pessoa lê é outro campo.
-          PLIST=ios/Runner/Info.plist
-          /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Deskside" "$PLIST" \
-            || /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Deskside" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$PLIST"
+      - name: Ajustes obrigatórios do iOS
+        script: sh ../scripts/preparar-ios.sh
       - name: Análise e testes
         script: |
           # Antes do `analyze`, porque é mais rápido e a mensagem é melhor: uma
@@ -121,27 +78,90 @@ workflows:
       - client/build/ipa/*.ipa
       - "**/*.ipa"
 
-  # ios-testflight:
-  #   name: iOS (TestFlight — exige Apple Developer)
-  #   instance_type: mac_mini_m2
-  #   working_directory: client
-  #   environment:
-  #     flutter: stable
-  #     xcode: latest
-  #     groups:
-  #       - app_store            # chave da App Store Connect API (painel do Codemagic)
-  #     ios_signing:
-  #       distribution_type: app_store
-  #       bundle_identifier: com.deskside.desksideClient
-  #   scripts:
-  #     - flutter pub get
-  #     - flutter build ipa --export-options-plist=/Users/builder/export_options.plist
-  #   artifacts:
-  #     - client/build/ios/ipa/*.ipa
-  #   publishing:
-  #     app_store_connect:
-  #       auth: integration
-  #       submit_to_testflight: true
+  ios-testflight:
+    name: iOS (TestFlight — para amigos e família testarem)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    working_directory: client
+    environment:
+      flutter: stable
+      xcode: latest
+      # A chave da App Store Connect API, cadastrada no painel do Codemagic em
+      # Teams > Integrations > App Store Connect. O nome abaixo tem que ser
+      # **idêntico** ao que você deu para a chave lá.
+      #
+      # Com a integração ligada, o Codemagic cria e renova o certificado e o
+      # perfil sozinho: não há .p12 para exportar de um Mac que você não tem.
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.deskside.desksideClient
+    integrations:
+      app_store_connect: deskside
+    # Sem gatilho automático, de propósito. Todo envio para o TestFlight
+    # consome um número de versão que não volta atrás, e é visível para quem
+    # testa. Este build sai quando você aperta "Start new build".
+    scripts:
+      - name: Gerar pasta ios/ se ainda não versionada
+        script: |
+          if [ ! -d ios ]; then
+            flutter create --org com.deskside --project-name deskside_client --platforms=ios .
+          fi
+      - name: Dependências
+        script: flutter pub get
+      - name: Ícone e splash (não bloqueia o build se falhar)
+        script: |
+          dart run flutter_launcher_icons || echo "aviso: geração de ícone falhou"
+          dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
+      # O mesmo arquivo que o sideload usa. O workflow de TestFlight nasceu
+      # sem estes ajustes, e teria subido para os testadores um app que trava
+      # na biometria e não conecta na rede local — sem nada no log dizendo.
+      - name: Ajustes obrigatórios do iOS
+        script: sh ../scripts/preparar-ios.sh
+      - name: Número da build
+        script: |
+          # A App Store Connect recusa um número de build repetido, e a
+          # mensagem dela ("The provided entity includes an attribute with a
+          # value that has already been used") não diz que é isso. O contador
+          # do Codemagic resolve: ele cresce sozinho a cada execução.
+          #
+          # A versão que a pessoa lê (0.1.0) continua vindo do pubspec.yaml.
+          echo "build number: $BUILD_NUMBER"
+      - name: Análise e testes
+        script: |
+          python3 ../scripts/conferir-textos.py lib/l10n/strings.dart
+          python3 ../scripts/conferir-dart.py lib test
+          flutter analyze
+          flutter test
+      - name: Build assinado e .ipa
+        script: |
+          # `use-profiles` aplica ao projeto do Xcode o perfil que a integração
+          # baixou. Sem ele o build assina com o que achar pela frente, ou não
+          # assina.
+          xcode-project use-profiles
+          flutter build ipa --release \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist \
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - client/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Sobe para o TestFlight, sem enviar para a revisão da App Store.
+        submit_to_testflight: true
+        # Descomente quando o grupo existir na App Store Connect (o nome tem
+        # que bater letra por letra). Sem isto a build chega ao TestFlight e
+        # você distribui pelo painel; com isto, ela vai sozinha para o grupo.
+        # beta_groups:
+        #   - Amigos e familia
+      email:
+        recipients:
+          - caiofbchaves@gmail.com
+        notify:
+          success: true
+          failure: true
 
   android:
     name: Android (APK para instalar direto, sem expirar)
