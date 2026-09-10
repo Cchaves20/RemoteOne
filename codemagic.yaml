@@ -145,9 +145,15 @@ workflows:
 
   android:
     name: Android (APK para instalar direto, sem expirar)
-    # Linux, e não Mac: o Android não precisa de macOS, a instância é mais
-    # rápida e não gasta os minutos de Mac da conta gratuita.
-    instance_type: linux_x2
+    # Mac, apesar de o Android não precisar de macOS: a instância Linux é mais
+    # rápida e mais barata, mas **não está no plano gratuito** — o build morre
+    # em "The selected instance type is not available with the current billing
+    # plan" antes de rodar a primeira linha. O Mac é o que a conta tem.
+    #
+    # O preço disso é real: estes minutos saem do mesmo bolo dos builds de iOS.
+    # Se um dia a conta virar paga, voltar para `linux_x2` é trocar esta linha
+    # — os passos abaixo são portáteis de propósito.
+    instance_type: mac_mini_m2
     max_build_duration: 60
     working_directory: client
     environment:
@@ -189,11 +195,32 @@ workflows:
             }
           }
 
+          # Troca literal dentro de um arquivo, igual nos dois sistemas.
+          #
+          # Aqui havia `sed -i`, e ele **não é portátil**: no Linux o `-i`
+          # edita no lugar, no macOS (BSD) o `-i` exige um sufixo de backup e
+          # engole o próprio comando como se fosse o sufixo. Isso já bastaria
+          # para quebrar o build ao sair do Linux — mas o pior era outro: o
+          # `\n` do lado direito de uma substituição é extensão do GNU. No
+          # macOS ele vira um `n` literal, o manifesto sai corrompido, e a
+          # conferência logo abaixo **passa mesmo assim**, porque o texto que
+          # ela procura continua lá. Defeito que se anuncia é melhor do que
+          # defeito que espera; este esperava até o celular de alguém.
+          trocar() {
+            python3 - "$@" <<'PY'
+          import sys
+          caminho, de, para = sys.argv[1:4]
+          texto = open(caminho, encoding="utf-8").read()
+          if de in texto:
+              open(caminho, "w", encoding="utf-8").write(texto.replace(de, para))
+          PY
+          }
+
           # --- 1. Biometria -------------------------------------------------
           # O local_auth exige FlutterFragmentActivity. Com o FlutterActivity
           # padrão a biometria não falha: **derruba o app**.
           MAIN=$(find android/app/src/main -name MainActivity.kt | head -1)
-          sed -i 's/FlutterActivity/FlutterFragmentActivity/g' "$MAIN"
+          trocar "$MAIN" "FlutterActivity" "FlutterFragmentActivity"
           exigir "$MAIN" "FlutterFragmentActivity"
 
           # --- 2. Manifesto -------------------------------------------------
@@ -201,7 +228,11 @@ workflows:
 
           # O espaço de nomes `tools` é o que permite **remover** permissões que
           # vieram de uma dependência.
-          sed -i 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools">|' "$MANIFESTO"
+          # Numa linha só. O `\n` da versão anterior era exatamente o que não
+          # sobrevive à troca de sistema, e o XML não liga para a quebra.
+          trocar "$MANIFESTO" \
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">' \
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">'
           exigir "$MANIFESTO" "xmlns:tools"
 
           # INTERNET não vem no manifesto principal do template - só nos de
@@ -245,7 +276,12 @@ workflows:
           # O here-doc acima entra indentado (o YAML exige); o XML não se
           # importa com espaços à esquerda, mas a primeira linha precisa ser a
           # declaração. Tirar a indentação evita depender disso.
-          sed -i 's/^ *//' android/app/src/main/res/xml/network_security_config.xml
+          python3 - android/app/src/main/res/xml/network_security_config.xml <<'PY'
+          import sys
+          caminho = sys.argv[1]
+          linhas = open(caminho, encoding="utf-8").read().splitlines(True)
+          open(caminho, "w", encoding="utf-8").writelines(l.lstrip(" ") for l in linhas)
+          PY
           exigir android/app/src/main/res/xml/network_security_config.xml 'cleartextTrafficPermitted="false"'
 
           python3 - "$MANIFESTO" <<'PY'
@@ -284,9 +320,12 @@ workflows:
           # em Groovy ou em Kotlin conforme a versão do Flutter; os dois casos
           # entram aqui.
           APPGRADLE=$(ls android/app/build.gradle.kts android/app/build.gradle 2>/dev/null | head -1)
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' "$APPGRADLE"
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' "$APPGRADLE"
-          exigir "$APPGRADLE" "23"
+          trocar "$APPGRADLE" "minSdk = flutter.minSdkVersion" "minSdk = 23"
+          trocar "$APPGRADLE" "minSdkVersion flutter.minSdkVersion" "minSdkVersion 23"
+          # Procurar só por "23" aceitaria um "2023" em qualquer lugar do
+          # arquivo e diria que deu certo. A conferência precisa olhar para a
+          # linha que interessa.
+          exigir "$APPGRADLE" "minSdk.*23"
 
           echo "--- manifesto final ---"
           cat "$MANIFESTO"
