@@ -100,17 +100,20 @@ class _FilesScreenState extends State<FilesScreen> {
     if (_busy != null) return;
     final messenger = ScaffoldMessenger.of(context);
     final t = widget.state.t;
-    // `withData` traz o conteúdo junto: sem ele viria só um caminho, e no
-    // iPhone esse caminho aponta para uma cópia temporária que o sistema pode
-    // recolher antes do envio terminar.
-    final escolha = await FilePicker.pickFiles(withData: true);
-    if (escolha == null || escolha.files.isEmpty) return; // cancelou
-    final arquivo = escolha.files.first;
-    final bytes = arquivo.bytes;
-    if (bytes == null) return;
+    // Um arquivo só, então `pickFile` no singular. O conteúdo vem por
+    // `readAsBytes`: sem ler agora sobraria um caminho, e no iPhone esse
+    // caminho aponta para uma cópia temporária que o sistema pode recolher
+    // antes do envio terminar.
+    final arquivo = await FilePicker.pickFile();
+    if (arquivo == null) return; // cancelou
+    if (!mounted) return;
 
     setState(() => _busy = arquivo.name);
     try {
+      // A leitura mora dentro do `try` porque ela também falha: um arquivo que
+      // o sistema já recolheu estoura aqui, e do lado de fora isso subiria
+      // como exceção sem tratamento em vez de virar o aviso de envio falhado.
+      final bytes = await arquivo.readAsBytes();
       final destino =
           await widget.state.uploadFile(widget.device, arquivo.name, bytes);
       messenger.showSnackBar(

@@ -23,7 +23,17 @@ dependencies:
   # arquivo temporário (path_provider) e oferecer "Salvar em Arquivos" pela
   # folha de compartilhamento do iOS (share_plus) — que é como o iPhone deixa
   # o usuário escolher onde guardar sem pedir permissão nenhuma.
-  file_picker: ^11.0.0
+  # A 11.x não compila no Android com AGP 9: o `android/build.gradle` dela
+  # deixa de aplicar o plugin de Kotlin achando que o AGP 9 compila Kotlin
+  # sozinho, o Kotlin do plugin não compila, e o registrador gerado pelo
+  # Flutter não acha a classe. A 12.x quebrou o pacote em um por plataforma e
+  # o do Android respeita `android.builtInKotlin` — ver codemagic.yaml.
+  #
+  # `^12.2.0` de propósito, sem deixar cair para a 11: a 12 exige Flutter
+  # 3.38+, e se a máquina de build for mais velha eu prefiro que o `pub get`
+  # recuse na hora, com o motivo escrito, a resolver para a 11 e falhar cinco
+  # minutos depois com "cannot find symbol".
+  file_picker: ^12.2.0
   path_provider: ^2.1.0
   # Faixa larga de propósito: as versões mais novas do share_plus exigem um
   # Flutter bem recente, e a API que usamos (SharePlus.instance.share com

@@ -315,6 +315,44 @@ workflows:
           }
           true
 
+          # --- 2b. Kotlin dos plugins ---------------------------------------
+          # O template do Flutter agora gera AGP 9, e o AGP 9 traz compilação
+          # de Kotlin embutida. Os plugins passaram a confiar nisso: quando
+          # detectam AGP 9, **não** aplicam mais o plugin de Kotlin.
+          #
+          # Só que essa compilação embutida não alcança os módulos de plugin
+          # nesta versão do Flutter. O resultado foi este, depois de 5 minutos
+          # de build:
+          #
+          #     GeneratedPluginRegistrant.java:19: error: cannot find symbol
+          #       new com.mr.flutter.plugin.filepicker.FilePickerPlugin()
+          #
+          # O Kotlin do plugin simplesmente não virou classe. A prova de que o
+          # problema é esse: todos os outros plugins em Kotlin compilaram no
+          # mesmo build — eles ainda aplicam o plugin de Kotlin por conta
+          # própria, que é justamente o que o aviso do Flutter pede para parar
+          # de fazer.
+          #
+          # Dizer `builtInKotlin=false` faz o `android_file_picker` voltar a
+          # aplicar o Kotlin explicitamente. Quando a migração do Flutter para
+          # o AGP 9 terminar, esta linha sai.
+          python3 - <<'PY'
+          import pathlib
+          caminho = pathlib.Path("android/gradle.properties")
+          linhas = caminho.read_text(encoding="utf-8").splitlines() if caminho.exists() else []
+          # Escrito assim, e não com `>>`: a pasta android/ pode sobreviver de
+          # uma execução anterior, e append repetido deixa a chave duas vezes
+          # no arquivo. Já paguei esse preço num .env de servidor.
+          linhas = [l for l in linhas if not l.startswith("android.builtInKotlin")]
+          linhas.append("android.builtInKotlin=false")
+          caminho.write_text("\n".join(linhas) + "\n", encoding="utf-8")
+          PY
+          exigir android/gradle.properties "android.builtInKotlin=false"
+          test "$(grep -c '^android.builtInKotlin' android/gradle.properties)" = 1 || {
+            echo "FALHOU: android.builtInKotlin aparece mais de uma vez."
+            exit 1
+          }
+
           # --- 3. minSdk ----------------------------------------------------
           # O flutter_webrtc não compila abaixo da 23. O template usa Gradle
           # em Groovy ou em Kotlin conforme a versão do Flutter; os dois casos
