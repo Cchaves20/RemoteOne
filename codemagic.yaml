@@ -219,6 +219,16 @@ workflows:
             --build-number=$BUILD_NUMBER \
             --export-options-plist=/Users/builder/export_options.plist \
             --dart-define=DESKSIDE_BACKEND=https://deskside.com.br
+
+          # Onde o .ipa foi parar, e se ele existe mesmo.
+          #
+          # A publicação só envia o que a seção `artifacts` conseguiu colher.
+          # Quando o caminho não casa, não há erro: o build fica verde, a
+          # publicação não tem o que mandar, e a build nunca aparece no
+          # TestFlight — exatamente o sintoma que estamos perseguindo. Melhor
+          # ver o arquivo no log do que deduzir pela ausência dele.
+          echo "--- .ipa gerado ---"
+          ls -la build/ios/ipa/ || echo "(pasta build/ios/ipa não existe)"
     artifacts:
       - build/ios/ipa/*.ipa
       - client/build/ios/ipa/*.ipa
