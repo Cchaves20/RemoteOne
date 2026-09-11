@@ -132,6 +132,21 @@ workflows:
           python3 ../scripts/conferir-dart.py lib test
           flutter analyze
           flutter test
+      - name: O que a chave da Apple enxerga
+        script: |
+          # Diagnóstico, nunca derruba o build.
+          #
+          # Quando a assinatura falha, a mensagem é sempre a mesma — "No
+          # matching profiles found for bundle identifier ... and distribution
+          # type app_store" — e ela não distingue três coisas bem diferentes:
+          # o identificador não existe, ele existe mas a chave não tem
+          # permissão para vê-lo, ou ele existe como curinga (`com.deskside.*`),
+          # que a App Store não aceita para distribuição.
+          #
+          # Esta lista responde as três de uma vez, antes do passo que falha.
+          echo "--- identificadores visíveis para esta chave ---"
+          app-store-connect bundle-ids list || \
+            echo "(não consegui listar: veja se a chave é App Manager e se há contrato pendente)"
       - name: Build assinado e .ipa
         script: |
           # `use-profiles` aplica ao projeto do Xcode o perfil que a integração
