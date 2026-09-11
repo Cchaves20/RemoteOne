@@ -165,10 +165,7 @@ workflows:
           xcode-project use-profiles
       - name: Build assinado e .ipa
         script: |
-          # `use-profiles` aplica ao projeto do Xcode o perfil que a integração
-          # baixou. Sem ele o build assina com o que achar pela frente, ou não
-          # assina.
-          xcode-project use-profiles
+          # O `export_options.plist` vem do `use-profiles`, no passo anterior.
           flutter build ipa --release \
             --build-number=$BUILD_NUMBER \
             --export-options-plist=/Users/builder/export_options.plist \
