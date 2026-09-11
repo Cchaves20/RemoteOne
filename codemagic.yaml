@@ -97,6 +97,20 @@ workflows:
       #
       # No passo "Assinatura" lá embaixo dá para ver o que aconteceu, e o
       # `--create` ainda cria o perfil e o certificado que faltarem.
+      #
+      # ---
+      #
+      # Grupo de variáveis criado no painel do Codemagic. Precisa conter
+      # `CERTIFICATE_PRIVATE_KEY`, marcada como secreta: é a chave privada RSA
+      # que assina o certificado de distribuição. Sem ela a ferramenta para em
+      # "Cannot save Signing Certificates without certificate private key" —
+      # ela consegue pedir o certificado à Apple, mas não tem com o que assinar.
+      #
+      # A chave é a mesma para sempre: gerar uma nova a cada build criaria um
+      # certificado novo a cada build, e a Apple limita quantos existem ao
+      # mesmo tempo. Duas ou três execuções e a conta trava.
+      groups:
+        - apple
     integrations:
       app_store_connect: deskside
     # Sem gatilho automático, de propósito. Todo envio para o TestFlight
@@ -137,25 +151,33 @@ workflows:
       - name: Assinatura
         script: |
           set -e
+          ESPERADO=com.deskside.desksideClient
 
-          # Antes de tentar assinar, mostrar o que esta chave realmente vê. A
-          # mensagem de falha da Apple é a mesma para três causas diferentes:
-          # o identificador não existe; existe mas a chave não tem permissão
-          # (chave criada como Developer em vez de App Manager); ou existe como
-          # curinga (`com.deskside.*`), que a App Store não aceita para
-          # distribuição. A lista separa as três.
+          # O que esta chave enxerga de verdade, antes de tentar qualquer coisa.
           echo "--- identificadores visíveis para esta chave ---"
-          app-store-connect bundle-ids list \
-            || echo "(não consegui listar: chave sem permissão, ou contrato pendente)"
+          app-store-connect bundle-ids list | tee /tmp/ids.txt
+
+          # O identificador registrado precisa ser **exatamente** o do app.
+          #
+          # A âncora de fim de linha não é capricho: o que estava registrado era
+          # `com.deskside.desksideClient.3P2C2883SS` (o Team ID grudado no fim),
+          # e um `grep` sem âncora casa com isso e diz que está tudo certo. Seria
+          # mais uma conferência que passa com o defeito no lugar.
+          grep -q "^Identifier: ${ESPERADO}$" /tmp/ids.txt || {
+            echo "FALHOU: nenhum App ID registrado é exatamente '$ESPERADO'."
+            echo "Veja a lista acima. Registre um App ID do tipo Explicit com"
+            echo "esse texto em developer.apple.com > Identifiers."
+            exit 1
+          }
 
           # Chaveiro temporário desta máquina, onde o certificado vai morar.
           keychain initialize
 
-          # `--create` cria o que faltar: o perfil de distribuição e, se for o
-          # caso, o certificado. É o que a assinatura automática deveria ter
-          # feito sozinha.
-          app-store-connect fetch-signing-files com.deskside.desksideClient \
+          # `--certificate-key` é a chave privada que assina o certificado de
+          # distribuição; `--create` cria o certificado e o perfil que faltarem.
+          app-store-connect fetch-signing-files "$ESPERADO" \
             --type IOS_APP_STORE \
+            --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
             --create
 
           keychain add-certificates
