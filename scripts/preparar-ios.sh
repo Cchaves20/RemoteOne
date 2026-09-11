@@ -29,46 +29,81 @@ definir() {
     || /usr/libexec/PlistBuddy -c "Set :$1 $3" "$PLIST"
 }
 
-# --- 1. iOS 13 -------------------------------------------------------------
-# O flutter_webrtc exige iOS 13 no mínimo, e o ajuste precisa vir antes do
-# `flutter build`, que é quem roda o pod install.
+# --- 1. Versão mínima do iOS -----------------------------------------------
+# O flutter_webrtc exige iOS 13 no mínimo.
 #
-# O Podfile **não vem do `flutter create`**: quem o escreve é o próprio Flutter
-# ao preparar o build de iOS, e `--config-only` faz essa preparação sem
-# compilar nada. Antes disto o script mexia num arquivo que ainda não existia;
-# sem `set -e` os erros do `grep` e do `cat` iam para o log e o build seguia,
-# então é bem provável que a linha de `platform :ios` nunca tenha sido
-# aplicada de verdade — ou seja, o requisito do WebRTC vinha sendo ignorado em
-# silêncio, e o build passava verde.
-if [ ! -f ios/Podfile ]; then
-  flutter build ios --config-only --no-codesign
-fi
+# Isto aqui já procurou esse ajuste no lugar errado duas vezes, então vale
+# escrever o que mudou: **a partir do Flutter 3.44 o Swift Package Manager é o
+# padrão no iOS, e o Podfile deixou de ser gerado.** Ele só aparece como
+# reserva, para plugins que ainda não têm pacote Swift. Quem manda na versão
+# mínima, nos dois caminhos, é o projeto do Xcode.
+#
+# Antes disto o script editava um Podfile inexistente, e sem `set -e` os erros
+# iam para o log enquanto o build seguia verde. Quer dizer: a linha de
+# plataforma provavelmente nunca foi aplicada, e ninguém notou porque o
+# projeto do Xcode já carregava o valor certo.
 
-# Se ainda assim não existir, parar aqui. Seguir em frente só empurraria a
-# falha para o `pod install`, com uma mensagem pior e cinco minutos depois.
-if [ ! -f ios/Podfile ]; then
-  echo "FALHOU: ios/Podfile não existe nem depois de --config-only."
-  exit 1
-fi
+# Sobe o alvo para 13.0 onde estiver abaixo — e **só onde estiver abaixo**.
+#
+# A versão anterior usava um `perl` que carimbava 13.0 em toda ocorrência.
+# Enquanto o template do Flutter vinha com 12.0 isso parecia igual, mas é
+# outra coisa: no dia em que o template subir para 15.0 (e ele vai; o Flutter
+# vem subindo o piso), aquele comando **rebaixaria** o projeto, e um pacote
+# Swift que exige 15 quebraria o build com uma mensagem sobre deployment
+# target que não aponta para cá.
+python3 - <<'PY'
+import pathlib
+import re
 
-if grep -q "^platform :ios" ios/Podfile; then
-  perl -pi -e "s/^platform :ios.*/platform :ios, '13.0'/" ios/Podfile
+MINIMO = 13.0
+caminho = pathlib.Path("ios/Runner.xcodeproj/project.pbxproj")
+texto = caminho.read_text(encoding="utf-8")
+
+def subir(m):
+    atual = float(m.group(1))
+    if atual >= MINIMO:
+        return m.group(0)
+    return f"IPHONEOS_DEPLOYMENT_TARGET = {MINIMO};"
+
+novo, trocas = re.subn(
+    r"IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);", subir, texto
+)
+if novo != texto:
+    caminho.write_text(novo, encoding="utf-8")
+
+valores = re.findall(r"IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);", novo)
+if not valores:
+    raise SystemExit(
+        "FALHOU: nenhum IPHONEOS_DEPLOYMENT_TARGET no projeto — "
+        "o template do Flutter mudou de forma."
+    )
+baixos = [v for v in valores if float(v) < MINIMO]
+if baixos:
+    raise SystemExit(f"FALHOU: alvo ainda abaixo de {MINIMO}: {baixos}")
+print(f"alvo mínimo do iOS: {sorted(set(valores))} em {len(valores)} configuração(ões)")
+PY
+
+# O Podfile é opcional. Quando existe, é o caminho de reserva do CocoaPods e
+# precisa concordar com o projeto; quando não existe, é o Swift Package
+# Manager cuidando de tudo, e não há o que ajustar.
+if [ -f ios/Podfile ]; then
+  if grep -q "^platform :ios" ios/Podfile; then
+    perl -pi -e "s/^platform :ios.*/platform :ios, '13.0'/" ios/Podfile
+  else
+    # O template traz a linha comentada (`# platform :ios, '12.0'`), que o
+    # `grep` acima não casa. Acrescentar no topo é o certo: o CocoaPods usa a
+    # primeira declaração e ignora a comentada.
+    printf "platform :ios, '13.0'\n" | cat - ios/Podfile > ios/Podfile.novo
+    mv ios/Podfile.novo ios/Podfile
+  fi
+  grep -q "^platform :ios, '13.0'" ios/Podfile || {
+    echo "FALHOU: a linha de plataforma não entrou no Podfile."
+    exit 1
+  }
+  echo "Podfile presente (reserva do CocoaPods), plataforma em 13.0"
 else
-  # O template do Flutter traz a linha comentada (`# platform :ios, '12.0'`),
-  # que o `grep` acima não casa. Acrescentar no topo é o certo: o CocoaPods
-  # usa a primeira declaração e ignora a comentada.
-  printf "platform :ios, '13.0'\n" | cat - ios/Podfile > ios/Podfile.novo
-  mv ios/Podfile.novo ios/Podfile
+  echo "sem Podfile: o projeto usa Swift Package Manager, que é o padrão"
 fi
-
-# Conferir que pegou. Um Podfile sem esta linha faz o pod install resolver
-# para iOS 12, e o flutter_webrtc não compila lá.
-grep -q "^platform :ios, '13.0'" ios/Podfile || {
-  echo "FALHOU: a linha de plataforma não entrou no Podfile."
-  exit 1
-}
-perl -pi -e "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g" \
-  ios/Runner.xcodeproj/project.pbxproj
 
 # --- 2. Permissões ---------------------------------------------------------
 # O binário do WebRTC referencia câmera e microfone. O Deskside só recebe
@@ -107,8 +142,6 @@ definir CFBundleDisplayName string Deskside
 # cifrar conteúdo por conta própria, esta linha precisa ser revista.
 definir ITSAppUsesNonExemptEncryption bool false
 
-echo "--- Podfile ---"
-head -3 ios/Podfile
 echo "--- Info.plist ---"
 /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$PLIST"
 /usr/libexec/PlistBuddy -c "Print :ITSAppUsesNonExemptEncryption" "$PLIST"
