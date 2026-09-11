@@ -32,12 +32,41 @@ definir() {
 # --- 1. iOS 13 -------------------------------------------------------------
 # O flutter_webrtc exige iOS 13 no mínimo, e o ajuste precisa vir antes do
 # `flutter build`, que é quem roda o pod install.
+#
+# O Podfile **não vem do `flutter create`**: quem o escreve é o próprio Flutter
+# ao preparar o build de iOS, e `--config-only` faz essa preparação sem
+# compilar nada. Antes disto o script mexia num arquivo que ainda não existia;
+# sem `set -e` os erros do `grep` e do `cat` iam para o log e o build seguia,
+# então é bem provável que a linha de `platform :ios` nunca tenha sido
+# aplicada de verdade — ou seja, o requisito do WebRTC vinha sendo ignorado em
+# silêncio, e o build passava verde.
+if [ ! -f ios/Podfile ]; then
+  flutter build ios --config-only --no-codesign
+fi
+
+# Se ainda assim não existir, parar aqui. Seguir em frente só empurraria a
+# falha para o `pod install`, com uma mensagem pior e cinco minutos depois.
+if [ ! -f ios/Podfile ]; then
+  echo "FALHOU: ios/Podfile não existe nem depois de --config-only."
+  exit 1
+fi
+
 if grep -q "^platform :ios" ios/Podfile; then
   perl -pi -e "s/^platform :ios.*/platform :ios, '13.0'/" ios/Podfile
 else
+  # O template do Flutter traz a linha comentada (`# platform :ios, '12.0'`),
+  # que o `grep` acima não casa. Acrescentar no topo é o certo: o CocoaPods
+  # usa a primeira declaração e ignora a comentada.
   printf "platform :ios, '13.0'\n" | cat - ios/Podfile > ios/Podfile.novo
   mv ios/Podfile.novo ios/Podfile
 fi
+
+# Conferir que pegou. Um Podfile sem esta linha faz o pod install resolver
+# para iOS 12, e o flutter_webrtc não compila lá.
+grep -q "^platform :ios, '13.0'" ios/Podfile || {
+  echo "FALHOU: a linha de plataforma não entrou no Podfile."
+  exit 1
+}
 perl -pi -e "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g" \
   ios/Runner.xcodeproj/project.pbxproj
 
