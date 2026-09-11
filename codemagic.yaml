@@ -159,16 +159,29 @@ workflows:
 
           # O identificador registrado precisa ser **exatamente** o do app.
           #
-          # A âncora de fim de linha não é capricho: o que estava registrado era
+          # A âncora de fim de linha não é capricho: o que havia registrado era
           # `com.deskside.desksideClient.3P2C2883SS` (o Team ID grudado no fim),
           # e um `grep` sem âncora casa com isso e diz que está tudo certo. Seria
-          # mais uma conferência que passa com o defeito no lugar.
-          grep -q "^Identifier: ${ESPERADO}$" /tmp/ids.txt || {
-            echo "FALHOU: nenhum App ID registrado é exatamente '$ESPERADO'."
-            echo "Veja a lista acima. Registre um App ID do tipo Explicit com"
-            echo "esse texto em developer.apple.com > Identifiers."
-            exit 1
-          }
+          # mais uma conferência passando com o defeito no lugar.
+          #
+          # Quando falta, criar aqui em vez de mandar alguém ao formulário do
+          # portal. Não é preguiça: o formulário tem um campo de prefixo ao lado
+          # do identificador, e é exatamente ali que o Team ID entrou grudado da
+          # primeira vez. Aqui o texto é uma constante deste arquivo, e não há
+          # campo para errar. Só cria quando não existe.
+          if ! grep -q "^Identifier: ${ESPERADO}$" /tmp/ids.txt; then
+            echo "App ID '$ESPERADO' não está registrado. Criando."
+            app-store-connect bundle-ids create "$ESPERADO" \
+              --name "Deskside iOS" \
+              --platform IOS
+            app-store-connect bundle-ids list | tee /tmp/ids.txt
+            grep -q "^Identifier: ${ESPERADO}$" /tmp/ids.txt || {
+              echo "FALHOU: criei o App ID e ele não apareceu na lista."
+              echo "Pode ser atraso de propagação da Apple — tente de novo em"
+              echo "alguns minutos antes de procurar outra causa."
+              exit 1
+            }
+          fi
 
           # Chaveiro temporário desta máquina, onde o certificado vai morar.
           keychain initialize
