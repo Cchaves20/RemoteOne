@@ -86,15 +86,17 @@ workflows:
     environment:
       flutter: stable
       xcode: latest
-      # A chave da App Store Connect API, cadastrada no painel do Codemagic em
-      # Teams > Integrations > App Store Connect. O nome abaixo tem que ser
-      # **idêntico** ao que você deu para a chave lá.
+      # A assinatura é feita à mão, num passo, e não pelo bloco `ios_signing`
+      # daqui. O motivo é concreto: com `ios_signing`, o Codemagic busca
+      # certificado e perfil na **preparação** do build, antes do primeiro
+      # script. Quando isso falha, o build morre sem lista de passos e sem log
+      # — só a frase "No matching profiles found", que não diz se o
+      # identificador não existe, se a chave não o enxerga, ou se falta
+      # certificado. Passei um diagnóstico para dentro dos scripts e ele nunca
+      # chegou a rodar.
       #
-      # Com a integração ligada, o Codemagic cria e renova o certificado e o
-      # perfil sozinho: não há .p12 para exportar de um Mac que você não tem.
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.deskside.desksideClient
+      # No passo "Assinatura" lá embaixo dá para ver o que aconteceu, e o
+      # `--create` ainda cria o perfil e o certificado que faltarem.
     integrations:
       app_store_connect: deskside
     # Sem gatilho automático, de propósito. Todo envio para o TestFlight
@@ -132,21 +134,35 @@ workflows:
           python3 ../scripts/conferir-dart.py lib test
           flutter analyze
           flutter test
-      - name: O que a chave da Apple enxerga
+      - name: Assinatura
         script: |
-          # Diagnóstico, nunca derruba o build.
-          #
-          # Quando a assinatura falha, a mensagem é sempre a mesma — "No
-          # matching profiles found for bundle identifier ... and distribution
-          # type app_store" — e ela não distingue três coisas bem diferentes:
-          # o identificador não existe, ele existe mas a chave não tem
-          # permissão para vê-lo, ou ele existe como curinga (`com.deskside.*`),
-          # que a App Store não aceita para distribuição.
-          #
-          # Esta lista responde as três de uma vez, antes do passo que falha.
+          set -e
+
+          # Antes de tentar assinar, mostrar o que esta chave realmente vê. A
+          # mensagem de falha da Apple é a mesma para três causas diferentes:
+          # o identificador não existe; existe mas a chave não tem permissão
+          # (chave criada como Developer em vez de App Manager); ou existe como
+          # curinga (`com.deskside.*`), que a App Store não aceita para
+          # distribuição. A lista separa as três.
           echo "--- identificadores visíveis para esta chave ---"
-          app-store-connect bundle-ids list || \
-            echo "(não consegui listar: veja se a chave é App Manager e se há contrato pendente)"
+          app-store-connect bundle-ids list \
+            || echo "(não consegui listar: chave sem permissão, ou contrato pendente)"
+
+          # Chaveiro temporário desta máquina, onde o certificado vai morar.
+          keychain initialize
+
+          # `--create` cria o que faltar: o perfil de distribuição e, se for o
+          # caso, o certificado. É o que a assinatura automática deveria ter
+          # feito sozinha.
+          app-store-connect fetch-signing-files com.deskside.desksideClient \
+            --type IOS_APP_STORE \
+            --create
+
+          keychain add-certificates
+
+          # Aplica o perfil ao projeto do Xcode e escreve o export_options.plist
+          # que o `flutter build ipa` usa no passo seguinte.
+          xcode-project use-profiles
       - name: Build assinado e .ipa
         script: |
           # `use-profiles` aplica ao projeto do Xcode o perfil que a integração
