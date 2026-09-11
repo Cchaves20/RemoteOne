@@ -183,6 +183,20 @@ workflows:
             }
           fi
 
+          # Os registros de app que existem na App Store Connect, com o
+          # bundle id de cada um.
+          #
+          # Assinar e subir são coisas diferentes: o certificado e o perfil
+          # vêm do portal de desenvolvedor, mas o `.ipa` só entra num
+          # **registro de app** cujo bundle id seja exatamente o mesmo. Sem
+          # esse registro o build compila, assina, e o upload é recusado no
+          # fim — que foi o que aconteceu. Não dá para criar o registro por
+          # aqui (ele precisa de nome, SKU e idioma), então isto só imprime;
+          # nunca derruba o build.
+          echo "--- registros de app na App Store Connect ---"
+          app-store-connect apps list \
+            || echo "(não consegui listar os registros de app)"
+
           # Chaveiro temporário desta máquina, onde o certificado vai morar.
           keychain initialize
 
