@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/strings.dart';
+import '../models/canais.dart';
 import '../models/pais.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
@@ -38,6 +39,15 @@ class _SignupScreenState extends State<SignupScreen> {
 
   /// Se o contato é telefone. Falso = e-mail.
   bool _porTelefone = false;
+
+  /// O que este servidor consegue entregar.
+  ///
+  /// Começa em "os dois" e é corrigido quando o `/health` responde. Não é
+  /// espera bloqueante de propósito: a tela abre na hora, e se a resposta
+  /// chegar depois de a pessoa já ter escolhido telefone num servidor sem SMS,
+  /// o seletor desaparece e a escolha volta para e-mail — chato, mas melhor do
+  /// que uma tela em branco enquanto a rede pensa.
+  CanaisDeEntrega _canais = CanaisDeEntrega.desconhecido;
   bool _verSenha = false;
   bool _enviando = false;
   String? _erro;
@@ -49,6 +59,19 @@ class _SignupScreenState extends State<SignupScreen> {
     // é o que transforma "senha inválida" em "falta um número".
     _senha.addListener(_redesenhar);
     _confirmacao.addListener(_redesenhar);
+    _descobrirCanais();
+  }
+
+  /// Pergunta ao servidor o que ele entrega, e ajusta a tela.
+  Future<void> _descobrirCanais() async {
+    final canais = await widget.state.api.canaisDeEntrega();
+    if (!mounted) return;
+    setState(() {
+      _canais = canais;
+      // Se só um caminho serve, é nele que a tela fica — inclusive quando a
+      // pessoa já havia tocado no outro antes da resposta chegar.
+      if (!canais.haEscolha) _porTelefone = canais.unicoPorTelefone;
+    });
   }
 
   void _redesenhar() {
@@ -219,28 +242,37 @@ class _SignupScreenState extends State<SignupScreen> {
                     // e não como um segundo campo opcional: são duas formas de
                     // dizer a mesma coisa, e dois campos fariam parecer que se
                     // pede as duas.
-                    SegmentedButton<bool>(
-                      segments: [
-                        ButtonSegment(
-                          value: false,
-                          label: Text(t.email),
-                          icon: const Icon(Icons.alternate_email),
-                        ),
-                        ButtonSegment(
-                          value: true,
-                          label: Text(t.phone),
-                          icon: const Icon(Icons.smartphone),
-                        ),
-                      ],
-                      selected: {_porTelefone},
-                      onSelectionChanged: (v) => setState(() {
-                        _porTelefone = v.first;
-                        // Limpa: um e-mail escrito no campo de telefone não é
-                        // um telefone, e deixá-lo lá convidaria a mandar.
-                        _contato.clear();
-                      }),
-                    ),
-                    const SizedBox(height: 12),
+                    //
+                    // E só aparece quando há escolha de verdade. Este servidor
+                    // responde `sms: false`, e o seletor oferecia telefone
+                    // igual: a pessoa preenchia tudo, escolhia o país, digitava
+                    // o número, e só então lia que o código tinha ido para o
+                    // registro do servidor. Um botão com uma opção que não
+                    // serve é pior do que nenhum botão.
+                    if (_canais.haEscolha) ...[
+                      SegmentedButton<bool>(
+                        segments: [
+                          ButtonSegment(
+                            value: false,
+                            label: Text(t.email),
+                            icon: const Icon(Icons.alternate_email),
+                          ),
+                          ButtonSegment(
+                            value: true,
+                            label: Text(t.phone),
+                            icon: const Icon(Icons.smartphone),
+                          ),
+                        ],
+                        selected: {_porTelefone},
+                        onSelectionChanged: (v) => setState(() {
+                          _porTelefone = v.first;
+                          // Limpa: um e-mail escrito no campo de telefone não é
+                          // um telefone, e deixá-lo lá convidaria a mandar.
+                          _contato.clear();
+                        }),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     if (_porTelefone)
                       Row(
                         children: [

@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/automation.dart';
 import '../models/cadastro.dart';
+import '../models/canais.dart';
 import '../models/conta.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
@@ -91,6 +92,25 @@ class ApiClient {
       };
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
+
+  /// Por quais caminhos este servidor consegue mandar o código.
+  ///
+  /// Sem autenticação de propósito: é consultado **antes** de existir conta,
+  /// pela tela de cadastro, para não oferecer um caminho que não entrega.
+  ///
+  /// Nunca lança. Qualquer falha vira [CanaisDeEntrega.desconhecido], que
+  /// mostra as duas opções — o mesmo que o app fazia antes de consultar. Uma
+  /// tela de cadastro que quebra porque o `/health` não respondeu seria trocar
+  /// um incômodo por um impedimento.
+  Future<CanaisDeEntrega> canaisDeEntrega() async {
+    try {
+      final res = await _http.get(_uri('/health')).timeout(_timeout);
+      if (res.statusCode != 200) return CanaisDeEntrega.desconhecido;
+      return CanaisDeEntrega.doHealth(jsonDecode(res.body));
+    } catch (_) {
+      return CanaisDeEntrega.desconhecido;
+    }
+  }
 
   /// Primeira etapa do cadastro: valida o formulário e manda o código.
   ///
