@@ -18,6 +18,7 @@ Os métodos externos (Google, Apple, Microsoft) entram por cima desta base:
 produzem a identidade e reaproveitam a mesma emissão de tokens.
 """
 
+import logging
 from datetime import UTC, date, datetime
 
 import jwt
@@ -66,6 +67,8 @@ from app.security import (
     verify_password,
     verify_totp,
 )
+
+logger = logging.getLogger("deskside")
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 _bearer = HTTPBearer(auto_error=True)
@@ -202,9 +205,30 @@ def _enviar(destino: str, canal: str, codigo: str) -> bool:
         else:
             entrega.entregador.sms(destino, codigo)
     except entrega.EntregaError as exc:
-        # 502 e não 500: quem falhou foi um serviço de fora, e a mensagem dele
-        # é a única pista que existe (número não verificado, sem saldo).
-        raise _erro(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+        # O texto do provedor vai para o diário do servidor, **não** para a
+        # tela de quem está se cadastrando.
+        #
+        # Antes ele ia para os dois, com o argumento de que era a única pista
+        # existente. Era pista, sim — para mim, lendo o log. Na tela virou isto,
+        # para um estranho tentando criar conta:
+        #
+        #     não consegui enviar o e-mail: (550, b'You can only send testing
+        #     emails to your own email address (caiofbchaves@gmail.com). To send
+        #     emails to other recipients, please verify a domain at
+        #     resend.com/domains...
+        #
+        # Três coisas de uma vez: incompreensível para quem lê, entrega o nome
+        # do provedor e o estado da conta dele, e **publica o e-mail pessoal do
+        # dono** para qualquer pessoa que toque em "criar conta". A pista não se
+        # perde: ela fica no log, onde eu a leio e o usuário não.
+        logger.error("entrega falhou por %s: %s", canal, exc)
+        # 502 e não 500: quem falhou foi um serviço de fora, e a diferença
+        # importa para quem lê o log seis meses depois.
+        raise _erro(
+            status.HTTP_502_BAD_GATEWAY,
+            "não conseguimos enviar o código agora. Tente de novo em alguns "
+            "minutos; se continuar, fale com o suporte.",
+        ) from exc
     return entrega.configurado()[
         "email" if canal == "email" else "sms"
     ]

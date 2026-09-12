@@ -11,13 +11,14 @@ cada tentativa de cadastro por telefone custa um SMS:
 - que a validação toda aconteça **antes** do envio.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 from conftest import SENHA, criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app import telefone, verificacao
+from app import entrega, telefone, verificacao
 from app.db import SessionLocal
 from app.main import app
 from app.models import PendingSignup, User
@@ -355,3 +356,67 @@ def test_health_conta_se_a_entrega_esta_configurada():
     assert "delivery" in corpo
     assert set(corpo["delivery"]) == {"email", "sms"}
     assert "signup-verification" in corpo["features"]
+
+
+# --- a falha do provedor não vira mensagem de tela ----------------------------
+
+
+def test_erro_do_provedor_fica_no_diario_e_nao_na_tela(espiao, monkeypatch, caplog):
+    """O que o provedor reclama é pista para mim, não texto para o usuário.
+
+    Este caso não é hipotético: em produção o Resend recusou com
+
+        550 You can only send testing emails to your own email address
+        (caiofbchaves@gmail.com). To send emails to other recipients, please
+        verify a domain at resend.com/domains...
+
+    e isso apareceu **na tela de quem tentou criar conta**. Três problemas de
+    uma vez: ninguém entende, entrega o provedor e o estado da conta dele, e
+    publica o e-mail pessoal do dono para qualquer estranho.
+
+    A pista não pode se perder — por isso o teste exige as duas coisas: fora da
+    resposta, dentro do log.
+    """
+    recusa = (
+        "não consegui enviar o e-mail: (550, b'You can only send testing "
+        "emails to your own email address (dono@example.com). To send emails "
+        "to other recipients, please verify a domain at resend.com/domains.')"
+    )
+
+    def explode(destino, codigo):
+        raise entrega.EntregaError(recusa)
+
+    monkeypatch.setattr(espiao, "email", explode)
+
+    with caplog.at_level(logging.ERROR, logger="deskside"):
+        resposta = comecar(email="alguem@example.com")
+
+    assert resposta.status_code == 502
+    corpo = resposta.text
+    # Nada do provedor na resposta.
+    for vazamento in ("dono@example.com", "resend", "550", "testing emails"):
+        assert vazamento.lower() not in corpo.lower(), vazamento
+    # E a mensagem que sobra serve para quem lê.
+    assert "tente de novo" in resposta.json()["detail"].lower()
+    # A pista inteira, no diário.
+    assert "dono@example.com" in caplog.text
+
+
+def test_a_conta_nao_nasce_quando_o_envio_falha(espiao, monkeypatch):
+    """Envio que falha não pode deixar conta pela metade.
+
+    Se a pessoa tentar de novo depois, um cadastro pendente órfão faria o
+    segundo pedido bater em "já cadastrado" — e ela ficaria sem conta e sem
+    conseguir criar uma.
+    """
+
+    def explode(destino, codigo):
+        raise entrega.EntregaError("provedor fora do ar")
+
+    monkeypatch.setattr(espiao, "email", explode)
+    comecar(email="orfao@example.com")
+
+    with SessionLocal() as db:
+        assert db.scalar(
+            select(User).where(User.email == "orfao@example.com")
+        ) is None
