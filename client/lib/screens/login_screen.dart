@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../config.dart';
-import '../models/pais.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../widgets/brand.dart';
@@ -48,8 +47,6 @@ class _LoginScreenState extends State<LoginScreen> {
   late bool _servidorAberto = widget.state.serverUrl != backendPadrao;
 
   /// Se entra por telefone. Falso = e-mail.
-  bool _porTelefone = false;
-  Pais _pais = Pais.padrao;
 
   bool _busy = false;
   // Vira true quando a conta tem 2FA e o backend pede o código.
@@ -80,33 +77,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Future<void> _escolherPais() async {
-    final escolhido = await showModalBottomSheet<Pais>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheet) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.7,
-          builder: (_, controller) => ListView.builder(
-            controller: controller,
-            itemCount: Pais.todos.length,
-            itemBuilder: (_, i) {
-              final p = Pais.todos[i];
-              return ListTile(
-                leading: Text(p.bandeira, style: const TextStyle(fontSize: 24)),
-                title: Text(p.nome),
-                trailing: Text('+${p.ddi}'),
-                selected: p == _pais,
-                onTap: () => Navigator.of(sheet).pop(p),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-    if (escolhido != null) setState(() => _pais = escolhido);
-  }
 
   Future<void> _submit() async {
     setState(() => _busy = true);
@@ -114,9 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await widget.state.login(
         _password.text,
-        email: _porTelefone ? null : _contato.text.trim(),
-        phone: _porTelefone ? _contato.text.trim() : null,
-        country: _porTelefone ? _pais.iso : null,
+        email: _contato.text.trim(),
         totpCode: _needsCode ? _code.text.trim() : null,
       );
     } on ApiException catch (e) {
@@ -178,64 +146,22 @@ class _LoginScreenState extends State<LoginScreen> {
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            SegmentedButton<bool>(
-                              segments: [
-                                ButtonSegment(
-                                  value: false,
-                                  label: Text(t.email),
-                                  icon: const Icon(Icons.alternate_email),
-                                ),
-                                ButtonSegment(
-                                  value: true,
-                                  label: Text(t.phone),
-                                  icon: const Icon(Icons.smartphone),
-                                ),
-                              ],
-                              selected: {_porTelefone},
-                              onSelectionChanged: (v) => setState(() {
-                                _porTelefone = v.first;
-                                // Limpa: um e-mail no campo de telefone não é
-                                // um telefone, e deixá-lo lá convidaria a
-                                // mandar.
-                                _contato.clear();
-                              }),
-                            ),
-                            const SizedBox(height: 12),
-                            if (_porTelefone)
-                              Row(
-                                children: [
-                                  InkWell(
-                                    onTap: _escolherPais,
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 18),
-                                      child: Text('${_pais.bandeira} +${_pais.ddi}'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _contato,
-                                      keyboardType: TextInputType.phone,
-                                      decoration: InputDecoration(
-                                        labelText: t.phone,
-                                        hintText: t.phoneHint,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              )
-                            else
-                              TextField(
-                                controller: _contato,
-                                keyboardType: TextInputType.emailAddress,
-                                autocorrect: false,
-                                decoration: InputDecoration(
-                                  labelText: t.email,
-                                  prefixIcon: const Icon(Icons.alternate_email),
-                                ),
+                            // Só e-mail. Ver signup_screen.dart: sem
+                            // provedor de SMS, o caminho por telefone saiu das
+                            // telas. Aqui vale uma ressalva — o login por
+                            // telefone **não** usava SMS (é telefone e senha,
+                            // sem código), então quem tinha conta só com
+                            // telefone perderia o acesso. Conferi antes de
+                            // remover: havia uma, e ela ganhou e-mail primeiro.
+                            TextField(
+                              controller: _contato,
+                              keyboardType: TextInputType.emailAddress,
+                              autocorrect: false,
+                              decoration: InputDecoration(
+                                labelText: t.email,
+                                prefixIcon: const Icon(Icons.alternate_email),
                               ),
+                            ),
                             const SizedBox(height: 12),
                             TextField(
                               controller: _password,

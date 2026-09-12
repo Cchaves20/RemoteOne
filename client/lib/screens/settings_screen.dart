@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../l10n/strings.dart';
 import '../models/cadastro.dart';
-import '../models/pais.dart';
 import '../models/stream_quality.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
@@ -105,18 +104,14 @@ class SettingsScreen extends StatelessWidget {
                 _plano(context, state),
               ])),
               staggered(_card(context, t.account, Icons.person_outline, [
-                // O rótulo, o ícone e o diálogo seguem **como a conta foi
-                // criada**: quem entrou por telefone não tem e-mail nenhum
-                // para trocar, e "Alterar e-mail" ali era um botão que não
-                // servia para nada.
-                if (state.conta?.porTelefone ?? false)
-                  _action(context, Icons.smartphone, t.changePhone,
-                      () => _showChangePhone(context),
-                      subtitle: state.conta?.contato)
-                else
-                  _action(context, Icons.alternate_email, t.changeEmail,
-                      () => _showChangeEmail(context),
-                      subtitle: state.conta?.contato),
+                // Só e-mail. A troca de telefone saiu junto com o resto do
+                // caminho por SMS (ver signup_screen.dart): ela manda código
+                // por mensagem, e sem provedor o código ia para o registro do
+                // servidor. Uma conta que **só** tenha telefone fica sem esta
+                // entrada — não há nenhuma hoje, foi conferido antes.
+                _action(context, Icons.alternate_email, t.changeEmail,
+                    () => _showChangeEmail(context),
+                    subtitle: state.conta?.contato),
                 _action(context, Icons.password, t.changePassword,
                     () => _showChangePassword(context)),
                 _action(context, Icons.logout, t.signOut, () {
@@ -466,84 +461,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  /// Trocar o telefone. Gêmeo do de e-mail, com o seletor de país junto.
-  ///
-  /// O país é obrigatório porque o número vai normalizado ao servidor: sem ele,
-  /// "(11) 98765-4321" seria gravado como veio, e o login — que normaliza —
-  /// nunca acharia essa forma. A pessoa trocaria o número e ficaria fora da
-  /// própria conta.
-  Future<void> _showChangePhone(BuildContext context) async {
-    final t = state.t;
-    final phone = TextEditingController();
-    final password = TextEditingController();
-    var pais = Pais.porIso(_isoAtual()) ?? Pais.padrao;
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, refazer) => AlertDialog(
-          title: Text(t.changePhone),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(t.contactNeedsCode, style: const TextStyle(fontSize: 12)),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  TextButton(
-                    onPressed: () async {
-                      final escolhido = await _escolherPais(context, pais);
-                      if (escolhido != null) refazer(() => pais = escolhido);
-                    },
-                    child: Text('${pais.bandeira} +${pais.ddi}'),
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: phone,
-                      autofocus: true,
-                      keyboardType: TextInputType.phone,
-                      decoration: InputDecoration(
-                        labelText: t.newPhone,
-                        hintText: t.phoneHint,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              TextField(
-                controller: password,
-                obscureText: true,
-                decoration: InputDecoration(labelText: t.currentPassword),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(t.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(t.save),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true) return;
-    if (!context.mounted) return;
-    await _verificarContato(
-      context,
-      messenger,
-      () => state.contactChangeStart(
-        currentPassword: password.text,
-        phone: phone.text.trim(),
-        country: pais.iso,
-      ),
-      t.phoneUpdated,
-    );
-  }
-
   /// A segunda metade das duas trocas: manda o código e abre a tela de código.
   ///
   /// Comum aos dois porque a partir daqui e-mail e telefone são o mesmo fluxo —
@@ -585,49 +502,6 @@ class SettingsScreen extends StatelessWidget {
             Navigator.of(telaDoCodigo).pop();
             messenger.showSnackBar(SnackBar(content: Text(sucesso)));
           },
-        ),
-      ),
-    );
-  }
-
-  /// O país do número atual, deduzido do DDI guardado.
-  ///
-  /// Abrir o diálogo já no país certo poupa um toque de quem só quer corrigir
-  /// um dígito. O mais longo primeiro: `+1` é prefixo de nada, mas `+55` e
-  /// `+595` se confundem se a comparação for pela ordem da tabela.
-  String _isoAtual() {
-    final atual = state.conta?.phone ?? '';
-    if (!atual.startsWith('+')) return Pais.padrao.iso;
-    final ordenados = [...Pais.todos]
-      ..sort((a, b) => b.ddi.length.compareTo(a.ddi.length));
-    for (final p in ordenados) {
-      if (atual.startsWith('+${p.ddi}')) return p.iso;
-    }
-    return Pais.padrao.iso;
-  }
-
-  Future<Pais?> _escolherPais(BuildContext context, Pais atual) {
-    return showModalBottomSheet<Pais>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheet) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.7,
-          builder: (_, controller) => ListView.builder(
-            controller: controller,
-            itemCount: Pais.todos.length,
-            itemBuilder: (_, i) {
-              final p = Pais.todos[i];
-              return ListTile(
-                leading: Text(p.bandeira, style: const TextStyle(fontSize: 24)),
-                title: Text(p.nome),
-                trailing: Text('+${p.ddi}'),
-                selected: p == atual,
-                onTap: () => Navigator.of(sheet).pop(p),
-              );
-            },
-          ),
         ),
       ),
     );

@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 
 import '../l10n/strings.dart';
 import '../models/cadastro.dart';
-import '../models/pais.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/senha.dart';
@@ -37,8 +36,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _senha = TextEditingController();
   final _confirmacao = TextEditingController();
 
-  bool _porTelefone = false;
-  Pais _pais = Pais.padrao;
   bool _verSenha = false;
   bool _ocupado = false;
   String? _erro;
@@ -92,9 +89,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     });
     try {
       final pedido = await widget.state.forgotPassword(
-        email: _porTelefone ? null : _contato.text.trim(),
-        phone: _porTelefone ? _contato.text.trim() : null,
-        country: _porTelefone ? _pais.iso : null,
+        email: _contato.text.trim(),
       );
       if (!mounted) return;
       setState(() => _pedido = pedido);
@@ -134,33 +129,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     }
   }
 
-  Future<void> _escolherPais() async {
-    final escolhido = await showModalBottomSheet<Pais>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheet) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.7,
-          builder: (_, controller) => ListView.builder(
-            controller: controller,
-            itemCount: Pais.todos.length,
-            itemBuilder: (_, i) {
-              final p = Pais.todos[i];
-              return ListTile(
-                leading: Text(p.bandeira, style: const TextStyle(fontSize: 24)),
-                title: Text(p.nome),
-                trailing: Text('+${p.ddi}'),
-                selected: p == _pais,
-                onTap: () => Navigator.of(sheet).pop(p),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-    if (escolhido != null) setState(() => _pais = escolhido);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -198,62 +166,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 24),
-        SegmentedButton<bool>(
-          segments: [
-            ButtonSegment(
-              value: false,
-              label: Text(t.email),
-              icon: const Icon(Icons.alternate_email),
-            ),
-            ButtonSegment(
-              value: true,
-              label: Text(t.phone),
-              icon: const Icon(Icons.smartphone),
-            ),
-          ],
-          selected: {_porTelefone},
-          onSelectionChanged: (v) => setState(() {
-            _porTelefone = v.first;
-            _contato.clear();
-          }),
-        ),
-        const SizedBox(height: 12),
-        if (_porTelefone)
-          Row(
-            children: [
-              InkWell(
-                onTap: _escolherPais,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 18),
-                  child: Text('${_pais.bandeira} +${_pais.ddi}'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _contato,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: t.phone,
-                    hintText: t.phoneHint,
-                  ),
-                ),
-              ),
-            ],
-          )
-        else
-          TextField(
-            controller: _contato,
-            keyboardType: TextInputType.emailAddress,
-            autocorrect: false,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: t.email,
-              prefixIcon: const Icon(Icons.alternate_email),
-            ),
+        // Só e-mail. Ver signup_screen.dart — e aqui era o furo mais
+        // grave dos quatro: recuperar senha por telefone manda código por
+        // SMS, então quem pedisse por esse caminho ficaria sem conta **e**
+        // sem recuperação, lendo um aviso de que o código foi para o
+        // registro do servidor.
+        TextField(
+          controller: _contato,
+          keyboardType: TextInputType.emailAddress,
+          autocorrect: false,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: t.email,
+            prefixIcon: const Icon(Icons.alternate_email),
           ),
+        ),
         if (_erro != null) ...[
           const SizedBox(height: 14),
           Text(_erro!, style: TextStyle(color: theme.colorScheme.error)),
