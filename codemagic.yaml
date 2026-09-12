@@ -62,7 +62,13 @@ workflows:
           # — sem citar o arquivo quebrado, sem citar a diretiva. Ver
           # scripts/conferir-dart.py.
           python3 ../scripts/conferir-dart.py lib test
-          flutter analyze
+          # `--no-fatal-infos` porque `flutter analyze` sai com código 1 em
+          # **qualquer** aviso, inclusive sugestão de estilo — diferente do
+          # `dart analyze`, que só falha em erro e warning. Com o `set -e`
+          # acima, um `prefer_const_constructors` esquecido passaria a impedir
+          # uma entrega ao TestFlight, e isso é desproporcional: erro e warning
+          # devem barrar, sugestão de estilo não.
+          flutter analyze --no-fatal-infos
           flutter test
       - name: Build iOS sem assinatura e empacotar .ipa
         script: |
@@ -162,7 +168,13 @@ workflows:
           set -e
           python3 ../scripts/conferir-textos.py lib/l10n/strings.dart
           python3 ../scripts/conferir-dart.py lib test
-          flutter analyze
+          # `--no-fatal-infos` porque `flutter analyze` sai com código 1 em
+          # **qualquer** aviso, inclusive sugestão de estilo — diferente do
+          # `dart analyze`, que só falha em erro e warning. Com o `set -e`
+          # acima, um `prefer_const_constructors` esquecido passaria a impedir
+          # uma entrega ao TestFlight, e isso é desproporcional: erro e warning
+          # devem barrar, sugestão de estilo não.
+          flutter analyze --no-fatal-infos
           flutter test
       - name: Assinatura
         script: |
@@ -518,7 +530,13 @@ workflows:
           # — sem citar o arquivo quebrado, sem citar a diretiva. Ver
           # scripts/conferir-dart.py.
           python3 ../scripts/conferir-dart.py lib test
-          flutter analyze
+          # `--no-fatal-infos` porque `flutter analyze` sai com código 1 em
+          # **qualquer** aviso, inclusive sugestão de estilo — diferente do
+          # `dart analyze`, que só falha em erro e warning. Com o `set -e`
+          # acima, um `prefer_const_constructors` esquecido passaria a impedir
+          # uma entrega ao TestFlight, e isso é desproporcional: erro e warning
+          # devem barrar, sugestão de estilo não.
+          flutter analyze --no-fatal-infos
           flutter test
       - name: Build do APK
         # `--no-shrink` de propósito: o R8 do release removeria classes que o

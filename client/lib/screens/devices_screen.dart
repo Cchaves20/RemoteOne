@@ -348,7 +348,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
                 child: OutlinedButton.icon(
                   onPressed: _copiarEndereco,
                   icon: const Icon(Icons.copy, size: 16),
-                  label: Text(siteDeskside),
+                  label: const Text(siteDeskside),
                 ),
               ),
             ],

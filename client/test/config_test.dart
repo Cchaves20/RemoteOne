@@ -33,7 +33,7 @@ void main() {
     // Sem TLS, a senha e o token viajam em texto claro pelo Wi-Fi de qualquer
     // café. `http://` é aceitável só quando alguém escolheu apontar para a
     // própria rede — nunca como padrão de fábrica.
-    if (bool.hasEnvironment('DESKSIDE_BACKEND')) return;
+    if (const bool.hasEnvironment('DESKSIDE_BACKEND')) return;
     expect(backendPadrao.startsWith('https://'), isTrue, reason: backendPadrao);
   });
 
