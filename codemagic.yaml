@@ -44,6 +44,14 @@ workflows:
         script: sh ../scripts/preparar-ios.sh
       - name: Análise e testes
         script: |
+          # `set -e` para o passo morrer no primeiro erro.
+          #
+          # Sem isto, um erro do `analyze` era reportado e o script seguia para
+          # os testes. O `flutter test` então falhava por não compilar a mesma
+          # coisa, e a mensagem do analyze — que nomeia arquivo, linha e o
+          # problema — ficava soterrada sob duzentas linhas de teste. O log
+          # dizia "loading widget_test.dart", que não aponta para nada.
+          set -e
           # Antes do `analyze`, porque é mais rápido e a mensagem é melhor: uma
           # string não fechada em `strings.dart` faz o compilador reclamar de
           # dezenas de "getter não definido" — um por palavra da frase que virou
@@ -144,6 +152,14 @@ workflows:
           echo "build number: $BUILD_NUMBER"
       - name: Análise e testes
         script: |
+          # `set -e` para o passo morrer no primeiro erro.
+          #
+          # Sem isto, um erro do `analyze` era reportado e o script seguia para
+          # os testes. O `flutter test` então falhava por não compilar a mesma
+          # coisa, e a mensagem do analyze — que nomeia arquivo, linha e o
+          # problema — ficava soterrada sob duzentas linhas de teste. O log
+          # dizia "loading widget_test.dart", que não aponta para nada.
+          set -e
           python3 ../scripts/conferir-textos.py lib/l10n/strings.dart
           python3 ../scripts/conferir-dart.py lib test
           flutter analyze
@@ -484,6 +500,14 @@ workflows:
           cat "$MANIFESTO"
       - name: Análise e testes
         script: |
+          # `set -e` para o passo morrer no primeiro erro.
+          #
+          # Sem isto, um erro do `analyze` era reportado e o script seguia para
+          # os testes. O `flutter test` então falhava por não compilar a mesma
+          # coisa, e a mensagem do analyze — que nomeia arquivo, linha e o
+          # problema — ficava soterrada sob duzentas linhas de teste. O log
+          # dizia "loading widget_test.dart", que não aponta para nada.
+          set -e
           # Antes do `analyze`, porque é mais rápido e a mensagem é melhor: uma
           # string não fechada em `strings.dart` faz o compilador reclamar de
           # dezenas de "getter não definido" — um por palavra da frase que virou

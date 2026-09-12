@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../l10n/strings.dart';
 import '../models/cadastro.dart';
+import '../models/pais.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/senha.dart';
