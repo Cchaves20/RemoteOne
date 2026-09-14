@@ -43,6 +43,34 @@ if (-not $nome) {
 $item = Get-Item $Caminho
 $tamanho = [math]::Round($item.Length / 1MB, 1)
 
+# --- O runtime C++ da Microsoft vem junto, ou é esperado na máquina? --------
+#
+# Mesma família do defeito de arquitetura, e igualmente invisível de dentro: um
+# .exe ligado dinamicamente ao runtime roda aqui e morre no computador de quem
+# não tem o Visual Studio instalado, com
+#
+#     A execução de código não pode continuar porque VCRUNTIME140.dll não foi
+#     encontrado.
+#
+# antes da primeira linha do nosso código — não há mensagem nossa possível.
+#
+# A detecção é por busca de texto, e não por leitura da tabela de importação:
+# o nome da DLL importada fica no arquivo como texto puro, então achá-lo basta
+# e não exige interpretar o formato PE. Ver agent/.cargo/config.toml.
+$conteudo = [System.Text.Encoding]::ASCII.GetString(
+    [System.IO.File]::ReadAllBytes($Caminho))
+$dinamicas = @('VCRUNTIME140.dll', 'MSVCP140.dll') |
+    Where-Object { $conteudo.Contains($_) }
+
+if ($dinamicas) {
+    Write-Host "ERRADO: $Caminho depende de $($dinamicas -join ', ')." -ForegroundColor Red
+    Write-Host "  Esse .exe funciona aqui e falha em Windows sem o runtime C++" -ForegroundColor DarkGray
+    Write-Host "  da Microsoft instalado, que é o caso de uma máquina recém-formatada." -ForegroundColor DarkGray
+    Write-Host "  Confira se agent/.cargo/config.toml existe e traz +crt-static," -ForegroundColor DarkGray
+    Write-Host "  e recompile do zero (cargo clean antes)." -ForegroundColor DarkGray
+    exit 1
+}
+
 if ($nome -eq $Esperado) {
     Write-Host "ok: $Caminho é $nome, $tamanho MB, de $($item.LastWriteTime)" -ForegroundColor Green
     exit 0
