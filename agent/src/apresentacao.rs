@@ -167,6 +167,7 @@ pub use imp::detectar;
 
 #[cfg(windows)]
 mod imp {
+    use crate::sem_janela::SemJanela;
     /// `true` = silêncio ligado.
     ///
     /// Devolve `Err` quando o `PresentationSettings` não existe. Ele acompanha
@@ -175,6 +176,7 @@ mod imp {
     pub fn silenciar(ligar: bool) -> Result<(), String> {
         let argumento = if ligar { "/start" } else { "/stop" };
         let saida = std::process::Command::new("PresentationSettings.exe")
+            .sem_janela()
             .arg(argumento)
             .spawn();
         match saida {

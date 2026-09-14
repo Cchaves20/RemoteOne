@@ -287,6 +287,7 @@ fn parse_desktop(text: &str) -> Vec<AppInfo> {
 
 #[cfg(windows)]
 mod imp {
+    use crate::sem_janela::SemJanela;
     use std::path::{Path, PathBuf};
     use std::process::{Command, Output};
 
@@ -306,6 +307,7 @@ mod imp {
             .collect();
         let encoded = base64::engine::general_purpose::STANDARD.encode(utf16);
         Command::new("powershell")
+            .sem_janela()
             .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
             .output()
     }
@@ -549,6 +551,7 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
         // `start` resolve atalhos (.lnk) e executáveis. O "" é o título da
         // janela, exigido quando o caminho vem entre aspas.
         Command::new("cmd")
+            .sem_janela()
             .args(["/C", "start", "", &alvo])
             .spawn()
             .map(|_| ())
@@ -601,6 +604,7 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
     pub fn close(id: &str) -> Result<(), String> {
         let pid: u32 = id.parse().map_err(|_| format!("PID inválido: {id}"))?;
         Command::new("taskkill")
+            .sem_janela()
             .args(["/PID", &pid.to_string(), "/F"])
             .spawn()
             .map(|_| ())
@@ -615,6 +619,7 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
         // automação que diz "fechei o Slack" com o Slack aberto seria pior que
         // uma que diz que não achou.
         let saida = Command::new("taskkill")
+            .sem_janela()
             .args(["/IM", &alvo])
             .output()
             .map_err(|e| format!("não foi possível encerrar: {e}"))?;
@@ -662,6 +667,7 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
             //
             // Sem `/F`: é o pedido educado, o mesmo do `close_by_name`.
             let saiu = Command::new("taskkill")
+            .sem_janela()
                 .args(["/PID", &app.id])
                 .output();
             match saiu {

@@ -13,6 +13,7 @@ pub fn apply(action: PowerAction) -> Result<(), String> {
 
 #[cfg(windows)]
 mod imp {
+    use crate::sem_janela::SemJanela;
     use std::process::Command;
 
     use crate::protocol::PowerAction;
@@ -21,13 +22,16 @@ mod imp {
         let status = match action {
             // /t 0 = sem contagem regressiva; /f força fechar apps travados.
             PowerAction::Shutdown => Command::new("shutdown")
+            .sem_janela()
                 .args(["/s", "/f", "/t", "0"])
                 .status(),
             PowerAction::Restart => Command::new("shutdown")
+            .sem_janela()
                 .args(["/r", "/f", "/t", "0"])
                 .status(),
             // Suspende (S3). O 2º parâmetro 0 = suspender (não hibernar).
             PowerAction::Suspend => Command::new("rundll32.exe")
+            .sem_janela()
                 .args(["powrprof.dll,SetSuspendState", "0,1,0"])
                 .status(),
         };

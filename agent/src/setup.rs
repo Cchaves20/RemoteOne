@@ -351,6 +351,7 @@ pub fn uninstall_entries(exe: &Path, versao: &str) -> Vec<(String, String)> {
 
 #[cfg(windows)]
 mod imp {
+    use crate::sem_janela::SemJanela;
     use super::*;
     use std::process::Command;
 
@@ -391,6 +392,7 @@ mod imp {
     /// em Shell Folders, que o Windows mantém atualizado.
     fn desktop_dir() -> Result<PathBuf, String> {
         let saida = Command::new("reg")
+            .sem_janela()
             .args([
                 "query",
                 r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
@@ -459,6 +461,7 @@ mod imp {
     fn stop_running() {
         let eu = std::process::id();
         let _ = Command::new("taskkill")
+            .sem_janela()
             .args([
                 "/IM",
                 "deskside-agent.exe",
@@ -471,6 +474,7 @@ mod imp {
 
     fn reg_add(key: &str, nome: &str, valor: &str) -> Result<(), String> {
         let saida = Command::new("reg")
+            .sem_janela()
             .args([
                 "add",
                 &format!("HKCU\\{key}"),
@@ -501,6 +505,7 @@ mod imp {
     /// que não é dela.
     fn powershell(comando: &str) -> Result<std::process::Output, String> {
         Command::new("powershell")
+            .sem_janela()
             .args([
                 "-NoProfile",
                 "-NonInteractive",
@@ -671,6 +676,7 @@ mod imp {
 
         // Sobe agora, sem esperar o próximo login.
         Command::new("wscript.exe")
+            .sem_janela()
             .arg(&plano.launcher)
             .spawn()
             .map_err(|e| format!("instalei, mas não consegui iniciar: {e}"))?;
@@ -696,6 +702,7 @@ mod imp {
         let _ = std::fs::remove_file(&plano.start_menu);
         let _ = std::fs::remove_file(&plano.desktop);
         let _ = Command::new("reg")
+            .sem_janela()
             .args(["delete", &format!("HKCU\\{UNINSTALL_KEY}"), "/f"])
             .output();
 
@@ -705,6 +712,7 @@ mod imp {
         // parte que a pessoa realmente queria ver sumir.
         let alvo = plano.exe.display().to_string();
         let _ = Command::new("cmd")
+            .sem_janela()
             .args([
                 "/C",
                 &format!(
