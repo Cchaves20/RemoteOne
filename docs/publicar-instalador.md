@@ -180,7 +180,35 @@ despesa depois do domínio. O de validação estendida (EV) remove o aviso de
 imediato e exige CNPJ; o comum (OV) reduz, com a reputação acumulando ao longo
 de semanas.
 
-De graça, e vale fazer: submeter o `.exe` em
-<https://www.microsoft.com/en-us/wdsi/filesubmission> como falso positivo, na
-opção de **software** ("Software developer"). Costuma limpar o SmartScreen em
-alguns dias, e precisa ser refeito a cada versão nova do executável.
+### O que o WDSI faz, e o que não
+
+Este documento afirmava que submeter o `.exe` em
+<https://www.microsoft.com/en-us/wdsi/filesubmission> "costuma limpar o
+SmartScreen em alguns dias". **Está errado, e custou uma tentativa real.**
+
+São dois avisos diferentes, com causas e consertos diferentes:
+
+- **Defender** acusando ameaça (alerta vermelho, com nome tipo
+  `Trojan:Win32/Wacatac.B!ml`, o arquivo some). Aí sim: é falso positivo, e o
+  WDSI existe para isso.
+- **SmartScreen** (caixa azul, "O Windows protegeu o seu PC", fala em *editor
+  desconhecido*, dá para prosseguir). É falta de **reputação**, não detecção. O
+  WDSI não tem o que corrigir.
+
+E o formulário deixa isso claro na prática: o campo **Detection name é
+obrigatório**, e sem uma detecção do Defender não há o que escrever ali. Foi
+onde a tentativa parou. Não invente um nome para preencher.
+
+### Por que a reputação nunca chega sozinha
+
+Para binário sem assinatura, a reputação do SmartScreen é por **hash do
+arquivo**. Ela se acumula com os downloads daquele `.exe` exato — e **zera a
+cada versão publicada**, porque o hash muda.
+
+Isso significa que, enquanto o agente estiver sendo corrigido e republicado, a
+reputação nunca sai do zero. Não é questão de esperar mais.
+
+Com certificado, a reputação passa a ficar no **certificado** e cada versão nova
+herda o que as anteriores construíram. É esse o valor de assinar — maior do que
+o de tirar a palavra "desconhecido" da tela. Os preços e os caminhos estão em
+[`custos-para-distribuir.md`](custos-para-distribuir.md).
