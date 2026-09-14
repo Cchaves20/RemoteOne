@@ -27,9 +27,14 @@ próprio. O Explorer abre `.zip` como se fosse pasta, o `.cmd` rodava de dentro
 dele e não achava o `.exe` ao lado — o script precisou de uma mensagem de erro só
 para esse caso, e precisar dela já era o sinal de que o desenho tinha uma quina.
 
-Agora o próprio `.exe` pergunta se pode instalar quando é aberto de fora da pasta
-de instalação. Um arquivo, sem extrair, **um** aviso — e esse é exatamente o que
-o certificado remove.
+Agora o próprio `.exe` se instala quando é aberto de fora da pasta de
+instalação. Um arquivo, sem extrair, **um** aviso — e esse é exatamente o que o
+certificado remove.
+
+Ele **perguntava**, num console, com `[S/n]`. Uma pessoa baixou, clicou, viu a
+janela preta e perguntou o que fazer — e tinha razão: aquilo é vocabulário de
+quem programa. Quem baixou e abriu já decidiu; o que faltava era contar depois,
+e disso a janela do agente dá conta sozinha.
 
 ## Os comandos
 
