@@ -99,22 +99,6 @@ pub fn deve_oferecer_instalacao() -> bool {
     imp::deve_oferecer_instalacao()
 }
 
-/// Interpreta a resposta à pergunta "instalar neste computador?".
-///
-/// Enter vazio é **sim**: quem deu dois cliques no instalador já disse o que
-/// queria, e obrigar a digitar mais uma letra seria cerimônia. Dizer não
-/// continua sendo uma tecla.
-///
-/// Puro para ser testado. O que erra calado aqui é o contrário: um "n" lido como
-/// sim instalaria um programa que a pessoa acabou de recusar — e instalar sem
-/// consentimento é justamente o comportamento de que este produto está tentando
-/// não parecer.
-pub fn quer_instalar(resposta: &str) -> bool {
-    !matches!(
-        resposta.trim().to_lowercase().as_str(),
-        "n" | "nao" | "não" | "no" | "0"
-    )
-}
 
 /// O caminho do fluxo alternativo que marca um arquivo como vindo da internet.
 ///
@@ -874,22 +858,6 @@ mod tests {
         let vbs = launcher_script(&p(r#"C:\a"b\x.exe"#));
         assert!(!vbs.contains(r#"a"b"#), "aspas não foram dobradas:\n{vbs}");
         assert!(vbs.contains(r#"a""b"#));
-    }
-
-    #[test]
-    fn enter_vazio_instala_e_o_nao_e_respeitado() {
-        // Enter vazio é sim: quem deu dois cliques no instalador já disse o que
-        // queria. O que **não** pode errar é o outro lado — um "n" lido como sim
-        // instalaria um programa que a pessoa acabou de recusar, e instalar sem
-        // consentimento é justamente o que este produto tenta não parecer.
-        assert!(quer_instalar(""));
-        assert!(quer_instalar("\n"));
-        assert!(quer_instalar("s"));
-        assert!(quer_instalar("S\r\n"));
-
-        for nao in ["n", "N", "nao", "Não", "NÃO", "no", "0", "  n  \r\n"] {
-            assert!(!quer_instalar(nao), "{nao} devia ser recusa");
-        }
     }
 
     #[test]

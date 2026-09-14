@@ -1,3 +1,27 @@
+// Sem janela preta.
+//
+// O `.exe` era do subsistema "console": dar dois cliques nele abria um
+// terminal. Uma pessoa baixou o programa do site, clicou, e apareceu isto:
+//
+//     Instalar neste computador? Ele passa a subir junto com o Windows,
+//     oculto, e aparece em "Aplicativos instalados".
+//     [S/n]
+//
+// Ela perguntou o que fazer. E a pergunta é justa: fundo preto, fonte de
+// terminal e `[S/n]` são vocabulário de quem programa. Para quem quer usar o
+// produto, aquilo não parece um instalador — parece que algo deu errado.
+//
+// Com o subsistema "windows" não há console. A interface do agente já existe
+// (janela e ícone ao lado do relógio, ver `gui.rs`), e é ela que fala com a
+// pessoa. O terminal era o último resquício de ferramenta de desenvolvedor no
+// caminho de quem instala.
+//
+// O preço: quem chama pela linha de comando (`status`, `--help`) não veria
+// mais a saída, porque um processo "windows" nasce sem console. Por isso o
+// `anexar_ao_terminal` logo abaixo: quando há argumentos, o processo se
+// pendura no console de quem o chamou e volta a imprimir normalmente.
+#![windows_subsystem = "windows"]
+
 use std::time::Duration;
 
 use deskside_agent::client::{self, AgentIdentity, StreamConfig};
@@ -5,6 +29,31 @@ use deskside_agent::config::{resolve, Config};
 use deskside_agent::identity::load_or_create_device_id;
 use deskside_agent::platform::{self, Platform};
 use deskside_agent::{device_id_path, load_config, setup, DEFAULT_BACKEND_URL};
+
+/// Volta a escrever no terminal de quem chamou, quando houver um.
+///
+/// Um processo do subsistema "windows" nasce sem console: `println!` escreve
+/// num descritor que não vai a lugar nenhum. `AttachConsole` com
+/// `ATTACH_PARENT_PROCESS` pendura este processo no console do `cmd` ou do
+/// PowerShell que o iniciou — e aí `deskside-agent status` volta a responder.
+///
+/// Falhar aqui é normal e não é erro: significa que ninguém chamou de um
+/// terminal (foi duplo clique, ou a tarefa agendada). Por isso o resultado é
+/// descartado.
+#[cfg(windows)]
+fn anexar_ao_terminal() {
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn AttachConsole(dwProcessId: u32) -> i32;
+    }
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
+#[cfg(not(windows))]
+fn anexar_ao_terminal() {}
 
 const AGENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const HEARTBEAT_SECS: u64 = 10;
@@ -168,43 +217,47 @@ async fn laco_de_conexao(
     }
 }
 
-/// Pergunta se é para instalar, e instala. `true` = instalou e pode sair.
+/// Instala no primeiro duplo clique. `true` = instalou e este processo pode sair.
 ///
-/// O `install` já sobe a cópia instalada no fim, então este processo não tem
-/// mais o que fazer.
-fn oferecer_instalacao() -> bool {
-    use std::io::Write;
-
-    println!();
-    println!("Deskside {AGENT_VERSION}");
-    println!();
-    println!("Instalar neste computador? Ele passa a subir junto com o Windows,");
-    println!("oculto, e aparece em \"Aplicativos instalados\".");
-    print!("[S/n] ");
-    let _ = std::io::stdout().flush();
-
-    let mut resposta = String::new();
-    // **`Ok(0)` é o caso que importa.** Significa fim de entrada: ninguém para
-    // responder. Acontece quando o agente sobe pela tarefa agendada, sem
-    // console. Tratar isso como "Enter vazio" instalaria sozinho, em silêncio,
-    // toda vez que a máquina liga - o oposto do que a pergunta existe para
-    // garantir.
-    let quer = match std::io::stdin().read_line(&mut resposta) {
-        Ok(0) | Err(_) => false,
-        Ok(_) => setup::quer_instalar(&resposta),
-    };
-    if !quer {
-        println!();
-        println!("Sem instalar. O agente vai rodar agora, e para até esta janela fechar.");
-        println!("Para instalar depois: deskside-agent.exe install");
-        return false;
-    }
-
+/// ## Por que não pergunta mais
+///
+/// Perguntava, num terminal, com `[S/n]`. A pessoa que baixou o programa não
+/// soube responder — e tinha razão: ela já havia decidido. Foi ao site, leu
+/// "baixe o arquivo e dê dois cliques", baixou e clicou. Perguntar de novo,
+/// ali, é pedir que confirme o que acabou de fazer, numa tela que ela não
+/// reconhece.
+///
+/// A pergunta existia por um bom motivo — instalar sem consentimento é
+/// comportamento de programa indesejado, e este produto tenta não parecer um.
+/// Mas o consentimento está no ato de baixar e abrir, e a página de download
+/// diz o que vai acontecer. O que faltava era **contar depois**, e disso a
+/// janela do agente já dá conta: ela aparece sozinha quando o código de
+/// pareamento chega, poucos segundos depois.
+///
+/// Desfazer continua a um clique de distância, em "Aplicativos instalados".
+///
+/// ## Quem impede a reinstalação em laço
+///
+/// Não é esta função: é `setup::deve_oferecer_instalacao()`, que compara o
+/// caminho do executável em execução com o da cópia instalada. A tarefa
+/// agendada roda a cópia instalada, então ali dá `false` e nada acontece.
+///
+/// Antes havia uma segunda guarda aqui: `read_line` devolvendo `Ok(0)` — fim
+/// de entrada, ninguém para responder — era tratado como "não". Ela protegia
+/// o mesmo caso por outro caminho. Sem console não há mais o que ler, e a
+/// comparação de caminhos continua sendo a que decide.
+fn instalar_no_primeiro_uso() -> bool {
+    deskside_agent::diario(&format!("primeiro uso: instalando o Deskside {AGENT_VERSION}"));
     match setup::install(None) {
-        Ok(()) => true,
+        Ok(()) => {
+            deskside_agent::diario("instalado; a cópia instalada assumiu");
+            true
+        }
         Err(e) => {
-            eprintln!("Não consegui instalar: {e}");
-            println!("O agente vai rodar assim mesmo, sem instalar.");
+            // No diário e não em `eprintln!`: sem console, `eprintln!` escreve
+            // num descritor que não vai a lugar nenhum, e esta é justamente a
+            // linha que explica por que o agente não subiu sozinho depois.
+            deskside_agent::diario(&format!("não consegui instalar: {e}"));
             false
         }
     }
@@ -212,6 +265,11 @@ fn oferecer_instalacao() -> bool {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Só quando há argumentos: duplo clique não tem terminal para se pendurar,
+    // e tentar não custa nada além de uma chamada que falha em silêncio.
+    if !args.is_empty() {
+        anexar_ao_terminal();
+    }
     match parse_args(&args) {
         Cmd::Help => {
             println!("{HELP}");
@@ -256,7 +314,7 @@ fn main() {
     // `args.is_empty()` é o que separa "cliquei no ícone" de "chamei pelo
     // terminal": quem digita `deskside-agent run` pediu para rodar, não para
     // instalar, e perguntar ali seria atrapalhar quem sabe o que está fazendo.
-    if args.is_empty() && setup::deve_oferecer_instalacao() && oferecer_instalacao() {
+    if args.is_empty() && setup::deve_oferecer_instalacao() && instalar_no_primeiro_uso() {
         return;
     }
 
