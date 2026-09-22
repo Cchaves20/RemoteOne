@@ -258,6 +258,17 @@ class UserOut(BaseModel):
     #: Deduzir isto no app exigiria uma segunda chamada em toda tela que
     #: mostrasse o plano.
     em_teste: bool = False
+    #: Se há uma **cobrança marcada** para quando o prazo acabar.
+    #:
+    #: Decide entre "22 dias para a próxima cobrança" e "acaba em 22 dias". A
+    #: diferença não é de estilo: a primeira frase dita a quem desligou a
+    #: renovação é o app avisando que vai cobrar de quem pediu para não ser
+    #: cobrado, e a segunda dita a quem está pagando esconde a data que mais
+    #: importa saber.
+    #:
+    #: Durante os 30 dias iniciais é `false`, porque nenhuma cobrança vem —
+    #: ninguém comprou nada ainda.
+    renova: bool = False
 
     model_config = {"from_attributes": True}
 

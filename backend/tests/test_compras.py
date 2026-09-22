@@ -532,6 +532,57 @@ class TestEmTeste:
         assert conta["plano"] == "pago"
         assert conta["em_teste"] is False
 
+    def test_no_teste_nenhuma_cobranca_esta_marcada(self):
+        """`renova` falso no teste: ninguém comprou nada, nada vai ser cobrado.
+
+        É o que impede o cartão de dizer "30 dias para a próxima cobrança" a
+        quem só está experimentando — uma frase que faz a pessoa procurar onde
+        cancelar uma cobrança que não existe.
+        """
+        token = criar_conta(client, "experimenta@example.com")["access_token"]
+        conta = self._me(token)
+        assert conta["em_teste"] is True
+        assert conta["renova"] is False
+
+    def test_assinatura_ativa_tem_cobranca_marcada(self, loja):
+        token = criar_conta(client, "assinante@example.com")["access_token"]
+        loja.compra = uma_compra(estado=Estado.ATIVA)
+        assert _validar(token).status_code == 200
+
+        conta = self._me(token)
+        assert conta["em_teste"] is False
+        assert conta["renova"] is True
+
+    def test_quem_desligou_a_renovacao_nao_tem_cobranca_marcada(self, loja):
+        """O caso que separa "próxima cobrança" de "acaba em".
+
+        Quem cancelou continua com acesso até o fim do mês pago — e dizer a
+        essa pessoa que há uma cobrança vindo é o app contradizendo o que ela
+        acabou de pedir.
+        """
+        token = criar_conta(client, "cancelou@example.com")["access_token"]
+        loja.compra = uma_compra(estado=Estado.CANCELADA)
+        assert _validar(token).status_code == 200
+
+        conta = self._me(token)
+        assert conta["plano"] == "pago", "cancelar não corta o acesso já pago"
+        assert conta["renova"] is False
+
+    def test_cobranca_em_atraso_ainda_e_cobranca(self, loja):
+        """Período de graça: a loja está tentando de novo, então vem cobrança."""
+        token = criar_conta(client, "atrasou@example.com")["access_token"]
+        loja.compra = uma_compra(estado=Estado.EM_ATRASO)
+        assert _validar(token).status_code == 200
+
+        assert self._me(token)["renova"] is True
+
+    def test_conta_sem_prazo_nao_tem_cobranca_marcada(self):
+        email = "cortesia2@example.com"
+        token = criar_conta(client, email)["access_token"]
+        _sem_prazo(email)
+
+        assert self._me(token)["renova"] is False
+
     def test_conta_no_gratis_nao_esta_em_teste(self):
         email = "acabou@example.com"
         token = criar_conta(client, email)["access_token"]

@@ -1382,6 +1382,29 @@ class Strings {
       dias == 1 ? '明天结束' : '还剩 $dias 天',
       dias == 1 ? 'Se termine demain' : 'Il reste $dias jours',
       dias == 1 ? 'Termina mañana' : 'Quedan $dias días');
+  /// Quantos dias faltam até a **cobrança** seguinte.
+  ///
+  /// Só é dito a quem tem cobrança marcada. A mesma contagem tem três leituras
+  /// conforme o estado, e usar uma frase só para as três seria mentir em duas.
+  String planoProximaCobranca(int dias) => _t(
+      dias == 1
+          ? 'Próxima cobrança amanhã'
+          : 'Faltam $dias dias para a próxima cobrança',
+      dias == 1 ? 'Next charge tomorrow' : '$dias days until the next charge',
+      dias == 1 ? '明天扣款' : '距离下次扣款还有 $dias 天',
+      dias == 1
+          ? 'Prochain prélèvement demain'
+          : 'Prochain prélèvement dans $dias jours',
+      dias == 1 ? 'Próximo cobro mañana' : '$dias días para el próximo cobro');
+
+  /// Quem desligou a renovação: o prazo é um fim, e não uma cobrança.
+  String planoAcabaEm(int dias) => _t(
+      dias == 1 ? 'Acaba amanhã' : 'Acaba em $dias dias',
+      dias == 1 ? 'Ends tomorrow' : 'Ends in $dias days',
+      dias == 1 ? '明天到期' : '$dias 天后到期',
+      dias == 1 ? 'Se termine demain' : 'Se termine dans $dias jours',
+      dias == 1 ? 'Termina mañana' : 'Termina en $dias días');
+
   String get planoGratisResumo => _t(
       'Um computador, mouse, teclado, tela ao vivo e uma automação.',
       'One computer, mouse, keyboard, live screen and one automation.',

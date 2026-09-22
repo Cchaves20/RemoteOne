@@ -201,6 +201,7 @@ class SettingsScreen extends StatelessWidget {
     final pago = conta?.ehPago ?? false;
     final dias = conta?.diasRestantes;
     final emTeste = conta?.emTeste ?? false;
+    final renova = conta?.renova ?? false;
 
     // Quem tem o que comprar: o grátis e o que está no teste.
     //
@@ -222,11 +223,21 @@ class SettingsScreen extends StatelessWidget {
     // nasce com 30 dias**, ele passou a esconder a contagem durante dois terços
     // do teste — justamente a informação que faz a pessoa decidir assinar, e a
     // que ela vem procurar nesta tela.
+    //
+    // E a mesma contagem tem três leituras, conforme o que vem no fim dela.
+    // Uma frase só para as três mentiria em duas: "próxima cobrança" dito a
+    // quem está no teste manda procurar onde cancelar uma cobrança que não
+    // existe, e dito a quem desligou a renovação contradiz o que a pessoa
+    // acabou de pedir. Quem sabe qual é o caso é o servidor.
     final prazo = !pago
         ? null
         : dias == null
             ? t.planoSemPrazo
-            : t.planoDiasRestantes(dias);
+            : renova
+                ? t.planoProximaCobranca(dias)
+                : emTeste
+                    ? t.planoDiasRestantes(dias)
+                    : t.planoAcabaEm(dias);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -267,7 +278,11 @@ class SettingsScreen extends StatelessWidget {
                 prazo,
                 key: const Key('plano-prazo'),
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: (dias != null && dias <= 3)
+                  // Vermelho só quando algo **acaba**. Para quem renova,
+                  // faltarem três dias para a cobrança é o normal do mês, e
+                  // pintar isso de alarme ensina a pessoa a abrir o app com
+                  // susto uma vez por mês — até parar de olhar.
+                  color: (!renova && dias != null && dias <= 3)
                       ? theme.colorScheme.error
                       : theme.colorScheme.onSurfaceVariant,
                 ),

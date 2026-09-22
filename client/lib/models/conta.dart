@@ -15,6 +15,7 @@ class Conta {
     this.plano = 'gratis',
     this.planoAte,
     this.emTeste = false,
+    this.renova = false,
   });
 
   final int id;
@@ -45,6 +46,13 @@ class Conta {
   /// teste e assinatura chegam os dois como `pago` com trinta dias, e pelo
   /// calendário são a mesma coisa.
   final bool emTeste;
+
+  /// Se há uma **cobrança marcada** para quando o prazo acabar.
+  ///
+  /// Falso no teste (ninguém comprou nada) e falso para quem desligou a
+  /// renovação (o prazo é um fim, não uma cobrança). Quem sabe é o servidor,
+  /// que enxerga o estado da assinatura na loja.
+  final bool renova;
 
   bool get ehPago => plano == 'pago';
 
@@ -94,5 +102,9 @@ class Conta {
         // errar dizendo "não é teste" apenas omite a contagem, enquanto errar
         // ao contrário poria uma contagem de teste na tela de quem paga.
         emTeste: json['em_teste'] as bool? ?? false,
+        // `false` também é o padrão seguro aqui: sem o campo, o
+        // cartão diz "acaba em N dias", que é verdade em todo caso —
+        // enquanto prometer uma cobrança que não vem não é.
+        renova: json['renova'] as bool? ?? false,
       );
 }

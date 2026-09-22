@@ -637,7 +637,7 @@ def me(
     """
     saida = UserOut.model_validate(current_user)
     saida.plano = cobranca.plano_de(current_user)
-    saida.em_teste = cobranca.em_teste(db, current_user)
+    saida.em_teste, saida.renova = cobranca.situacao_de(db, current_user)
     return saida
 
 

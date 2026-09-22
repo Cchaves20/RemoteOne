@@ -103,4 +103,40 @@ void main() {
       expect(conta.emTeste, isFalse);
     });
   });
+
+  group('cobrança marcada', () {
+    test('no teste não há cobrança vindo', () {
+      final conta = Conta.fromJson({
+        'id': 1,
+        'plano': 'pago',
+        'plano_ate': DateTime.now().add(const Duration(days: 22)).toIso8601String(),
+        'em_teste': true,
+        'renova': false,
+      });
+
+      expect(conta.emTeste, isTrue);
+      expect(conta.renova, isFalse);
+    });
+
+    test('assinante ativo tem cobrança marcada', () {
+      final conta = Conta.fromJson({
+        'id': 1,
+        'plano': 'pago',
+        'plano_ate': DateTime.now().add(const Duration(days: 22)).toIso8601String(),
+        'em_teste': false,
+        'renova': true,
+      });
+
+      expect(conta.renova, isTrue);
+    });
+
+    test('servidor antigo vira "não renova", que é verdade em todo caso', () {
+      // Sem o campo, o cartão diz "acaba em N dias". Prometer uma cobrança
+      // que não vem seria o erro caro; dizer que algo acaba nunca é falso,
+      // porque a data existe.
+      final conta = Conta.fromJson({'id': 1, 'plano': 'pago'});
+
+      expect(conta.renova, isFalse);
+    });
+  });
 }

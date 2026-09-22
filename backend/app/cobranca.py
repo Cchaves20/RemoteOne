@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import plano as regras
+from app.assinatura import Estado
 from app.models import Assinatura, User
 
 
@@ -26,26 +27,49 @@ def plano_de(user: User) -> regras.Plano:
     return regras.plano_efetivo(user.plano, user.plano_ate)
 
 
-def em_teste(db: Session, user: User) -> bool:
-    """O plano pago desta conta são os 30 dias iniciais, e não uma compra?
+#: Os estados em que a loja **vai cobrar de novo** quando o prazo acabar.
+#:
+#: `cancelada` fica de fora de propósito: a pessoa desligou a renovação, então o
+#: prazo é uma data de término e não uma data de cobrança. `expirada` e
+#: `revogada` também não cobram nada.
+_RENOVAM = frozenset({Estado.ATIVA, Estado.EM_ATRASO})
 
-    Três condições, e todas necessárias:
 
-    - a conta está paga **agora** — quem já caiu no grátis não está em teste;
-    - tem prazo: sem prazo é a cortesia dada à mão, que não acaba;
-    - não tem assinatura de loja — é isto que separa teste de compra, porque
-      pelo calendário os dois são a mesma coisa: trinta dias.
+def situacao_de(db: Session, user: User) -> tuple[bool, bool]:
+    """`(em_teste, renova)` — as duas coisas que o app não consegue deduzir.
+
+    Uma consulta só para as duas perguntas, porque as duas se respondem com a
+    mesma linha da tabela de assinaturas, e `/auth/me` é chamado a cada
+    abertura de tela.
+
+    **em_teste**: o plano pago são os 30 dias iniciais, e não uma compra. Três
+    condições, todas necessárias: estar pago agora (quem caiu no grátis não
+    está em teste), ter prazo (sem prazo é a cortesia dada à mão, que não
+    acaba), e não ter assinatura de loja — é isto que separa teste de compra,
+    porque pelo calendário os dois são a mesma coisa, trinta dias.
+
+    **renova**: existe uma cobrança marcada para quando o prazo acabar. É o que
+    decide entre "22 dias para a próxima cobrança" e "acaba em 22 dias", e a
+    diferença não é de estilo: a primeira frase dita a quem cancelou é o app
+    dizendo que vai cobrar de alguém que pediu para não ser cobrado.
 
     Mora aqui, e não no `app/plano.py`, porque depende do banco. O `plano.py`
     é regra pura de propósito, e uma consulta lá dentro tornaria intestável a
     parte que hoje se testa sem banco nenhum.
     """
     if plano_de(user) is not regras.Plano.PAGO or user.plano_ate is None:
-        return False
-    comprou = db.scalar(
-        select(Assinatura.id).where(Assinatura.user_id == user.id).limit(1)
+        return False, False
+    assinatura = db.scalar(
+        select(Assinatura).where(Assinatura.user_id == user.id).limit(1)
     )
-    return comprou is None
+    if assinatura is None:
+        return True, False
+    return False, assinatura.estado in _RENOVAM
+
+
+def em_teste(db: Session, user: User) -> bool:
+    """Só o primeiro de `situacao_de`, para quem não precisa do resto."""
+    return situacao_de(db, user)[0]
 
 
 def exigir_recurso(user: User, recurso: regras.Recurso) -> None:
