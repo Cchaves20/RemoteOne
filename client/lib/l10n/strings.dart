@@ -1479,12 +1479,24 @@ class Strings {
   /// A loja responde e não devolve produto nenhum, sem erro. Dizer "tente de
   /// novo" mandaria a pessoa repetir algo que nunca vai funcionar naquele
   /// aparelho.
-  String get assinaturaIndisponivel => _t(
-      'A compra não está disponível neste aparelho. Instale o Deskside pela App Store para assinar.',
-      'Purchase is not available on this device. Install Deskside from the App Store to subscribe.',
-      '此设备无法购买。请从 App Store 安装 Deskside 后订阅。',
-      "L'achat n'est pas disponible sur cet appareil. Installez Deskside depuis l'App Store pour vous abonner.",
-      'La compra no está disponible en este dispositivo. Instala Deskside desde la App Store para suscribirte.');
+  ///
+  /// O nome da loja entra por parâmetro: dizer "App Store" a quem está no
+  /// Android manda a pessoa procurar um aplicativo que não existe no aparelho
+  /// dela, e é a forma mais rápida de parecer que o produto não foi feito para
+  /// ela.
+  String assinaturaIndisponivel(String loja) => _t(
+      'A compra não está disponível neste aparelho. Instale o Deskside pela $loja para assinar.',
+      'Purchase is not available on this device. Install Deskside from the $loja to subscribe.',
+      '此设备无法购买。请从 $loja 安装 Deskside 后订阅。',
+      "L'achat n'est pas disponible sur cet appareil. Installez Deskside depuis le $loja pour vous abonner.",
+      'La compra no está disponible en este dispositivo. Instala Deskside desde la $loja para suscribirte.');
+
+  /// O nome da loja, como ela se chama em qualquer idioma.
+  ///
+  /// Não passa pelo `_t`: "App Store" e "Play Store" são marcas, e traduzir
+  /// marca é como se inventa um nome que ninguém encontra na busca.
+  String nomeDaLoja({required bool android}) =>
+      android ? 'Play Store' : 'App Store';
   String get assinaturaJaTem =>
       _t('Você já assina.', 'You are already subscribed.', '你已订阅。',
           'Vous êtes déjà abonné.', 'Ya estás suscrito.');
@@ -1543,12 +1555,25 @@ class Strings {
       "Impossible d'ouvrir. L'adresse est deskside.com.br",
       'No pude abrirlo. La dirección es deskside.com.br');
 
-  String get assinaturaRenova => _t(
-      'Renova sozinha todo mês. Dá para cancelar quando quiser, nos Ajustes do iPhone.',
-      'Renews automatically every month. Cancel any time in your iPhone Settings.',
-      '每月自动续订，可随时在 iPhone 设置中取消。',
-      "Se renouvelle chaque mois. Annulable à tout moment dans les Réglages de l'iPhone.",
-      'Se renueva cada mes. Puedes cancelar cuando quieras en los Ajustes del iPhone.');
+  /// Como a assinatura renova e **onde se cancela**.
+  ///
+  /// Dois textos inteiros, e não um com o lugar trocado: em iOS cancela-se nos
+  /// Ajustes do sistema e em Android dentro da Play Store, e a frase muda de
+  /// forma em cada idioma. Um texto com buraco no meio sairia torto em pelo
+  /// menos três deles.
+  String assinaturaRenova({required bool android}) => android
+      ? _t(
+          'Renova sozinha todo mês. Dá para cancelar quando quiser, na Play Store.',
+          'Renews automatically every month. Cancel any time in the Play Store.',
+          '每月自动续订，可随时在 Play Store 中取消。',
+          'Se renouvelle chaque mois. Annulable à tout moment dans le Play Store.',
+          'Se renueva cada mes. Puedes cancelar cuando quieras en Play Store.')
+      : _t(
+          'Renova sozinha todo mês. Dá para cancelar quando quiser, nos Ajustes do iPhone.',
+          'Renews automatically every month. Cancel any time in your iPhone Settings.',
+          '每月自动续订，可随时在 iPhone 设置中取消。',
+          "Se renouvelle chaque mois. Annulable à tout moment dans les Réglages de l'iPhone.",
+          'Se renueva cada mes. Puedes cancelar cuando quieras en los Ajustes del iPhone.');
 
   String get twoFactorTitle => _t('Verificação em duas etapas', 'Two-step verification',
       '两步验证', 'Vérification en deux étapes', 'Verificación en dos pasos');

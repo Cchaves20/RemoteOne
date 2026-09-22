@@ -74,6 +74,46 @@ bool precisaEncerrar(PurchaseDetails compra) => compra.pendingCompletePurchase;
 /// concordar: se divergirem, a loja cobra e o servidor não libera nada.
 const produtoPro = 'com.deskside.pro.mensal';
 
+/// Qual loja está em jogo.
+///
+/// Os nomes são os que o servidor reconhece em `ValidarIn.loja`
+/// (`backend/app/assinatura.py`), e é de propósito que o `valor` seja idêntico
+/// à string dele: um mapeamento a mais entre os dois seria mais um lugar para
+/// divergirem.
+enum LojaDoApp {
+  apple('apple'),
+  google('google');
+
+  const LojaDoApp(this.valor);
+
+  /// O que vai no corpo da requisição de validação.
+  final String valor;
+}
+
+/// A loja que **emitiu este comprovante**.
+///
+/// Sai de `PurchaseVerificationData.source`, e não da plataforma, porque é o
+/// comprovante que vai ser conferido: quem decide é quem assinou.
+///
+/// O defeito que isto substitui mandava `'apple'` fixo. Numa compra pelo
+/// Google, o servidor tentaria conferir uma assinatura JWS da Apple num token
+/// do Google e recusaria — o Google cobrando e o plano não liberando, que é o
+/// pior desfecho que existe neste caminho.
+///
+/// `app_store` cobre iOS e macOS; `google_play` é o Android. Um valor
+/// desconhecido cai em `apple` porque é a única loja que o servidor sabe
+/// verificar hoje — e uma recusa explicada é melhor que um nome inventado.
+LojaDoApp lojaDoComprovante(String source) =>
+    source == 'google_play' ? LojaDoApp.google : LojaDoApp.apple;
+
+/// A loja **deste aparelho**, para o texto da tela antes de haver compra.
+///
+/// Separada da de cima porque responde outra pergunta. Aqui não existe
+/// comprovante nenhum: a tela precisa dizer "instale pela Play Store" a quem
+/// está no Android **antes** de qualquer compra acontecer.
+LojaDoApp lojaDaPlataforma(bool ehAndroid) =>
+    ehAndroid ? LojaDoApp.google : LojaDoApp.apple;
+
 /// Se vale a pena oferecer a compra.
 ///
 /// Loja indisponível e catálogo vazio são coisas diferentes para quem

@@ -99,6 +99,43 @@ void main() {
     });
   });
 
+  group('qual loja', () {
+    test('compra do Google vai ao servidor como google', () {
+      // O defeito que isto conserta mandava `'apple'` fixo: o servidor
+      // tentaria conferir uma assinatura JWS da Apple num token do Google e
+      // recusaria. O Google cobrando e o plano não liberando é o pior
+      // desfecho possível neste caminho.
+      expect(lojaDoComprovante('google_play'), LojaDoApp.google);
+      expect(lojaDoComprovante('google_play').valor, 'google');
+    });
+
+    test('compra da App Store vai como apple', () {
+      expect(lojaDoComprovante('app_store'), LojaDoApp.apple);
+      expect(lojaDoComprovante('app_store').valor, 'apple');
+    });
+
+    test('origem desconhecida não vira google por engano', () {
+      // Cair em `apple` é deliberado: é a única loja que o servidor sabe
+      // verificar hoje, e uma recusa explicada vale mais que um nome
+      // inventado que ninguém reconhece do outro lado.
+      expect(lojaDoComprovante(''), LojaDoApp.apple);
+      expect(lojaDoComprovante('alguma_loja_nova'), LojaDoApp.apple);
+    });
+
+    test('os nomes são exatamente os que o servidor aceita', () {
+      // `ValidarIn.loja` é o enum `Loja` do backend: "apple" ou "google".
+      // Qualquer outra grafia vira 422 antes de chegar à verificação.
+      expect(LojaDoApp.values.map((l) => l.valor).toSet(), {'apple', 'google'});
+    });
+
+    test('o texto da tela segue a plataforma, não o comprovante', () {
+      // Antes de existir compra não há comprovante nenhum, e a tela precisa
+      // dizer "instale pela Play Store" a quem está no Android mesmo assim.
+      expect(lojaDaPlataforma(true), LojaDoApp.google);
+      expect(lojaDaPlataforma(false), LojaDoApp.apple);
+    });
+  });
+
   group('situacaoDoPlano', () {
     test('quem está nos 30 dias iniciais ainda pode assinar', () {
       // O caso que uma leitura ingênua de `plano == "pago"` esconde. Toda conta

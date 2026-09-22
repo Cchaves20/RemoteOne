@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -43,6 +44,14 @@ class AssinaturaScreen extends StatefulWidget {
 
 class _AssinaturaScreenState extends State<AssinaturaScreen> {
   final _loja = InAppPurchase.instance;
+
+  /// Qual loja é a desta tela, para os textos.
+  ///
+  /// `defaultTargetPlatform` e não `Platform.isAndroid`: o segundo vem do
+  /// `dart:io`, que não existe na web e obriga todo teste de widget a rodar
+  /// num alvo de verdade. Este é o mesmo valor que o Flutter usa para decidir
+  /// o desenho dos próprios componentes.
+  bool get _ehAndroid => defaultTargetPlatform == TargetPlatform.android;
   StreamSubscription<List<PurchaseDetails>>? _escuta;
 
   bool _carregando = true;
@@ -99,7 +108,8 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
       if (ofereceAssinar(situacao) &&
           !podeComprar(
               lojaDisponivel: disponivel, produtos: encontrados.length)) {
-        _erro = widget.state.t.assinaturaIndisponivel;
+        _erro = widget.state.t
+            .assinaturaIndisponivel(widget.state.t.nomeDaLoja(android: _ehAndroid));
       }
     });
   }
@@ -259,7 +269,10 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
     }
     try {
       await widget.state.api.validarCompra(
-        loja: 'apple',
+        // **Do comprovante, e não fixo.** Mandar `'apple'` numa compra do
+        // Google faria o servidor conferir uma assinatura da Apple num token
+        // do Google e recusar — o Google cobrando e o plano não liberando.
+        loja: lojaDoComprovante(compra.verificationData.source).valor,
         comprovante: compra.verificationData.serverVerificationData,
       );
       // O plano vive no servidor; reler é o que faz o resto do app saber.
@@ -384,7 +397,7 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        t.assinaturaRenova,
+                        t.assinaturaRenova(android: _ehAndroid),
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodySmall,
                       ),
