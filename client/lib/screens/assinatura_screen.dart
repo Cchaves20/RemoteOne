@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
-import '../l10n/strings.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/compra.dart';
