@@ -1457,6 +1457,23 @@ class Strings {
       'Abonnement actif. Tout est débloqué.', 'Suscripción activa. Todo desbloqueado.');
   String get assinaturaCancelada => _t('Compra cancelada.', 'Purchase canceled.',
       '购买已取消。', 'Achat annulé.', 'Compra cancelada.');
+
+  /// Restaurou e não havia nada.
+  ///
+  /// O caso mais comum de quem toca no botão, e o que antes travava a tela: a
+  /// loja não responde nada quando não há compra, então sem esta frase a
+  /// pessoa ficava olhando um roda-roda para sempre.
+  ///
+  /// Diz também **onde** a compra teria de estar, porque restaurar falha por
+  /// um motivo que não é óbvio: a compra pertence ao ID Apple, e não à conta
+  /// do Deskside. Quem comprou noutro ID Apple não restaura aqui, e sem essa
+  /// pista tentaria de novo achando que é defeito.
+  String get assinaturaNadaARestaurar => _t(
+      'Nenhuma compra para restaurar neste ID Apple.',
+      'No purchase to restore on this Apple ID.',
+      '此 Apple ID 没有可恢复的购买。',
+      "Aucun achat à restaurer sur cet identifiant Apple.",
+      'No hay compras para restaurar en este ID de Apple.');
   /// Catálogo vazio: o caso do app instalado fora da loja.
   ///
   /// A loja responde e não devolve produto nenhum, sem erro. Dizer "tente de

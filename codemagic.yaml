@@ -311,10 +311,37 @@ workflows:
           fi
       - name: Dependências
         script: flutter pub get
-      - name: Ícone e splash (não bloqueia o build se falhar)
+      - name: Ícone e splash
         script: |
-          dart run flutter_launcher_icons || echo "aviso: geração de ícone falhou"
-          dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
+          set -e
+
+          # **Sem `|| echo`, ao contrário dos workflows de iOS.**
+          #
+          # O passo tolerante é como o ícone do Android ficou errado sem
+          # ninguém ver: o `pubspec.yaml` tinha `android: false`, o comando
+          # rodava, não gerava nada para Android, o build ficava verde, e o
+          # APK saía com o robozinho do Flutter. Um passo que não pode falhar
+          # é um passo que não confere nada.
+          dart run flutter_launcher_icons
+          dart run flutter_native_splash:create
+
+          # E conferir a saída, não só o código de retorno.
+          #
+          # Este arquivo é o descritor do ícone adaptativo, e o template do
+          # `flutter create` **não** o gera — só a ferramenta de ícone gera. A
+          # presença dele é, portanto, prova de que o ícone do Android foi
+          # gerado de verdade, e não de que um comando terminou sem reclamar.
+          ADAPTATIVO=android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          if [ ! -f "$ADAPTATIVO" ]; then
+            echo "FALHOU: $ADAPTATIVO não existe."
+            echo "O ícone adaptativo do Android não foi gerado. Confira"
+            echo "flutter_launcher_icons no pubspec.yaml: android, "
+            echo "adaptive_icon_background e adaptive_icon_foreground."
+            ls -la android/app/src/main/res/ || true
+            exit 1
+          fi
+          echo "--- ícone adaptativo gerado ---"
+          cat "$ADAPTATIVO"
       - name: Ajustes obrigatórios do Android
         script: |
           set -e

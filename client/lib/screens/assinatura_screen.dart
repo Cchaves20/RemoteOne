@@ -159,7 +159,26 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
     }
   }
 
+  /// Quantas atualizações chegaram desde o último toque em Restaurar.
+  ///
+  /// Existe por um motivo só, e ele é o defeito descrito em `_restaurar`.
+  int _chegaramDesdeORestaurar = 0;
+
+  /// Quanto esperar pelo fluxo depois que o `restorePurchases` retorna.
+  ///
+  /// Um número escolhido, e vale dizer por quê: o `in_app_purchase` **não**
+  /// avisa "terminei de restaurar, foram N". O `await` volta quando o pedido
+  /// foi feito, e as compras (se houver) chegam depois, pelo `purchaseStream`.
+  /// Não há sinal melhor disponível na API.
+  ///
+  /// Três segundos erram para o lado certo dos dois jeitos: se a compra
+  /// demorar mais, ela ainda chega e a tela se corrige sozinha — o aviso de
+  /// "nada a restaurar" é substituído pelo plano liberado; e se não houver
+  /// nada, a pessoa espera três segundos em vez de para sempre.
+  static const _esperaDoRestaurar = Duration(seconds: 3);
+
   Future<void> _restaurar() async {
+    _chegaramDesdeORestaurar = 0;
     setState(() {
       _ocupado = true;
       _erro = null;
@@ -171,11 +190,34 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
       await _loja.restorePurchases();
     } catch (e) {
       _falhar('$e');
+      return;
     }
+
+    // O defeito que estas linhas existem para impedir:
+    //
+    // quem **não tem** nada a restaurar — que é a maioria de quem toca no
+    // botão por curiosidade, e todo testador que ainda não comprou — não
+    // recebe atualização nenhuma. A loja simplesmente não fala. Sem isto, o
+    // `_ocupado` fica ligado para sempre: roda-roda girando, os dois botões
+    // desabilitados, e nenhuma explicação. A tela não trava por erro; ela
+    // trava por sucesso silencioso, que é a pior forma de travar porque não
+    // deixa nada no log para alguém investigar depois.
+    await Future<void>.delayed(_esperaDoRestaurar);
+    if (!mounted || _chegaramDesdeORestaurar > 0) return;
+    setState(() {
+      _ocupado = false;
+      _aviso = widget.state.t.assinaturaNadaARestaurar;
+    });
   }
 
   /// Chegou algo da loja. Uma atualização por compra, a qualquer momento.
   Future<void> _chegouDaLoja(List<PurchaseDetails> compras) async {
+    // Contado **antes** do laço e para toda atualização, não só as restauradas:
+    // se a loja falou, ela não ficou em silêncio, e é o silêncio que o aviso de
+    // "nada a restaurar" descreve. Contar só `restored` faria a mensagem
+    // aparecer por cima de um erro que a loja acabou de explicar.
+    _chegaramDesdeORestaurar += compras.length;
+
     for (final compra in compras) {
       switch (acaoPara(compra.status)) {
         case AcaoDaCompra.esperar:
