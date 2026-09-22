@@ -1392,6 +1392,49 @@ class Strings {
       "Le paiement automatique est en cours de construction. Pour l'instant nous l'activons à la main — écrivez-nous.",
       'El pago automático aún se está construyendo. Por ahora lo activamos a mano — escríbenos y respondemos.');
 
+  // --- Assinatura pela loja ---------------------------------------------------
+
+  String get assinaturaTitulo =>
+      _t('Deskside Pro', 'Deskside Pro', 'Deskside Pro', 'Deskside Pro', 'Deskside Pro');
+  String get assinaturaChamada => _t(
+      'Perfis, arquivos, agenda e vários computadores.',
+      'Profiles, files, schedule and several computers.',
+      '配置文件、文件传输、定时任务和多台电脑。',
+      'Profils, fichiers, horaire et plusieurs ordinateurs.',
+      'Perfiles, archivos, horario y varios equipos.');
+  String get assinaturaAssinar =>
+      _t('Assinar', 'Subscribe', '订阅', "S'abonner", 'Suscribirse');
+  String get assinaturaRestaurar => _t('Restaurar compra', 'Restore purchase',
+      '恢复购买', 'Restaurer un achat', 'Restaurar compra');
+  String get assinaturaVerificando => _t('Conferindo com a loja…',
+      'Checking with the store…', '正在与商店核对…', 'Vérification avec le magasin…',
+      'Comprobando con la tienda…');
+  String get assinaturaPronta => _t('Assinatura ativa. Tudo liberado.',
+      'Subscription active. Everything unlocked.', '订阅已生效，全部功能已解锁。',
+      'Abonnement actif. Tout est débloqué.', 'Suscripción activa. Todo desbloqueado.');
+  String get assinaturaCancelada => _t('Compra cancelada.', 'Purchase canceled.',
+      '购买已取消。', 'Achat annulé.', 'Compra cancelada.');
+  /// Catálogo vazio: o caso do app instalado fora da loja.
+  ///
+  /// A loja responde e não devolve produto nenhum, sem erro. Dizer "tente de
+  /// novo" mandaria a pessoa repetir algo que nunca vai funcionar naquele
+  /// aparelho.
+  String get assinaturaIndisponivel => _t(
+      'A compra não está disponível neste aparelho. Instale o Deskside pela App Store para assinar.',
+      'Purchase is not available on this device. Install Deskside from the App Store to subscribe.',
+      '此设备无法购买。请从 App Store 安装 Deskside 后订阅。',
+      "L'achat n'est pas disponible sur cet appareil. Installez Deskside depuis l'App Store pour vous abonner.",
+      'La compra no está disponible en este dispositivo. Instala Deskside desde la App Store para suscribirte.');
+  String get assinaturaJaTem =>
+      _t('Você já assina.', 'You are already subscribed.', '你已订阅。',
+          'Vous êtes déjà abonné.', 'Ya estás suscrito.');
+  String get assinaturaRenova => _t(
+      'Renova sozinha todo mês. Dá para cancelar quando quiser, nos Ajustes do iPhone.',
+      'Renews automatically every month. Cancel any time in your iPhone Settings.',
+      '每月自动续订，可随时在 iPhone 设置中取消。',
+      "Se renouvelle chaque mois. Annulable à tout moment dans les Réglages de l'iPhone.",
+      'Se renueva cada mes. Puedes cancelar cuando quieras en los Ajustes del iPhone.');
+
   String get twoFactorTitle => _t('Verificação em duas etapas', 'Two-step verification',
       '两步验证', 'Vérification en deux étapes', 'Verificación en dos pasos');
   String get twoFactorSteps => _t(

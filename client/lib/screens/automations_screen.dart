@@ -111,7 +111,8 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
       // vermelho, depois do trabalho todo, faria parecer que o app perdeu o
       // que ela fez — e a automação continua na tela, intacta.
       if (ehLimiteDePlano(e)) {
-        await mostrarLimiteDePlano(context, t, e.toString());
+        await mostrarLimiteDePlano(context, t, e.toString(),
+            state: widget.state);
         return;
       }
       _avisar(e.toString());

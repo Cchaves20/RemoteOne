@@ -53,6 +53,14 @@ dependencies:
   # ShareParams) é a mesma desde a 11. Assim o pub escolhe o que couber no
   # Flutter de cada máquina em vez de recusar a resolução.
   share_plus: ">=11.0.0 <14.0.0"
+  # Compra dentro do app (StoreKit no iOS, Play Billing no Android).
+  #
+  # Só responde em build vindo da App Store ou do TestFlight. Num app instalado
+  # por sideload a loja devolve **lista de produtos vazia, sem erro nenhum** —
+  # e é por isso que a tela de assinatura diz "indisponível" em vez de ficar
+  # girando: a ausência de produto é o sintoma normal fora da loja, não uma
+  # falha a ser tentada de novo.
+  in_app_purchase: ^3.3.1
 
 dev_dependencies:
   flutter_test:

@@ -455,6 +455,38 @@ class ApiClient {
     await _persist();
   }
 
+  /// Manda o comprovante da loja para o servidor conferir.
+  ///
+  /// **O app nunca decide se pagou.** Ele entrega um comprovante opaco; quem
+  /// diz o que aquilo vale é o servidor, que confere a assinatura da Apple.
+  /// Um `POST {"pago": true}` seria trivial de forjar a partir do aparelho de
+  /// qualquer pessoa, e um servidor que acreditasse nisso não teria plano
+  /// pago — teria plano opcional.
+  ///
+  /// Devolve o plano resultante. O 402 que o servidor usa para "comprovante
+  /// não vale" chega aqui como [ApiException], com a explicação dele.
+  Future<Map<String, dynamic>> validarCompra({
+    required String loja,
+    required String comprovante,
+  }) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/assinatura/validar'),
+          headers: _authHeaders,
+          body: jsonEncode({'loja': loja, 'comprovante': comprovante}),
+        )
+        .timeout(_timeout);
+    return _decode(res) as Map<String, dynamic>;
+  }
+
+  /// O estado da assinatura desta conta, como o servidor o vê.
+  Future<Map<String, dynamic>> minhaAssinatura() async {
+    final res = await _http
+        .get(_uri('/api/v1/assinatura'), headers: _authHeaders)
+        .timeout(_timeout);
+    return _decode(res) as Map<String, dynamic>;
+  }
+
   /// Exclui a conta (exige a senha). Ao concluir, limpa a sessão local.
   Future<void> deleteAccount(String password) async {
     final res = await _http.delete(

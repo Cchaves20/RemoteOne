@@ -26,7 +26,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/strings.dart';
+import '../screens/assinatura_screen.dart';
 import '../services/api_client.dart';
+import '../services/app_state.dart';
 
 /// Para onde escrever enquanto o pagamento é feito à mão.
 const contatoDeskside = 'contato@deskside.com.br';
@@ -47,8 +49,9 @@ bool ehLimiteDePlano(Object erro) =>
 Future<void> mostrarLimiteDePlano(
   BuildContext context,
   Strings t,
-  String mensagem,
-) {
+  String mensagem, {
+  AppState? state,
+}) {
   return showDialog<void>(
     context: context,
     builder: (dialogo) => AlertDialog(
@@ -60,15 +63,24 @@ Future<void> mostrarLimiteDePlano(
         children: [
           Text(mensagem),
           const SizedBox(height: 12),
-          SelectableText(
-            contatoDeskside,
-            style: Theme.of(dialogo).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            t.planoComoAssinar,
-            style: Theme.of(dialogo).textTheme.bodySmall,
-          ),
+          // Com a compra na loja disponível, a oferta é o botão abaixo. O
+          // e-mail só aparece onde ela não está — e some de vez quando a
+          // cobrança estiver de pé em todas as telas.
+          if (state == null) ...[
+            SelectableText(
+              contatoDeskside,
+              style: Theme.of(dialogo).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              t.planoComoAssinar,
+              style: Theme.of(dialogo).textTheme.bodySmall,
+            ),
+          ] else
+            Text(
+              t.assinaturaChamada,
+              style: Theme.of(dialogo).textTheme.bodyMedium,
+            ),
         ],
       ),
       actions: [
@@ -76,7 +88,22 @@ Future<void> mostrarLimiteDePlano(
           onPressed: () => Navigator.of(dialogo).pop(),
           child: Text(t.planoAgoraNao),
         ),
-        FilledButton.icon(
+        if (state != null)
+          FilledButton.icon(
+            key: const Key('plano-assinar'),
+            onPressed: () {
+              Navigator.of(dialogo).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => AssinaturaScreen(state: state),
+                ),
+              );
+            },
+            icon: const Icon(Icons.workspace_premium_outlined, size: 18),
+            label: Text(t.assinaturaAssinar),
+          )
+        else
+          FilledButton.icon(
           // **Copiar**, e não abrir o app de e-mail. Nem todo aparelho tem um
           // configurado, e um `mailto:` que não abre nada deixa a pessoa
           // achando que o botão está quebrado. Copiar funciona em qualquer
