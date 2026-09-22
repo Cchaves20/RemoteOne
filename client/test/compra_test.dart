@@ -156,6 +156,78 @@ void main() {
     });
   });
 
+  group('situacaoDaConta', () {
+    final prazo = DateTime.now().add(const Duration(days: 20));
+
+    test('as duas portas de entrada dão a mesma resposta', () {
+      // O teste que existe para o dia em que alguém mexer numa e esquecer a
+      // outra. Uma tela oferecendo assinar e outra não, para a mesma conta, é
+      // pior do que as duas erradas igual: quem usa conclui que está quebrado.
+      void concordam(String nome, SituacaoDoPlano daConta,
+          SituacaoDoPlano daAssinatura) {
+        expect(daConta, daAssinatura, reason: nome);
+        expect(ofereceAssinar(daConta), ofereceAssinar(daAssinatura),
+            reason: nome);
+      }
+
+      concordam(
+        'grátis',
+        situacaoDaConta(plano: 'gratis', emTeste: false, planoAte: null),
+        situacaoDoPlano(plano: 'gratis', loja: null, expiraEm: null),
+      );
+      concordam(
+        'teste',
+        situacaoDaConta(plano: 'pago', emTeste: true, planoAte: prazo),
+        situacaoDoPlano(
+            plano: 'pago', loja: null, expiraEm: prazo.toIso8601String()),
+      );
+      concordam(
+        'assinante',
+        situacaoDaConta(plano: 'pago', emTeste: false, planoAte: prazo),
+        situacaoDoPlano(
+            plano: 'pago', loja: 'apple', expiraEm: prazo.toIso8601String()),
+      );
+      concordam(
+        'sem prazo',
+        situacaoDaConta(plano: 'pago', emTeste: false, planoAte: null),
+        situacaoDoPlano(plano: 'pago', loja: null, expiraEm: null),
+      );
+    });
+
+    test('o botão aparece no grátis e no teste, e só neles', () {
+      expect(
+        ofereceAssinar(
+            situacaoDaConta(plano: 'gratis', emTeste: false, planoAte: null)),
+        isTrue,
+      );
+      expect(
+        ofereceAssinar(
+            situacaoDaConta(plano: 'pago', emTeste: true, planoAte: prazo)),
+        isTrue,
+      );
+      expect(
+        ofereceAssinar(
+            situacaoDaConta(plano: 'pago', emTeste: false, planoAte: prazo)),
+        isFalse,
+      );
+      expect(
+        ofereceAssinar(
+            situacaoDaConta(plano: 'pago', emTeste: false, planoAte: null)),
+        isFalse,
+      );
+    });
+
+    test('em teste vence o prazo nulo', () {
+      // Combinação que o servidor não manda, mas que um `em_teste` ligado por
+      // engano produziria. Cair em "teste" mostra o botão, que é o erro
+      // barato; cair em "sem prazo" o esconderia de quem talvez precise.
+      expect(
+        situacaoDaConta(plano: 'pago', emTeste: true, planoAte: null),
+        SituacaoDoPlano.teste,
+      );
+    });
+  });
+
   group('diasAte', () {
     final agora = DateTime.utc(2026, 9, 22, 12, 0);
 

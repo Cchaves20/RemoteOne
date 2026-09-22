@@ -5,9 +5,10 @@ import '../models/cadastro.dart';
 import '../models/stream_quality.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
+import '../services/compra.dart';
 import '../widgets/brand.dart';
-import '../widgets/plano.dart';
 import '../widgets/transitions.dart';
+import 'assinatura_screen.dart';
 import 'gesture_tutorial_screen.dart';
 import 'profiles_screen.dart';
 import 'two_factor_screen.dart';
@@ -201,6 +202,18 @@ class SettingsScreen extends StatelessWidget {
     final dias = conta?.diasRestantes;
     final emTeste = conta?.emTeste ?? false;
 
+    // Quem tem o que comprar: o grátis e o que está no teste.
+    //
+    // A pergunta é feita pela **mesma** função que a tela de compra usa. Um
+    // `!pago || emTeste` escrito aqui funcionaria hoje e seria uma segunda
+    // regra sobre o mesmo assunto — e o dia em que as duas discordassem, o app
+    // ofereceria assinar numa tela e não na outra, para a mesma conta.
+    final podeAssinar = ofereceAssinar(situacaoDaConta(
+      plano: conta?.plano ?? 'gratis',
+      emTeste: emTeste,
+      planoAte: conta?.planoAte,
+    ));
+
     // O prazo aparece sempre que existe.
     //
     // A regra anterior escondia acima de 10 dias, com o argumento de que
@@ -259,6 +272,24 @@ class SettingsScreen extends StatelessWidget {
                       : theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+            // Quem já assina **não** vê este botão, e quem está no teste vê.
+            //
+            // O teste é o momento em que o botão importa: a pessoa já usou
+            // tudo e tem uma data chegando. Esperar o plano acabar para só
+            // então oferecer seria oferecer depois de tirar.
+            if (podeAssinar)
+              FilledButton.icon(
+                key: const Key('plano-assinar-ajustes'),
+                onPressed: () => Navigator.of(context).push(
+                  fadeThroughRoute(AssinaturaScreen(state: state)),
+                ),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                ),
+                icon: const Icon(Icons.workspace_premium_outlined, size: 18),
+                label: Text(t.assinaturaAssinar),
+              ),
           ],
         ),
         const SizedBox(height: 6),
@@ -275,17 +306,13 @@ class SettingsScreen extends StatelessWidget {
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
         ],
-        if (!pago) ...[
-          const SizedBox(height: 10),
-          // Sem botão de "assinar", porque não há como assinar ainda. Um botão
-          // que abrisse uma tela vazia custaria mais confiança do que a
-          // ausência dele.
-          Text(t.planoComoAssinar, style: theme.textTheme.bodySmall),
-          const SizedBox(height: 6),
-          SelectableText(contatoDeskside,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.primary)),
-        ],
+        // Aqui havia o aviso de que o pagamento ainda estava sendo montado,
+        // mais o e-mail para pedir na mão. Saiu junto com o motivo: agora o
+        // botão acima abre a compra de verdade. Deixar os dois daria duas
+        // respostas à mesma pergunta, e a pessoa escolheria a mais lenta.
+        //
+        // O e-mail continua em `widgets/plano.dart`, no caminho que ainda não
+        // recebe o `AppState` — some de lá quando o último receber.
       ],
     );
   }

@@ -124,6 +124,28 @@ SituacaoDoPlano situacaoDoPlano({
   return SituacaoDoPlano.teste;
 }
 
+/// A mesma situação, a partir do que `GET /api/v1/auth/me` devolve.
+///
+/// Duas portas de entrada para a mesma decisão, e **uma decisão só**. As duas
+/// existem porque as duas respostas do servidor carregam a informação de
+/// formas diferentes — uma traz `loja`, a outra traz `em_teste` já mastigado —
+/// e obrigar a tela de ajustes a pedir a assinatura inteira só para desenhar
+/// um botão seria uma chamada de rede por cartão exibido.
+///
+/// O que **não** pode existir é uma segunda regra. Uma tela que ofereça
+/// assinar e outra que não, para a mesma conta, é pior do que as duas erradas
+/// do mesmo jeito: quem usa conclui que o app está quebrado.
+SituacaoDoPlano situacaoDaConta({
+  required String plano,
+  required bool emTeste,
+  required DateTime? planoAte,
+}) {
+  if (plano != 'pago') return SituacaoDoPlano.gratis;
+  if (emTeste) return SituacaoDoPlano.teste;
+  if (planoAte == null) return SituacaoDoPlano.semPrazo;
+  return SituacaoDoPlano.assinante;
+}
+
 /// Quantos dias inteiros faltam até a data que o servidor mandou.
 ///
 /// Devolve `null` quando a data não dá para ler — e não zero. Zero é "acaba
