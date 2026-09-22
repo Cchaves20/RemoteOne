@@ -1428,6 +1428,43 @@ class Strings {
   String get assinaturaJaTem =>
       _t('Você já assina.', 'You are already subscribed.', '你已订阅。',
           'Vous êtes déjà abonné.', 'Ya estás suscrito.');
+
+  /// A conta liberada à mão, sem prazo nenhum.
+  String get assinaturaSemPrazo => _t(
+      'Sua conta tem o Deskside Pro liberado, sem prazo.',
+      'Your account has Deskside Pro unlocked, with no end date.',
+      '你的账号已永久解锁 Deskside Pro。',
+      "Votre compte dispose de Deskside Pro, sans date de fin.",
+      'Tu cuenta tiene Deskside Pro desbloqueado, sin fecha de término.');
+
+  /// Quantos dias ainda faltam dos 30 iniciais.
+  ///
+  /// Dias, e não a data: "faltam 3 dias" é uma conta que já foi feita para
+  /// quem lê. "Até 21/11" obriga a pessoa a olhar o calendário para saber se
+  /// isso é urgente, e a maioria não olha.
+  String assinaturaTesteAcaba(int dias) => switch (dias) {
+        <= 0 => _t('Seu período de teste acaba hoje.',
+            'Your trial ends today.', '你的试用今天到期。',
+            "Votre essai se termine aujourd'hui.", 'Tu prueba termina hoy.'),
+        1 => _t('Falta 1 dia de teste do Deskside Pro.',
+            '1 day left of your Deskside Pro trial.',
+            'Deskside Pro 试用还剩 1 天。',
+            "Il reste 1 jour d'essai de Deskside Pro.",
+            'Queda 1 día de prueba de Deskside Pro.'),
+        _ => _t('Faltam $dias dias de teste do Deskside Pro.',
+            '$dias days left of your Deskside Pro trial.',
+            'Deskside Pro 试用还剩 $dias 天。',
+            "Il reste $dias jours d'essai de Deskside Pro.",
+            'Quedan $dias días de prueba de Deskside Pro.'),
+      };
+
+  /// O que acontece quando o teste acaba. Dito antes, e sem drama.
+  String get assinaturaDepoisDoTeste => _t(
+      'Depois disso a conta continua funcionando no plano grátis — nada é apagado.',
+      'After that your account keeps working on the free plan — nothing is deleted.',
+      '之后账号会转为免费版继续使用，不会删除任何内容。',
+      'Ensuite, votre compte continue sur le forfait gratuit — rien n’est supprimé.',
+      'Después tu cuenta sigue funcionando en el plan gratis: no se borra nada.');
   String get assinaturaRenova => _t(
       'Renova sozinha todo mês. Dá para cancelar quando quiser, nos Ajustes do iPhone.',
       'Renews automatically every month. Cancel any time in your iPhone Settings.',

@@ -105,6 +105,15 @@ def _rebaixar(email: str) -> None:
         db.commit()
 
 
+def _sem_prazo(email: str) -> None:
+    """A cortesia sem prazo, como `python -m app.conta pago <email>` a dá."""
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == email))
+        user.plano = "pago"
+        user.plano_ate = None
+        db.commit()
+
+
 def _validar(token: str, comprovante: str = "comprovante-de-teste"):
     return client.post(
         "/api/v1/assinatura/validar",
@@ -236,6 +245,74 @@ class TestVinculoExclusivo:
         with SessionLocal() as db:
             linhas = db.query(Assinatura).all()
             assert len(linhas) == 1
+
+
+class TestCortesiaSemPrazo:
+    """A conta liberada à mão, sem prazo, não pode ser encurtada por uma compra.
+
+    `plano_ate = None` com plano pago quer dizer **sem prazo** — é como
+    `python -m app.conta pago <email>` liga uma conta, e é o que a conta do dono
+    do produto tem. O mesmo `None` também é o valor de quem nunca teve plano
+    nenhum, e essa coincidência é a armadilha: uma comparação de datas que trate
+    `None` como "o menor prazo possível" troca infinito por trinta dias.
+
+    O caminho de rebaixar já cuidava disso; o de promover fazia o contrário.
+    """
+
+    def test_uma_compra_nao_encurta_a_cortesia(self, loja):
+        """O caso que ia acontecer no primeiro teste pelo TestFlight.
+
+        O dono testa a própria tela de compra no sandbox, a compra é válida por
+        trinta dias, e a conta ilimitada dele vira uma conta de trinta dias —
+        sem erro nenhum, sem aviso, e sem volta a não ser pela mão.
+        """
+        email = "dono@example.com"
+        token = criar_conta(client, email)["access_token"]
+        _sem_prazo(email)
+
+        loja.compra = uma_compra(dias=30)
+        assert _validar(token).status_code == 200
+
+        plano, ate = _plano_de(email)
+        assert plano == "pago"
+        assert ate is None, "a cortesia sem prazo virou um prazo de 30 dias"
+
+    def test_a_compra_e_guardada_mesmo_assim(self, loja):
+        """Não guardar seria a correção preguiçosa, e quebraria a renovação.
+
+        A assinatura precisa existir no banco para as notificações da loja
+        acharem a conta depois. O que não muda é o prazo.
+        """
+        email = "dono2@example.com"
+        token = criar_conta(client, email)["access_token"]
+        _sem_prazo(email)
+
+        loja.compra = uma_compra(id_original="1000000000000777")
+        assert _validar(token).status_code == 200
+
+        with SessionLocal() as db:
+            assert db.query(Assinatura).count() == 1
+
+    def test_conta_nova_continua_ganhando_o_prazo_da_compra(self, loja):
+        """O contrapeso: a correção não pode transformar todo mundo em ilimitado.
+
+        Uma conta cujo teste de 30 dias acabou tem `plano_ate` no passado, e não
+        nulo — ela precisa receber a data da compra normalmente.
+        """
+        email = "cliente@example.com"
+        token = criar_conta(client, email)["access_token"]
+        _rebaixar(email)
+
+        loja.compra = uma_compra(dias=30)
+        assert _validar(token).status_code == 200
+
+        plano, ate = _plano_de(email)
+        assert plano == "pago"
+        assert ate is not None, "quem pagou ficou sem prazo nenhum"
+        # O SQLite devolve datetime ingênuo; comparar sem normalizar levanta
+        # TypeError e o teste "falharia" pelo motivo errado.
+        ate = ate if ate.tzinfo else ate.replace(tzinfo=UTC)
+        assert ate > datetime.now(UTC) + timedelta(days=29)
 
 
 class TestBanco:

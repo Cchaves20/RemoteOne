@@ -99,6 +99,104 @@ void main() {
     });
   });
 
+  group('situacaoDoPlano', () {
+    test('quem está nos 30 dias iniciais ainda pode assinar', () {
+      // O caso que uma leitura ingênua de `plano == "pago"` esconde. Toda conta
+      // nasce paga por 30 dias sem ter comprado nada: tratar isso como
+      // "já assina" tira o botão de assinar justamente de quem está mais perto
+      // de pagar, e devolve o botão só depois que o produto foi perdido.
+      final s = situacaoDoPlano(
+        plano: 'pago',
+        loja: null,
+        expiraEm: '2026-11-21T12:00:00Z',
+      );
+      expect(s, SituacaoDoPlano.teste);
+      expect(ofereceAssinar(s), isTrue);
+    });
+
+    test('quem já assina pela loja não vê o botão', () {
+      final s = situacaoDoPlano(
+        plano: 'pago',
+        loja: 'apple',
+        expiraEm: '2026-11-21T12:00:00Z',
+      );
+      expect(s, SituacaoDoPlano.assinante);
+      expect(ofereceAssinar(s), isFalse);
+    });
+
+    test('a conta sem prazo é reconhecida, e não confundida com teste', () {
+      // A cortesia dada à mão: plano pago e nenhuma data. Confundi-la com o
+      // teste faria a tela oferecer uma assinatura a quem já tem tudo para
+      // sempre — e, se a pessoa comprasse, o prazo infinito viraria mensal.
+      final s = situacaoDoPlano(plano: 'pago', loja: null, expiraEm: null);
+      expect(s, SituacaoDoPlano.semPrazo);
+      expect(ofereceAssinar(s), isFalse);
+    });
+
+    test('no grátis, o botão aparece', () {
+      final s = situacaoDoPlano(plano: 'gratis', loja: null, expiraEm: null);
+      expect(s, SituacaoDoPlano.gratis);
+      expect(ofereceAssinar(s), isTrue);
+    });
+
+    test('string vazia conta como ausente', () {
+      // O servidor manda `null`, mas um JSON que perde o tipo pelo caminho
+      // manda `""`. Tratar os dois igual evita uma conta sem prazo virar
+      // "teste" por causa de uma serialização.
+      expect(
+        situacaoDoPlano(plano: 'pago', loja: '', expiraEm: ''),
+        SituacaoDoPlano.semPrazo,
+      );
+    });
+
+    test('toda situação tem decisão sobre mostrar o botão', () {
+      for (final s in SituacaoDoPlano.values) {
+        expect(() => ofereceAssinar(s), returnsNormally, reason: '$s');
+      }
+    });
+  });
+
+  group('diasAte', () {
+    final agora = DateTime.utc(2026, 9, 22, 12, 0);
+
+    test('conta os dias que faltam', () {
+      expect(diasAte('2026-10-22T12:00:00Z', agora: agora), 30);
+      expect(diasAte('2026-09-23T12:00:00Z', agora: agora), 1);
+    });
+
+    test('arredonda para cima', () {
+      // Faltando 30 horas, "faltam 2 dias" descreve melhor o que a pessoa vai
+      // viver; arredondar para baixo faria a contagem pular de 1 para "acaba
+      // hoje" com um dia inteiro ainda pela frente.
+      expect(diasAte('2026-09-23T18:00:00Z', agora: agora), 2);
+    });
+
+    test('data já passada é zero, e não negativo', () {
+      expect(diasAte('2026-09-01T12:00:00Z', agora: agora), 0);
+    });
+
+    test('faltando horas, ainda é "1 dia"; faltando segundos, é "hoje"', () {
+      // O limite entre as duas frases. Cinco horas viram um dia porque
+      // "acaba hoje" com cinco horas pela frente é alarme; meio minuto é
+      // "acaba hoje" de verdade.
+      expect(diasAte('2026-09-22T17:00:00Z', agora: agora), 1);
+      expect(diasAte('2026-09-22T12:00:30Z', agora: agora), 0);
+    });
+
+    test('texto que não é data devolve nulo, e não zero', () {
+      // Zero é "acaba hoje", uma frase urgente. Mostrá-la por causa de um
+      // campo malformado seria assustar quem tem 29 dias pela frente.
+      expect(diasAte('', agora: agora), isNull);
+      expect(diasAte('amanhã', agora: agora), isNull);
+    });
+
+    test('fuso não muda a conta', () {
+      // O servidor manda ISO com deslocamento; comparar sem normalizar para
+      // UTC erraria por horas, e perto do limite erraria o dia.
+      expect(diasAte('2026-09-23T09:00:00-03:00', agora: agora), 1);
+    });
+  });
+
   test('o identificador do produto é o mesmo dos outros dois lugares', () {
     // Ele vive em três: aqui, na App Store Connect e em `PRODUTOS_PAGOS` no
     // servidor. Os três têm que concordar — se divergirem, a loja cobra e o

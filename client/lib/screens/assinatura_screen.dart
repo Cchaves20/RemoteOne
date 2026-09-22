@@ -49,6 +49,16 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
   String? _erro;
   String? _aviso;
 
+  /// A situação do plano, **segundo o servidor**.
+  ///
+  /// Não sai de `conta.plano`: durante os 30 dias iniciais esse campo vale
+  /// `pago` sem ninguém ter comprado nada, e usá-lo aqui esconderia o botão de
+  /// assinar justamente de quem está mais perto de assinar.
+  SituacaoDoPlano _situacao = SituacaoDoPlano.gratis;
+
+  /// Quantos dias faltam do teste. Nulo fora do teste.
+  int? _diasDeTeste;
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +79,8 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
   }
 
   Future<void> _procurarProduto() async {
+    final situacao = await _perguntarAoServidor();
+
     final disponivel = await _loja.isAvailable();
     var encontrados = <ProductDetails>[];
     if (disponivel) {
@@ -79,11 +91,51 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
     setState(() {
       _carregando = false;
       _produto = encontrados.isEmpty ? null : encontrados.first;
-      if (!podeComprar(
-          lojaDisponivel: disponivel, produtos: encontrados.length)) {
+      // Quem já assina ou tem a conta sem prazo não precisa saber que o
+      // catálogo da loja veio vazio: não há nada que essa pessoa queira
+      // comprar, e o aviso só assustaria.
+      if (ofereceAssinar(situacao) &&
+          !podeComprar(
+              lojaDisponivel: disponivel, produtos: encontrados.length)) {
         _erro = widget.state.t.assinaturaIndisponivel;
       }
     });
+  }
+
+  /// Pergunta ao servidor em que situação a conta está.
+  ///
+  /// Uma chamada a mais, de propósito. O `conta.plano` que o app já tem não
+  /// distingue teste de assinatura — os dois chegam como `pago` — e essa
+  /// distinção é a que decide se existe algo para vender nesta tela.
+  ///
+  /// Falhar aqui não pode fechar a tela: sem rede, o certo é oferecer a compra
+  /// (o pior caso é a loja recusar uma compra repetida, e ela sabe fazer isso)
+  /// em vez de esconder o botão e deixar a pessoa sem caminho nenhum.
+  Future<SituacaoDoPlano> _perguntarAoServidor() async {
+    var situacao = SituacaoDoPlano.gratis;
+    int? dias;
+    try {
+      final resposta = await widget.state.api.minhaAssinatura();
+      final expiraEm = resposta['expira_em'] as String?;
+      situacao = situacaoDoPlano(
+        plano: '${resposta['plano'] ?? 'gratis'}',
+        loja: resposta['loja'] as String?,
+        expiraEm: expiraEm,
+      );
+      if (situacao == SituacaoDoPlano.teste && expiraEm != null) {
+        dias = diasAte(expiraEm);
+      }
+    } catch (_) {
+      // Segue como `gratis`: a tela oferece a compra, que é o caminho que não
+      // deixa ninguém preso.
+    }
+    if (mounted) {
+      setState(() {
+        _situacao = situacao;
+        _diasDeTeste = dias;
+      });
+    }
+    return situacao;
   }
 
   Future<void> _comprar() async {
@@ -168,6 +220,9 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
       );
       // O plano vive no servidor; reler é o que faz o resto do app saber.
       await widget.state.recarregarConta();
+      // E reler **esta** tela também, senão o botão de assinar continua ali
+      // depois da compra, convidando a comprar de novo o que já foi comprado.
+      await _perguntarAoServidor();
       if (!mounted) return;
       setState(() {
         _ocupado = false;
@@ -196,7 +251,7 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
   Widget build(BuildContext context) {
     final t = widget.state.t;
     final theme = Theme.of(context);
-    final jaAssina = widget.state.conta?.plano == 'pago';
+    final oferecer = ofereceAssinar(_situacao);
 
     return Scaffold(
       appBar: AppBar(title: Text(t.assinaturaTitulo)),
@@ -219,13 +274,37 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
                     const SizedBox(height: 24),
                     if (_carregando)
                       const Center(child: CircularProgressIndicator())
-                    else if (jaAssina)
+                    else if (_situacao == SituacaoDoPlano.semPrazo)
+                      Text(
+                        t.assinaturaSemPrazo,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyLarge,
+                      )
+                    else if (_situacao == SituacaoDoPlano.assinante)
                       Text(
                         t.assinaturaJaTem,
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyLarge,
                       )
-                    else if (_produto != null) ...[
+                    else if (oferecer && _produto != null) ...[
+                      // Quem está no teste vê quanto falta **antes** do preço.
+                      // É a informação que torna o preço uma decisão em vez de
+                      // uma cobrança do nada.
+                      if (_diasDeTeste != null) ...[
+                        Text(
+                          t.assinaturaTesteAcaba(_diasDeTeste!),
+                          key: const Key('assinatura-teste'),
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          t.assinaturaDepoisDoTeste,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 20),
+                      ],
                       // O preço vem **da loja**, e não de um texto nosso: ela
                       // já o traz na moeda e no formato do país de quem olha,
                       // e um valor escrito por nós ficaria errado no dia em

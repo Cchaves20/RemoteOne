@@ -150,16 +150,27 @@ def _sincronizar_plano(user: User, compra: regras.Compra) -> None:
     o `else`, um reembolso gravaria o estado novo na assinatura e deixaria a
     conta paga para sempre.
 
-    E o que **não** acontece aqui: derrubar quem foi liberado à mão. Uma conta
+    E o que **não** acontece aqui: mexer em quem foi liberado à mão. Uma conta
     com `plano_ate` nulo e plano pago é uma cortesia dada por `python -m
-    app.conta`, sem prazo — uma compra de loja que expirou não desfaz isso.
+    app.conta`, sem prazo — nem uma compra que expirou a desfaz, nem uma compra
+    válida a encurta.
+
+    Esse segundo caso é o traiçoeiro, porque `plano_ate = None` quer dizer duas
+    coisas opostas conforme o plano: **sem prazo nenhum** quando a conta é paga,
+    e **sem plano nenhum** quando não é. Tratar o nulo como "a menor data
+    possível" acerta no segundo caso e, no primeiro, troca infinito por trinta
+    dias — calado, e sem volta a não ser pela mão. O jeito de ver isto acontecer
+    é o dono testar a própria tela de compra.
     """
     ate = regras.ate_quando(compra, aceitar_sandbox=settings.aceitar_sandbox)
     if ate is not None:
+        sem_prazo = user.plano == "pago" and user.plano_ate is None
         user.plano = "pago"
         # Só para frente: uma notificação atrasada não pode encurtar um prazo
-        # que uma renovação mais nova já esticou.
-        if user.plano_ate is None or em_utc(user.plano_ate) < em_utc(ate):
+        # que uma renovação mais nova já esticou — e nada encurta o sem prazo.
+        if not sem_prazo and (
+            user.plano_ate is None or em_utc(user.plano_ate) < em_utc(ate)
+        ):
             user.plano_ate = ate
         return
 

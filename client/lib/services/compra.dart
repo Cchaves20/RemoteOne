@@ -81,3 +81,70 @@ const produtoPro = 'com.deskside.pro.mensal';
 /// texto, e por isso os dois casos chegam aqui separados.
 bool podeComprar({required bool lojaDisponivel, required int produtos}) =>
     lojaDisponivel && produtos > 0;
+
+/// Em que situação a conta está em relação ao Pro.
+///
+/// Quatro, e não duas, porque `plano == 'pago'` sozinho abrange coisas que
+/// precisam de telas diferentes.
+enum SituacaoDoPlano {
+  /// No grátis. O caso mais simples: oferecer a compra.
+  gratis,
+
+  /// **Nos 30 dias iniciais.** Toda conta nasce paga e cai para o grátis
+  /// depois (`backend/app/plano.py`), então durante um mês inteiro o plano
+  /// efetivo é `pago` sem ninguém ter comprado nada.
+  ///
+  /// É o caso que uma leitura ingênua de `plano == 'pago'` esconde — e ele
+  /// esconde justamente **quem está mais perto de assinar**: alguém que já
+  /// usou o produto inteiro e está a poucos dias de perdê-lo.
+  teste,
+
+  /// Já assina pela loja. Não há o que vender de novo.
+  assinante,
+
+  /// Liberada à mão, sem prazo. A conta do dono do produto, e as cortesias
+  /// dadas por `python -m app.conta pago <email>`.
+  semPrazo,
+}
+
+/// A situação, a partir do que o servidor respondeu em `GET /api/v1/assinatura`.
+///
+/// A distinção entre teste e assinatura vem de `loja`: ela só tem valor quando
+/// existe uma compra registrada. Deduzir pela data não daria — teste e
+/// assinatura mensal têm os dois um prazo de trinta dias, e são indistinguíveis
+/// pelo calendário.
+SituacaoDoPlano situacaoDoPlano({
+  required String plano,
+  required String? loja,
+  required String? expiraEm,
+}) {
+  if (plano != 'pago') return SituacaoDoPlano.gratis;
+  if (loja != null && loja.isNotEmpty) return SituacaoDoPlano.assinante;
+  if (expiraEm == null || expiraEm.isEmpty) return SituacaoDoPlano.semPrazo;
+  return SituacaoDoPlano.teste;
+}
+
+/// Quantos dias inteiros faltam até a data que o servidor mandou.
+///
+/// Devolve `null` quando a data não dá para ler — e não zero. Zero é "acaba
+/// hoje", uma frase urgente; mostrá-la por causa de um texto malformado seria
+/// assustar sem motivo.
+///
+/// Arredonda para cima por um motivo prático: faltando 30 horas, "faltam 2
+/// dias" é mais fiel ao que a pessoa vai viver do que "falta 1 dia", e o
+/// contrário faria a contagem pular de 1 para "acaba hoje" com um dia inteiro
+/// ainda pela frente.
+int? diasAte(String iso, {DateTime? agora}) {
+  final quando = DateTime.tryParse(iso);
+  if (quando == null) return null;
+  final daqui = quando.toUtc().difference((agora ?? DateTime.now()).toUtc());
+  if (daqui.isNegative) return 0;
+  return (daqui.inMinutes / (60 * 24)).ceil();
+}
+
+/// Se a tela deve mostrar o botão de assinar.
+///
+/// Quem está no teste **precisa** poder assinar antes de o teste acabar; a
+/// alternativa é pedir que a pessoa espere perder o produto para poder pagar.
+bool ofereceAssinar(SituacaoDoPlano situacao) =>
+    situacao == SituacaoDoPlano.gratis || situacao == SituacaoDoPlano.teste;
