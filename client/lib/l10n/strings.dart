@@ -1420,20 +1420,20 @@ class Strings {
   String get planoLimiteTitulo => _t('Isto é do Deskside completo',
       'This is part of Deskside full', '这是完整版功能',
       'Ceci fait partie de Deskside complet', 'Esto es de Deskside completo');
-  String get planoFalarConosco => _t('Falar com a gente', 'Get in touch',
-      '联系我们', 'Nous contacter', 'Hablar con nosotros');
-  String get planoCopiarEmail => _t('Copiar e-mail', 'Copy e-mail address',
-      '复制邮箱', "Copier l'adresse e-mail", 'Copiar correo');
-  String get planoEmailCopiado => _t('Endereço copiado.', 'Address copied.',
-      '地址已复制。', 'Adresse copiée.', 'Dirección copiada.');
-  String get planoAgoraNao =>
-      _t('Agora não', 'Not now', '暂不', 'Pas maintenant', 'Ahora no');
-  String get planoComoAssinar => _t(
-      'O pagamento automático ainda está sendo montado. Por enquanto a gente ativa na mão — escreva e respondemos.',
-      'Automatic payment is still being built. For now we enable it by hand — write to us and we will reply.',
-      '自动付款仍在开发中。目前我们手动开通——写信给我们即可。',
-      "Le paiement automatique est en cours de construction. Pour l'instant nous l'activons à la main — écrivez-nous.",
-      'El pago automático aún se está construyendo. Por ahora lo activamos a mano — escríbenos y respondemos.');
+  String get planoEntendi =>
+      _t('Entendi', 'Got it', '知道了', "J'ai compris", 'Entendido');
+
+  /// Onde se assina — uma porta só, e esta frase é a placa dela.
+  ///
+  /// O aviso de limite **não** abre a compra direto, de propósito: ter duas
+  /// entradas para a mesma tela é ter duas telas para manter iguais, e um dia
+  /// uma delas passa a oferecer o que a outra já não oferece.
+  String get planoOndeAssinar => _t(
+      'Para assinar, abra Ajustes e toque em Assinar, no seu plano.',
+      'To subscribe, open Settings and tap Subscribe, under your plan.',
+      '如需订阅，请打开设置，在你的方案中点击订阅。',
+      'Pour vous abonner, ouvrez Réglages et touchez S’abonner, dans votre forfait.',
+      'Para suscribirte, abre Ajustes y toca Suscribirse, en tu plan.');
 
   // --- Assinatura pela loja ---------------------------------------------------
 
@@ -1508,6 +1508,24 @@ class Strings {
       '之后账号会转为免费版继续使用，不会删除任何内容。',
       'Ensuite, votre compte continue sur le forfait gratuit — rien n’est supprimé.',
       'Después tu cuenta sigue funcionando en el plan gratis: no se borra nada.');
+  /// Os dois documentos que a Apple exige na tela de compra (diretriz 3.1.2).
+  String get assinaturaTermos =>
+      _t('Termos de uso', 'Terms of Use', '使用条款', "Conditions d'utilisation",
+          'Términos de uso');
+  String get assinaturaPrivacidade => _t('Política de privacidade',
+      'Privacy Policy', '隐私政策', 'Politique de confidentialité',
+      'Política de privacidad');
+
+  /// Quando o navegador não abre. Raro, e ainda assim precisa de saída: sem
+  /// isto a pessoa toca no link e não acontece nada, que é como um app parece
+  /// quebrado sem estar.
+  String get assinaturaLinkFalhou => _t(
+      'Não consegui abrir. O endereço é deskside.com.br',
+      'Could not open it. The address is deskside.com.br',
+      '无法打开。网址是 deskside.com.br',
+      "Impossible d'ouvrir. L'adresse est deskside.com.br",
+      'No pude abrirlo. La dirección es deskside.com.br');
+
   String get assinaturaRenova => _t(
       'Renova sozinha todo mês. Dá para cancelar quando quiser, nos Ajustes do iPhone.',
       'Renews automatically every month. Cancel any time in your iPhone Settings.',

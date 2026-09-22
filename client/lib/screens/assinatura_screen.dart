@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../config.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/compra.dart';
@@ -238,6 +240,30 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
     }
   }
 
+  /// Abre um dos dois documentos no navegador.
+  ///
+  /// `externalApplication` e não a visualização de dentro do app: a Apple pede
+  /// que os documentos estejam **acessíveis**, e o navegador do sistema é o
+  /// que tem voltar, compartilhar e aumentar a letra. Uma janela embutida que
+  /// falha ao carregar deixa a pessoa presa numa tela branca.
+  Future<void> _abrir(String caminho) async {
+    final endereco = Uri.parse('https://$siteDeskside$caminho');
+    var abriu = false;
+    try {
+      abriu = await launchUrl(endereco, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      abriu = false;
+    }
+    // O `launchUrl` devolve `false` em vez de lançar quando não há navegador,
+    // então checar só o `try` deixaria o toque sem resposta — que é como um
+    // app parece quebrado sem estar.
+    if (!abriu && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(widget.state.t.assinaturaLinkFalhou)),
+      );
+    }
+  }
+
   void _falhar(String mensagem) {
     if (!mounted) return;
     setState(() {
@@ -348,6 +374,30 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
                         style: TextStyle(color: theme.colorScheme.error),
                       ),
                     ],
+                    // Os dois documentos, **sempre visíveis** e fora de todo
+                    // `if` acima. A diretriz 3.1.2 da Apple os exige na tela
+                    // de compra, e é a rejeição mais comum em app de
+                    // assinatura. Pendurá-los num ramo — só quando há produto,
+                    // por exemplo — faria a tela cumprir a regra na máquina de
+                    // quem escreveu e falhar na do revisor, que abre o app sem
+                    // catálogo com mais frequência do que se imagina.
+                    const SizedBox(height: 28),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 4,
+                      children: [
+                        TextButton(
+                          key: const Key('assinatura-termos'),
+                          onPressed: () => _abrir('/termos'),
+                          child: Text(t.assinaturaTermos),
+                        ),
+                        TextButton(
+                          key: const Key('assinatura-privacidade'),
+                          onPressed: () => _abrir('/privacidade'),
+                          child: Text(t.assinaturaPrivacidade),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

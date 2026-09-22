@@ -61,6 +61,14 @@ dependencies:
   # girando: a ausência de produto é o sintoma normal fora da loja, não uma
   # falha a ser tentada de novo.
   in_app_purchase: ^3.3.1
+  # Abrir os Termos de Uso e a Política de Privacidade no navegador.
+  #
+  # O projeto evitou esta dependência por bom motivo (ver devices_screen.dart:
+  # copiar um endereço serve melhor que abri-lo quando ele tem de ser digitado
+  # noutro computador). Aqui ela se paga: a diretriz 3.1.2 da Apple exige
+  # **links funcionais** para os dois documentos na tela de compra, e texto
+  # copiável não é link. É a rejeição mais comum de app de assinatura.
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:

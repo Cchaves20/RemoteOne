@@ -80,8 +80,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
       // mais provável de esbarrar nele: a pessoa gostou e foi instalar no
       // segundo computador.
       if (ehLimiteDePlano(e)) {
-        await mostrarLimiteDePlano(context, t, e.toString(),
-            state: widget.state);
+        await mostrarLimiteDePlano(context, t, e.toString());
         return;
       }
       ScaffoldMessenger.of(context)
