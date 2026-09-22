@@ -129,6 +129,19 @@ services:
       # Fica dentro do clone do Git, e isso é seguro: a pasta está no
       # .gitignore, e `git reset --hard` não apaga arquivo não versionado.
       - ./backups:/backups
+      # O certificado **raiz** da Apple, que ancora a verificação do
+      # comprovante de compra (`DESKSIDE_APPLE_ROOT_CA=/certs/...`).
+      #
+      # Somente leitura, e por um motivo específico deste arquivo: ele é a
+      # âncora de confiança inteira. Se a API pudesse escrever aqui, uma falha
+      # que desse escrita no contêiner bastaria para trocar a raiz por outra —
+      # e a partir daí qualquer comprovante forjado passaria na verificação,
+      # sem erro nenhum no log.
+      #
+      # Sem o arquivo, o servidor **não** libera plano pago de graça: ele cai
+      # no modo `DeMentira`, que só emite compra de sandbox, e sandbox não
+      # vale como pago. O `/health` denuncia o modo.
+      - ./certs:/certs:ro
     # Sem `ports:` — só o Caddy alcança a API (rede interna).
 
   # Servidor de relay (TURN). Sem ele, celular no 5G + computador atrás do

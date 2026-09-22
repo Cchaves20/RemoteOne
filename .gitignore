@@ -21,6 +21,14 @@ __pycache__/
 .env
 deploy/.env
 
+# Certificados de âncora de confiança. O .cer da Apple é público — qualquer um
+# baixa do site deles — mas versionar uma raiz de confiança é péssimo hábito:
+# ela passa a ser atualizada por `git pull`, e quem revisa um diff de bytes
+# binários não revisa nada. Ela é buscada na fonte, no servidor, e conferida lá.
+deploy/certs/*
+!deploy/certs/.gitkeep
+!deploy/certs/LEIAME.md
+
 # Flutter / Dart
 client/.dart_tool/
 client/build/
