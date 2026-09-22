@@ -45,9 +45,15 @@ são credenciais de cobrança, e valem tanto quanto o `DESKSIDE_JWT_SECRET`.
 
 from __future__ import annotations
 
+import json
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
+from cryptography import x509
+
+from app import jws
 from app.assinatura import Ambiente, Compra, Estado, Loja
 from app.config import settings
 
@@ -137,23 +143,170 @@ class AppStore(Verificador):
     conteúdo. Decodificar sem verificar é o erro clássico desta integração: a
     parte central de um JWS é base64 comum, lê-se sem chave nenhuma, e um
     comprovante forjado passa por qualquer leitura que se contente com isso.
+
+    A criptografia mora em `app/jws.py`, sem rede e sem configuração, para
+    poder ser exercitada com uma cadeia fabricada nos testes.
+
+    **Não há chamada de rede aqui, e é de propósito.** A transação assinada já
+    carrega tudo o que decide o plano — produto, validade, reembolso, ambiente
+    — e a assinatura prova a origem. Consultar a App Store Server API traria um
+    ponto de falha externo no caminho de quem acabou de pagar, para confirmar
+    algo que a própria Apple já assinou.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, raiz: object | None = None) -> None:
         self._bundle = settings.apple_bundle_id
+        self._raiz = raiz if raiz is not None else _raiz_da_apple()
+
+    def _compra_de(self, transacao: dict) -> Compra:
+        """Traduz uma transação assinada da Apple para o nosso vocabulário."""
+        bundle = transacao.get("bundleId")
+        if self._bundle and bundle != self._bundle:
+            # Um comprovante legítimo **de outro aplicativo** é assinado pela
+            # Apple e passa em toda a verificação criptográfica. O que o separa
+            # do nosso é este campo.
+            raise ComprovanteInvalido(
+                f"comprovante é do aplicativo {bundle!r}, não do nosso"
+            )
+
+        produto = transacao.get("productId")
+        if not produto:
+            raise ComprovanteInvalido("transação sem productId")
+
+        original = transacao.get("originalTransactionId")
+        if not original:
+            raise ComprovanteInvalido("transação sem originalTransactionId")
+
+        ambiente = (
+            Ambiente.PRODUCAO
+            if str(transacao.get("environment", "")).lower() == "production"
+            else Ambiente.SANDBOX
+        )
+
+        expira = _instante(transacao.get("expiresDate"))
+        revogada = _instante(transacao.get("revocationDate"))
+        agora = datetime.now(UTC)
+
+        # A ordem importa: reembolso vence data. Uma assinatura reembolsada
+        # pode ter `expiresDate` no futuro, e tratá-la como ativa daria plano
+        # pago a quem pediu o dinheiro de volta.
+        if revogada is not None:
+            estado = Estado.REVOGADA
+        elif expira is None or expira <= agora:
+            estado = Estado.EXPIRADA
+        else:
+            estado = Estado.ATIVA
+
+        return Compra(
+            loja=Loja.APPLE,
+            id_original=str(original),
+            product_id=str(produto),
+            estado=estado,
+            ambiente=ambiente,
+            expira_em=expira,
+            visto_em=agora,
+        )
 
     def verificar(self, comprovante: str) -> Compra:
-        raise NotImplementedError(
-            "a integração com a App Store Server API entra quando a conta Apple "
-            "Developer existir; até lá o servidor roda com DeMentira e não "
-            "distribui plano pago (ver o docstring deste módulo)"
-        )
+        if not comprovante:
+            raise ComprovanteInvalido("comprovante vazio")
+        try:
+            transacao = jws.verificar_jws(comprovante, self._raiz)
+        except jws.JwsInvalido as e:
+            raise ComprovanteInvalido(str(e)) from e
+        return self._compra_de(transacao)
 
     def ler_notificacao(self, corpo: bytes) -> Compra:
-        raise NotImplementedError(
-            "App Store Server Notifications V2: conferir a cadeia x5c até a raiz "
-            "da Apple antes de ler qualquer campo"
-        )
+        """App Store Server Notifications V2.
+
+        São **dois** JWS, um dentro do outro: o corpo traz `signedPayload`, e
+        dentro dele vem `data.signedTransactionInfo`. Os dois são conferidos —
+        verificar só o de fora deixaria a transação, que é o que decide o
+        plano, entrando sem prova.
+        """
+        try:
+            envelope = json.loads(corpo)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            raise ComprovanteInvalido(f"notificação não é JSON: {e}") from e
+
+        assinado = envelope.get("signedPayload")
+        if not assinado:
+            raise ComprovanteInvalido("notificação sem signedPayload")
+
+        try:
+            aviso = jws.verificar_jws(str(assinado), self._raiz)
+            dados = aviso.get("data") or {}
+            transacao_assinada = dados.get("signedTransactionInfo")
+            if not transacao_assinada:
+                raise ComprovanteInvalido("notificação sem signedTransactionInfo")
+            transacao = jws.verificar_jws(str(transacao_assinada), self._raiz)
+        except jws.JwsInvalido as e:
+            raise ComprovanteInvalido(str(e)) from e
+
+        compra = self._compra_de(transacao)
+        return _com_estado_do_aviso(compra, aviso)
+
+
+#: O que cada aviso da Apple diz sobre o estado, quando ele sabe mais que a
+#: transação. Fora desta tabela, vale o que a transação disse.
+#:
+#: `DID_FAIL_TO_RENEW` é o caso que a transação não tem como expressar: a
+#: assinatura não foi renovada por problema de cobrança e a Apple ainda está
+#: tentando. Não é expirada (pode voltar sozinha) nem ativa (não pagou).
+_ESTADO_POR_AVISO = {
+    "REFUND": Estado.REVOGADA,
+    "REVOKE": Estado.REVOGADA,
+    "EXPIRED": Estado.EXPIRADA,
+    "DID_FAIL_TO_RENEW": Estado.EM_ATRASO,
+    "GRACE_PERIOD_EXPIRED": Estado.EXPIRADA,
+}
+
+
+def _com_estado_do_aviso(compra: Compra, aviso: dict) -> Compra:
+    tipo = str(aviso.get("notificationType", ""))
+    estado = _ESTADO_POR_AVISO.get(tipo)
+    if estado is None or estado is compra.estado:
+        return compra
+    return replace(compra, estado=estado)
+
+
+def _instante(milissegundos: object) -> datetime | None:
+    """Data da Apple (milissegundos desde 1970, UTC) para `datetime`.
+
+    Milissegundos, e não segundos: tratar como segundos põe a validade no ano
+    de 56 mil, e a assinatura nunca expira. O erro não aparece em teste que só
+    olha "é uma data".
+    """
+    if milissegundos is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(milissegundos) / 1000, tz=UTC)
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
+def _raiz_da_apple():
+    """Carrega o certificado raiz do caminho configurado.
+
+    Devolve `None` quando não há caminho ou o arquivo não abre — e aí
+    `_escolher` não usa o `AppStore`. Falhar fechado: sem raiz não há
+    verificação possível, e verificação impossível não pode virar "aceita".
+    """
+    caminho = settings.apple_root_ca
+    if not caminho:
+        return None
+    try:
+        dados = Path(caminho).read_bytes()
+    except OSError as e:
+        logger.error("não consegui ler o certificado raiz da Apple em %s: %s", caminho, e)
+        return None
+    try:
+        if b"-----BEGIN CERTIFICATE-----" in dados:
+            return x509.load_pem_x509_certificate(dados)
+        return x509.load_der_x509_certificate(dados)
+    except ValueError as e:
+        logger.error("o arquivo em %s não é um certificado: %s", caminho, e)
+        return None
 
 
 class PlayStore(Verificador):
@@ -182,8 +335,15 @@ class PlayStore(Verificador):
 
 
 def _escolher(loja: Loja) -> Verificador:
-    if loja is Loja.APPLE and settings.apple_key_id and settings.apple_issuer_id:
-        return AppStore()
+    # A condição mudou junto com a implementação, e vale dizer por quê: ela
+    # pedia `apple_key_id` e `apple_issuer_id`, que são credenciais para
+    # **chamar** a App Store Server API. A verificação não chama ninguém —
+    # confere a assinatura da transação contra o certificado raiz. Então o que
+    # decide se dá para verificar é ter a raiz, e não ter credencial de API.
+    if loja is Loja.APPLE:
+        raiz = _raiz_da_apple()
+        if raiz is not None:
+            return AppStore(raiz)
     if loja is Loja.GOOGLE and settings.google_service_account:
         return PlayStore()
     return DeMentira()
@@ -202,6 +362,6 @@ def configurado() -> dict[str, bool]:
     `.env`, o nome da variável pode estar errado, e nada disso aparece de fora.
     """
     return {
-        "apple": bool(settings.apple_key_id and settings.apple_issuer_id),
+        "apple": _raiz_da_apple() is not None,
         "google": bool(settings.google_service_account),
     }

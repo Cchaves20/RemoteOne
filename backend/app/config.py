@@ -118,6 +118,19 @@ class Settings(BaseSettings):
     #: que alguém abra no contêiner.
     apple_key_p8: str = ""
     apple_bundle_id: str = ""
+    #: Caminho do certificado **raiz** da Apple (`AppleRootCA-G3.cer`), que é o
+    #: que torna a verificação do comprovante uma verificação de verdade.
+    #:
+    #: Um arquivo, e não uma constante no código, por um motivo prático: este
+    #: ambiente de desenvolvimento não alcança `apple.com`, então embutir os
+    #: bytes exigiria copiá-los de algum lugar sem poder conferir a origem — e
+    #: um certificado raiz copiado errado transforma a verificação em teatro.
+    #: Baixe de <https://www.apple.com/certificateauthority/> e aponte aqui.
+    #:
+    #: **Sem ele o verificador recusa tudo.** É de propósito: falhar fechado
+    #: custa um plano pago que não liga; falhar aberto aceita comprovante
+    #: forjado.
+    apple_root_ca: str = ""
     google_package: str = ""
     google_service_account: str = ""
 
