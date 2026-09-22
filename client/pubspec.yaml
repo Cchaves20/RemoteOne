@@ -84,12 +84,12 @@ flutter:
 
 # Ícone do app: a configuração fica em **dois arquivos**, e não aqui.
 #
-#   flutter_launcher_icons-android.yaml
-#   flutter_launcher_icons-ios.yaml
+#   icone-android.yaml
+#   icone-ios.yaml
 #
 # Cada workflow do Codemagic gera uma plataforma só, e uma configuração que
 # escreve nas duas morre na pasta que não existe. O porquê completo está no
-# cabeçalho do arquivo de Android.
+# cabeçalho de `icone-android.yaml`.
 #
 # E não há um bloco `flutter_launcher_icons:` aqui de propósito: quando o `-f`
 # aponta para um arquivo que não existe, a ferramenta **cai calada** no

@@ -1,0 +1,34 @@
+# Ícone do iOS. Só do iOS.
+#
+# O par do `icone-android.yaml` — o porquê de serem dois
+# arquivos está escrito lá, e vale para os dois: cada workflow do Codemagic
+# cria só a pasta da plataforma que vai compilar, e uma configuração que
+# escreve nas duas morre na que não existe.
+#
+# Se você mudar o desenho, `image_path` também está no arquivo de Android.
+
+# ## O nome deste arquivo importa, e não pode voltar a ser o óbvio
+#
+# Ele **não** pode se chamar `icone-ios.yaml`. A ferramenta
+# trata todo arquivo que case com
+#
+#     ^flutter_launcher_icons-(.*).yaml$
+#
+# como um *flavor*, e quando existe qualquer flavor ela **ignora o `-f`** e
+# faz um laço por todos eles — cada workflow tentaria gerar as duas
+# plataformas de novo, que é exatamente o que estes arquivos existem para
+# evitar. Foi o que aconteceu: os nomes óbvios viraram os flavors "android" e
+# "ios", e o build de Android foi tentar escrever em `ios/Runner.xcodeproj`.
+#
+# `scripts/gerar-icone-adaptativo.py` recusa se um arquivo com o nome
+# proibido reaparecer em `client/`.
+
+flutter_launcher_icons:
+  image_path: "assets/icon/deskside.png"
+  ios: true
+  android: false
+
+  # A App Store recusa ícone com canal alfa. A ferramenta remove e achata
+  # contra o branco — por isso o `deskside.png` já vem com o fundo escuro
+  # pintado, e não transparente: o que seria transparente viraria branco.
+  remove_alpha_ios: true

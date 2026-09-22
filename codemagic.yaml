@@ -43,7 +43,20 @@ workflows:
           # Configuração **só do iOS**. Uma compartilhada com `android: true`
           # faria a ferramenta escrever na pasta android/, que este workflow
           # não cria — e ela morre com PathNotFoundException.
-          CONFIG=flutter_launcher_icons-ios.yaml
+          CONFIG=icone-ios.yaml
+
+          # Nenhum arquivo pode se chamar `flutter_launcher_icons-*.yaml`.
+          #
+          # A ferramenta trata esse nome como um *flavor*, e havendo qualquer
+          # flavor ela **ignora o `-f`** e faz um laço por todos — este
+          # workflow voltaria a tentar as duas plataformas e morreria na pasta
+          # que ele não cria. Foi assim que o build quebrou uma vez.
+          if ls flutter_launcher_icons-*.yaml >/dev/null 2>&1; then
+            echo "FALHOU: existe arquivo flutter_launcher_icons-*.yaml aqui."
+            echo "Esse nome vira flavor e faz o -f ser ignorado. Renomeie."
+            ls -la flutter_launcher_icons-*.yaml
+            exit 1
+          fi
 
           # Confere que o arquivo existe antes de usá-lo. Com `-f` apontando
           # para um nome errado, a ferramenta **cai calada** no pubspec.yaml
@@ -172,7 +185,20 @@ workflows:
           # Configuração **só do iOS**. Uma compartilhada com `android: true`
           # faria a ferramenta escrever na pasta android/, que este workflow
           # não cria — e ela morre com PathNotFoundException.
-          CONFIG=flutter_launcher_icons-ios.yaml
+          CONFIG=icone-ios.yaml
+
+          # Nenhum arquivo pode se chamar `flutter_launcher_icons-*.yaml`.
+          #
+          # A ferramenta trata esse nome como um *flavor*, e havendo qualquer
+          # flavor ela **ignora o `-f`** e faz um laço por todos — este
+          # workflow voltaria a tentar as duas plataformas e morreria na pasta
+          # que ele não cria. Foi assim que o build quebrou uma vez.
+          if ls flutter_launcher_icons-*.yaml >/dev/null 2>&1; then
+            echo "FALHOU: existe arquivo flutter_launcher_icons-*.yaml aqui."
+            echo "Esse nome vira flavor e faz o -f ser ignorado. Renomeie."
+            ls -la flutter_launcher_icons-*.yaml
+            exit 1
+          fi
 
           # Confere que o arquivo existe antes de usá-lo. Com `-f` apontando
           # para um nome errado, a ferramenta **cai calada** no pubspec.yaml
@@ -378,7 +404,20 @@ workflows:
           # é um passo que não confere nada.
           # Configuração **só do Android**: este workflow não cria a pasta
           # ios/, e uma configuração com `ios: true` morre lá.
-          CONFIG=flutter_launcher_icons-android.yaml
+          CONFIG=icone-android.yaml
+
+          # Nenhum arquivo pode se chamar `flutter_launcher_icons-*.yaml`.
+          #
+          # A ferramenta trata esse nome como um *flavor*, e havendo qualquer
+          # flavor ela **ignora o `-f`** e faz um laço por todos — este
+          # workflow voltaria a tentar as duas plataformas e morreria na pasta
+          # que ele não cria. Foi assim que o build quebrou uma vez.
+          if ls flutter_launcher_icons-*.yaml >/dev/null 2>&1; then
+            echo "FALHOU: existe arquivo flutter_launcher_icons-*.yaml aqui."
+            echo "Esse nome vira flavor e faz o -f ser ignorado. Renomeie."
+            ls -la flutter_launcher_icons-*.yaml
+            exit 1
+          fi
           if [ ! -f "$CONFIG" ]; then
             echo "FALHOU: $CONFIG não existe."
             exit 1

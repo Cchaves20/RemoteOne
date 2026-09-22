@@ -21,6 +21,22 @@
 # (um por plataforma), e `scripts/gerar-icone-adaptativo.py` confere que os
 # dois continuam apontando para os arquivos certos.
 
+# ## O nome deste arquivo importa, e não pode voltar a ser o óbvio
+#
+# Ele **não** pode se chamar `icone-android.yaml`. A ferramenta
+# trata todo arquivo que case com
+#
+#     ^flutter_launcher_icons-(.*).yaml$
+#
+# como um *flavor*, e quando existe qualquer flavor ela **ignora o `-f`** e
+# faz um laço por todos eles — cada workflow tentaria gerar as duas
+# plataformas de novo, que é exatamente o que estes arquivos existem para
+# evitar. Foi o que aconteceu: os nomes óbvios viraram os flavors "android" e
+# "ios", e o build de Android foi tentar escrever em `ios/Runner.xcodeproj`.
+#
+# `scripts/gerar-icone-adaptativo.py` recusa se um arquivo com o nome
+# proibido reaparecer em `client/`.
+
 flutter_launcher_icons:
   # O ícone de antes do Android 8, com o fundo escuro já embutido.
   image_path: "assets/icon/deskside.png"

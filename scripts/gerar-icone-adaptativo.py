@@ -33,6 +33,7 @@ versionado, e o `flutter_launcher_icons` o consome de lá.
 """
 
 import pathlib
+import re
 import sys
 
 from PIL import Image, ImageDraw
@@ -97,17 +98,17 @@ def perda(imagem: Image.Image, diametro: float) -> float:
 #: As duas configurações, uma por plataforma, e o que cada uma tem de dizer.
 #:
 #: São dois arquivos porque cada workflow do Codemagic cria a pasta de uma
-#: plataforma só (ver o cabeçalho de `client/flutter_launcher_icons-android.yaml`).
+#: plataforma só (ver o cabeçalho de `client/icone-android.yaml`).
 #: O preço de separar é o `image_path` repetido — e é este bloco que impede o
 #: preço de virar defeito, conferindo que ninguém trocou o desenho pela metade.
 CONFIGURACOES = {
-    "client/flutter_launcher_icons-android.yaml": {
+    "client/icone-android.yaml": {
         "android": True,
         "ios": False,
         "image_path": "assets/icon/deskside.png",
         "adaptive_icon_foreground": "assets/icon/deskside_adaptativo.png",
     },
-    "client/flutter_launcher_icons-ios.yaml": {
+    "client/icone-ios.yaml": {
         "android": False,
         "ios": True,
         "image_path": "assets/icon/deskside.png",
@@ -115,19 +116,43 @@ CONFIGURACOES = {
 }
 
 
+#: O nome que **não** pode existir em `client/`.
+#:
+#: `flutter_launcher_icons` trata todo arquivo que case com isto como um
+#: *flavor*, e havendo qualquer flavor ele ignora o `-f` e faz um laço por
+#: todos — cada workflow voltaria a tentar as duas plataformas.
+#:
+#: Não é hipótese: os arquivos nasceram com esses nomes, viraram os flavors
+#: "android" e "ios", e o build de Android foi tentar escrever em
+#: `ios/Runner.xcodeproj`. O padrão abaixo é copiado do próprio pacote
+#: (`flavorConfigFilePattern`, em `lib/main.dart`).
+PADRAO_DE_FLAVOR = re.compile(r"^flutter_launcher_icons-(.*)\.yaml$")
+
+PASTA_DO_APP = pathlib.Path("client")
+
+
 def conferir_configuracoes() -> list[str]:
     """As duas configurações continuam dizendo o que se espera delas?
 
-    Sem `pyyaml` instalado, sai calado em vez de reclamar: a parte que importa
-    de verdade neste script é a medição das máscaras, e ela não depende disto.
+    Sem `pyyaml` instalado, sai calado quanto ao conteúdo — mas a checagem de
+    nome acontece de qualquer jeito, porque ela não depende de ler YAML.
     """
+    problemas = []
+
+    for item in sorted(PASTA_DO_APP.glob("*.yaml")):
+        if PADRAO_DE_FLAVOR.match(item.name):
+            problemas.append(
+                f"{item}: este nome vira um *flavor* para o "
+                "flutter_launcher_icons, e havendo flavor ele ignora o `-f` e "
+                "tenta as duas plataformas. Renomeie (ex.: icone-<plataforma>.yaml)."
+            )
+
     try:
         import yaml
     except ImportError:
-        print("(sem pyyaml: não conferi os arquivos de configuração)")
-        return []
+        print("(sem pyyaml: não conferi o conteúdo dos arquivos de configuração)")
+        return problemas
 
-    problemas = []
     for arquivo, esperado in CONFIGURACOES.items():
         caminho = pathlib.Path(arquivo)
         if not caminho.is_file():
