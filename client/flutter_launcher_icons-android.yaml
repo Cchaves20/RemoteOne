@@ -1,0 +1,40 @@
+# Ícone do Android. Só do Android.
+#
+# ## Por que é um arquivo separado, e não uma seção do pubspec.yaml
+#
+# Cada workflow do Codemagic gera **uma** plataforma: o de Android roda
+# `flutter create --platforms=android`, e a pasta `ios/` não existe ali. Uma
+# configuração única com `android: true` e `ios: true` manda a ferramenta
+# escrever nas duas, e ela morre na que não existe:
+#
+#     PathNotFoundException: Cannot open file,
+#     path = 'ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@1x.png'
+#
+# O oposto é pior, e é o que quase aconteceu: com `android: true` na
+# configuração compartilhada, o workflow de **iOS** passaria a morrer na pasta
+# `android/` ausente — e como o passo dele tolerava falha, o ícone do iOS
+# sumiria sem ninguém ver.
+#
+# ## Se você mudar o desenho
+#
+# `image_path` aparece aqui e no arquivo de iOS. São dois lugares de propósito
+# (um por plataforma), e `scripts/gerar-icone-adaptativo.py` confere que os
+# dois continuam apontando para os arquivos certos.
+
+flutter_launcher_icons:
+  # O ícone de antes do Android 8, com o fundo escuro já embutido.
+  image_path: "assets/icon/deskside.png"
+  android: true
+  ios: false
+
+  # Ícone adaptativo: duas camadas, que o Android recorta com a máscara
+  # escolhida pelo fabricante — redonda, quadrada arredondada ou "squircle".
+  adaptive_icon_background: "#0D0F20"
+  # A camada da frente tem folga **medida**, e não a recomendada: o glifo é
+  # largo, e a 66% do quadro a máscara redonda come 12% dele. Ver
+  # `scripts/gerar-icone-adaptativo.py`, que gera o arquivo e prova a conta.
+  adaptive_icon_foreground: "assets/icon/deskside_adaptativo.png"
+
+  # O adaptativo chegou no Android 8; abaixo disso vale o `image_path`. O app
+  # pede 24 de mínimo, então todo aparelho alcançado usa o adaptativo.
+  min_sdk_android: 24

@@ -94,6 +94,62 @@ def perda(imagem: Image.Image, diametro: float) -> float:
     return 100 * (total - sobrou) / total
 
 
+#: As duas configurações, uma por plataforma, e o que cada uma tem de dizer.
+#:
+#: São dois arquivos porque cada workflow do Codemagic cria a pasta de uma
+#: plataforma só (ver o cabeçalho de `client/flutter_launcher_icons-android.yaml`).
+#: O preço de separar é o `image_path` repetido — e é este bloco que impede o
+#: preço de virar defeito, conferindo que ninguém trocou o desenho pela metade.
+CONFIGURACOES = {
+    "client/flutter_launcher_icons-android.yaml": {
+        "android": True,
+        "ios": False,
+        "image_path": "assets/icon/deskside.png",
+        "adaptive_icon_foreground": "assets/icon/deskside_adaptativo.png",
+    },
+    "client/flutter_launcher_icons-ios.yaml": {
+        "android": False,
+        "ios": True,
+        "image_path": "assets/icon/deskside.png",
+    },
+}
+
+
+def conferir_configuracoes() -> list[str]:
+    """As duas configurações continuam dizendo o que se espera delas?
+
+    Sem `pyyaml` instalado, sai calado em vez de reclamar: a parte que importa
+    de verdade neste script é a medição das máscaras, e ela não depende disto.
+    """
+    try:
+        import yaml
+    except ImportError:
+        print("(sem pyyaml: não conferi os arquivos de configuração)")
+        return []
+
+    problemas = []
+    for arquivo, esperado in CONFIGURACOES.items():
+        caminho = pathlib.Path(arquivo)
+        if not caminho.is_file():
+            problemas.append(f"{arquivo}: não existe.")
+            continue
+        conteudo = yaml.safe_load(caminho.read_text(encoding="utf-8"))
+        achado = (conteudo or {}).get("flutter_launcher_icons")
+        if achado is None:
+            problemas.append(
+                f"{arquivo}: sem a chave `flutter_launcher_icons`. A ferramenta "
+                "ignora o arquivo e cai no pubspec.yaml, sem avisar."
+            )
+            continue
+        for chave, valor in esperado.items():
+            if achado.get(chave) != valor:
+                problemas.append(
+                    f"{arquivo}: `{chave}` é {achado.get(chave)!r}, "
+                    f"esperado {valor!r}."
+                )
+    return problemas
+
+
 def main(args: list[str]) -> int:
     so_conferir = "--conferir" in args
     imagem = Image.open(SAIDA).convert("RGBA") if so_conferir else montar()
@@ -118,6 +174,13 @@ def main(args: list[str]) -> int:
 
     if ruim:
         print("FALHOU: a máscara que os aparelhos usam corta o glifo. Baixe a FRACAO.")
+        return 1
+
+    problemas = conferir_configuracoes()
+    for problema in problemas:
+        print(problema)
+    if problemas:
+        print(f"FALHOU: {len(problemas)} problema(s) nos arquivos de configuração.")
         return 1
 
     if not so_conferir:

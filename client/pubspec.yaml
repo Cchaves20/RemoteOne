@@ -82,32 +82,20 @@ flutter:
   assets:
     - assets/icon/deskside_glyph.png
 
-# Ícone do app (gerado por `dart run flutter_launcher_icons`).
+# Ícone do app: a configuração fica em **dois arquivos**, e não aqui.
 #
-# O Android estava em `false`, e por isso o APK saía com o robozinho padrão do
-# Flutter enquanto o iOS já tinha o ícone certo. O comando roda nos três
-# workflows do Codemagic — ele gerava só metade do que parecia gerar.
-flutter_launcher_icons:
-  image_path: "assets/icon/deskside.png"
-  remove_alpha_ios: true
-  ios: true
-  android: true
-  # Ícone adaptativo: duas camadas, e o Android recorta o conjunto com a
-  # máscara que o fabricante escolheu — redonda, quadrada arredondada ou
-  # "squircle". Sem estas duas linhas o sistema pega a imagem quadrada e a
-  # recorta do mesmo jeito, comendo as bordas.
-  adaptive_icon_background: "#0D0F20"
-  # Camada de frente **com folga**, e não o glifo cheio.
-  #
-  # O recorte é um círculo de 72dp num quadro de 108dp. Medido: o glifo a 66%
-  # do quadro — a folga que se costuma recomendar — perde 12% nos cantos do
-  # monitor. A 54% não perde nada em nenhuma das três máscaras. Ver
-  # `scripts/gerar-icone-adaptativo.py`, que refaz o arquivo e confere a conta.
-  adaptive_icon_foreground: "assets/icon/deskside_adaptativo.png"
-  # O Android 8 é quem trouxe o ícone adaptativo; abaixo disso vale o
-  # `image_path`, que já tem o fundo escuro embutido. O app pede 24 de mínimo,
-  # então na prática todo aparelho alcançado usa o adaptativo.
-  min_sdk_android: 24
+#   flutter_launcher_icons-android.yaml
+#   flutter_launcher_icons-ios.yaml
+#
+# Cada workflow do Codemagic gera uma plataforma só, e uma configuração que
+# escreve nas duas morre na pasta que não existe. O porquê completo está no
+# cabeçalho do arquivo de Android.
+#
+# E não há um bloco `flutter_launcher_icons:` aqui de propósito: quando o `-f`
+# aponta para um arquivo que não existe, a ferramenta **cai calada** no
+# pubspec.yaml (`loadConfigFromPath(...) ?? loadConfigFromPubSpec(...)`). Sem
+# bloco nenhum aqui, um nome de arquivo errado vira erro na hora em vez de uma
+# geração silenciosa com a configuração errada.
 
 # Splash screen (gerada por `dart run flutter_native_splash:create`).
 flutter_native_splash:

@@ -1,0 +1,18 @@
+# Ícone do iOS. Só do iOS.
+#
+# O par do `flutter_launcher_icons-android.yaml` — o porquê de serem dois
+# arquivos está escrito lá, e vale para os dois: cada workflow do Codemagic
+# cria só a pasta da plataforma que vai compilar, e uma configuração que
+# escreve nas duas morre na que não existe.
+#
+# Se você mudar o desenho, `image_path` também está no arquivo de Android.
+
+flutter_launcher_icons:
+  image_path: "assets/icon/deskside.png"
+  ios: true
+  android: false
+
+  # A App Store recusa ícone com canal alfa. A ferramenta remove e achata
+  # contra o branco — por isso o `deskside.png` já vem com o fundo escuro
+  # pintado, e não transparente: o que seria transparente viraria branco.
+  remove_alpha_ios: true

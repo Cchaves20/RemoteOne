@@ -36,9 +36,36 @@ workflows:
           fi
       - name: Dependências
         script: flutter pub get
-      - name: Ícone e splash (não bloqueia o build se falhar)
+      - name: Ícone e splash
         script: |
-          dart run flutter_launcher_icons || echo "aviso: geração de ícone falhou"
+          set -e
+
+          # Configuração **só do iOS**. Uma compartilhada com `android: true`
+          # faria a ferramenta escrever na pasta android/, que este workflow
+          # não cria — e ela morre com PathNotFoundException.
+          CONFIG=flutter_launcher_icons-ios.yaml
+
+          # Confere que o arquivo existe antes de usá-lo. Com `-f` apontando
+          # para um nome errado, a ferramenta **cai calada** no pubspec.yaml
+          # (`loadConfigFromPath(...) ?? loadConfigFromPubSpec(...)`), e a
+          # geração sairia com outra configuração sem avisar.
+          if [ ! -f "$CONFIG" ]; then
+            echo "FALHOU: $CONFIG não existe."
+            exit 1
+          fi
+          # E que ele ainda manda gerar iOS. Um `ios: false` aqui não daria
+          # erro nenhum: a ferramenta sai com zero sem fazer nada, e o app
+          # chegaria ao TestFlight com o ícone do Flutter.
+          grep -q '^  ios: true' "$CONFIG" || {
+            echo "FALHOU: $CONFIG não tem 'ios: true'."; exit 1; }
+
+          # **Sem `|| echo`.** O passo tolerante é como o ícone do Android
+          # ficou errado por meses: o comando rodava, não gerava nada, e o
+          # build ficava verde.
+          dart run flutter_launcher_icons -f "$CONFIG"
+
+          # O splash segue tolerante: ele é cosmético, e mexe em pastas das
+          # duas plataformas por conta própria.
           dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
       - name: Ajustes obrigatórios do iOS
         script: sh ../scripts/preparar-ios.sh
@@ -138,9 +165,36 @@ workflows:
           fi
       - name: Dependências
         script: flutter pub get
-      - name: Ícone e splash (não bloqueia o build se falhar)
+      - name: Ícone e splash
         script: |
-          dart run flutter_launcher_icons || echo "aviso: geração de ícone falhou"
+          set -e
+
+          # Configuração **só do iOS**. Uma compartilhada com `android: true`
+          # faria a ferramenta escrever na pasta android/, que este workflow
+          # não cria — e ela morre com PathNotFoundException.
+          CONFIG=flutter_launcher_icons-ios.yaml
+
+          # Confere que o arquivo existe antes de usá-lo. Com `-f` apontando
+          # para um nome errado, a ferramenta **cai calada** no pubspec.yaml
+          # (`loadConfigFromPath(...) ?? loadConfigFromPubSpec(...)`), e a
+          # geração sairia com outra configuração sem avisar.
+          if [ ! -f "$CONFIG" ]; then
+            echo "FALHOU: $CONFIG não existe."
+            exit 1
+          fi
+          # E que ele ainda manda gerar iOS. Um `ios: false` aqui não daria
+          # erro nenhum: a ferramenta sai com zero sem fazer nada, e o app
+          # chegaria ao TestFlight com o ícone do Flutter.
+          grep -q '^  ios: true' "$CONFIG" || {
+            echo "FALHOU: $CONFIG não tem 'ios: true'."; exit 1; }
+
+          # **Sem `|| echo`.** O passo tolerante é como o ícone do Android
+          # ficou errado por meses: o comando rodava, não gerava nada, e o
+          # build ficava verde.
+          dart run flutter_launcher_icons -f "$CONFIG"
+
+          # O splash segue tolerante: ele é cosmético, e mexe em pastas das
+          # duas plataformas por conta própria.
           dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
       # O mesmo arquivo que o sideload usa. O workflow de TestFlight nasceu
       # sem estes ajustes, e teria subido para os testadores um app que trava
@@ -322,8 +376,16 @@ workflows:
           # rodava, não gerava nada para Android, o build ficava verde, e o
           # APK saía com o robozinho do Flutter. Um passo que não pode falhar
           # é um passo que não confere nada.
-          dart run flutter_launcher_icons
-          dart run flutter_native_splash:create
+          # Configuração **só do Android**: este workflow não cria a pasta
+          # ios/, e uma configuração com `ios: true` morre lá.
+          CONFIG=flutter_launcher_icons-android.yaml
+          if [ ! -f "$CONFIG" ]; then
+            echo "FALHOU: $CONFIG não existe."
+            exit 1
+          fi
+
+          dart run flutter_launcher_icons -f "$CONFIG"
+          dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
 
           # E conferir a saída, não só o código de retorno.
           #
