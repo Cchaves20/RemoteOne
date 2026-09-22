@@ -1356,6 +1356,26 @@ class Strings {
           'Deskside gratuit', 'Deskside gratis');
   String get planoSemPrazo => _t('Sem prazo', 'No expiry date', '无期限',
       "Sans date d'expiration", 'Sin fecha de vencimiento');
+
+  /// O selo que diz que o plano pago desta conta são os 30 dias iniciais.
+  ///
+  /// Sem ele, "Deskside completo · Faltam 22 dias" não diz **por que** falta
+  /// algo: pode ser um teste acabando ou uma assinatura sendo cortada, e as
+  /// duas leituras pedem reações opostas de quem lê.
+  String get planoEmTeste =>
+      _t('Teste grátis', 'Free trial', '免费试用', "Essai gratuit", 'Prueba gratis');
+
+  /// O que acontece quando o teste acaba, dito no próprio cartão.
+  ///
+  /// A frase existe para desarmar o susto da contagem. "Faltam 22 dias" sem
+  /// isto faz pensar em conta bloqueada e trabalho perdido; o que acontece de
+  /// verdade é bem menos do que se teme.
+  String get planoTesteDepois => _t(
+      'Quando acabar, a conta continua no Deskside grátis. Nada é apagado.',
+      'When it ends, your account continues on Deskside free. Nothing is deleted.',
+      '试用结束后，账号将继续使用免费版，不会删除任何内容。',
+      'À la fin, votre compte continue sur Deskside gratuit. Rien n’est supprimé.',
+      'Cuando termine, tu cuenta sigue en Deskside gratis. No se borra nada.');
   String planoDiasRestantes(int dias) => _t(
       dias == 1 ? 'Termina amanhã' : 'Faltam $dias dias',
       dias == 1 ? 'Ends tomorrow' : '$dias days left',

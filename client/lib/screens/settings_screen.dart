@@ -199,36 +199,66 @@ class SettingsScreen extends StatelessWidget {
     final conta = state.conta;
     final pago = conta?.ehPago ?? false;
     final dias = conta?.diasRestantes;
+    final emTeste = conta?.emTeste ?? false;
 
-    // O prazo só aparece quando **existe** e quando está perto o bastante para
-    // significar alguma coisa. "Faltam 340 dias" é ruído; "faltam 3 dias" é
-    // informação, e é a diferença entre avisar e encher a tela.
+    // O prazo aparece sempre que existe.
+    //
+    // A regra anterior escondia acima de 10 dias, com o argumento de que
+    // "faltam 340 dias" é ruído. O argumento valia quando todo prazo vinha de
+    // uma liberação manual de duração arbitrária. Depois que **toda conta nova
+    // nasce com 30 dias**, ele passou a esconder a contagem durante dois terços
+    // do teste — justamente a informação que faz a pessoa decidir assinar, e a
+    // que ela vem procurar nesta tela.
     final prazo = !pago
         ? null
         : dias == null
             ? t.planoSemPrazo
-            : (dias <= 10 ? t.planoDiasRestantes(dias) : null);
+            : t.planoDiasRestantes(dias);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        // `Wrap` e não `Row`: com o prazo sempre visível, título mais selo mais
+        // contagem não cabem numa linha em telefone estreito, e um `Row` não
+        // quebra — ele estoura com a faixa amarela e preta.
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
           children: [
             Text(
               pago ? t.planoPago : t.planoGratis,
               style: theme.textTheme.titleMedium,
             ),
-            if (prazo != null) ...[
-              const SizedBox(width: 8),
+            if (emTeste)
+              Container(
+                key: const Key('plano-selo-teste'),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  // `withAlpha` e não `withValues`: é o que o resto do
+                  // cliente usa, e `theme.dart` registra o porquê — manter-se
+                  // em API estável para o `flutter analyze` não quebrar numa
+                  // versão nova do Flutter. 46 ≈ 18%.
+                  color: theme.colorScheme.primary.withAlpha(46),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  t.planoEmTeste,
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: theme.colorScheme.primary),
+                ),
+              ),
+            if (prazo != null)
               Text(
                 prazo,
+                key: const Key('plano-prazo'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: (dias != null && dias <= 3)
                       ? theme.colorScheme.error
                       : theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-            ],
           ],
         ),
         const SizedBox(height: 6),
@@ -237,6 +267,14 @@ class SettingsScreen extends StatelessWidget {
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
+        if (emTeste) ...[
+          const SizedBox(height: 6),
+          Text(
+            t.planoTesteDepois,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
         if (!pago) ...[
           const SizedBox(height: 10),
           // Sem botão de "assinar", porque não há como assinar ainda. Um botão

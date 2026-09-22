@@ -68,4 +68,39 @@ void main() {
       expect(vencida.diasRestantes, 0);
     });
   });
+
+  group('em teste', () {
+    test('o servidor diz, e o app não deduz', () {
+      // Teste e assinatura chegam os dois como `pago` com trinta dias. Quem
+      // enxerga a diferença é o servidor, que vê a tabela de assinaturas.
+      final conta = Conta.fromJson({
+        'id': 1,
+        'plano': 'pago',
+        'plano_ate': DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+        'em_teste': true,
+      });
+
+      expect(conta.emTeste, isTrue);
+      expect(conta.ehPago, isTrue);
+    });
+
+    test('servidor que não manda o campo vira falso', () {
+      // Errar dizendo "não é teste" apenas omite um selo. Errar ao contrário
+      // poria "Teste grátis" no cartão de quem paga.
+      final conta = Conta.fromJson({'id': 1, 'plano': 'pago'});
+
+      expect(conta.emTeste, isFalse);
+    });
+
+    test('quem comprou não aparece como teste', () {
+      final conta = Conta.fromJson({
+        'id': 1,
+        'plano': 'pago',
+        'plano_ate': DateTime.now().add(const Duration(days: 12)).toIso8601String(),
+        'em_teste': false,
+      });
+
+      expect(conta.emTeste, isFalse);
+    });
+  });
 }

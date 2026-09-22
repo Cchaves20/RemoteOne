@@ -619,16 +619,25 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> AccessToken:
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)) -> UserOut:
+def me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserOut:
     """A conta, com o plano **efetivo** — não o rótulo guardado.
 
     Uma conta com `plano="pago"` e prazo vencido está no grátis. Devolver o
     rótulo cru faria o app oferecer recursos que o servidor recusaria em
     seguida, e uma tela que promete o que o servidor nega é pior que uma tela
     que não promete nada.
+
+    Vai junto `em_teste`, que o app não consegue deduzir sozinho: teste e
+    assinatura chegam os dois como `pago` com trinta dias. Sem isto, toda tela
+    que mostra o plano precisaria de uma segunda chamada só para saber se a
+    contagem que ela exibe é um convite ou um susto.
     """
     saida = UserOut.model_validate(current_user)
     saida.plano = cobranca.plano_de(current_user)
+    saida.em_teste = cobranca.em_teste(db, current_user)
     return saida
 
 

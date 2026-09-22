@@ -493,3 +493,50 @@ class TestSaude:
         )
 
         assert resposta.status_code == 413
+
+
+class TestEmTeste:
+    """O campo que separa "está experimentando" de "está pagando".
+
+    Pelo calendário os dois são idênticos: `plano='pago'` e trinta dias. A
+    diferença decide o que a tela escreve — num caso a contagem convida a
+    assinar, no outro parece que algo vai ser cortado de quem já paga.
+    """
+
+    def _me(self, token: str) -> dict:
+        resposta = client.get("/api/v1/auth/me", headers=cabecalho(token))
+        assert resposta.status_code == 200, resposta.text
+        return resposta.json()
+
+    def test_conta_recem_criada_esta_em_teste(self):
+        # Toda conta nasce com 30 dias do plano pago e sem ter comprado nada.
+        token = criar_conta(client, "nova@example.com")["access_token"]
+        conta = self._me(token)
+        assert conta["plano"] == "pago"
+        assert conta["em_teste"] is True
+
+    def test_depois_de_comprar_nao_esta_mais_em_teste(self, loja):
+        token = criar_conta(client, "comprou@example.com")["access_token"]
+        loja.compra = uma_compra()
+        assert _validar(token).status_code == 200
+
+        assert self._me(token)["em_teste"] is False
+
+    def test_conta_sem_prazo_nao_esta_em_teste(self):
+        # A cortesia dada à mão não acaba, então não há o que contar.
+        email = "cortesia@example.com"
+        token = criar_conta(client, email)["access_token"]
+        _sem_prazo(email)
+
+        conta = self._me(token)
+        assert conta["plano"] == "pago"
+        assert conta["em_teste"] is False
+
+    def test_conta_no_gratis_nao_esta_em_teste(self):
+        email = "acabou@example.com"
+        token = criar_conta(client, email)["access_token"]
+        _rebaixar(email)
+
+        conta = self._me(token)
+        assert conta["plano"] == "gratis"
+        assert conta["em_teste"] is False

@@ -246,6 +246,18 @@ class UserOut(BaseModel):
     plano: str = "gratis"
     #: Até quando o plano pago vale. Nulo = sem prazo (ou já no grátis).
     plano_ate: datetime | None = None
+    #: Se o plano pago desta conta são os **30 dias iniciais**, e não uma
+    #: assinatura comprada.
+    #:
+    #: Os dois chegam ao app como `plano="pago"` com um prazo de trinta dias, e
+    #: pelo calendário são indistinguíveis. A diferença muda o que a tela deve
+    #: dizer: num caso a contagem é um convite a assinar, no outro é um susto —
+    #: "faltam 27 dias" para quem paga parece que algo vai ser cortado.
+    #:
+    #: Quem sabe a diferença é o servidor, que enxerga a tabela de assinaturas.
+    #: Deduzir isto no app exigiria uma segunda chamada em toda tela que
+    #: mostrasse o plano.
+    em_teste: bool = False
 
     model_config = {"from_attributes": True}
 

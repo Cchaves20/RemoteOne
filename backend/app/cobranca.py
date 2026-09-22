@@ -14,14 +14,38 @@ plano.
 """
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app import plano as regras
-from app.models import User
+from app.models import Assinatura, User
 
 
 def plano_de(user: User) -> regras.Plano:
     """O plano em que esta conta está agora."""
     return regras.plano_efetivo(user.plano, user.plano_ate)
+
+
+def em_teste(db: Session, user: User) -> bool:
+    """O plano pago desta conta são os 30 dias iniciais, e não uma compra?
+
+    Três condições, e todas necessárias:
+
+    - a conta está paga **agora** — quem já caiu no grátis não está em teste;
+    - tem prazo: sem prazo é a cortesia dada à mão, que não acaba;
+    - não tem assinatura de loja — é isto que separa teste de compra, porque
+      pelo calendário os dois são a mesma coisa: trinta dias.
+
+    Mora aqui, e não no `app/plano.py`, porque depende do banco. O `plano.py`
+    é regra pura de propósito, e uma consulta lá dentro tornaria intestável a
+    parte que hoje se testa sem banco nenhum.
+    """
+    if plano_de(user) is not regras.Plano.PAGO or user.plano_ate is None:
+        return False
+    comprou = db.scalar(
+        select(Assinatura.id).where(Assinatura.user_id == user.id).limit(1)
+    )
+    return comprou is None
 
 
 def exigir_recurso(user: User, recurso: regras.Recurso) -> None:

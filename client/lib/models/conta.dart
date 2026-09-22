@@ -14,6 +14,7 @@ class Conta {
     this.twoFactorEnabled = false,
     this.plano = 'gratis',
     this.planoAte,
+    this.emTeste = false,
   });
 
   final int id;
@@ -37,6 +38,13 @@ class Conta {
 
   /// Até quando o plano pago vale. Nulo = sem prazo, ou já no grátis.
   final DateTime? planoAte;
+
+  /// Se o plano pago são os 30 dias iniciais, e não uma assinatura comprada.
+  ///
+  /// Vem pronto do servidor porque só ele enxerga a tabela de assinaturas:
+  /// teste e assinatura chegam os dois como `pago` com trinta dias, e pelo
+  /// calendário são a mesma coisa.
+  final bool emTeste;
 
   bool get ehPago => plano == 'pago';
 
@@ -82,5 +90,9 @@ class Conta {
         planoAte: json['plano_ate'] == null
             ? null
             : DateTime.tryParse(json['plano_ate'] as String)?.toLocal(),
+        // Ausente num servidor antigo: `false` é o padrão certo, porque
+        // errar dizendo "não é teste" apenas omite a contagem, enquanto errar
+        // ao contrário poria uma contagem de teste na tela de quem paga.
+        emTeste: json['em_teste'] as bool? ?? false,
       );
 }
