@@ -261,10 +261,29 @@ _ESTADO_POR_AVISO = {
     "GRACE_PERIOD_EXPIRED": Estado.EXPIRADA,
 }
 
+#: Avisos em que o **subtipo** é quem carrega a informação.
+#:
+#: `DID_CHANGE_RENEWAL_STATUS` sozinho não diz nada: ele é mandado tanto quando
+#: a pessoa desliga a renovação quanto quando religa. O que distingue os dois é
+#: o subtipo, e sem ele o aviso teria de ser ignorado.
+#:
+#: Este é o único jeito de o servidor saber que alguém cancelou. A transação
+#: continua idêntica — a pessoa pagou o mês e ele vale até o fim —, então nada
+#: no comprovante muda. Sem esta linha, o app diria "faltam 22 dias para a
+#: próxima cobrança" a quem acabou de pedir para não ser cobrado, até a
+#: assinatura expirar de verdade.
+_ESTADO_POR_SUBTIPO = {
+    ("DID_CHANGE_RENEWAL_STATUS", "AUTO_RENEW_DISABLED"): Estado.CANCELADA,
+    ("DID_CHANGE_RENEWAL_STATUS", "AUTO_RENEW_ENABLED"): Estado.ATIVA,
+}
+
 
 def _com_estado_do_aviso(compra: Compra, aviso: dict) -> Compra:
     tipo = str(aviso.get("notificationType", ""))
-    estado = _ESTADO_POR_AVISO.get(tipo)
+    subtipo = str(aviso.get("subtype", ""))
+    # O subtipo primeiro: ele é mais específico, e quando existe uma regra para
+    # o par, ela sabe mais que a do tipo sozinho.
+    estado = _ESTADO_POR_SUBTIPO.get((tipo, subtipo)) or _ESTADO_POR_AVISO.get(tipo)
     if estado is None or estado is compra.estado:
         return compra
     return replace(compra, estado=estado)

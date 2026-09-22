@@ -273,9 +273,14 @@ def test_sem_data_de_validade_nao_e_ativa(ca, loja):
 # --- notificações da Apple ----------------------------------------------------
 
 
-def _notificacao(ca: Autoridade, tipo: str, **mudancas) -> bytes:
+def _notificacao(
+    ca: Autoridade, tipo: str, subtipo: str | None = None, **mudancas
+) -> bytes:
     dentro = ca.assinar(transacao(**mudancas))
-    fora = ca.assinar({"notificationType": tipo, "data": {"signedTransactionInfo": dentro}})
+    aviso = {"notificationType": tipo, "data": {"signedTransactionInfo": dentro}}
+    if subtipo is not None:
+        aviso["subtype"] = subtipo
+    fora = ca.assinar(aviso)
     return json.dumps({"signedPayload": fora}).encode()
 
 
@@ -297,6 +302,64 @@ def test_falha_de_cobranca_nao_e_expirada_nem_ativa(ca, loja):
     ativa (não pagou)."""
     aviso = loja.ler_notificacao(_notificacao(ca, "DID_FAIL_TO_RENEW"))
     assert aviso.estado is Estado.EM_ATRASO
+
+
+def test_desligar_a_renovacao_marca_cancelada(ca, loja):
+    """O único jeito de o servidor saber que alguém cancelou.
+
+    A transação não muda: a pessoa pagou o mês e ele vale até o fim. Quem
+    carrega a informação é o **subtipo** do aviso. Sem ele, o app diria "faltam
+    22 dias para a próxima cobrança" a quem acabou de pedir para não ser
+    cobrado, e só descobriria o engano quando a assinatura expirasse.
+    """
+    aviso = loja.ler_notificacao(
+        _notificacao(ca, "DID_CHANGE_RENEWAL_STATUS", "AUTO_RENEW_DISABLED")
+    )
+    assert aviso.estado is Estado.CANCELADA
+
+
+def test_cancelar_nao_corta_o_acesso_ja_pago(ca, loja):
+    """Cancelada **não** é expirada: a validade continua no futuro.
+
+    Cortar na hora do cancelamento é cobrar por um mês e não entregar — e a
+    Apple devolve o dinheiro de quem reclama disso.
+    """
+    aviso = loja.ler_notificacao(
+        _notificacao(ca, "DID_CHANGE_RENEWAL_STATUS", "AUTO_RENEW_DISABLED")
+    )
+    assert aviso.expira_em is not None
+    assert aviso.expira_em > datetime.now(UTC)
+
+
+def test_religar_a_renovacao_volta_a_ativa(ca, loja):
+    aviso = loja.ler_notificacao(
+        _notificacao(ca, "DID_CHANGE_RENEWAL_STATUS", "AUTO_RENEW_ENABLED")
+    )
+    assert aviso.estado is Estado.ATIVA
+
+
+def test_mudanca_de_renovacao_sem_subtipo_nao_inventa_estado(ca, loja):
+    """O aviso sozinho não diz nada: ele vem tanto para ligar quanto desligar.
+
+    Sem subtipo reconhecido, o certo é não mexer no que a transação disse —
+    chutar "cancelada" cortaria a cobrança de quem não pediu nada.
+    """
+    aviso = loja.ler_notificacao(_notificacao(ca, "DID_CHANGE_RENEWAL_STATUS"))
+    assert aviso.estado is Estado.ATIVA
+
+
+def test_subtipo_desconhecido_nao_derruba_nem_inventa(ca, loja):
+    """A Apple acrescenta subtipos. Um que não conhecemos vale como nenhum."""
+    aviso = loja.ler_notificacao(
+        _notificacao(ca, "DID_CHANGE_RENEWAL_STATUS", "ALGO_QUE_NAO_EXISTE_AINDA")
+    )
+    assert aviso.estado is Estado.ATIVA
+
+
+def test_subtipo_nao_atrapalha_o_aviso_que_decide_pelo_tipo(ca, loja):
+    """`REFUND` continua revogando, com ou sem subtipo junto."""
+    aviso = loja.ler_notificacao(_notificacao(ca, "REFUND", "QUALQUER_COISA"))
+    assert aviso.estado is Estado.REVOGADA
 
 
 def test_transacao_interna_de_outra_autoridade(ca, loja):
