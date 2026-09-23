@@ -109,6 +109,46 @@ def plano_efetivo(
     return Plano.PAGO if _aware(plano_ate) > _aware(agora) else Plano.GRATIS
 
 
+def depois_de_desvincular(
+    criada_em: datetime,
+    plano_atual: str | None,
+    plano_ate: datetime | None,
+    agora: datetime | None = None,
+) -> tuple[Plano, datetime | None]:
+    """Em que plano a conta fica quando a compra dela é desvinculada.
+
+    Tirar a compra e deixar o plano pago em pé seria dar o produto de graça; e
+    cortar tudo seria tirar também o que **não** veio da compra. Três regras,
+    nessa ordem:
+
+    1. **Cortesia sem prazo não se mexe.** `pago` com `plano_ate` nulo foi dado
+       à mão por `python -m app.conta`, não por compra nenhuma. É o mesmo nulo
+       de duas leituras que já quase custou a conta do dono em `compras.py`.
+    2. **Quem já estava no grátis continua no grátis.** Desvincular não promove
+       ninguém — seria um jeito torto de ganhar plano.
+    3. **O resto volta para o teste inicial**, se ele ainda não acabou. A conta
+       nasceu com trinta dias que não vieram de compra alguma, e eles não
+       podem sumir junto. Passados os trinta dias, grátis.
+
+    O prazo devolvido nunca é maior que o que a conta já tinha: desvincular
+    encurta ou mantém, nunca estica.
+    """
+    agora = agora or datetime.now(UTC)
+
+    if plano_atual == Plano.PAGO and plano_ate is None:
+        return Plano.PAGO, None
+
+    if plano_efetivo(plano_atual, plano_ate, agora) is not Plano.PAGO:
+        return Plano.GRATIS, None
+
+    fim = fim_do_teste(criada_em)
+    if plano_ate is not None:
+        fim = min(fim, _aware(plano_ate))
+    if fim > _aware(agora):
+        return Plano.PAGO, fim
+    return Plano.GRATIS, None
+
+
 def permite(plano: Plano, recurso: Recurso) -> bool:
     """O plano alcança este recurso?
 

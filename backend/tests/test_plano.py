@@ -380,3 +380,80 @@ def cobranca_plano(email: str) -> str:
     with SessionLocal() as db:
         user = db.scalar(select(User).where(User.email == email))
         return str(cobranca.plano_de(user))
+
+
+class TestDepoisDeDesvincular:
+    """O que sobra do plano quando a compra é solta da conta.
+
+    Desvincular existe para um caso de suporte concreto — a pessoa assinou
+    estando na conta errada — e a parte delicada não é apagar a linha, é
+    decidir o que a conta continua tendo. Deixar o plano pago seria dar o
+    produto de graça; cortar tudo tiraria junto os 30 dias iniciais, que não
+    vieram de compra nenhuma.
+    """
+
+    AGORA = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
+
+    def test_a_cortesia_sem_prazo_nao_e_tocada(self):
+        # `pago` com prazo nulo foi dado à mão, não por compra. É o mesmo nulo
+        # de duas leituras que já quase custou a conta do dono em compras.py.
+        nascimento = self.AGORA - timedelta(days=400)
+        assert plano.depois_de_desvincular(
+            nascimento, "pago", None, self.AGORA
+        ) == (plano.Plano.PAGO, None)
+
+    def test_conta_nova_volta_para_o_que_resta_do_teste(self):
+        # Assinou no terceiro dia de uso: ao desvincular, os 27 dias que
+        # sobraram do teste continuam sendo dela.
+        nascimento = self.AGORA - timedelta(days=3)
+        resultado, ate = plano.depois_de_desvincular(
+            nascimento, "pago", self.AGORA + timedelta(days=30), self.AGORA
+        )
+        assert resultado is plano.Plano.PAGO
+        assert ate == nascimento + timedelta(days=plano.TESTE_DIAS)
+
+    def test_conta_antiga_cai_no_gratis(self):
+        # Passados os 30 dias do cadastro, o que sustentava o plano era a
+        # compra — e ela acabou de sair.
+        nascimento = self.AGORA - timedelta(days=200)
+        assert plano.depois_de_desvincular(
+            nascimento, "pago", self.AGORA + timedelta(days=20), self.AGORA
+        ) == (plano.Plano.GRATIS, None)
+
+    def test_quem_ja_estava_no_gratis_nao_e_promovido(self):
+        # Desvincular não pode virar um jeito torto de ganhar plano — nem
+        # quando a conta é novinha e o teste dela ainda estaria valendo.
+        nascimento = self.AGORA - timedelta(days=2)
+        assert plano.depois_de_desvincular(
+            nascimento, "gratis", None, self.AGORA
+        ) == (plano.Plano.GRATIS, None)
+
+    def test_prazo_vencido_e_tratado_como_gratis(self):
+        nascimento = self.AGORA - timedelta(days=5)
+        assert plano.depois_de_desvincular(
+            nascimento, "pago", self.AGORA - timedelta(days=1), self.AGORA
+        ) == (plano.Plano.GRATIS, None)
+
+    def test_nunca_estica_o_prazo(self):
+        """A conta tinha menos do que o teste daria. Desvincular não dá mais.
+
+        O caso aparece quando alguém encurtou o prazo à mão. Devolver o teste
+        cheio seria desvincular premiando.
+        """
+        nascimento = self.AGORA - timedelta(days=1)
+        curto = self.AGORA + timedelta(days=2)
+        resultado, ate = plano.depois_de_desvincular(
+            nascimento, "pago", curto, self.AGORA
+        )
+        assert resultado is plano.Plano.PAGO
+        assert ate == curto
+
+    def test_data_ingenua_do_sqlite_nao_quebra(self):
+        # O SQLite devolve datetime sem fuso; comparar sem normalizar levanta
+        # TypeError e derrubaria o comando no meio.
+        nascimento = (self.AGORA - timedelta(days=3)).replace(tzinfo=None)
+        ate_ingenuo = (self.AGORA + timedelta(days=10)).replace(tzinfo=None)
+        resultado, _ = plano.depois_de_desvincular(
+            nascimento, "pago", ate_ingenuo, self.AGORA
+        )
+        assert resultado is plano.Plano.PAGO

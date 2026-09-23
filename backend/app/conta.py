@@ -12,6 +12,7 @@ Roda dentro do contêiner, onde o banco está:
     ... python -m app.conta pago caio@example.com --dias 365
     ... python -m app.conta pago caio@example.com --sem-prazo
     ... python -m app.conta gratis caio@example.com
+    ... python -m app.conta desvincular caio@example.com
 
 Não há como listar todas as contas de propósito. Uma ferramenta de operação que
 despeja a base inteira convida a olhar dados de cliente sem motivo, e o motivo
@@ -27,7 +28,7 @@ from sqlalchemy import select
 
 from app import cobranca, plano
 from app.db import SessionLocal
-from app.models import User
+from app.models import Assinatura, User
 
 
 def _achar(db, quem: str) -> User:
@@ -88,6 +89,30 @@ def main() -> None:
         elif acao == "gratis":
             user.plano = plano.Plano.GRATIS
             user.plano_ate = None
+        elif acao == "desvincular":
+            # Solta a compra desta conta para que **outra** possa reivindicá-la.
+            #
+            # Existe por um caso concreto de suporte: a pessoa assinou estando
+            # na conta errada do Deskside. Sem isto ela fica presa, porque um
+            # comprovante vale para uma conta só e cancelar a assinatura não
+            # desfaz o vínculo — a transação continua sendo a mesma.
+            #
+            # Apaga **todas** as assinaturas da conta: `user_id` não é único
+            # (uma da Apple e uma do Google convivem), e desvincular metade
+            # deixaria a pessoa com o mesmo erro por um motivo diferente.
+            quantas = (
+                db.query(Assinatura).filter(Assinatura.user_id == user.id).delete()
+            )
+            if not quantas:
+                print(f"nada a fazer: {quem} não tem assinatura de loja.")
+                return
+            # E o plano precisa acompanhar. Deixá-lo pago seria dar o produto
+            # de graça a quem acabou de perder a compra; cortar tudo tiraria
+            # junto os 30 dias iniciais, que não vieram de compra nenhuma.
+            user.plano, user.plano_ate = plano.depois_de_desvincular(
+                user.created_at, user.plano, user.plano_ate
+            )
+            print(f"{quantas} assinatura(s) desvinculada(s).")
         else:
             raise SystemExit(f"ação desconhecida: {acao!r}")
 
