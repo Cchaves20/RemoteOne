@@ -159,6 +159,90 @@ pub fn nome_de_processo(bruto: &str) -> Option<String> {
     }
 }
 
+/// O começo do `id` de um app da Microsoft Store.
+///
+/// Programa clássico tem um arquivo de atalho no menu Iniciar, e o `id` dele é
+/// o caminho desse arquivo. App da Store **não tem arquivo nenhum**: ele é
+/// registrado por pacote, e o que o identifica é o AUMID
+/// (`Pacote_editor!App`). O Explorer abre qualquer um deles por
+/// `shell:AppsFolder\<AUMID>`, e é essa forma que vira `id` — assim o celular
+/// guarda e devolve o mesmo texto de sempre, sem saber que existe diferença.
+///
+/// É o motivo de o iTunes não aparecer para escolher em perfis e automações:
+/// hoje a Apple o distribui pela Store, e a varredura de atalhos nunca o via.
+pub(crate) const PREFIXO_DA_LOJA: &str = r"shell:AppsFolder\";
+
+/// Se o texto tem forma de AUMID, e nada além disso.
+///
+/// O `id` chega pela rede e vira argumento de processo, então só passa o que
+/// um AUMID de verdade contém: letras, números, `.`, `_`, `-` e **um** `!`
+/// separando o pacote do app. Sem espaço, aspas, `&` ou `\` — nada que vire
+/// outro comando ou outro caminho.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn aumid_valido(aumid: &str) -> bool {
+    if aumid.is_empty() || aumid.len() > 256 || aumid.contains("..") {
+        return false;
+    }
+    let Some((pacote, app)) = aumid.split_once('!') else {
+        return false;
+    };
+    let pedaco_bom = |s: &str| {
+        !s.is_empty()
+            && s
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    };
+    pedaco_bom(pacote) && pedaco_bom(app)
+}
+
+/// O AUMID dentro de um `id`, se o `id` for de app da Store e for válido.
+///
+/// O prefixo é conferido sem diferenciar maiúsculas, porque é assim que o
+/// Explorer o lê; um `id` que vier de outro lugar com outra caixa ainda abre.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn aumid_de(id: &str) -> Option<&str> {
+    let prefixo = PREFIXO_DA_LOJA.len();
+    if id.len() <= prefixo || !id[..prefixo].eq_ignore_ascii_case(PREFIXO_DA_LOJA) {
+        return None;
+    }
+    let aumid = &id[prefixo..];
+    aumid_valido(aumid).then_some(aumid)
+}
+
+/// Interpreta a saída do `Get-StartApps` e fica só com os apps da Store.
+///
+/// O `Get-StartApps` devolve **tudo** que o menu Iniciar mostra, e os
+/// programas clássicos já vêm da varredura de atalhos — com um `id` que é
+/// caminho de arquivo, que é o que perfis antigos têm guardado. Repeti-los
+/// aqui com outro `id` quebraria a troca entre computadores que o
+/// `resolve_target` faz por nome de atalho. O filtro é o `!`: só AUMID de
+/// pacote tem.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn parse_start_apps(text: &str) -> Vec<AppInfo> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
+        return Vec::new();
+    };
+    let items = match value {
+        serde_json::Value::Array(items) => items,
+        other => vec![other],
+    };
+    items
+        .into_iter()
+        .filter_map(|item| {
+            let nome = item.get("Name")?.as_str()?.trim().to_string();
+            let aumid = item.get("AppID")?.as_str()?.trim();
+            if nome.is_empty() || !aumid_valido(aumid) {
+                return None;
+            }
+            Some(AppInfo {
+                id: format!("{PREFIXO_DA_LOJA}{aumid}"),
+                name: nome,
+                icon: None,
+            })
+        })
+        .collect()
+}
+
 /// Ordena por nome (sem diferenciar maiúsculas) e remove nomes repetidos.
 /// Só a implementação do Windows usa; mantida fora do `cfg` para ser testável
 /// em qualquer sistema.
@@ -458,7 +542,8 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
     }
 
     /// Programas instalados = atalhos (.lnk) dos menus Iniciar do sistema e do
-    /// usuário. É o que o usuário reconhece como "seus programas".
+    /// usuário, **mais os apps da Microsoft Store**. É o que o usuário
+    /// reconhece como "seus programas".
     pub fn list_installed() -> Vec<AppInfo> {
         let mut roots: Vec<PathBuf> = Vec::new();
         if let Some(pd) = std::env::var_os("ProgramData") {
@@ -471,7 +556,56 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
         for root in roots {
             collect_shortcuts(&root, 0, 4, &mut out);
         }
+        // Os atalhos entram primeiro de propósito: o `tidy` ordena de forma
+        // estável e, havendo um programa com o mesmo nome dos dois jeitos,
+        // fica o do atalho — cujo `id` é caminho de arquivo, o formato que os
+        // perfis antigos têm guardado.
+        out.extend(list_store());
         tidy(out)
+    }
+
+    /// Os apps da Store, pelo `Get-StartApps` — a mesma lista que o menu
+    /// Iniciar usa.
+    ///
+    /// **Força UTF-8 na saída.** Sem isso o PowerShell escreve na página de
+    /// código do console (850 no Windows em português), e os nomes dos apps da
+    /// Store — que vêm traduzidos: "Câmera", "Configurações", "Relógio" —
+    /// chegariam como `C�mera`. Sem BOM, porque um BOM no começo da saída faz
+    /// o JSON inteiro falhar ao ler.
+    ///
+    /// Falhar aqui não pode esvaziar a lista: sem o módulo (edições do
+    /// Windows que não o trazem) ou com o PowerShell bloqueado, fica só o que
+    /// a varredura de atalhos achou, que é o comportamento de antes.
+    const START_APPS: &str = r#"
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+$out = @()
+try {
+  foreach ($a in Get-StartApps) {
+    if ($a.AppID -like '*!*') {
+      $out += [PSCustomObject]@{ Name = $a.Name; AppID = $a.AppID }
+    }
+  }
+} catch { }
+ConvertTo-Json -InputObject @($out) -Compress -Depth 3
+"#;
+
+    fn list_store() -> Vec<AppInfo> {
+        let output = match run_powershell(START_APPS) {
+            Ok(output) => output,
+            Err(e) => {
+                eprintln!("Falha ao listar os apps da Store: {e}");
+                return Vec::new();
+            }
+        };
+        if !output.stderr.is_empty() {
+            eprintln!(
+                "PowerShell (apps da Store): {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        let apps = super::parse_start_apps(&String::from_utf8_lossy(&output.stdout));
+        println!("Apps da Store: {}", apps.len());
+        apps
     }
 
     /// Percorre a pasta em busca de atalhos, até `max_depth` níveis (0 = só o
@@ -547,6 +681,23 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
     }
 
     pub fn launch(id: &str) -> Result<(), String> {
+        // App da Store: não há arquivo para o `start` abrir, e o `id` não passa
+        // pelo `cmd`. Vai direto ao Explorer, como argumento de processo — e
+        // só depois de `aumid_de` conferir que ele tem forma de AUMID e nada
+        // além disso, porque o `id` chegou pela rede.
+        //
+        // O AUMID é o mesmo em qualquer computador para o mesmo app da Store,
+        // então o perfil feito numa máquina abre o app na outra sem a busca
+        // por nome que os atalhos precisam.
+        if let Some(aumid) = super::aumid_de(id) {
+            return Command::new("explorer.exe")
+                .sem_janela()
+                .arg(format!("{}{}", super::PREFIXO_DA_LOJA, aumid))
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| format!("não foi possível abrir: {e}"));
+        }
+
         let alvo = resolve_target(id);
         // `start` resolve atalhos (.lnk) e executáveis. O "" é o título da
         // janela, exigido quando o caminho vem entre aspas.
@@ -727,6 +878,130 @@ mod imp {
     pub fn close_all() -> Result<usize, String> {
         println!("[apps-stub] fechar tudo (nada a fazer fora do Windows)");
         Ok(0)
+    }
+}
+
+#[cfg(test)]
+mod loja {
+    //! Os apps da Microsoft Store, que a varredura de atalhos nunca via.
+
+    use super::{aumid_de, aumid_valido, parse_start_apps, PREFIXO_DA_LOJA};
+
+    #[test]
+    fn o_itunes_da_store_entra_na_lista() {
+        // O caso que motivou isto: o iTunes da Store não tem atalho no menu
+        // Iniciar, então não aparecia para escolher em perfis e automações.
+        let apps = parse_start_apps(
+            r#"[{"Name":"iTunes","AppID":"AppleInc.iTunes_nzyj5cqn3pzs8!iTunes"}]"#,
+        );
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].name, "iTunes");
+        assert_eq!(
+            apps[0].id,
+            r"shell:AppsFolder\AppleInc.iTunes_nzyj5cqn3pzs8!iTunes"
+        );
+    }
+
+    #[test]
+    fn programa_classico_fica_de_fora() {
+        // Esses já vêm da varredura de atalhos, com o caminho como `id` — que
+        // é o que os perfis antigos têm guardado. Repeti-los com outro `id`
+        // quebraria a troca entre computadores pelo nome do atalho.
+        let apps = parse_start_apps(
+            r#"[
+                {"Name":"Bloco de Notas","AppID":"{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\notepad.exe"},
+                {"Name":"Chrome","AppID":"Chrome"},
+                {"Name":"Spotify","AppID":"SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"}
+            ]"#,
+        );
+        let nomes: Vec<_> = apps.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(nomes, ["Spotify"]);
+    }
+
+    #[test]
+    fn um_so_app_vem_como_objeto_e_nao_como_lista() {
+        // O PowerShell devolve objeto solto quando há um item só. Tratar só o
+        // caso da lista faria o computador com um único app da Store vir vazio.
+        let apps = parse_start_apps(
+            r#"{"Name":"Calculadora","AppID":"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"}"#,
+        );
+        assert_eq!(apps.len(), 1);
+    }
+
+    #[test]
+    fn nome_com_acento_chega_inteiro() {
+        // Os apps da Store vêm com o nome traduzido: "Câmera", "Configurações".
+        // O script força UTF-8 na saída justamente por isso; aqui se confere
+        // que o lado do Rust não estraga o que chegou certo.
+        let apps = parse_start_apps(
+            r#"[{"Name":"Câmera","AppID":"Microsoft.WindowsCamera_8wekyb3d8bbwe!App"}]"#,
+        );
+        assert_eq!(apps[0].name, "Câmera");
+    }
+
+    #[test]
+    fn saida_quebrada_ou_vazia_nao_derruba_a_lista() {
+        // Sem `Get-StartApps` (edição do Windows sem o módulo, política de
+        // execução), a lista de atalhos continua valendo sozinha.
+        assert!(parse_start_apps("").is_empty());
+        assert!(parse_start_apps("[]").is_empty());
+        assert!(parse_start_apps("isto nao e json").is_empty());
+        assert!(parse_start_apps(r#"[{"Name":"","AppID":"A_b!C"}]"#).is_empty());
+    }
+
+    #[test]
+    fn aumid_de_verdade_passa() {
+        for bom in [
+            "AppleInc.iTunes_nzyj5cqn3pzs8!iTunes",
+            "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App",
+            "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel",
+            "MSTeams_8wekyb3d8bbwe!MSTeams",
+        ] {
+            assert!(aumid_valido(bom), "{bom}");
+        }
+    }
+
+    #[test]
+    fn o_que_vira_outro_comando_nao_passa() {
+        // O `id` chega pela rede e vira argumento de processo.
+        for ruim in [
+            "",
+            "SemExclamacao",
+            "!SoApp",
+            "SoPacote!",
+            "Dois!Pontos!Exclamacao",
+            "Pacote!App & calc",
+            "Pacote!App\"..\\x",
+            "Pacote!App|calc",
+            "Pacote!App\\..\\cmd",
+            "Pacote..x!App",
+            "Pacote!App\"",
+        ] {
+            assert!(!aumid_valido(ruim), "{ruim:?} deveria ser recusado");
+        }
+    }
+
+    #[test]
+    fn o_prefixo_e_reconhecido_e_retirado() {
+        assert_eq!(
+            aumid_de(r"shell:AppsFolder\AppleInc.iTunes_nzyj5cqn3pzs8!iTunes"),
+            Some("AppleInc.iTunes_nzyj5cqn3pzs8!iTunes")
+        );
+        // Sem diferenciar maiúsculas, como o Explorer.
+        assert_eq!(
+            aumid_de(r"SHELL:appsfolder\A_b!C"),
+            Some("A_b!C")
+        );
+    }
+
+    #[test]
+    fn caminho_de_atalho_nao_e_confundido_com_app_da_store() {
+        // O `id` de programa clássico continua indo pelo caminho de sempre.
+        assert_eq!(aumid_de(r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\iTunes.lnk"), None);
+        assert_eq!(aumid_de("notepad"), None);
+        assert_eq!(aumid_de(PREFIXO_DA_LOJA), None);
+        // Prefixo certo com AUMID forjado: recusado.
+        assert_eq!(aumid_de(r"shell:AppsFolder\x!y & calc"), None);
     }
 }
 
