@@ -1458,6 +1458,22 @@ class Strings {
   String get assinaturaCancelada => _t('Compra cancelada.', 'Purchase canceled.',
       '购买已取消。', 'Achat annulé.', 'Compra cancelada.');
 
+  /// A compra pertence a outra conta do Deskside.
+  ///
+  /// Substitui o texto do servidor, que é curto de propósito — ele não diz de
+  /// qual conta se trata, para não confirmar a existência dela a quem estiver
+  /// tentando adivinhar. Aqui já se sabe que quem lê é o dono do aparelho.
+  ///
+  /// Diz as **duas** saídas, e não uma, porque a óbvia não funciona: cancelar
+  /// a assinatura não desfaz o vínculo. A transação continua sendo a mesma, e
+  /// ela é que está amarrada à outra conta.
+  String get assinaturaDeOutraConta => _t(
+      'Esta assinatura já pertence a outra conta do Deskside. Entre naquela conta para usar o plano, ou assine nesta com outro ID Apple. Cancelar a assinatura não desfaz esse vínculo.',
+      'This subscription already belongs to another Deskside account. Sign in to that account to use the plan, or subscribe here with a different Apple ID. Canceling the subscription does not undo the link.',
+      '此订阅已属于另一个 Deskside 账号。请登录该账号使用，或用其他 Apple ID 在此订阅。取消订阅不会解除绑定。',
+      "Cet abonnement appartient déjà à un autre compte Deskside. Connectez-vous à ce compte pour utiliser le forfait, ou abonnez-vous ici avec un autre identifiant Apple. Annuler l'abonnement ne supprime pas ce lien.",
+      'Esta suscripción ya pertenece a otra cuenta de Deskside. Entra en esa cuenta para usar el plan, o suscríbete aquí con otro ID de Apple. Cancelar la suscripción no deshace el vínculo.');
+
   /// Restaurou e não havia nada.
   ///
   /// O caso mais comum de quem toca no botão, e o que antes travava a tela: a

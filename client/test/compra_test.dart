@@ -99,6 +99,23 @@ void main() {
     });
   });
 
+  group('recusa do servidor', () {
+    test('409 é "a compra é de outra conta"', () {
+      // A restrição de unicidade que amarra um comprovante a uma conta — a
+      // proteção contra assinar uma vez e passar o comprovante adiante.
+      expect(ehDeOutraConta(409), isTrue);
+    });
+
+    test('as outras recusas continuam com o texto do servidor', () {
+      // 402 (comprovante não vale), 502 (loja fora do ar) e os demais dizem
+      // coisas diferentes entre si, e o servidor é quem sabe qual foi. Trocar
+      // o texto deles aqui apagaria a única explicação boa que existe.
+      for (final status in [400, 401, 402, 403, 404, 422, 500, 502]) {
+        expect(ehDeOutraConta(status), isFalse, reason: '$status');
+      }
+    });
+  });
+
   group('qual loja', () {
     test('compra do Google vai ao servidor como google', () {
       // O defeito que isto conserta mandava `'apple'` fixo: o servidor

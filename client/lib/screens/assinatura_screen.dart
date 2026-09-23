@@ -289,7 +289,14 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
     } on ApiException catch (e) {
       // A recusa do servidor é a explicação boa: ele diz se o comprovante não
       // vale, se é de outro aplicativo, ou se a loja não está configurada.
-      _falhar(e.message);
+      //
+      // Com uma exceção: quando a compra é de outra conta, o texto de lá é
+      // curto de propósito (não diz qual conta, para não confirmar que ela
+      // existe) e o resultado é uma frase sem saída. Aqui já se sabe que quem
+      // lê é o dono do aparelho, então o app diz o que fazer.
+      _falhar(ehDeOutraConta(e.statusCode)
+          ? widget.state.t.assinaturaDeOutraConta
+          : e.message);
     } catch (_) {
       _falhar(widget.state.t.networkError);
     }

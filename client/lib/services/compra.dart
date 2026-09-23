@@ -74,6 +74,20 @@ bool precisaEncerrar(PurchaseDetails compra) => compra.pendingCompletePurchase;
 /// concordar: se divergirem, a loja cobra e o servidor não libera nada.
 const produtoPro = 'com.deskside.pro.mensal';
 
+/// A recusa do servidor é "esta compra já é de outra conta"?
+///
+/// Uma linha, e ela existe pelo mesmo motivo do `precisaEncerrar`: dá nome à
+/// regra e um lugar para testá-la. O `409` vem da restrição de unicidade que
+/// amarra um comprovante a uma conta — a proteção contra assinar uma vez e
+/// passar o comprovante adiante.
+///
+/// O app troca o texto porque o do servidor é **deliberadamente vago**: ele
+/// não diz de qual conta se trata, para não confirmar a existência dela a quem
+/// estiver tentando adivinhar. O preço dessa discrição é uma frase sem saída,
+/// e é o app quem pode pagá-lo — aqui já se sabe que quem lê é o dono do
+/// aparelho, e dizer o que fazer não entrega nada a ninguém.
+bool ehDeOutraConta(int status) => status == 409;
+
 /// Qual loja está em jogo.
 ///
 /// Os nomes são os que o servidor reconhece em `ValidarIn.loja`
