@@ -7,6 +7,7 @@ import 'screens/login_screen.dart';
 import 'services/api_client.dart';
 import 'services/app_state.dart';
 import 'theme.dart';
+import 'widgets/barra_do_sistema.dart';
 
 
 Future<void> main() async {
@@ -36,6 +37,9 @@ class DesksideApp extends StatelessWidget {
           theme: buildTheme(Brightness.light),
           darkTheme: buildTheme(Brightness.dark),
           themeMode: state.themeMode,
+          // Deixa o app acima da barra de navegação do Android. Ver o
+          // arquivo: em 8 das 17 telas, o fim da lista ficava por baixo dela.
+          builder: respeitarBarraDoSistema,
           home: LockGate(
             state: state,
             child: state.isAuthenticated
