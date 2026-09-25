@@ -339,6 +339,16 @@ class Strings {
       'Pide un código del autenticador al entrar');
   String get changeEmail =>
       _t('Alterar e-mail', 'Change email', '更改邮箱', "Changer l'e-mail", 'Cambiar correo');
+
+  /// O mesmo caminho, para a conta que ainda entra pelo telefone.
+  ///
+  /// "Alterar e-mail" ali oferecia trocar um e-mail que a conta não tem. E a
+  /// entrada não pode simplesmente sumir para essas contas: sem SMS, é por
+  /// ela que uma conta de telefone passa a entrar por e-mail.
+  String get usarEmailParaEntrar => _t('Entrar com e-mail em vez do telefone',
+      'Sign in with email instead of phone', '改用邮箱登录，而非手机号',
+      "Se connecter par e-mail plutôt que par téléphone",
+      'Entrar con correo en lugar del teléfono');
   String get changePassword => _t('Alterar senha', 'Change password', '更改密码',
       'Changer le mot de passe', 'Cambiar contraseña');
   String get signOut => _t('Sair', 'Sign out', '退出', 'Se déconnecter', 'Salir');

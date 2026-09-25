@@ -139,4 +139,29 @@ void main() {
       expect(conta.renova, isFalse);
     });
   });
+
+  group('contato que identifica a conta', () {
+    test('conta de telefone mostra o telefone', () {
+      final conta = Conta.fromJson({'id': 1, 'phone': '+5521999990000'});
+      expect(conta.porTelefone, isTrue);
+      expect(conta.contato, '+5521999990000');
+    });
+
+    test('depois de trocar para e-mail, mostra o e-mail', () {
+      // O servidor grava o e-mail e **apaga** o telefone na troca, e é isso
+      // que o `/me` devolve em seguida. Se o telefone continuasse aparecendo,
+      // a pessoa concluiria que a troca não pegou.
+      final conta = Conta.fromJson(
+          {'id': 1, 'email': 'caio@example.com', 'phone': null});
+      expect(conta.porTelefone, isFalse);
+      expect(conta.contato, 'caio@example.com');
+    });
+
+    test('telefone vazio conta como sem telefone', () {
+      final conta =
+          Conta.fromJson({'id': 1, 'email': 'caio@example.com', 'phone': ''});
+      expect(conta.porTelefone, isFalse);
+      expect(conta.contato, 'caio@example.com');
+    });
+  });
 }

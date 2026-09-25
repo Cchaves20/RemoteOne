@@ -108,9 +108,21 @@ class SettingsScreen extends StatelessWidget {
                 // Só e-mail. A troca de telefone saiu junto com o resto do
                 // caminho por SMS (ver signup_screen.dart): ela manda código
                 // por mensagem, e sem provedor o código ia para o registro do
-                // servidor. Uma conta que **só** tenha telefone fica sem esta
-                // entrada — não há nenhuma hoje, foi conferido antes.
-                _action(context, Icons.alternate_email, t.changeEmail,
+                // servidor.
+                //
+                // Uma conta que entra pelo **telefone** também vê esta
+                // entrada, e precisa ver: é por ela que a conta passa a entrar
+                // por e-mail (o servidor grava o e-mail e apaga o telefone).
+                // O que muda é o título — "Alterar e-mail" oferecia trocar um
+                // e-mail que a conta não tem. Este comentário dizia que não
+                // existia conta de telefone; existia, e foi assim que ela
+                // apareceu com o número embaixo de "Alterar e-mail".
+                _action(
+                    context,
+                    Icons.alternate_email,
+                    (state.conta?.porTelefone ?? false)
+                        ? t.usarEmailParaEntrar
+                        : t.changeEmail,
                     () => _showChangeEmail(context),
                     subtitle: state.conta?.contato),
                 _action(context, Icons.password, t.changePassword,
