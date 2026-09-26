@@ -32,6 +32,7 @@ from __future__ import annotations
 import base64
 import json
 from datetime import UTC, datetime
+from itertools import pairwise
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -126,7 +127,11 @@ def verificar_jws(token: str, raiz: x509.Certificate, agora: datetime | None = N
         if not (cert.not_valid_before_utc <= agora <= cert.not_valid_after_utc):
             raise JwsInvalido("certificado da cadeia fora da validade")
 
-    for filho, pai in zip(cadeia, cadeia[1:]):
+    # `pairwise`, e não `zip(cadeia, cadeia[1:])` com `strict=True` como o
+    # lint sugere: as duas listas têm tamanhos diferentes **de propósito**
+    # (cada certificado com o de cima), e `strict=True` faria toda verificação
+    # levantar erro.
+    for filho, pai in pairwise(cadeia):
         _conferir_assinatura_entre(filho, pai)
 
     folha = cadeia[0]

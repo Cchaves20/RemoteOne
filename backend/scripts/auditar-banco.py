@@ -197,7 +197,7 @@ def main() -> int:
     _autorizar_agente("dev-auditoria", segredos["segredo do agente"])
     bytes_do_banco = recolher()
 
-    print(f"momento 2 — depois da primeira conexão autenticada do agente")
+    print("momento 2 — depois da primeira conexão autenticada do agente")
     print(f"banco auditado: {BANCO} ({len(bytes_do_banco)} bytes)\n")
     print(f"{'o que':36} {'esperado':10} {'medido':10} veredito")
 

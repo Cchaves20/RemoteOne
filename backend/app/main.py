@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from app import entrega, lojas, pairing
 from app.agents import AgentRegistry
-from app.auth import router as auth_router
 from app.auth import get_current_user, sessao_valida
+from app.auth import router as auth_router
 from app.automations import enviar_agenda
 from app.automations import router as automations_router
 from app.compras import router as compras_router

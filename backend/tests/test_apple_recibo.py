@@ -33,7 +33,6 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from cryptography.x509.oid import NameOID
 
-from app import jws
 from app.assinatura import Ambiente, Estado, Loja
 from app.lojas import AppStore, ComprovanteInvalido
 
@@ -80,7 +79,9 @@ class Autoridade:
 
     def __init__(self, *, folha_de=None, folha_ate=None):
         self.raiz_chave, raiz_pub = _par()
-        self.raiz = _certificado("Raiz de teste", raiz_pub, self.raiz_chave, "Raiz de teste", ca=True)
+        self.raiz = _certificado(
+            "Raiz de teste", raiz_pub, self.raiz_chave, "Raiz de teste", ca=True
+        )
 
         meio_chave, meio_pub = _par()
         self.meio = _certificado("Meio", meio_pub, self.raiz_chave, "Raiz de teste", ca=True)

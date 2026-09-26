@@ -27,8 +27,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import cofre, entrega, limite, telefone, teste, verificacao
-from app import cobranca
+from app import cobranca, cofre, entrega, limite, telefone, teste, verificacao
 from app import senha as politica_de_senha
 from app.config import settings
 from app.db import get_db

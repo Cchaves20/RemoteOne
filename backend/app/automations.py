@@ -26,8 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import pairing
-from app import cobranca, plano
+from app import cobranca, pairing, plano
 from app.auth import get_current_user
 from app.connections import manager
 from app.db import get_db

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.main import app
-from tests.conftest import SENHA, criar_conta
+from tests.conftest import criar_conta
 
 client = TestClient(app)
 

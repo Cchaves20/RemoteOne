@@ -185,7 +185,8 @@ def test_a_segunda_automacao_pede_o_plano():
     _parear(token, "dev-gratis-5")
     corpo = {"name": "A", "icon": "work", "steps": [{"kind": "save_all"}]}
 
-    assert client.post("/api/v1/automations", json=corpo, headers=_cabecalho(token)).status_code == 201
+    primeira = client.post("/api/v1/automations", json=corpo, headers=_cabecalho(token))
+    assert primeira.status_code == 201
     segunda = client.post("/api/v1/automations", json=corpo, headers=_cabecalho(token))
 
     assert segunda.status_code == 402
@@ -337,8 +338,7 @@ def test_ligar_e_desligar_o_plano_a_mao():
     criar_conta(client, "a-mao@example.com")
     _rebaixar("a-mao@example.com")
 
-    with SessionLocal() as db:
-        assert cobranca_plano("a-mao@example.com") == "gratis"
+    assert cobranca_plano("a-mao@example.com") == "gratis"
 
     conta.main.__globals__["sys"].argv = ["x", "pago", "a-mao@example.com", "--dias", "10"]
     conta.main()

@@ -22,8 +22,7 @@ from sqlalchemy import select
 
 from app import pairing
 from app.db import SessionLocal
-from app.main import _autorizar_agente, _segredo_do_aparelho
-from app.main import app
+from app.main import _autorizar_agente, _segredo_do_aparelho, app
 from app.models import Device, User
 
 client = TestClient(app)
