@@ -206,6 +206,9 @@ pub struct AgentIdentity {
     /// Onde mora o segredo deste computador. `None` nos testes, e nas duas
     /// situações significa a mesma coisa: "sei guardar um, mas não tenho".
     pub secret_path: Option<std::path::PathBuf>,
+    /// Resumo do identificador da máquina, lido uma vez na partida. Ele não
+    /// muda enquanto o Windows não for reinstalado, então não há o que reler.
+    pub maquina: Option<String>,
 }
 
 impl AgentIdentity {
@@ -230,6 +233,7 @@ impl AgentIdentity {
             os: self.os.clone(),
             agent_version: self.agent_version.clone(),
             secret: Some(secret),
+            maquina: self.maquina.clone(),
         }
     }
 
@@ -2233,6 +2237,7 @@ mod tests {
             os: "linux".into(),
             agent_version: "0.1.0".into(),
             secret_path: None,
+            maquina: None,
         };
         assert_eq!(
             identity.hello(),
@@ -2245,6 +2250,7 @@ mod tests {
                 // "sou um agente antigo", e o servidor não emitiria segredo
                 // nenhum para este computador.
                 secret: Some(String::new()),
+                maquina: None,
             }
         );
     }
@@ -2265,6 +2271,7 @@ mod tests {
             os: "linux".into(),
             agent_version: "0.1.0".into(),
             secret_path: Some(caminho.clone()),
+            maquina: None,
         };
 
         // Antes de existir arquivo: vazio, que é o pedido de adoção.
@@ -2298,6 +2305,7 @@ mod tests {
             os: "linux".into(),
             agent_version: "0.1.0".into(),
             secret_path: Some(caminho.clone()),
+            maquina: None,
         };
         identity.guardar_segredo(Some("bom".into()));
         identity.guardar_segredo(None);

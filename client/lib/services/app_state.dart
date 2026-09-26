@@ -383,6 +383,9 @@ class AppState extends ChangeNotifier {
   Future<Device> pair(String code) async {
     final device = await api.claim(code);
     await refreshDevices();
+    // O plano mudou no servidor: reler é o que faz o cartão "Seu plano" e os
+    // recursos pagos refletirem isso agora, e não na próxima abertura do app.
+    if (device.testeEncerrado) await recarregarConta();
     return device;
   }
 

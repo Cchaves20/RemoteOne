@@ -60,6 +60,13 @@ def _migrate() -> None:
             # mundo do lado de fora — o agente não teria como adivinhá-lo.
             "agent_secret": "VARCHAR(64)",
             "agent_secret_pendente": "VARCHAR(64)",
+            # Resumo da máquina (ver `app/teste.py`). Nula nos que já estavam
+            # pareados: o agente manda na próxima conexão, e nulo não corta o
+            # teste de ninguém.
+            "maquina": "VARCHAR(64)",
+        },
+        "pairing_requests": {
+            "maquina": "VARCHAR(64)",
         },
         # Agendamento das automações. As duas com padrão, porque `ADD COLUMN`
         # com `NOT NULL` e sem padrão é recusado em tabela que já tem linhas.
@@ -110,6 +117,44 @@ def _migrate() -> None:
     _email_deixa_de_ser_obrigatorio()
     _sortear_chaves_de_sessao()
     _cifrar_segredos_do_2fa()
+    _registrar_testes_ja_dados()
+
+
+def _registrar_testes_ja_dados() -> None:
+    """Anota que toda conta que **já existe** teve a sua chance de teste.
+
+    O registro de testes nasce vazio. Sem esta varredura, quem já tem conta
+    poderia criar outra com `+alguma-coisa` no mesmo e-mail e ganhar um teste
+    novo — justamente o que o registro existe para impedir, e justamente para
+    as pessoas que já conhecem o produto.
+
+    Vale para todas, inclusive as de antes de haver cobrança: elas não
+    precisam de teste, já usam o produto.
+
+    Idempotente — `registrar` não repete — e roda a cada subida pelo mesmo
+    motivo das outras migrações daqui: não depende de alguém lembrar.
+    """
+    from sqlalchemy import select
+
+    from app import teste
+    from app.models import TesteConcedido, User
+
+    with SessionLocal() as db:
+        ja_anotadas = set(db.scalars(select(TesteConcedido.conta)).all())
+        novas = 0
+        for email, phone in db.execute(select(User.email, User.phone)).all():
+            ident = teste.identidade(email, phone)
+            if ident is None:
+                continue
+            conta = teste.resumo(ident)
+            if conta in ja_anotadas:
+                continue
+            db.add(TesteConcedido(conta=conta))
+            ja_anotadas.add(conta)
+            novas += 1
+        if novas:
+            db.commit()
+            print(f"migração: {novas} conta(s) existente(s) anotada(s) como já tendo tido teste")
 
 
 def _cifrar_segredos_do_2fa() -> None:

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Res
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app import cobranca, pairing, plano
+from app import cobranca, pairing, plano, teste
 from app.auth import get_current_user
 from app.connections import manager
 from app.db import get_db
@@ -117,7 +117,14 @@ def claim_device(
         device = pairing.claim(db, body.code.strip().upper(), current_user)
     except pairing.PairingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    return _device_out(device)
+    # **Depois** de parear, e não antes: o computador fica na conta de
+    # qualquer jeito — o grátis também alcança um. O que pode mudar é só o
+    # teste, e recusar o pareamento puniria a pessoa duas vezes pelo mesmo
+    # motivo.
+    encerrado = teste.ao_parear(db, current_user, device.maquina)
+    saida = _device_out(device)
+    saida.teste_encerrado = encerrado
+    return saida
 
 
 @router.get("/devices", response_model=list[DeviceOut])

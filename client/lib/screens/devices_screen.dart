@@ -68,12 +68,30 @@ class _DevicesScreenState extends State<DevicesScreen> {
     );
     if (code == null || code.isEmpty) return;
     try {
-      await widget.state.pair(code);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.computerPaired)),
+      final device = await widget.state.pair(code);
+      if (!mounted) return;
+      if (device.testeEncerrado) {
+        // Diálogo, e não o aviso de rodapé de sempre: o plano da pessoa
+        // acabou de mudar, e isso não pode sumir sozinho em quatro segundos.
+        await showDialog<void>(
+          context: context,
+          builder: (dialogo) => AlertDialog(
+            icon: const Icon(Icons.workspace_premium_outlined),
+            title: Text(t.testeEncerradoTitulo),
+            content: Text(t.testeEncerradoTexto),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(dialogo).pop(),
+                child: Text(t.planoEntendi),
+              ),
+            ],
+          ),
         );
+        return;
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.computerPaired)),
+      );
     } catch (e) {
       if (!mounted) return;
       // O limite de plano sai do aviso vermelho e vira conversa. É o caminho

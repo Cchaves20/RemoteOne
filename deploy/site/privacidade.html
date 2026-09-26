@@ -49,12 +49,20 @@
       máquina, o sistema operacional, o endereço MAC (usado para ligar o
       computador pela rede), o último endereço IP público visto e um segredo
       sorteado no pareamento — é ele que prova ao servidor que aquele computador
-      é mesmo o seu.</li>
+      é mesmo o seu. Também um <strong>resumo</strong> (hash SHA-256) do
+      identificador que o próprio Windows dá à máquina: o identificador em si
+      nunca sai do computador.</li>
     <li><strong>O que você configurou</strong>: perfis de atalho e automações,
       incluindo horários.</li>
     <li><strong>Do seu plano</strong>: se a conta está no Deskside grátis ou no
       pago, até quando o plano vale, e se já avisamos que o seu mês completo
       está acabando.</li>
+    <li><strong>Quem já teve o teste grátis</strong>: um resumo (hash SHA-256)
+      do seu e-mail — ou telefone — e, se você pareou um computador durante o
+      teste, o resumo daquele computador. Serve a uma coisa só: impedir que o
+      teste de 30 dias seja tirado de novo com uma conta nova. O resumo não
+      permite descobrir o seu e-mail; só serve para reconhecer um e-mail que
+      já se conheça.</li>
     <li><strong>Se você ligou a verificação em duas etapas</strong>: a chave que
       o seu aplicativo autenticador usa, guardada cifrada. Ela não vale nada sem
       a chave de cifra, que fica fora do banco.</li>
@@ -122,7 +130,13 @@
 
   <h2>6. Por quanto tempo</h2>
   <p>
-    Enquanto a conta existir. Excluída a conta, os dados são removidos.
+    Enquanto a conta existir. Excluída a conta, os dados são removidos — com
+    uma exceção, que dizemos aqui para não ser surpresa: o
+    <strong>registro de quem já teve o teste grátis</strong> (item 1) continua.
+    Se ele fosse apagado junto, bastaria excluir a conta e criar outra para
+    ganhar mais 30 dias, e é justamente isso que ele existe para impedir. Ele
+    guarda só resumos, não o seu nome, e-mail ou telefone, e se apoia no
+    legítimo interesse de prevenir fraude (LGPD, art. 7º, IX).
     <br><br>
     As cópias de segurança do banco são <strong>catorze</strong>, uma por dia, e
     as mais antigas são descartadas automaticamente. Uma cópia cifrada pode ser

@@ -39,6 +39,11 @@ pub enum ClientMessage {
         /// como se pede a adoção.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         secret: Option<String>,
+        /// Resumo do identificador da máquina (ver `identity::resumo_da_maquina`).
+        /// Ausente quando não deu para ler — e o servidor trata ausente como
+        /// "não sei", que nunca corta o teste de ninguém.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        maquina: Option<String>,
     },
     Heartbeat,
     /// Este computador está saindo da conta.
@@ -535,11 +540,28 @@ mod tests {
             os: "windows".into(),
             agent_version: "0.1.0".into(),
             secret: Some("abc".into()),
+            maquina: Some("f".repeat(64)),
         };
         let value: serde_json::Value = serde_json::to_value(&hello).unwrap();
         assert_eq!(value["type"], "hello");
         assert_eq!(value["device_id"], "dev-1");
         assert_eq!(value["os"], "windows");
+        assert_eq!(value["maquina"], "f".repeat(64));
+    }
+
+    #[test]
+    fn hello_sem_maquina_nao_manda_o_campo() {
+        // Servidor antigo não conhece o campo; omitido, ele não estranha nada.
+        let hello = ClientMessage::Hello {
+            device_id: "dev-1".into(),
+            hostname: "pc".into(),
+            os: "windows".into(),
+            agent_version: "0.1.0".into(),
+            secret: None,
+            maquina: None,
+        };
+        let value: serde_json::Value = serde_json::to_value(&hello).unwrap();
+        assert!(value.get("maquina").is_none());
     }
 
     #[test]

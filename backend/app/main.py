@@ -248,7 +248,12 @@ def _pairing_intro(hello: Hello) -> dict:
         return Paired(user_email=email).model_dump()
     with SessionLocal() as db:
         code = pairing.create_pairing_request(
-            db, hello.device_id, hello.hostname, hello.os, settings.pairing_ttl_seconds
+            db,
+            hello.device_id,
+            hello.hostname,
+            hello.os,
+            settings.pairing_ttl_seconds,
+            maquina=hello.maquina,
         )
     return PairCode(code=code, expires_in_seconds=settings.pairing_ttl_seconds).model_dump()
 
@@ -387,6 +392,7 @@ async def agent_ws(websocket: WebSocket) -> None:
         device_id = message.device_id
         hostname = message.hostname
         os_name = message.os
+        maquina = message.maquina
 
         # **Antes** de registrar. Registrar sobrepõe a conexão anterior daquele
         # device_id, então fazer isso antes de conferir o segredo entregaria a
@@ -614,6 +620,7 @@ async def agent_ws(websocket: WebSocket) -> None:
                 device_id = message.device_id
                 hostname = message.hostname
                 os_name = message.os
+                maquina = message.maquina
                 registry.register(message)
                 manager.register(device_id, websocket)
                 await websocket.send_json(
@@ -652,7 +659,12 @@ async def agent_ws(websocket: WebSocket) -> None:
                     paired_notified = False
                     with SessionLocal() as db:
                         code = pairing.create_pairing_request(
-                            db, device_id, hostname, os_name, settings.pairing_ttl_seconds
+                            db,
+                            device_id,
+                            hostname,
+                            os_name,
+                            settings.pairing_ttl_seconds,
+                            maquina=maquina,
                         )
                     await websocket.send_json(
                         PairCode(

@@ -17,6 +17,10 @@ tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
 gethostname = "0.5"
+# Resumo do identificador da máquina (ver `identity::resumo_da_maquina`). Já
+# vinha na árvore por baixo de outra dependência; aqui só passa a ser usado
+# direto. Rust puro, sem C: não pesa no build do ARM64.
+sha2 = "0.10"
 # Usado para passar scripts ao PowerShell via -EncodedCommand (sem problemas
 # de escape de aspas na linha de comando).
 base64 = "0.22"

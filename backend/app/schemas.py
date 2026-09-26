@@ -849,5 +849,10 @@ class DeviceOut(BaseModel):
     created_at: datetime
     # Preenchido pela rota a partir das conexões vivas (não vem do banco).
     online: bool = False
+    #: Só no pareamento: o teste de 30 dias desta conta **acabou agora**,
+    #: porque este computador já serviu a testes de outras contas (ver
+    #: `app/teste.py`). O app precisa dizer isso na hora — o plano mudou
+    #: debaixo da pessoa, e sem explicação ela acharia que parear quebrou algo.
+    teste_encerrado: bool = False
 
     model_config = {"from_attributes": True}

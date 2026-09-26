@@ -1430,6 +1430,25 @@ class Strings {
   String get planoLimiteTitulo => _t('Isto é do Deskside completo',
       'This is part of Deskside full', '这是完整版功能',
       'Ceci fait partie de Deskside complet', 'Esto es de Deskside completo');
+  /// O teste acabou porque este computador já serviu a testes de outras
+  /// contas (ver `backend/app/teste.py`).
+  ///
+  /// Neutro de propósito: quem lê pode ser o segundo membro de uma família, e
+  /// não quem tentou ganhar outro mês. Diz o que aconteceu, que nada se
+  /// perdeu, e onde se resolve.
+  String get testeEncerradoTitulo => _t(
+      'Este computador já teve teste grátis',
+      'This computer already had a free trial',
+      '这台电脑已使用过免费试用',
+      "Cet ordinateur a déjà eu un essai gratuit",
+      'Este equipo ya tuvo prueba gratis');
+  String get testeEncerradoTexto => _t(
+      'Ele já foi usado no teste de 30 dias de outras contas, então o teste desta conta terminou. O computador foi pareado e continua funcionando no plano grátis. Para os recursos pagos, assine em Ajustes.',
+      'It was already used in the 30-day trial of other accounts, so this account\'s trial has ended. The computer was paired and keeps working on the free plan. For paid features, subscribe in Settings.',
+      '它已在其他账号的 30 天试用中使用过，因此本账号的试用已结束。电脑已配对，并继续使用免费版。如需付费功能，请在设置中订阅。',
+      "Il a déjà servi à l'essai de 30 jours d'autres comptes, donc l'essai de ce compte est terminé. L'ordinateur a été associé et continue de fonctionner avec le forfait gratuit. Pour les fonctions payantes, abonnez-vous dans Réglages.",
+      'Ya se usó en la prueba de 30 días de otras cuentas, así que la prueba de esta cuenta terminó. El equipo quedó vinculado y sigue funcionando en el plan gratis. Para las funciones de pago, suscríbete en Ajustes.');
+
   String get planoEntendi =>
       _t('Entendi', 'Got it', '知道了', "J'ai compris", 'Entendido');
 

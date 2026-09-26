@@ -27,9 +27,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import cofre, entrega, limite, telefone, verificacao
+from app import cofre, entrega, limite, telefone, teste, verificacao
 from app import cobranca
-from app import plano as plano_regras
 from app import senha as politica_de_senha
 from app.config import settings
 from app.db import get_db
@@ -383,17 +382,22 @@ def signup_verify(body: SignupVerify, db: Session = Depends(get_db)) -> TokenPai
     # Sem esta conferência, o `commit` estouraria a unicidade e viraria um 500.
     _livre(db, pendente.destino, pendente.canal)
 
+    email = pendente.destino if pendente.canal == "email" else None
+    phone = pendente.destino if pendente.canal == "phone" else None
+    # Trinta dias conhecendo o produto inteiro, e depois o plano grátis — nunca
+    # uma conta bloqueada (ver `app/plano.py`). **Uma vez por pessoa**: quem já
+    # teve teste, com este e-mail ou com uma variação dele (`+sufixo`, pontos
+    # no Gmail), começa no grátis. Ver `app/teste.py`.
+    plano_inicial, plano_ate = teste.plano_inicial(db, email, phone)
     user = User(
-        email=pendente.destino if pendente.canal == "email" else None,
-        phone=pendente.destino if pendente.canal == "phone" else None,
+        email=email,
+        phone=phone,
         hashed_password=pendente.hashed_password,
         first_name=pendente.first_name,
         last_name=pendente.last_name,
         birth_date=pendente.birth_date,
-        # Trinta dias conhecendo o produto inteiro, e depois o plano grátis —
-        # nunca uma conta bloqueada. Ver `app/plano.py`.
-        plano=plano_regras.Plano.PAGO,
-        plano_ate=plano_regras.fim_do_teste(datetime.now(UTC)),
+        plano=plano_inicial,
+        plano_ate=plano_ate,
     )
     db.add(user)
     db.delete(pendente)

@@ -273,6 +273,13 @@ class Device(Base):
     agent_secret_pendente: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
+    #: Resumo (SHA-256) do `MachineGuid` do Windows, que o agente manda ao
+    #: conectar. Nunca o valor: ele sai do computador já resumido.
+    #:
+    #: É o que amarra o teste de 30 dias ao **computador**, e não só à conta
+    #: (ver `app/teste.py`). Nulo para agente antigo, que não sabe mandá-lo — e
+    #: nulo não corta o teste de ninguém.
+    maquina: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="devices")
 
@@ -289,6 +296,33 @@ class PairingRequest(Base):
     os: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    #: O resumo da máquina, guardado aqui entre o agente se apresentar e alguém
+    #: digitar o código — é o único lugar onde ele existe nesse intervalo.
+    maquina: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class TesteConcedido(Base):
+    """Uma pessoa (e, às vezes, um computador) que já teve os 30 dias de teste.
+
+    **Sem chave estrangeira para `users`, de propósito**: o registro precisa
+    sobreviver à exclusão da conta, ou bastaria excluir e recriar para ganhar
+    outro teste. Por isso só guarda resumos — nada daqui leva a um e-mail ou a
+    um computador sem já se saber qual é. Ver `app/teste.py`.
+
+    Duas formas de linha:
+
+    - `maquina` nula: "esta pessoa teve teste", anotada no cadastro;
+    - `maquina` preenchida: "esta pessoa teve teste **neste** computador",
+      anotada quando uma conta em teste pareia um PC.
+    """
+
+    __tablename__ = "testes_concedidos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    #: SHA-256 da identidade canônica (e-mail sem `+sufixo`, ou telefone).
+    conta: Mapped[str] = mapped_column(String(64), index=True)
+    maquina: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class ControlProfile(Base):

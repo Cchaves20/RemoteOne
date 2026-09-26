@@ -1295,6 +1295,7 @@ dependencies = [
  "rand 0.8.7",
  "serde",
  "serde_json",
+ "sha2",
  "sysinfo",
  "tokio",
  "tokio-tungstenite",

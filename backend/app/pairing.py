@@ -87,6 +87,7 @@ def create_pairing_request(
     hostname: str,
     os: str,
     ttl_seconds: int,
+    maquina: str | None = None,
 ) -> str:
     """Cria (ou substitui) o código pendente do dispositivo e o retorna."""
     # Um pedido pendente por dispositivo: remove os anteriores.
@@ -104,6 +105,7 @@ def create_pairing_request(
             hostname=hostname,
             os=os,
             expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
+            maquina=maquina,
         )
     )
     db.commit()
@@ -136,6 +138,9 @@ def claim(db: Session, code: str, user: User) -> Device:
         hostname=request.hostname,
         agent_secret=resumo_de_segredo(segredo),
         agent_secret_pendente=segredo,
+        # Passa do pedido para o computador: o pedido é apagado logo abaixo, e
+        # é aqui que o resumo continua existindo para a conferência do teste.
+        maquina=request.maquina,
     )
     db.add(device)
     db.delete(request)

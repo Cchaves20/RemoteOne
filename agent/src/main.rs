@@ -355,6 +355,7 @@ fn main() {
         os: plat.os_name().to_string(),
         agent_version: AGENT_VERSION.to_string(),
         secret_path: Some(deskside_agent::agent_secret_path()),
+        maquina: deskside_agent::identity::maquina(),
     };
 
     // Parâmetros de transmissão (ajustáveis sem recompilar).

@@ -30,6 +30,11 @@ class Hello(BaseModel):
     #:   de adoção.
     #: - **preenchido**: é conferido, e errar fecha a conexão.
     secret: str | None = None
+    #: Resumo (SHA-256, hexadecimal) do `MachineGuid` do Windows — o que amarra
+    #: o teste de 30 dias ao computador. Ausente em agente antigo, e aí o
+    #: computador simplesmente não entra na conta de testes (ver `app/teste.py`).
+    #: O valor é conferido antes de usado; o formato errado vale como ausente.
+    maquina: str | None = None
 
 
 class Heartbeat(BaseModel):
