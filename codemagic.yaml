@@ -119,7 +119,8 @@ workflows:
           # celular localhost é o próprio celular. O defeito passou meses sem
           # aparecer porque quem desenvolve tinha a URL salva na tela de login.
           flutter build ios --release --no-codesign \
-            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br \
+            --dart-define=DESKSIDE_COMMIT=$CM_COMMIT
           mkdir -p build/ipa/Payload
           cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
           cd build/ipa
@@ -326,7 +327,8 @@ workflows:
           flutter build ipa --release \
             --build-number=$BUILD_NUMBER \
             --export-options-plist=/Users/builder/export_options.plist \
-            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br \
+            --dart-define=DESKSIDE_COMMIT=$CM_COMMIT
 
           # Onde o .ipa foi parar, e se ele existe mesmo.
           #
@@ -683,8 +685,13 @@ workflows:
           # endereço ficar **visível no build**: ele era `localhost`, e num
           # celular localhost é o próprio celular. O defeito passou meses sem
           # aparecer porque quem desenvolve tinha a URL salva na tela de login.
+          # O commit vai no log e no app (Configurações, ao lado da versão):
+          # todo APK sai como 0.1.0+1, e sem isto não havia como saber qual
+          # código estava instalado no celular.
+          echo "commit do build: $CM_COMMIT"
           flutter build apk --release --no-shrink \
-            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br \
+            --dart-define=DESKSIDE_COMMIT=$CM_COMMIT
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       - client/build/app/outputs/flutter-apk/*.apk

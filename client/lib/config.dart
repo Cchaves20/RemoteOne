@@ -52,3 +52,18 @@ bool ehEnderecoLocal(String url) {
       u.contains('0.0.0.0') ||
       u.contains('10.0.2.2'); // o "localhost do computador" do emulador Android
 }
+
+/// O commit de que este app foi compilado, ou vazio num build local.
+///
+/// Vem do `--dart-define=DESKSIDE_COMMIT=$CM_COMMIT` do Codemagic e aparece em
+/// Configurações, ao lado da versão. Existe porque todo build sai com o mesmo
+/// número de versão, e um APK antigo instalado no lugar do novo era
+/// indistinguível dele — a não ser pelo defeito que já deveria ter sumido.
+const commitDoBuild = String.fromEnvironment('DESKSIDE_COMMIT');
+
+/// A versão como aparece na tela: `0.1.0 · 839766d`, ou só `0.1.0`.
+String versaoVisivel(String versao, [String commit = commitDoBuild]) {
+  final c = commit.trim();
+  if (c.isEmpty) return versao;
+  return '$versao · ${c.length > 7 ? c.substring(0, 7) : c}';
+}

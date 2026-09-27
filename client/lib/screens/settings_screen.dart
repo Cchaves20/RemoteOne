@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config.dart';
 import '../l10n/strings.dart';
 import '../models/cadastro.dart';
 import '../models/stream_quality.dart';
@@ -151,7 +152,7 @@ class SettingsScreen extends StatelessWidget {
                       children: [
                         Text('Deskside',
                             style: Theme.of(context).textTheme.titleMedium),
-                        Text(t.version(_appVersion),
+                        Text(t.version(versaoVisivel(_appVersion)),
                             style: Theme.of(context).textTheme.bodySmall),
                       ],
                     ),

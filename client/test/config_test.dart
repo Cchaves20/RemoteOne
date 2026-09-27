@@ -48,4 +48,12 @@ void main() {
     expect(ehEnderecoLocal('https://deskside.com.br'), isFalse);
     expect(ehEnderecoLocal('http://192.168.0.10:8000'), isFalse);
   });
+
+  test('a versão mostra o commit curto quando o build o informa', () {
+    // Todo APK sai como 0.1.0+1; o commit é o que separa um do outro.
+    expect(versaoVisivel('0.1.0', '839766d1234abcd'), '0.1.0 · 839766d');
+    expect(versaoVisivel('0.1.0', 'abc'), '0.1.0 · abc');
+    // Build local, sem `--dart-define`: só a versão, sem um ponto solto.
+    expect(versaoVisivel('0.1.0', ''), '0.1.0');
+  });
 }
