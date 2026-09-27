@@ -116,6 +116,23 @@ pub fn mandar(caminho: &str) -> Result<String, String> {
     Ok(nome)
 }
 
+/// O caminho na forma que a Lixeira do Windows aceita.
+///
+/// `files::resolve` canoniza o caminho, e no Windows a forma canônica leva o
+/// prefixo `\\?\` (`\\?\C:\Users\...`). O download aceita; a função da
+/// Lixeira não, e recusava todo arquivo com "caminho inválido" (0x7C) — foi
+/// assim que isto apareceu, no primeiro teste de verdade.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn para_o_shell(caminho: &str) -> String {
+    if let Some(resto) = caminho.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{resto}")
+    } else if let Some(resto) = caminho.strip_prefix(r"\\?\") {
+        resto.to_string()
+    } else {
+        caminho.to_string()
+    }
+}
+
 /// Tira o `{GUID}` do nome de volume que o Windows devolve
 /// (`\\?\Volume{...}\`). É por ele que a configuração da Lixeira é guardada.
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -230,7 +247,7 @@ mod imp {
     /// Sem conseguir ler, volta o padrão ("aceita"): a segunda guarda, a
     /// pergunta do Windows na tela, continua valendo.
     pub fn configuracao(arquivo: &Path) -> Configuracao {
-        let caminho = largo(&arquivo.display().to_string());
+        let caminho = largo(&super::para_o_shell(&arquivo.display().to_string()));
         let mut ponto = [0u16; 512];
         if unsafe { GetVolumePathNameW(caminho.as_ptr(), ponto.as_mut_ptr(), ponto.len() as u32) }
             == 0
@@ -265,7 +282,9 @@ mod imp {
     pub fn mandar(arquivo: &Path) -> Result<(), String> {
         // Lista de caminhos terminada por **dois** zeros: é o formato do
         // `pFrom`. Com um só, o Windows leria memória adiante até achar outro.
-        let mut de: Vec<u16> = arquivo.display().to_string().encode_utf16().collect();
+        let mut de: Vec<u16> = super::para_o_shell(&arquivo.display().to_string())
+            .encode_utf16()
+            .collect();
         de.extend([0, 0]);
 
         let (envia, recebe) = std::sync::mpsc::channel();
@@ -361,6 +380,22 @@ mod tests {
             capacidade_mb: None,
         };
         assert!(cabe(1, config).is_err());
+    }
+
+    #[test]
+    fn o_caminho_chega_ao_windows_sem_o_prefixo_canonico() {
+        // O defeito do primeiro teste: 0x7C, "caminho inválido", em todo
+        // arquivo, porque o caminho ia como `\\?\C:\...`.
+        assert_eq!(
+            para_o_shell(r"\\?\C:\Users\eu\Downloads\a.apk"),
+            r"C:\Users\eu\Downloads\a.apk"
+        );
+        assert_eq!(
+            para_o_shell(r"\\?\UNC\servidor\pasta\a.txt"),
+            r"\\servidor\pasta\a.txt"
+        );
+        // O que já está na forma comum passa como veio.
+        assert_eq!(para_o_shell(r"C:\Users\eu\a.txt"), r"C:\Users\eu\a.txt");
     }
 
     #[test]
