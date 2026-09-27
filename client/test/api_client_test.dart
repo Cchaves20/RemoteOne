@@ -156,42 +156,6 @@ void main() {
     expect(device.online, isTrue);
   });
 
-  test('deleteFile manda DELETE com o caminho e aceita 204', () async {
-    http.Request? pedido;
-    final client = ApiClient(
-      baseUrl: 'http://test',
-      tokenStore: InMemoryTokenStore(),
-      httpClient: MockClient((req) async {
-        pedido = req;
-        return http.Response('', 204);
-      }),
-    );
-    await client.deleteFile('dev-1', r'C:\Users\eu\nota & ideias.txt');
-    expect(pedido?.method, 'DELETE');
-    expect(pedido?.url.path, '/api/v1/devices/dev-1/files');
-    // Codificado: um `&` no nome não pode virar outro parâmetro.
-    expect(pedido?.url.queryParameters['path'], r'C:\Users\eu\nota & ideias.txt');
-  });
-
-  test('deleteFile recusado traz o motivo do computador', () async {
-    // O motivo é o que diz à pessoa que o arquivo continua lá.
-    final client = ApiClient(
-      baseUrl: 'http://test',
-      tokenStore: InMemoryTokenStore(),
-      httpClient: MockClient((req) async => http.Response(
-            jsonEncode({'detail': 'pastas não são excluídas pelo celular'}),
-            400,
-            headers: {'content-type': 'application/json; charset=utf-8'},
-          )),
-    );
-    await expectLater(
-      client.deleteFile('dev-1', 'C:/pasta'),
-      throwsA(isA<ApiException>()
-          .having((e) => e.statusCode, 'status', 400)
-          .having((e) => e.message, 'message', contains('pastas'))),
-    );
-  });
-
   test('powerDevice envia a ação e aceita 204', () async {
     Map<String, dynamic>? body;
     final client = ApiClient(

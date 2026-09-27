@@ -31,7 +31,6 @@ from app.protocol import (
     ClipboardChanged,
     Error,
     FileChunk,
-    FileDeleted,
     FileDone,
     FileList,
     Foreground,
@@ -512,8 +511,6 @@ async def agent_ws(websocket: WebSocket) -> None:
                         "error": message.error,
                     },
                 )
-            elif isinstance(message, FileDeleted):
-                pending.resolve(message.request_id, {"error": message.error})
             elif isinstance(message, FileChunk):
                 # Pedaço de um arquivo indo ao celular. O `await` aqui é o que
                 # segura o agente quando o celular não consome: a fila enche e

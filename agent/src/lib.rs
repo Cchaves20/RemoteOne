@@ -5,10 +5,10 @@
 //! (`main.rs`) é apenas uma casca fina por cima dela.
 
 pub mod adaptive;
-pub mod agenda;
 pub mod apps;
-pub mod apresentacao;
 pub mod atualizacao;
+pub mod apresentacao;
+pub mod agenda;
 pub mod audio;
 pub mod automacao;
 pub mod awake;
@@ -23,13 +23,12 @@ pub mod foreground;
 pub mod gui;
 pub mod h264;
 pub mod identity;
+pub mod instance;
+pub mod migracao;
 pub mod injector;
 pub mod input;
-pub mod instance;
 pub mod janelas;
-pub mod lixeira;
 pub mod lote;
-pub mod migracao;
 pub mod notify;
 pub mod pairing;
 pub mod platform;

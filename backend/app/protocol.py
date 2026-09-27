@@ -329,14 +329,6 @@ class FileList(BaseModel):
     error: str | None = None
 
 
-class FileDeleted(BaseModel):
-    """Resposta do agente a um `delete_file`. Sem `error`, foi para a Lixeira."""
-
-    type: Literal["file_deleted"] = "file_deleted"
-    request_id: str
-    error: str | None = None
-
-
 class FileChunk(BaseModel):
     """Um pedaço de arquivo vindo do computador. `data` é base64."""
 
@@ -393,7 +385,6 @@ ClientMessage = Annotated[
     | LaunchManyResult
     | AutomationResult
     | FileList
-    | FileDeleted
     | FileChunk
     | FileDone
     | WebrtcAnswer

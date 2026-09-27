@@ -36,10 +36,6 @@ class _FilesScreenState extends State<FilesScreen> {
   /// três ao mesmo tempo numa conexão só.
   String? _busy;
 
-  /// O que está em curso é uma exclusão, e não uma transferência: muda só o
-  /// texto da faixa de progresso.
-  bool _excluindo = false;
-
   @override
   void initState() {
     super.initState();
@@ -96,65 +92,6 @@ class _FilesScreenState extends State<FilesScreen> {
       );
     } finally {
       if (mounted) setState(() => _busy = null);
-    }
-  }
-
-  /// Manda um arquivo do computador para a Lixeira dele, depois de perguntar.
-  ///
-  /// A pergunta diz **onde** o arquivo vai parar e **como** trazê-lo de volta.
-  /// Um "tem certeza?" seco faria a pessoa confirmar sem saber se o erro tem
-  /// volta — e tem, porque o agente só exclui o que cabe na Lixeira.
-  Future<void> _delete(RemoteFile file) async {
-    if (_busy != null) return;
-    final t = widget.state.t;
-    final erro = Theme.of(context).colorScheme.error;
-    final confirmou = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.delete_outline),
-        title: Text(t.fileDeleteTitle(file.name)),
-        content: Text(t.fileDeleteBody),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(t.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: TextButton.styleFrom(foregroundColor: erro),
-            child: Text(t.delete),
-          ),
-        ],
-      ),
-    );
-    if (confirmou != true || !mounted) return;
-
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() {
-      _busy = file.name;
-      _excluindo = true;
-    });
-    try {
-      await widget.state.deleteFile(widget.device, file.path);
-      messenger.showSnackBar(
-        SnackBar(content: Text(t.fileDeleted(file.name))),
-      );
-      // Relê a pasta em vez de tirar o item da lista na mão: é o computador
-      // quem sabe o que ficou lá.
-      if (mounted) await _open(_listing?.path ?? '');
-    } catch (e) {
-      // O motivo vem do computador ("maior que a Lixeira", "aberto em outro
-      // programa") e é o que diz à pessoa que o arquivo continua lá.
-      messenger.showSnackBar(
-        SnackBar(content: Text('${t.fileDeleteFailed}: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = null;
-          _excluindo = false;
-        });
-      }
     }
   }
 
@@ -246,8 +183,7 @@ class _FilesScreenState extends State<FilesScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
                 title: Text(_busy!),
-                subtitle:
-                    Text(_excluindo ? t.fileDeleting : t.fileTransferring),
+                subtitle: Text(t.fileTransferring),
               ),
             ),
           if (_loading) const LinearProgressIndicator(),
@@ -304,35 +240,12 @@ class _FilesScreenState extends State<FilesScreen> {
             leading: Icon(item.isDir ? Icons.folder : Icons.insert_drive_file),
             title: Text(item.name, overflow: TextOverflow.ellipsis),
             subtitle: item.isDir ? null : Text(_size(item.size)),
-            // Um menu, e não dois ícones lado a lado: o de excluir colado ao
-            // de baixar seria tocado por engano, e a lista não tem largura
-            // para os dois num celular estreito.
             trailing: item.isDir
                 ? const Icon(Icons.chevron_right)
-                : PopupMenuButton<_AcaoDoArquivo>(
-                    enabled: _busy == null,
-                    onSelected: (acao) => switch (acao) {
-                      _AcaoDoArquivo.trazer => _download(item),
-                      _AcaoDoArquivo.excluir => _delete(item),
-                    },
-                    itemBuilder: (_) => [
-                      PopupMenuItem(
-                        value: _AcaoDoArquivo.trazer,
-                        child: ListTile(
-                          leading: const Icon(Icons.download),
-                          title: Text(t.fileBring),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: _AcaoDoArquivo.excluir,
-                        child: ListTile(
-                          leading: const Icon(Icons.delete_outline),
-                          title: Text(t.delete),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                    ],
+                : IconButton(
+                    tooltip: t.fileBring,
+                    icon: const Icon(Icons.download),
+                    onPressed: _busy == null ? () => _download(item) : null,
                   ),
             onTap: item.isDir
                 ? (_loading ? null : () => _open(item.path))
@@ -442,6 +355,3 @@ class _FilesScreenState extends State<FilesScreen> {
     );
   }
 }
-
-/// O que o menu de um arquivo oferece.
-enum _AcaoDoArquivo { trazer, excluir }

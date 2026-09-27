@@ -201,12 +201,6 @@ pub enum ClientMessage {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
-    /// Resposta a um `delete_file`. Sem `error`, o arquivo foi para a Lixeira.
-    FileDeleted {
-        request_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        error: Option<String>,
-    },
     /// Um pedaço de um arquivo que o app pediu para baixar. `data` é base64.
     ///
     /// A sequência existe para o backend detectar pedaço fora de ordem em vez de
@@ -424,11 +418,6 @@ pub enum ServerMessage {
     ListFiles {
         request_id: String,
         #[serde(default)]
-        path: String,
-    },
-    /// Pede que o agente mande um arquivo para a Lixeira (ver `lixeira.rs`).
-    DeleteFile {
-        request_id: String,
         path: String,
     },
     /// Pede que o agente leia um arquivo e o mande em pedaços (`file_chunk`).
@@ -815,17 +804,6 @@ mod tests {
                 path: String::new()
             }
         );
-        let excluir: ServerMessage = serde_json::from_str(
-            r#"{"type":"delete_file","request_id":"r2","path":"C:\\Users\\eu\\a.txt"}"#,
-        )
-        .unwrap();
-        assert_eq!(
-            excluir,
-            ServerMessage::DeleteFile {
-                request_id: "r2".into(),
-                path: "C:\\Users\\eu\\a.txt".into()
-            }
-        );
         let inicio: ServerMessage = serde_json::from_str(
             r#"{"type":"write_file_begin","transfer_id":"t1","name":"foto.png","size":10}"#,
         )
@@ -868,17 +846,6 @@ mod tests {
 
     #[test]
     fn file_list_carrega_erro_ou_conteudo() {
-        let excluiu = serde_json::to_value(&ClientMessage::FileDeleted {
-            request_id: "r2".into(),
-            error: None,
-        })
-        .unwrap();
-        assert_eq!(excluiu["type"], "file_deleted");
-        assert!(
-            excluiu.get("error").is_none(),
-            "sem erro no fio quando deu certo"
-        );
-
         let erro = serde_json::to_value(&ClientMessage::FileList {
             request_id: "r1".into(),
             listing: None,
