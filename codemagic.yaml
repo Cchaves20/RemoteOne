@@ -692,6 +692,14 @@ workflows:
           flutter build apk --release --no-shrink \
             --dart-define=DESKSIDE_BACKEND=https://deskside.com.br \
             --dart-define=DESKSIDE_COMMIT=$CM_COMMIT
+
+          # O APK leva o commit no nome. Com o nome padrão, todo build saía
+          # como `app-release.apk`, o navegador salvava os repetidos como
+          # `app-release (1).apk`, `(2)`... e um antigo foi instalado no lugar
+          # do novo mais de uma vez, sem nada que distinguisse os dois.
+          SAIDA=build/app/outputs/flutter-apk
+          mv "$SAIDA/app-release.apk" "$SAIDA/Deskside-${CM_COMMIT:0:7}.apk"
+          ls -la "$SAIDA"
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       - client/build/app/outputs/flutter-apk/*.apk
