@@ -14,6 +14,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signa
 # (VPS/Caddy). No Windows usa o SChannel nativo do sistema (sem OpenSSL nem
 # crypto provider do rustls); no Linux de dev usa OpenSSL.
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+# O mesmo TLS, usado direto para baixar atualizações (ver `atualizacao.rs`).
+# Já vinha na árvore por baixo do `tokio-tungstenite`: nenhuma crate nova.
+native-tls = "0.2"
 futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
 gethostname = "0.5"

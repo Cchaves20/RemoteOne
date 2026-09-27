@@ -69,6 +69,21 @@ pub struct Estado {
     pub desinstalar: bool,
     /// O servidor confirmou que o computador saiu da conta.
     pub desparear_ok: bool,
+    /// Se há versão nova no site. Escrito por `atualizacao::vigiar`.
+    pub atualizacao: Atualizacao,
+}
+
+/// Em que pé está a atualização, para a janela mostrar o botão certo.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Atualizacao {
+    /// Em dia, ou ainda não se sabe.
+    #[default]
+    Nenhuma,
+    Disponivel,
+    /// Baixando; o agente reinicia sozinho ao terminar.
+    Aplicando,
+    /// A última tentativa não deu certo, e o texto diz por quê.
+    Falhou(String),
 }
 
 /// O aviso de que uma automação vai rodar.
@@ -98,7 +113,7 @@ pub fn rodar(estado: Compartilhado) {
 
 #[cfg(windows)]
 mod imp {
-    use super::{AvisoDeAgenda, Compartilhado, Estado};
+    use super::{Atualizacao, AvisoDeAgenda, Compartilhado, Estado};
     use eframe::egui;
     use std::sync::OnceLock;
     use tray_icon::{
@@ -196,6 +211,70 @@ mod imp {
         });
     }
 
+    /// Baixa, confere e passa a vez ao ajudante. Só volta se der errado.
+    ///
+    /// Bloqueia quem chama: o download leva segundos, então quem chama é
+    /// sempre uma thread feita para isto, nunca a da janela nem a da bandeja.
+    /// Dando certo, o processo **sai** — o ajudante espera por isso para
+    /// trocar o executável e subir a versão nova.
+    fn aplicar_atualizacao(estado: &Compartilhado) -> Result<(), String> {
+        let backend = match estado.lock() {
+            Ok(mut e) => {
+                e.atualizacao = Atualizacao::Aplicando;
+                e.backend.clone()
+            }
+            Err(_) => return Err("estado interno indisponível".into()),
+        };
+        match crate::atualizacao::aplicar(&backend) {
+            Ok(()) => {
+                crate::diario("saindo para o ajudante trocar o executável");
+                std::process::exit(0);
+            }
+            Err(e) => {
+                crate::diario(&format!("atualização não aplicada: {e}"));
+                if let Ok(mut s) = estado.lock() {
+                    s.atualizacao = Atualizacao::Falhou(e.clone());
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// "Procurar atualização", no menu da bandeja.
+    ///
+    /// Existe além do botão da janela porque há máquina em que a janela não
+    /// abre (ver `bandeja_sem_placa_de_video`). Ali tudo vira caixa do
+    /// Windows, inclusive a resposta de "já está em dia" — um clique que não
+    /// responde nada parece defeito.
+    fn procurar_atualizacao_pela_bandeja(estado: Compartilhado) {
+        use crate::atualizacao::Situacao;
+        std::thread::spawn(move || {
+            let backend = estado.lock().map(|e| e.backend.clone()).unwrap_or_default();
+            match crate::atualizacao::verificar(&backend) {
+                Ok(Situacao::EmDia) => {
+                    if let Ok(mut e) = estado.lock() {
+                        e.atualizacao = Atualizacao::Nenhuma;
+                    }
+                    caixa("O Deskside está em dia: este computador já tem a versão mais recente.");
+                }
+                Ok(Situacao::NaoSeAplica(motivo)) => {
+                    caixa(&format!("Este Deskside não se atualiza sozinho: {motivo}."));
+                }
+                Err(e) => caixa(&format!("Não consegui verificar agora.\n\n{e}")),
+                Ok(Situacao::Disponivel) => {
+                    if let Ok(mut e) = estado.lock() {
+                        e.atualizacao = Atualizacao::Disponivel;
+                    }
+                    if caixa_de_atualizar() {
+                        if let Err(e) = aplicar_atualizacao(&estado) {
+                            caixa(&format!("Não deu para atualizar.\n\n{e}"));
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     pub fn mostrar_janela() {
         match achar_janela() {
             Some(janela) => unsafe {
@@ -240,6 +319,7 @@ mod imp {
         id_abrir: MenuId,
         id_sair: MenuId,
         id_desinstalar: MenuId,
+        id_atualizar: MenuId,
         copiado: bool,
         /// A confirmação de desinstalar está à mostra.
         confirmando_saida: bool,
@@ -261,12 +341,15 @@ mod imp {
             // acesso remoto". O botão de sair do produto foi parar exatamente
             // ali, e nessas máquinas não havia como removê-lo pela interface.
             let desinstalar = MenuItem::new("Desinstalar o Deskside", true, None);
+            let atualizar = MenuItem::new("Procurar atualização", true, None);
             let sair = MenuItem::new("Sair", true, None);
             let (id_abrir, id_sair) = (abrir.id().clone(), sair.id().clone());
             let id_desinstalar = desinstalar.id().clone();
+            let id_atualizar = atualizar.id().clone();
 
             let menu = Menu::new();
             let _ = menu.append(&abrir);
+            let _ = menu.append(&atualizar);
             let _ = menu.append(&tray_icon::menu::PredefinedMenuItem::separator());
             let _ = menu.append(&desinstalar);
             let _ = menu.append(&sair);
@@ -330,6 +413,7 @@ mod imp {
                 id_abrir,
                 id_sair,
                 id_desinstalar,
+                id_atualizar,
                 copiado: false,
                 confirmando_saida: false,
                 saindo: false,
@@ -413,6 +497,8 @@ mod imp {
                     if caixa_de_desinstalar() {
                         desinstalar_em_segundo_plano(self.estado.clone());
                     }
+                } else if evento.id == self.id_atualizar {
+                    procurar_atualizacao_pela_bandeja(self.estado.clone());
                 } else if evento.id == self.id_sair {
                     // O agente vive numa thread solta; encerrar o processo é o
                     // jeito honesto de parar tudo de uma vez.
@@ -480,6 +566,8 @@ mod imp {
                 }
             });
 
+            self.desenhar_atualizacao(ui, estado);
+
             ui.add_space(12.0);
             linha(ui, "Computador", &estado.hostname);
             linha(ui, "Servidor", &estado.backend);
@@ -508,6 +596,48 @@ mod imp {
 
             ui.add_space(20.0);
             self.desenhar_desinstalar(ui);
+        }
+
+        /// O botão de atualizar, quando há o que atualizar.
+        ///
+        /// Aparece só com versão nova no site. Um botão sempre à mostra
+        /// ensinaria a pessoa a ignorá-lo; este, quando surge, é notícia.
+        fn desenhar_atualizacao(&mut self, ui: &mut egui::Ui, estado: &Estado) {
+            let (titulo, texto, botao) = match &estado.atualizacao {
+                Atualizacao::Nenhuma => return,
+                Atualizacao::Disponivel => (
+                    "Há uma versão nova do Deskside",
+                    "Leva alguns segundos. O Deskside reinicia sozinho, e o celular \
+                     reconecta em seguida."
+                        .to_string(),
+                    Some("Atualizar"),
+                ),
+                Atualizacao::Aplicando => (
+                    "Atualizando...",
+                    "O Deskside reinicia sozinho em instantes.".to_string(),
+                    None,
+                ),
+                Atualizacao::Falhou(erro) => (
+                    "Não deu para atualizar",
+                    format!("{erro}\nEste computador continua na versão de antes."),
+                    Some("Tentar de novo"),
+                ),
+            };
+            ui.add_space(12.0);
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                ui.label(egui::RichText::new(titulo).strong());
+                ui.label(egui::RichText::new(texto).small().weak());
+                if let Some(rotulo) = botao {
+                    ui.add_space(6.0);
+                    if ui.button(rotulo).clicked() {
+                        let estado = self.estado.clone();
+                        std::thread::spawn(move || {
+                            let _ = aplicar_atualizacao(&estado);
+                        });
+                    }
+                }
+            });
         }
 
         /// Sair de vez, e por que este botão existe.
@@ -719,12 +849,15 @@ mod imp {
         // Aqui é o **único** lugar de onde dá para desinstalar pela interface:
         // esta máquina não abre janela nenhuma.
         let desinstalar = MenuItem::new("Desinstalar o Deskside", true, None);
+        let atualizar = MenuItem::new("Procurar atualização", true, None);
         let sair = MenuItem::new("Sair", true, None);
         let (id_abrir, id_sair) = (abrir.id().clone(), sair.id().clone());
         let id_desinstalar = desinstalar.id().clone();
+        let id_atualizar = atualizar.id().clone();
 
         let menu = Menu::new();
         let _ = menu.append(&abrir);
+        let _ = menu.append(&atualizar);
         let _ = menu.append(&tray_icon::menu::PredefinedMenuItem::separator());
         let _ = menu.append(&desinstalar);
         let _ = menu.append(&sair);
@@ -756,6 +889,8 @@ mod imp {
                         if caixa_de_desinstalar() {
                             desinstalar_em_segundo_plano(do_menu.clone());
                         }
+                    } else if evento.id == id_atualizar {
+                        procurar_atualizacao_pela_bandeja(do_menu.clone());
                     } else if evento.id == id_sair {
                         std::process::exit(0);
                     }
@@ -1021,6 +1156,30 @@ mod imp {
                     | MB_DEFBUTTON2
                     | MB_SETFOREGROUND
                     | MB_TOPMOST,
+            )
+        };
+        resposta == ID_YES
+    }
+
+    /// Pergunta se atualiza agora. `true` = sim.
+    ///
+    /// Com o "Sim" como padrão, ao contrário da de desinstalar: atualizar não
+    /// apaga nada, e dá errado voltando sozinho à versão de antes.
+    fn caixa_de_atualizar() -> bool {
+        let texto = "Há uma versão nova do Deskside.\n\n\
+             Atualizar agora? Leva alguns segundos: o Deskside reinicia \
+             sozinho, e o celular reconecta em seguida.";
+        let texto: Vec<u16> = texto.encode_utf16().chain(std::iter::once(0)).collect();
+        let titulo: Vec<u16> = "Deskside"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let resposta = unsafe {
+            MessageBoxW(
+                0,
+                texto.as_ptr(),
+                titulo.as_ptr(),
+                MB_YESNO | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST,
             )
         };
         resposta == ID_YES

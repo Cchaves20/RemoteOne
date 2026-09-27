@@ -172,6 +172,18 @@ Dell publica o x64 e mandar no MateBook publica o ARM64 — e o nome sai do
 cabeçalho, nunca de um parâmetro. É o que torna impossível repetir o erro de
 publicar o ARM64 com o nome do x64.
 
+### O resumo que vai junto, e para que serve
+
+Junto com cada `.exe` o `-Publicar` manda um `.sha256` (`Deskside.exe.sha256`,
+`Deskside-ARM64.exe.sha256`). É por ele que o agente instalado descobre que há
+versão nova: compara com o resumo do próprio arquivo e, se for diferente, a
+janela mostra **Atualizar** e o menu da bandeja responde em "Procurar
+atualização". Ver `agent/src/atualizacao.rs`.
+
+Por isso **publicar à mão pelo `scp` de cima não avisa ninguém**: sem o
+`.sha256` novo, os agentes continuam comparando com o velho. Use o
+`atualizar.cmd -Publicar`, que manda os dois, o executável primeiro.
+
 Automatizar **antes** de o fluxo funcionar à mão teria sido embutir num script
 de 800 linhas um passo que ninguém viu dar certo. Os quatro tropeços de ontem
 teriam acontecido lá dentro, e não na linha que se acabou de digitar.

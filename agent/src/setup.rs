@@ -706,6 +706,12 @@ mod imp {
             .args(["delete", &format!("HKCU\\{UNINSTALL_KEY}"), "/f"])
             .output();
 
+        // O que uma atualização deixou na pasta. Sem isto o `rmdir` abaixo,
+        // que só remove pasta vazia, deixaria a pasta do Deskside para trás.
+        for sobra in crate::atualizacao::SOBRAS {
+            let _ = std::fs::remove_file(plano.dir.join(sobra));
+        }
+
         // O executável que está rodando **agora** não pode se apagar. Quem
         // apaga é um `cmd` que espera um instante e some junto — sem isso a
         // desinstalação deixaria o próprio programa para trás, que é a única

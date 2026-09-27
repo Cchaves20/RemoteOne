@@ -66,8 +66,19 @@ const HEARTBEAT_SECS: u64 = 10;
 /// comandos e uma opção. `clap` traria meio megabyte de binário e uma
 /// dependência para resolver um problema que ainda não existe.
 enum Cmd {
-    Run,
-    Install { backend: Option<String> },
+    /// `atualizado`: quem chamou foi o ajudante da atualização, que espera a
+    /// prova de que esta versão conecta (ver `atualizacao.rs`).
+    Run {
+        atualizado: bool,
+    },
+    /// Este processo **é** o ajudante: troca o executável do agente que
+    /// acabou de sair (`pid`) e confere se o novo funciona.
+    AplicarAtualizacao {
+        pid: u32,
+    },
+    Install {
+        backend: Option<String>,
+    },
     Uninstall,
     Status,
     Help,
@@ -75,7 +86,7 @@ enum Cmd {
 
 fn parse_args(args: &[String]) -> Cmd {
     match args.first().map(String::as_str) {
-        None => Cmd::Run,
+        None => Cmd::Run { atualizado: false },
         Some("install") => {
             // `install --backend URL` ou `install URL`: as duas formas, porque
             // quem digita isto uma vez na vida não vai lembrar da flag.
@@ -93,7 +104,16 @@ fn parse_args(args: &[String]) -> Cmd {
         }
         Some("uninstall") | Some("remove") => Cmd::Uninstall,
         Some("status") => Cmd::Status,
-        Some("run") => Cmd::Run,
+        Some("run") => Cmd::Run { atualizado: false },
+        Some(a) if a == deskside_agent::atualizacao::ARG_ATUALIZADO => {
+            Cmd::Run { atualizado: true }
+        }
+        Some(a) if a == deskside_agent::atualizacao::ARG_APLICAR => {
+            match args.get(1).and_then(|p| p.parse().ok()) {
+                Some(pid) => Cmd::AplicarAtualizacao { pid },
+                None => Cmd::Help,
+            }
+        }
         _ => Cmd::Help,
     }
 }
@@ -270,7 +290,7 @@ fn main() {
     if !args.is_empty() {
         anexar_ao_terminal();
     }
-    match parse_args(&args) {
+    let atualizado = match parse_args(&args) {
         Cmd::Help => {
             println!("{HELP}");
             return;
@@ -295,8 +315,14 @@ fn main() {
             }
             return;
         }
-        Cmd::Run => {}
-    }
+        Cmd::AplicarAtualizacao { pid } => {
+            // Antes da guarda de instância e de tudo o mais: o ajudante não é
+            // um agente, e subir como um disputaria o nome com o novo.
+            deskside_agent::atualizacao::executar_ajudante(pid);
+            return;
+        }
+        Cmd::Run { atualizado } => atualizado,
+    };
 
     // A **primeira** linha do diário, antes de qualquer outra coisa. Ela é a
     // metade que faltava para responder "por que o agente demora a ficar
@@ -433,7 +459,15 @@ fn main() {
         cancelar: None,
         desinstalar: false,
         desparear_ok: false,
+        atualizacao: Default::default(),
     });
+
+    if atualizado {
+        deskside_agent::atualizacao::provar_quando_conectar(estado.clone());
+    } else {
+        deskside_agent::atualizacao::limpar_sobras();
+    }
+    deskside_agent::atualizacao::vigiar(estado.clone());
 
     // O agente sobe **antes** da interface e independe dela. Se a janela não
     // abrir - sessão sem desktop, driver gráfico recusando -, o computador
@@ -478,8 +512,36 @@ mod tests {
     fn sem_argumento_o_agente_roda() {
         // É o que acontece ao dar dois cliques no executável, e é o caso mais
         // comum: quem instalou não digita nada nunca mais.
-        assert!(matches!(parse_args(&args(&[])), Cmd::Run));
-        assert!(matches!(parse_args(&args(&["run"])), Cmd::Run));
+        assert!(matches!(
+            parse_args(&args(&[])),
+            Cmd::Run { atualizado: false }
+        ));
+        assert!(matches!(
+            parse_args(&args(&["run"])),
+            Cmd::Run { atualizado: false }
+        ));
+    }
+
+    #[test]
+    fn o_ajudante_e_o_agente_novo_sao_reconhecidos() {
+        assert!(matches!(
+            parse_args(&args(&["--aplicar-atualizacao", "4242"])),
+            Cmd::AplicarAtualizacao { pid: 4242 }
+        ));
+        assert!(matches!(
+            parse_args(&args(&["--atualizado"])),
+            Cmd::Run { atualizado: true }
+        ));
+        // Sem PID de verdade não há o que esperar, e trocar o executável
+        // debaixo de um agente em uso seria pior que não atualizar.
+        assert!(matches!(
+            parse_args(&args(&["--aplicar-atualizacao"])),
+            Cmd::Help
+        ));
+        assert!(matches!(
+            parse_args(&args(&["--aplicar-atualizacao", "x"])),
+            Cmd::Help
+        ));
     }
 
     #[test]
