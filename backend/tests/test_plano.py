@@ -6,6 +6,7 @@ a pessoa desinstala e não conta para ninguém. Metade destes testes existe para
 provar que o caminho principal continua aberto sem pagar nada.
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -246,6 +247,7 @@ def test_editar_para_agendar_tambem_e_recusado():
     "metodo,rota,corpo",
     [
         ("get", "/api/v1/devices/dev-pago/files", None),
+        ("delete", "/api/v1/devices/dev-pago/files?path=a.txt", None),
         ("post", "/api/v1/devices/dev-pago/audio", {"enabled": True}),
         ("post", "/api/v1/devices/dev-pago/presentation", {"on": True}),
         ("post", "/api/v1/devices/dev-pago/monitors", {"monitor": 1}),
@@ -260,7 +262,7 @@ def test_os_recursos_pagos_recusam_com_402_e_dizem_qual(metodo, rota, corpo):
     um 403 faria o aplicativo mostrar "acesso negado" a quem só precisava saber
     que existe um plano.
     """
-    token = _conta_gratis(f"gratis-{rota.replace('/', '-')}@example.com")
+    token = _conta_gratis(f"gratis-{metodo}{re.sub(r'[^a-z0-9]', '-', rota)}@example.com")
     _parear(token, "dev-pago")
 
     # `client.request` e não `client.get(json=...)`: o httpx recusa corpo

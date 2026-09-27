@@ -953,6 +953,26 @@ class ApiClient {
     return res.bodyBytes;
   }
 
+  /// Manda um arquivo do computador para a Lixeira dele.
+  ///
+  /// Lança `ApiException(400)` com o motivo quando o computador recusa — o
+  /// que a Lixeira não comportaria, por exemplo. Recusar é o que garante que
+  /// "vai para a Lixeira" seja verdade: o arquivo continua lá.
+  Future<void> deleteFile(String deviceId, String path) async {
+    final res = await _http
+        .delete(
+          _uri('/api/v1/devices/$deviceId/files'
+              '?path=${Uri.encodeQueryComponent(path)}'),
+          headers: _authHeaders,
+        )
+        // Mais que os 30 s que o servidor espera pelo computador, para a
+        // resposta dele chegar em vez de um tempo esgotado genérico.
+        .timeout(const Duration(seconds: 40));
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
   /// Envia um arquivo ao computador. Devolve onde ele foi salvo.
   Future<String> uploadFile(
     String deviceId,

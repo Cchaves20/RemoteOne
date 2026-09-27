@@ -72,12 +72,14 @@ class FileAgent:
         content: bytes | None = None,
         chunk: int = 8,
         accept_upload: bool = True,
+        responde_exclusao: bool = True,
     ):
         self.listing = listing
         self.error = error
         self.content = content
         self.chunk = chunk
         self.accept_upload = accept_upload
+        self.responde_exclusao = responde_exclusao
         self.sent: list[dict] = []
         self.received = bytearray()
         self._tasks: list[asyncio.Task] = []
@@ -89,6 +91,10 @@ class FileAgent:
             pending.resolve(
                 message["request_id"], {"listing": self.listing, "error": self.error}
             )
+        elif kind == "delete_file":
+            if not self.responde_exclusao:
+                return
+            pending.resolve(message["request_id"], {"error": self.error})
         elif kind == "read_file":
             # Numa tarefa à parte, e não aqui dentro: o agente de verdade é
             # outro processo, que segue lendo enquanto o backend responde.
@@ -239,6 +245,104 @@ def test_lista_de_outra_conta_404():
     intruso, _ = _auth_headers("arq5@example.com")
     resp = client.get("/api/v1/devices/dev-arq-4/files", headers=intruso)
     assert resp.status_code == 404
+
+
+# --- excluir -----------------------------------------------------------------
+
+
+def test_exclui_o_arquivo_pelo_caminho():
+    headers, uid = _auth_headers("exc1@example.com")
+    _add_device(uid, "dev-exc-1")
+    agent = FileAgent()
+    manager.register("dev-exc-1", agent)
+    try:
+        resp = client.delete(
+            "/api/v1/devices/dev-exc-1/files",
+            params={"path": "C:\\Users\\eu\\nota.txt"},
+            headers=headers,
+        )
+    finally:
+        manager.unregister("dev-exc-1")
+    assert resp.status_code == 204
+    assert agent.of_type("delete_file")[0]["path"] == "C:\\Users\\eu\\nota.txt"
+
+
+def test_recusa_do_agente_chega_ao_app_com_o_motivo():
+    """O motivo é o que diz à pessoa que o arquivo **não** foi apagado."""
+    headers, uid = _auth_headers("exc2@example.com")
+    _add_device(uid, "dev-exc-2")
+    motivo = "o arquivo (900 MB) é maior que a Lixeira deste computador (500 MB)"
+    manager.register("dev-exc-2", FileAgent(error=motivo))
+    try:
+        resp = client.delete(
+            "/api/v1/devices/dev-exc-2/files?path=C:/x.bin", headers=headers
+        )
+    finally:
+        manager.unregister("dev-exc-2")
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == motivo
+
+
+def test_excluir_sem_caminho_nao_chega_ao_computador():
+    headers, uid = _auth_headers("exc3@example.com")
+    _add_device(uid, "dev-exc-3")
+    agent = FileAgent()
+    manager.register("dev-exc-3", agent)
+    try:
+        resp = client.delete("/api/v1/devices/dev-exc-3/files", headers=headers)
+    finally:
+        manager.unregister("dev-exc-3")
+    assert resp.status_code == 422
+    assert agent.of_type("delete_file") == []
+
+
+def test_excluir_com_agente_offline_503():
+    headers, uid = _auth_headers("exc4@example.com")
+    _add_device(uid, "dev-exc-4")
+    resp = client.delete("/api/v1/devices/dev-exc-4/files?path=a.txt", headers=headers)
+    assert resp.status_code == 503
+
+
+def test_excluir_em_computador_de_outra_conta_404():
+    _, dono = _auth_headers("exc5@example.com")
+    _add_device(dono, "dev-exc-5")
+    intruso, _ = _auth_headers("exc6@example.com")
+    agent = FileAgent()
+    manager.register("dev-exc-5", agent)
+    try:
+        resp = client.delete(
+            "/api/v1/devices/dev-exc-5/files?path=a.txt", headers=intruso
+        )
+    finally:
+        manager.unregister("dev-exc-5")
+    assert resp.status_code == 404
+    assert agent.of_type("delete_file") == []
+
+
+def test_agente_antigo_que_nao_responde_vira_504_explicado(monkeypatch):
+    from app import devices
+
+    monkeypatch.setattr(devices, "_DELETE_TIMEOUT_SECONDS", 0.05)
+    headers, uid = _auth_headers("exc7@example.com")
+    _add_device(uid, "dev-exc-7")
+    manager.register("dev-exc-7", FileAgent(responde_exclusao=False))
+    try:
+        resp = client.delete(
+            "/api/v1/devices/dev-exc-7/files?path=a.txt", headers=headers
+        )
+    finally:
+        manager.unregister("dev-exc-7")
+    assert resp.status_code == 504
+    assert "atualize" in resp.json()["detail"]
+
+
+def test_parse_file_deleted():
+    ok = parse_client_message({"type": "file_deleted", "request_id": "r1"})
+    assert ok.error is None
+    falhou = parse_client_message(
+        {"type": "file_deleted", "request_id": "r1", "error": "pastas não"}
+    )
+    assert falhou.error == "pastas não"
 
 
 # --- baixar ------------------------------------------------------------------

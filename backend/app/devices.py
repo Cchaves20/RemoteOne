@@ -70,6 +70,9 @@ _BRIGHTNESS_TIMEOUT_SECONDS = 15
 _LAUNCH_MANY_TIMEOUT_SECONDS = 60
 # Listar uma pasta é ida e volta ao computador, como a lista de aplicativos.
 _FILES_TIMEOUT_SECONDS = 20
+#: Mais que a listagem: o agente espera até 20 s o próprio Windows, que pode
+#: estar parado numa pergunta na tela do computador (ver `agent/src/lixeira.rs`).
+_DELETE_TIMEOUT_SECONDS = 30
 # Quanto esperar por *cada* pedaço de um arquivo. Generoso: o computador pode
 # estar lendo de um disco lento, mas um silêncio longo é conexão morta.
 _CHUNK_TIMEOUT_SECONDS = 60
@@ -579,6 +582,46 @@ async def list_files(
             status_code=status.HTTP_400_BAD_REQUEST, detail=payload["error"]
         )
     return ListingOut(**payload["listing"])
+
+
+@router.delete("/devices/{device_id}/files", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_file(
+    device_id: str,
+    path: str = Query(..., min_length=1, max_length=4096),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Manda um arquivo do computador para a Lixeira dele.
+
+    Para a **Lixeira**, nunca de vez: o app promete isso na pergunta de
+    confirmação, e quem garante é o agente — ele recusa o que a Lixeira não
+    comportaria, e a recusa chega aqui como 400 com o motivo.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
+
+    request_id, future = pending.create()
+    message = {"type": "delete_file", "request_id": request_id, "path": path}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        payload = await asyncio.wait_for(future, timeout=_DELETE_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        # Um agente de antes desta função ignora o pedido, e o silêncio chega
+        # aqui como demora. Dizer as duas causas poupa a pessoa de esperar
+        # uma resposta que não vem.
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador não respondeu; se o Deskside dele for antigo, atualize-o",
+        ) from exc
+    if payload.get("error"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=payload["error"]
+        )
 
 
 @router.get("/devices/{device_id}/files/download")

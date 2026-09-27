@@ -560,6 +560,41 @@ class Strings {
   String get fileUploadFailed => _t('Não consegui enviar o arquivo',
       "Couldn't send the file", '无法发送该文件',
       "Impossible d'envoyer le fichier", 'No se pudo enviar el archivo');
+  String fileDeleteTitle(String name) => _t(
+      'Excluir “$name”?',
+      'Delete “$name”?',
+      '删除“$name”？',
+      'Supprimer « $name » ?',
+      '¿Eliminar «$name»?');
+  String get fileDeleteBody => _t(
+      'Ele vai para a Lixeira do computador, não é apagado de vez.\n\n'
+          'Para recuperar: no computador, abra a Lixeira, clique com o botão '
+          'direito no arquivo e escolha Restaurar. Ele volta para esta mesma pasta.',
+      "It goes to the computer's Recycle Bin; it is not deleted for good.\n\n"
+          'To get it back: on the computer, open the Recycle Bin, right-click the '
+          'file and choose Restore. It returns to this same folder.',
+      '文件会移到电脑的回收站，不会被永久删除。\n\n'
+          '如需恢复：在电脑上打开回收站，右键单击该文件，选择“还原”。'
+          '它会回到这个文件夹。',
+      "Il va dans la Corbeille de l'ordinateur ; il n'est pas supprimé "
+          "définitivement.\n\nPour le récupérer : sur l'ordinateur, ouvrez la "
+          'Corbeille, faites un clic droit sur le fichier et choisissez Restaurer. '
+          'Il revient dans ce même dossier.',
+      'Va a la Papelera de reciclaje del equipo; no se elimina para siempre.\n\n'
+          'Para recuperarlo: en el equipo, abre la Papelera de reciclaje, haz clic '
+          'derecho en el archivo y elige Restaurar. Vuelve a esta misma carpeta.');
+  String get fileDeleting => _t('Movendo para a Lixeira…',
+      'Moving to the Recycle Bin…', '正在移到回收站…',
+      'Déplacement vers la Corbeille…', 'Moviendo a la Papelera…');
+  String fileDeleted(String name) => _t(
+      '“$name” foi para a Lixeira do computador',
+      '“$name” went to the computer\'s Recycle Bin',
+      '“$name”已移到电脑的回收站',
+      "« $name » est dans la Corbeille de l'ordinateur",
+      '«$name» se movió a la Papelera del equipo');
+  String get fileDeleteFailed => _t('Não excluí o arquivo',
+      "The file wasn't deleted", '文件未删除',
+      "Le fichier n'a pas été supprimé", 'No se eliminó el archivo');
 
   // Painel de métricas do computador
   String get systemPanel =>

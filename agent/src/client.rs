@@ -1132,6 +1132,20 @@ pub async fn run(
                                 };
                                 ws.send(Message::Text(serde_json::to_string(&reply)?)).await?;
                             }
+                            // Mexe no disco e pode esperar o Windows: fora do
+                            // event loop, como a listagem.
+                            Some(Action::DeleteFile { request_id, path }) => {
+                                let resultado = tokio::task::spawn_blocking(move || {
+                                    crate::lixeira::mandar(&path)
+                                })
+                                .await
+                                .unwrap_or_else(|e| Err(format!("tarefa falhou: {e}")));
+                                let reply = ClientMessage::FileDeleted {
+                                    request_id,
+                                    error: resultado.err(),
+                                };
+                                ws.send(Message::Text(serde_json::to_string(&reply)?)).await?;
+                            }
                             // Leitura em thread própria, publicando pedaços no
                             // canal limitado: é ele que segura o disco quando a
                             // rede não acompanha.
@@ -1843,6 +1857,8 @@ enum Action {
     },
     /// Listar uma pasta e responder ao backend.
     ListFiles { request_id: String, path: String },
+    /// Mandar um arquivo para a Lixeira e responder.
+    DeleteFile { request_id: String, path: String },
     /// Ler um arquivo e mandá-lo em pedaços.
     ReadFile { transfer_id: String, path: String },
     /// Começar a receber um arquivo vindo do celular.
@@ -2033,6 +2049,9 @@ fn handle_server_text(
         // vivem no laço. Aqui só viram ação.
         Ok(ServerMessage::ListFiles { request_id, path }) => {
             return Some(Action::ListFiles { request_id, path });
+        }
+        Ok(ServerMessage::DeleteFile { request_id, path }) => {
+            return Some(Action::DeleteFile { request_id, path });
         }
         Ok(ServerMessage::ReadFile { transfer_id, path }) => {
             return Some(Action::ReadFile { transfer_id, path });

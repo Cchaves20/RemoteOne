@@ -612,6 +612,9 @@ class AppState extends ChangeNotifier {
   Future<Uint8List> downloadFile(Device device, String path) =>
       api.downloadFile(device.deviceId, path);
 
+  Future<void> deleteFile(Device device, String path) =>
+      api.deleteFile(device.deviceId, path);
+
   Future<String> uploadFile(Device device, String name, Uint8List bytes) =>
       api.uploadFile(device.deviceId, name, bytes);
 
