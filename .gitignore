@@ -58,3 +58,8 @@ deploy/backups/
 # docs/publicar-instalador.md.
 deploy/site/baixar/*.zip
 deploy/site/baixar/*.exe
+# O resumo de cada executavel (ver `atualizar.ps1 -Publicar`). Vai ao VPS pelo
+# mesmo `scp`, e **nao** pode estar no Git: um `git pull` no servidor trocaria o
+# resumo do executavel que esta no ar por um velho, e todo agente passaria a
+# ver uma "atualizacao" que nao bate com arquivo nenhum.
+deploy/site/baixar/*.sha256

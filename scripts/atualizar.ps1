@@ -749,6 +749,19 @@ if ($Publicar) {
             $mb = [math]::Round($item.Length / 1MB, 1)
             Write-Host "  $nomePublicado : $arq, $mb MB, de $($item.LastWriteTime)" -ForegroundColor DarkGray
 
+            # O resumo do executavel, publicado ao lado dele. E por ele que o
+            # agente instalado descobre que ha versao nova: o numero de versao
+            # do agente nunca muda (0.1.0 desde sempre), e comparar resumos nao
+            # depende de ninguem lembrar de trocar numero nenhum.
+            #
+            # WriteAllText sem codificacao grava UTF-8 SEM BOM, e isso importa:
+            # o agente compara o texto do arquivo com o resumo que ele calcula,
+            # e um BOM na frente faria os dois nunca serem iguais.
+            $resumo = (Get-FileHash $local -Algorithm SHA256).Hash.ToLower()
+            $localResumo = "$local.sha256"
+            [IO.File]::WriteAllText($localResumo, $resumo)
+            Write-Host "  resumo: $resumo" -ForegroundColor DarkGray
+
             # A data é a segunda conferência, e ela já salvou uma publicação:
             # quando o build falha, o .exe do build anterior continua no disco e
             # a cópia seguinte o leva sem erro nenhum. Um comando que da certo
@@ -766,9 +779,25 @@ if ($Publicar) {
             } else {
                 Passo "enviando para $Servidor"
                 & scp -i $ChaveSsh -o StrictHostKeyChecking=accept-new $local "${Servidor}:$raizRemota/deploy/site/baixar/"
-                if ($LASTEXITCODE -ne 0) {
+                $enviouExe = ($LASTEXITCODE -eq 0)
+                # O resumo vai DEPOIS do executavel, nunca antes. Na ordem
+                # contraria, por alguns segundos o site anunciaria uma versao
+                # nova enquanto ainda serve a velha; o agente baixaria a velha,
+                # o resumo nao bateria, e ele recusaria a atualizacao sem que
+                # nada estivesse errado.
+                $enviouResumo = $false
+                if ($enviouExe) {
+                    & scp -i $ChaveSsh -o StrictHostKeyChecking=accept-new $localResumo "${Servidor}:$raizRemota/deploy/site/baixar/"
+                    $enviouResumo = ($LASTEXITCODE -eq 0)
+                }
+                if (-not $enviouExe) {
                     $falhas += "publicar (scp)"
                     Write-Host "  O envio falhou." -ForegroundColor Red
+                } elseif (-not $enviouResumo) {
+                    # O executavel novo esta no ar, mas os agentes instalados
+                    # nao vao saber: continuam comparando com o resumo antigo.
+                    $falhas += "publicar (resumo)"
+                    Write-Host "  O executavel foi, o resumo nao. Os agentes nao vao ver a atualizacao." -ForegroundColor Red
                 } else {
                     # A pagina do site e versionada; o binario nao. Sem este
                     # `git pull`, um texto novo na pagina nunca chega ao ar.
