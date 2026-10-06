@@ -216,6 +216,29 @@ class Strings {
       '地址已复制', 'Adresse copiée', 'Dirección copiada');
   String get online => _t('Online', 'Online', '在线', 'En ligne', 'En línea');
   String get offline => _t('Offline', 'Offline', '离线', 'Hors ligne', 'Desconectado');
+  String get semConexaoTitulo => _t('Sem conexão com a internet',
+      'No internet connection', '没有网络连接', 'Pas de connexion Internet',
+      'Sin conexión a internet');
+  String get semConexaoTexto => _t(
+      'Seus computadores continuam na conta. Eles voltam a aparecer sozinhos '
+          'quando a internet voltar.',
+      'Your computers are still on your account. They will show up again on '
+          'their own when the internet is back.',
+      '你的电脑仍在账户中。网络恢复后会自动重新显示。',
+      'Vos ordinateurs sont toujours sur votre compte. Ils réapparaîtront '
+          "d'eux-mêmes au retour d'Internet.",
+      'Tus equipos siguen en tu cuenta. Volverán a aparecer solos cuando '
+          'vuelva internet.');
+  String get semConexaoAviso => _t('Sem internet: a lista pode estar desatualizada',
+      'No internet: this list may be out of date', '无网络：列表可能不是最新的',
+      'Pas d\'Internet : la liste peut être périmée',
+      'Sin internet: la lista puede estar desactualizada');
+  String get planoSemConexao => _t(
+      'Sem internet: seu plano aparece aqui quando a conexão voltar.',
+      'No internet: your plan will show here when the connection is back.',
+      '无网络：连接恢复后会在这里显示你的套餐。',
+      "Pas d'Internet : votre forfait s'affichera ici au retour de la connexion.",
+      'Sin internet: tu plan aparecerá aquí cuando vuelva la conexión.');
   String get control => _t('Controlar', 'Control', '控制', 'Contrôler', 'Controlar');
   String get rename => _t('Renomear', 'Rename', '重命名', 'Renommer', 'Renombrar');
   String get shutdown => _t('Desligar', 'Shut down', '关机', 'Éteindre', 'Apagar');

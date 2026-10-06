@@ -211,10 +211,24 @@ class SettingsScreen extends StatelessWidget {
     final t = state.t;
     final theme = Theme.of(context);
     final conta = state.conta;
-    final pago = conta?.ehPago ?? false;
-    final dias = conta?.diasRestantes;
-    final emTeste = conta?.emTeste ?? false;
-    final renova = conta?.renova ?? false;
+    // Conta ainda não lida (sem internet ao abrir o app): não dá para saber o
+    // plano. Tratar isso como grátis mostrava "Deskside grátis" e o botão
+    // Assinar a quem paga — e a pessoa podia assinar de novo por engano.
+    if (conta == null) {
+      return Row(
+        children: [
+          Icon(Icons.cloud_off, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(t.planoSemConexao, style: theme.textTheme.bodyMedium),
+          ),
+        ],
+      );
+    }
+    final pago = conta.ehPago;
+    final dias = conta.diasRestantes;
+    final emTeste = conta.emTeste;
+    final renova = conta.renova;
 
     // Quem tem o que comprar: o grátis e o que está no teste.
     //
@@ -223,9 +237,9 @@ class SettingsScreen extends StatelessWidget {
     // regra sobre o mesmo assunto — e o dia em que as duas discordassem, o app
     // ofereceria assinar numa tela e não na outra, para a mesma conta.
     final podeAssinar = ofereceAssinar(situacaoDaConta(
-      plano: conta?.plano ?? 'gratis',
+      plano: conta.plano,
       emTeste: emTeste,
-      planoAte: conta?.planoAte,
+      planoAte: conta.planoAte,
     ));
 
     // O prazo aparece sempre que existe.

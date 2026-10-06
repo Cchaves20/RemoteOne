@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -50,6 +51,23 @@ class AppState extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   bool appLockEnabled = false;
   bool twoFactorEnabled = false;
+
+  /// A última tentativa de falar com o servidor falhou por falta de rede.
+  ///
+  /// Separa "não há computadores" de "não consegui perguntar": sem isto, o app
+  /// aberto em modo avião mostrava a lista vazia com o convite para parear, e o
+  /// cartão do plano dizia "grátis" com o botão Assinar — para quem paga.
+  bool semConexao = false;
+
+  /// A próxima tentativa, enquanto `semConexao` durar.
+  Timer? _novaTentativa;
+  Duration _espera = _esperaInicial;
+  static const _esperaInicial = Duration(seconds: 5);
+  static const _esperaMaxima = Duration(minutes: 1);
+
+  /// A recarga em andamento, para a volta do segundo plano e a nova
+  /// tentativa agendada não dispararem duas ao mesmo tempo.
+  Future<void>? _recarregando;
 
   /// A conta de quem está logado. `null` enquanto o `/me` não respondeu — e a
   /// tela de conta trata isso mostrando o contato vazio em vez de adivinhar se
@@ -239,16 +257,69 @@ class AppState extends ChangeNotifier {
     } catch (_) {
       restored = false;
     }
-    if (restored) {
-      try {
-        await refreshDevices();
-        conta = await api.fetchAccount();
-        twoFactorEnabled = conta!.twoFactorEnabled;
-      } catch (_) {
-        // Sem rede agora: segue autenticado; a lista atualiza depois.
-      }
+    // Sem rede agora, segue autenticado, e `recarregar` tenta de novo sozinho
+    // até conseguir. Antes, a lista e a conta ficavam vazias até alguém
+    // fechar e abrir o app.
+    if (restored) await recarregar();
+    notifyListeners();
+  }
+
+  /// Relê os computadores e a conta. Não lança: falha de rede vira
+  /// `semConexao` e uma nova tentativa agendada.
+  ///
+  /// Chamado ao abrir o app, ao voltar do segundo plano e pela própria
+  /// tentativa agendada. O intervalo dobra a cada falha (5 s, 10 s, 20 s...
+  /// até 1 min): rápido o bastante para a lista voltar logo que a internet
+  /// volta, sem martelar o servidor nem a bateria num túnel de metrô.
+  Future<void> recarregar() => _recarregando ??=
+      _recarregar().whenComplete(() => _recarregando = null);
+
+  Future<void> _recarregar() async {
+    if (!isAuthenticated) return;
+    try {
+      final lista = await api.listDevices();
+      final lida = await api.fetchAccount();
+      // Saiu da conta enquanto a resposta vinha: ela é da sessão que acabou.
+      if (!isAuthenticated) return;
+      devices = lista;
+      conta = lida;
+      twoFactorEnabled = lida.twoFactorEnabled;
+      _conexaoVoltou();
+    } on ApiException {
+      // O servidor respondeu, então há conexão. O erro em si (sessão
+      // encerrada, servidor em manutenção) já tem quem trate.
+      _conexaoVoltou();
+    } catch (_) {
+      // Sem rede: o que já estava na tela fica. Apagar a lista e a conta por
+      // causa de um Wi-Fi instável é pior do que mostrá-las um pouco velhas.
+      semConexao = true;
+      _agendarNovaTentativa();
     }
     notifyListeners();
+  }
+
+  void _conexaoVoltou() {
+    semConexao = false;
+    _espera = _esperaInicial;
+    _novaTentativa?.cancel();
+    _novaTentativa = null;
+  }
+
+  void _agendarNovaTentativa() {
+    if (_novaTentativa?.isActive ?? false) return;
+    final espera = _espera;
+    final dobro = espera * 2;
+    _espera = dobro > _esperaMaxima ? _esperaMaxima : dobro;
+    _novaTentativa = Timer(espera, () {
+      _novaTentativa = null;
+      recarregar();
+    });
+  }
+
+  @override
+  void dispose() {
+    _novaTentativa?.cancel();
+    super.dispose();
   }
 
   String get serverUrl => api.baseUrl;
@@ -692,6 +763,7 @@ class AppState extends ChangeNotifier {
   /// que não for explicitamente descartado não fica esquecido — reaparece como
   /// dado de outra pessoa.
   void _esquecerSessao() {
+    _conexaoVoltou();
     devices = [];
     selected = null;
     conta = null;

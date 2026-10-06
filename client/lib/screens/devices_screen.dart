@@ -24,21 +24,36 @@ class DevicesScreen extends StatefulWidget {
   State<DevicesScreen> createState() => _DevicesScreenState();
 }
 
-class _DevicesScreenState extends State<DevicesScreen> {
+class _DevicesScreenState extends State<DevicesScreen>
+    with WidgetsBindingObserver {
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    // Atualiza a lista ao abrir (ignora erros de rede iniciais).
+    WidgetsBinding.instance.addObserver(this);
+    // Atualiza a lista ao abrir. `recarregar` não lança: sem rede, marca
+    // `semConexao` e tenta de novo sozinho.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        await widget.state.refreshDevices();
-      } catch (_) {
-        // Sem rede: mostra o que tiver (ou o estado vazio).
-      }
+      await widget.state.recarregar();
       if (mounted) setState(() => _loading = false);
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Volta do segundo plano: relê na hora.
+  ///
+  /// É o momento em que a internet costuma ter voltado (saiu do modo avião,
+  /// trocou de rede), e esperar a próxima tentativa agendada deixaria a lista
+  /// velha por até um minuto na frente de quem acabou de abrir o app.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState estado) {
+    if (estado == AppLifecycleState.resumed) widget.state.recarregar();
   }
 
   Future<void> _showPairDialog() async {
@@ -337,6 +352,50 @@ class _DevicesScreenState extends State<DevicesScreen> {
   /// pequeno com a fonte do sistema aumentada isso não cabe na altura da tela.
   /// Um `Center` fixo cortaria justamente o botão, que é o único elemento que
   /// precisa ser alcançado.
+  /// A lista não veio porque o celular está sem internet.
+  Widget _semConexao(BuildContext context) {
+    final theme = Theme.of(context);
+    final t = widget.state.t;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 64, 28, 120),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Icon(Icons.cloud_off,
+              size: 56, color: theme.colorScheme.primary.withAlpha(140)),
+          const SizedBox(height: 20),
+          Text(t.semConexaoTitulo,
+              textAlign: TextAlign.center, style: theme.textTheme.titleLarge),
+          const SizedBox(height: 12),
+          Text(t.semConexaoTexto,
+              textAlign: TextAlign.center, style: theme.textTheme.bodyMedium),
+          const SizedBox(height: 24),
+          Center(
+            child: OutlinedButton.icon(
+              onPressed: widget.state.recarregar,
+              icon: const Icon(Icons.refresh),
+              label: Text(t.retry),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Faixa acima da lista quando ela já existia e a conexão caiu: a lista
+  /// fica, mas o "online" de cada computador é de antes da queda.
+  Widget _avisoSemConexao(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: ListTile(
+        dense: true,
+        leading: const Icon(Icons.cloud_off, size: 20),
+        title: Text(widget.state.t.semConexaoAviso),
+      ),
+    );
+  }
+
   Widget _emptyState(BuildContext context) {
     final theme = Theme.of(context);
     final t = widget.state.t;
@@ -544,19 +603,32 @@ class _DevicesScreenState extends State<DevicesScreen> {
         listenable: widget.state,
         builder: (context, _) {
           final devices = widget.state.devices;
+          final semConexao = widget.state.semConexao;
           if (devices.isEmpty && _loading) return const _SkeletonList();
+          // Sem conexão **antes** de "nenhum computador": a lista vazia aqui
+          // é "não consegui perguntar", e o convite para parear mandaria a
+          // pessoa parear de novo um computador que já está na conta.
+          if (devices.isEmpty && semConexao) return _semConexao(context);
           if (devices.isEmpty) return _emptyState(context);
-          return RefreshIndicator(
-            onRefresh: widget.state.refreshDevices,
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
-              itemCount: devices.length,
-              // Entrada em cascata: cada card aparece um pouco depois do anterior.
-              itemBuilder: (context, i) => FadeSlideIn(
-                delay: Duration(milliseconds: 50 * i),
-                child: _deviceCard(devices[i]),
+          return Column(
+            children: [
+              if (semConexao) _avisoSemConexao(context),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: widget.state.recarregar,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+                    itemCount: devices.length,
+                    // Entrada em cascata: cada card aparece um pouco depois do
+                    // anterior.
+                    itemBuilder: (context, i) => FadeSlideIn(
+                      delay: Duration(milliseconds: 50 * i),
+                      child: _deviceCard(devices[i]),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           );
         },
       ),
