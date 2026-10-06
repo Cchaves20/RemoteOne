@@ -126,6 +126,9 @@ void main() {
         CausaDaFalha.computadorBloqueado,
       );
       expect(texto.toLowerCase(), contains('firewall'));
+      // E a rede vem junto, com o teste que separa as duas: foi a rede, e não
+      // o firewall, no primeiro caso real depois desta mensagem.
+      expect(texto.toLowerCase(), contains('outra rede'));
     });
   });
 }

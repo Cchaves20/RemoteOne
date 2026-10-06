@@ -15,7 +15,7 @@
 ///
 /// Só que aqueles números **sabem** o que aconteceu. Um computador que ofereceu
 /// apenas `host` é um computador que não conseguiu falar com o servidor de
-/// conexão — quase sempre firewall ou antivírus na máquina dele. Os dois lados
+/// conexão — a rede dele barrando UDP, ou firewall ou antivírus na máquina. Os dois lados
 /// com `relay` e ainda assim sem fechar é a rede no meio bloqueando. São
 /// diagnósticos diferentes, com **ações diferentes**, e estavam ali o tempo
 /// todo, escritos numa língua que ninguém fala.
@@ -40,8 +40,10 @@ enum CausaDaFalha {
   /// O computador só ofereceu endereços da rede local dele.
   ///
   /// Ele não alcançou o servidor de conexão — nem para descobrir o próprio
-  /// endereço público, nem para pedir um repasse. Firewall ou antivírus na
-  /// máquina é a causa comum, e é acionável: dá para consertar.
+  /// endereço público, nem para pedir um repasse. A causa mais comum é a rede
+  /// em que ele está barrar UDP para fora (Wi-Fi de faculdade, empresa,
+  /// hotel); firewall ou antivírus na máquina vêm depois. Foi a rede no
+  /// primeiro caso real, e trocar o computador de rede é o teste que separa.
   computadorBloqueado,
 
   /// O mesmo, do lado de cá.

@@ -440,12 +440,16 @@ class Strings {
       "L'ordinateur n'a pas répondu à la demande. Il a pu être éteint, ou Deskside s'y est arrêté.",
       'El equipo no respondió a la solicitud. Puede haberse apagado, o Deskside puede haberse detenido en él.');
 
+  /// Rede antes de firewall, e não o contrário. A mensagem já mandou alguém
+  /// procurar no firewall um bloqueio que era do Wi-Fi da rede onde o
+  /// computador estava: UDP barrado para fora, o caso mais comum em rede de
+  /// faculdade, empresa e hotel. Trocar de rede é o teste que separa os dois.
   String get videoCausaComputadorBloqueado => _t(
-      'O computador não conseguiu falar com o nosso servidor de conexão. Um antivírus ou o firewall do Windows costuma ser a causa.',
-      'The computer could not reach our connection server. An antivirus or the Windows firewall is the usual cause.',
-      '电脑无法连接到我们的连接服务器。通常是杀毒软件或 Windows 防火墙造成的。',
-      "L'ordinateur n'a pas pu joindre notre serveur de connexion. Un antivirus ou le pare-feu Windows en est souvent la cause.",
-      'El equipo no pudo comunicarse con nuestro servidor de conexión. Un antivirus o el firewall de Windows suele ser la causa.');
+      'O computador não conseguiu falar com o nosso servidor de conexão. Costuma ser a rede em que ele está (Wi-Fi de faculdade, empresa ou hotel); o firewall do Windows ou um antivírus também podem ser. Para descobrir, ligue o computador em outra rede, como o roteador do celular, e tente de novo.',
+      'The computer could not reach our connection server. It is usually the network it is on (university, company or hotel Wi-Fi); the Windows firewall or an antivirus can also be the cause. To find out, connect the computer to another network, such as your phone\'s hotspot, and try again.',
+      '电脑无法连接到我们的连接服务器。通常是它所在的网络造成的（学校、公司或酒店的 Wi-Fi）；Windows 防火墙或杀毒软件也可能是原因。要确认，请把电脑连到另一个网络（例如手机热点）再试一次。',
+      "L'ordinateur n'a pas pu joindre notre serveur de connexion. C'est en général le réseau où il se trouve (Wi-Fi d'université, d'entreprise ou d'hôtel) ; le pare-feu Windows ou un antivirus peuvent aussi en être la cause. Pour le savoir, connectez l'ordinateur à un autre réseau, comme le partage de connexion du téléphone, et réessayez.",
+      'El equipo no pudo comunicarse con nuestro servidor de conexión. Suele ser la red en la que está (Wi-Fi de universidad, empresa u hotel); el firewall de Windows o un antivirus también pueden ser la causa. Para saberlo, conecta el equipo a otra red, como el punto de acceso del teléfono, e inténtalo de nuevo.');
 
   String get videoCausaCelularBloqueado => _t(
       'Este aparelho não conseguiu falar com o nosso servidor de conexão. Costuma ser a rede em que ele está.',
