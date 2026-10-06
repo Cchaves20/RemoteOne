@@ -2,6 +2,7 @@ import asyncio
 import hmac
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 
 import jwt
@@ -19,7 +20,7 @@ from app.config import settings
 from app.connections import Viewer, manager, viewers
 from app.db import SessionLocal, get_db, init_db
 from app.devices import router as devices_router
-from app.ice import ice_servers
+from app.ice import ice_servers, precisa_renovar
 from app.models import User
 from app.profiles import router as profiles_router
 from app.protocol import (
@@ -424,6 +425,10 @@ async def agent_ws(websocket: WebSocket) -> None:
             ).model_dump()
         )
 
+        # Quando a credencial de TURN foi entregue, para renovar antes de
+        # vencer (ver `ice.precisa_renovar`).
+        ice_entregue_em = time.monotonic() if pareado else None
+
         intro = _pairing_intro(message)
         paired_notified = intro["type"] == "paired"
         await websocket.send_json(intro)
@@ -629,6 +634,7 @@ async def agent_ws(websocket: WebSocket) -> None:
                         ice_servers=ice_servers(f"agent-{device_id}"),
                     ).model_dump()
                 )
+                ice_entregue_em = time.monotonic()
             else:  # Heartbeat
                 registry.heartbeat(device_id)
                 await websocket.send_json(Ack().model_dump())
@@ -671,6 +677,21 @@ async def agent_ws(websocket: WebSocket) -> None:
                             code=code, expires_in_seconds=settings.pairing_ttl_seconds
                         ).model_dump()
                     )
+                # Credencial de TURN nova para o agente pareado: a primeira, se
+                # ele pareou depois de conectar, ou a renovação antes de a
+                # anterior vencer. Vai num `welcome` porque é a mensagem que
+                # todo agente já sabe ler no meio da conexão — inclusive os
+                # que já estão instalados, sem precisar atualizá-los.
+                if now_paired and precisa_renovar(
+                    ice_entregue_em, time.monotonic(), settings.turn_ttl_seconds
+                ):
+                    await websocket.send_json(
+                        Welcome(
+                            server_version=settings.version,
+                            ice_servers=ice_servers(f"agent-{device_id}"),
+                        ).model_dump()
+                    )
+                    ice_entregue_em = time.monotonic()
     except WebSocketDisconnect:
         pass
     finally:

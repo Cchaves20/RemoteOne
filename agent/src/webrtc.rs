@@ -129,12 +129,25 @@ impl Video {
         if servers.is_empty() {
             return;
         }
-        let relay = servers.iter().any(|s| s.username.is_some());
-        println!(
+        let agora = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let validade = servers
+            .iter()
+            .filter_map(|s| s.username.as_deref())
+            .find_map(|u| segundos_ate_vencer(u, agora));
+        // No diário, e não só no console: com o agente oculto, é esta linha
+        // que diz se o computador tinha TURN — e se a credencial ainda valia —
+        // quando o vídeo direto não fechou.
+        crate::diario(&format!(
             "ICE: {} servidor(es) do backend{}",
             servers.len(),
-            if relay { " (com TURN)" } else { " (só STUN)" }
-        );
+            match validade {
+                Some(s) => format!(" (com TURN, credencial vale por mais {}h)", s / 3600),
+                None => " (só STUN)".to_string(),
+            }
+        ));
         self.ice_servers = servers;
     }
 
@@ -283,13 +296,32 @@ impl Video {
         // saem pelo canal para o laço principal despachar.
         let outbox = self.outbox.clone();
         let session = session_id.to_string();
+        // Quantos de cada tipo, para o diário: é o lado do computador do
+        // "celular: 20 host + 1 srflx + 2 relay; computador: 1 host" que o app
+        // mostra, e sem ele não dá para saber se o STUN e o TURN responderam.
+        let contagem: Arc<std::sync::Mutex<std::collections::BTreeMap<String, u32>>> =
+            Arc::default();
         connection.on_ice_candidate(Box::new(move |candidate| {
             let outbox = outbox.clone();
             let session = session.clone();
+            let contagem = contagem.clone();
             Box::pin(async move {
+                let init = candidate.and_then(|c| c.to_json().ok());
+                if let Ok(mut c) = contagem.lock() {
+                    match &init {
+                        Some(i) => {
+                            *c.entry(tipo_do_candidato(&i.candidate).to_string())
+                                .or_default() += 1
+                        }
+                        None => crate::diario(&format!(
+                            "WebRTC ({session}): caminhos do computador: {}",
+                            resumo_de_candidatos(&c)
+                        )),
+                    }
+                }
                 // `None` é o fim dos candidatos; vira candidato vazio no fio,
                 // que é o que a outra ponta espera para parar de aguardar.
-                let signal = match candidate.and_then(|c| c.to_json().ok()) {
+                let signal = match init {
                     Some(init) => Signal::Ice {
                         session_id: session,
                         candidate: init.candidate,
@@ -337,7 +369,7 @@ impl Video {
 
         let session = session_id.to_string();
         connection.on_peer_connection_state_change(Box::new(move |state| {
-            println!("WebRTC ({session}): {state}");
+            crate::diario(&format!("WebRTC ({session}): {state}"));
             Box::pin(async {})
         }));
 
@@ -496,6 +528,38 @@ impl Video {
             self.close(&session_id).await;
         }
     }
+}
+
+/// O tipo de um candidato ICE (`host`, `srflx`, `relay`), lido do texto dele.
+pub(crate) fn tipo_do_candidato(candidato: &str) -> &str {
+    let mut partes = candidato.split_whitespace();
+    while let Some(p) = partes.next() {
+        if p == "typ" {
+            return partes.next().unwrap_or("?");
+        }
+    }
+    "?"
+}
+
+/// `1 host + 1 srflx`, ou `nenhum`. O mesmo formato do app.
+pub(crate) fn resumo_de_candidatos(contagem: &std::collections::BTreeMap<String, u32>) -> String {
+    if contagem.is_empty() {
+        return "nenhum".into();
+    }
+    contagem
+        .iter()
+        .map(|(tipo, n)| format!("{n} {tipo}"))
+        .collect::<Vec<_>>()
+        .join(" + ")
+}
+
+/// Quantos segundos faltam para a credencial de TURN vencer.
+///
+/// O usuário é `<vence em unix>:<quem>` (ver `backend/app/ice.py`). `None`
+/// se não estiver nesse formato.
+pub(crate) fn segundos_ate_vencer(usuario: &str, agora_unix: i64) -> Option<i64> {
+    let vence: i64 = usuario.split_once(':')?.0.parse().ok()?;
+    Some(vence - agora_unix)
 }
 
 #[cfg(test)]
@@ -716,6 +780,38 @@ mod tests {
                 .candidate("fantasma", "candidate:1 ...", None, None)
                 .await
         );
+    }
+
+    #[test]
+    fn le_o_tipo_do_candidato() {
+        assert_eq!(
+            tipo_do_candidato("candidate:1 1 udp 2130706431 192.168.0.10 50000 typ host"),
+            "host"
+        );
+        assert_eq!(
+            tipo_do_candidato(
+                "candidate:2 1 udp 1694498815 200.1.2.3 50000 typ srflx raddr 0.0.0.0 rport 0"
+            ),
+            "srflx"
+        );
+        assert_eq!(tipo_do_candidato("lixo"), "?");
+    }
+
+    #[test]
+    fn resume_os_candidatos_como_o_app() {
+        let mut c = std::collections::BTreeMap::new();
+        assert_eq!(resumo_de_candidatos(&c), "nenhum");
+        c.insert("host".to_string(), 1);
+        c.insert("relay".to_string(), 2);
+        assert_eq!(resumo_de_candidatos(&c), "1 host + 2 relay");
+    }
+
+    #[test]
+    fn sabe_quanto_falta_para_a_credencial_vencer() {
+        assert_eq!(segundos_ate_vencer("1000:agent-x", 400), Some(600));
+        // Vencida: negativo, e o diário mostra isso.
+        assert_eq!(segundos_ate_vencer("1000:agent-x", 1600), Some(-600));
+        assert_eq!(segundos_ate_vencer("sem-prazo", 0), None);
     }
 
     #[tokio::test]

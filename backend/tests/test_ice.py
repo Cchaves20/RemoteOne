@@ -15,7 +15,7 @@ from conftest import criar_conta
 from fastapi.testclient import TestClient
 
 from app.config import settings
-from app.ice import ice_servers
+from app.ice import ice_servers, precisa_renovar
 from app.main import app
 
 client = TestClient(app)
@@ -113,3 +113,68 @@ def test_welcome_do_agente_leva_os_servidores():
 def test_health_anuncia_o_recurso():
     """O `/health` é como se confere se o VPS já tem o que o app espera."""
     assert "ice-servers" in client.get("/health").json()["features"]
+
+
+# --- a credencial do agente se renova -----------------------------------------
+
+
+def test_renova_quem_nunca_recebeu_e_quem_passou_da_metade():
+    doze_horas = 12 * 3600
+    # Pareou depois de conectar: recebeu lista vazia no welcome.
+    assert precisa_renovar(None, 1000.0, doze_horas)
+    # Recém-entregue: nada a fazer a cada batida de 10 s.
+    assert not precisa_renovar(1000.0, 1010.0, doze_horas)
+    # Na metade da validade, renova — antes de vencer, com folga para uma
+    # sessão de vídeo que comece no fim.
+    assert precisa_renovar(1000.0, 1000.0 + 6 * 3600, doze_horas)
+
+
+def _ler_ate(ws, tipo: str, limite: int = 8) -> dict:
+    for _ in range(limite):
+        msg = ws.receive_json()
+        if msg.get("type") == tipo:
+            return msg
+    raise AssertionError(f"não veio nenhum {tipo} em {limite} mensagens")
+
+
+def test_computador_pareado_depois_de_conectar_recebe_o_turn():
+    """O defeito: quem pareou com o agente já conectado ficava sem TURN.
+
+    O `welcome` de quem ainda não pareou vem sem credencial (de propósito, ver
+    `test_seguranca`), e nada a entregava depois do pareamento. O vídeo direto
+    só fechava na rede local até o agente reconectar por acaso.
+    """
+
+    def cenario():
+        token = criar_conta(client, "pareia-depois@example.com")["access_token"]
+        with client.websocket_connect("/ws/agent") as ws:
+            ws.send_json(
+                {
+                    "type": "hello",
+                    "device_id": "dev-pareia-depois",
+                    "hostname": "PC",
+                    "os": "windows",
+                    "agent_version": "0.1.0",
+                    "secret": "",
+                }
+            )
+            assert ws.receive_json()["ice_servers"] == []
+            codigo = ws.receive_json()["code"]
+            resp = client.post(
+                "/api/v1/pairing/claim",
+                json={"code": codigo},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 201, resp.text
+
+            ws.send_json({"type": "heartbeat"})
+            novo = _ler_ate(ws, "welcome")
+            urls = [u for s in novo["ice_servers"] for u in s["urls"]]
+            assert any(u.startswith("turn:") for u in urls), novo
+            assert any(s.get("username") for s in novo["ice_servers"])
+
+            # E não repete a cada batida.
+            ws.send_json({"type": "heartbeat"})
+            assert ws.receive_json()["type"] == "ack"
+
+    _com_turn(cenario)

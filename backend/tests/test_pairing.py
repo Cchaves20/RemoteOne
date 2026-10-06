@@ -278,6 +278,9 @@ def test_agent_gets_new_code_after_device_removed():
         ws.send_json({"type": "heartbeat"})
         assert ws.receive_json()["type"] == "ack"
         assert ws.receive_json()["type"] == "paired"
+        # E os servidores ICE de quem acabou de parear: o `welcome` da conexão
+        # veio sem eles (ver `test_ice`).
+        assert ws.receive_json()["type"] == "welcome"
 
         # Usuário remove o dispositivo no app.
         assert client.delete("/api/v1/devices/dev-abc", headers=headers).status_code == 204

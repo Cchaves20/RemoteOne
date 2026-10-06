@@ -66,3 +66,20 @@ def ice_servers(tag: str) -> list[dict]:
         }
     )
     return servers
+
+
+def precisa_renovar(entregue_em: float | None, agora: float, ttl_seconds: int) -> bool:
+    """O agente pareado precisa de uma credencial de TURN nova?
+
+    O agente só recebia a credencial no `welcome`, ao conectar. Ficando
+    conectado mais que a validade dela (12 h), ele seguia com uma credencial
+    vencida: o TURN recusava, o computador deixava de oferecer o repasse, e o
+    vídeo direto parava de fechar no 4G até o agente reconectar por acaso.
+
+    `None` é "ainda não entregou": o computador pareado **depois** de conectar,
+    que recebeu a lista vazia no `welcome` (ver `test_seguranca`).
+
+    Renova na metade da validade, e não no fim: uma sessão de vídeo que comece
+    no último minuto ainda precisa de folga para negociar.
+    """
+    return entregue_em is None or agora - entregue_em >= ttl_seconds / 2
