@@ -1,5 +1,8 @@
 # Rust
 agent/target/
+# Compilar ou testar dentro de uma biblioteca corrigida cria estes dois.
+agent/vendor/*/target/
+agent/vendor/*/Cargo.lock
 # Cargo.lock é versionado (o agente é uma aplicação — builds reproduzíveis)
 # Launcher oculto gerado pelo instalador do Windows.
 agent/start-agent-hidden.vbs

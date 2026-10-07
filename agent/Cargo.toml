@@ -113,3 +113,13 @@ winresource = "0.1"
 
 [dev-dependencies]
 image = { version = "0.25", features = ["png"] }
+
+# O ICE do webrtc-rs com o repasse (TURN) por TCP, que a versão publicada não
+# tem: no código dela, o caso TCP é um `TODO` e a URL é ignorada com um aviso.
+# Sem ele, numa rede que bloqueia UDP (Wi-Fi de faculdade, de empresa) o
+# computador não oferece caminho nenhum para fora e o vídeo direto não fecha.
+# A mudança está isolada em `vendor/webrtc-ice/src/agent/turn_tcp.rs` e num
+# ramo de `agent_gather.rs`; ver o LEIAME da pasta. Sai quando o webrtc-rs
+# publicar o suporte.
+[patch.crates-io]
+webrtc-ice = { path = "vendor/webrtc-ice" }
