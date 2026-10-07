@@ -6,7 +6,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:pasteboard/pasteboard.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -21,6 +23,7 @@ import '../models/remote_file.dart';
 import '../models/system_stats.dart';
 import '../services/app_state.dart';
 import '../services/diagnostico_video.dart';
+import '../services/imagem_para_o_pc.dart';
 import '../services/retentativa.dart';
 import '../services/teclado_fisico.dart';
 import '../services/video_session.dart';
@@ -2826,6 +2829,43 @@ class _RemoteScreenState extends State<RemoteScreen>
                   ),
                 ],
               ),
+              // Imagem do celular para o computador. Duas origens, porque são
+              // dois gestos diferentes: quem copiou uma imagem num app quer
+              // colar no PC, e quem quer uma foto vai à galeria.
+              const SizedBox(height: 16),
+              Text(t.clipboardImagemParaOPc,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.content_paste, size: 18),
+                      label: Text(t.clipboardColarImagem),
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        // Lida só agora, no toque, como o texto: é quando o
+                        // iOS pergunta se o app pode colar.
+                        _mandarImagem(
+                          () => Pasteboard.image,
+                          quandoNaoHa: t.clipboardSemImagemNoCelular,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.photo_library_outlined, size: 18),
+                      label: Text(t.clipboardDaGaleria),
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        _mandarImagem(_escolherDaGaleria);
+                      },
+                    ),
+                  ),
+                ],
+              ),
               // Arquivos copiados: o Windows guarda o **caminho**, não os
               // bytes. Copiar um vídeo no Explorer e trazê-lo para cá é isto -
               // e quem busca por caminho é a transferência de arquivos.
@@ -3016,6 +3056,58 @@ class _RemoteScreenState extends State<RemoteScreen>
     final box = context.findRenderObject() as RenderBox?;
     if (box == null) return const Rect.fromLTWH(0, 0, 1, 1);
     return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  /// Uma foto da galeria, ou `null` se a pessoa desistiu.
+  ///
+  /// Com compressão: no iPhone é ela que faz a foto sair em JPEG em vez de
+  /// HEIC, que o computador não lê. A 85, a perda não aparece ao colar.
+  Future<Uint8List?> _escolherDaGaleria() async {
+    final foto = await FilePicker.pickFile(
+      type: FileType.image,
+      compressionQuality: 85,
+    );
+    if (foto == null) return null;
+    return foto.readAsBytes();
+  }
+
+  /// Manda uma imagem do celular para a área de transferência do computador.
+  ///
+  /// `quandoNaoHa` é o aviso para quando não veio imagem nenhuma. Sem ele
+  /// (galeria), não vir nada é a pessoa ter desistido, e calar é o certo.
+  Future<void> _mandarImagem(
+    Future<Uint8List?> Function() obter, {
+    String? quandoNaoHa,
+  }) async {
+    final t = widget.state.t;
+    Uint8List? bruta;
+    try {
+      bruta = await obter();
+    } catch (_) {
+      bruta = null;
+    }
+    if (!mounted) return;
+    if (bruta == null || bruta.isEmpty) {
+      if (quandoNaoHa != null) _avisar(quandoNaoHa);
+      return;
+    }
+    _avisar(t.clipboardMandandoImagem);
+    final Uint8List pronta;
+    try {
+      pronta = await prepararImagemParaOPc(bruta);
+    } on ImagemGrandeDemais {
+      _avisar(t.clipboardImagemGrande);
+      return;
+    } catch (_) {
+      _avisar(t.clipboardImagemIlegivel);
+      return;
+    }
+    try {
+      await widget.state.setClipboardImage(widget.device, pronta);
+      _avisar(t.clipboardImagemNoPc);
+    } catch (e) {
+      _avisar(e.toString());
+    }
   }
 
   void _avisar(String texto) {

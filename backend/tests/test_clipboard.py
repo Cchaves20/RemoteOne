@@ -6,6 +6,8 @@ sempre a pedido, porque o iOS mostra um aviso na tela toda vez que um app lê a
 área de transferência.
 """
 
+import base64
+
 from conftest import criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -60,16 +62,22 @@ class InstantAgent:
         files: list[dict] | None = None,
         ignored: int = 0,
         image: dict | None = None,
+        erro_da_imagem: str | None = None,
+        responde_imagem: bool = True,
     ):
         self.text = text
         self.files = files or []
         self.ignored = ignored
         #: Os quatro campos da imagem, ou nada quando o agente não copiou uma.
         self.image = image or SEM_IMAGEM
+        self.erro_da_imagem = erro_da_imagem
+        self.responde_imagem = responde_imagem
         self.sent: list[dict] = []
 
     async def send_json(self, message: dict) -> None:
         self.sent.append(message)
+        if message.get("type") == "clipboard_set_image" and self.responde_imagem:
+            pending.resolve(message["request_id"], {"error": self.erro_da_imagem})
         if message.get("type") == "clipboard_get" and self.text is not None:
             pending.resolve(
                 message["request_id"],
@@ -328,3 +336,119 @@ def test_agente_antigo_nao_manda_imagem():
     )
     assert message.image is None
     assert message.image_mime is None
+
+
+# --- imagem do celular para o computador -------------------------------------
+
+#: Um PNG de 1x1 de verdade: o servidor não decodifica, mas repassa os bytes
+#: exatos, e é isso que se confere.
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+)
+
+
+def _enviar_imagem(dispositivo: str, headers: dict, corpo: bytes):
+    return client.post(
+        f"/api/v1/devices/{dispositivo}/clipboard/image",
+        content=corpo,
+        headers={**headers, "Content-Type": "image/png"},
+    )
+
+
+def test_manda_a_imagem_ao_computador_com_os_bytes_exatos():
+    headers, uid = _auth_headers("clipimg1@example.com")
+    _add_device(uid, "dev-clipimg-1")
+    agent = InstantAgent()
+    manager.register("dev-clipimg-1", agent)
+    try:
+        resp = _enviar_imagem("dev-clipimg-1", headers, PNG_1X1)
+    finally:
+        manager.unregister("dev-clipimg-1")
+    assert resp.status_code == 204, resp.text
+    enviada = agent.of_type("clipboard_set_image")[0]["image"]
+    assert base64.b64decode(enviada) == PNG_1X1
+
+
+def test_recusa_do_computador_chega_com_o_motivo():
+    headers, uid = _auth_headers("clipimg2@example.com")
+    _add_device(uid, "dev-clipimg-2")
+    motivo = "a imagem chegou num formato que o computador não lê"
+    manager.register("dev-clipimg-2", InstantAgent(erro_da_imagem=motivo))
+    try:
+        resp = _enviar_imagem("dev-clipimg-2", headers, b"nao e imagem")
+    finally:
+        manager.unregister("dev-clipimg-2")
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == motivo
+
+
+def test_imagem_grande_demais_nao_chega_ao_computador():
+    from app.devices import MAX_CLIPBOARD_IMAGE_BYTES
+
+    headers, uid = _auth_headers("clipimg3@example.com")
+    _add_device(uid, "dev-clipimg-3")
+    agent = InstantAgent()
+    manager.register("dev-clipimg-3", agent)
+    try:
+        resp = _enviar_imagem(
+            "dev-clipimg-3", headers, b"\0" * (MAX_CLIPBOARD_IMAGE_BYTES + 1)
+        )
+    finally:
+        manager.unregister("dev-clipimg-3")
+    assert resp.status_code == 413
+    assert agent.of_type("clipboard_set_image") == []
+
+
+def test_corpo_vazio_e_recusado():
+    headers, uid = _auth_headers("clipimg4@example.com")
+    _add_device(uid, "dev-clipimg-4")
+    manager.register("dev-clipimg-4", InstantAgent())
+    try:
+        resp = _enviar_imagem("dev-clipimg-4", headers, b"")
+    finally:
+        manager.unregister("dev-clipimg-4")
+    assert resp.status_code == 400
+
+
+def test_imagem_para_computador_de_outra_conta_404():
+    _, dono = _auth_headers("clipimg5@example.com")
+    _add_device(dono, "dev-clipimg-5")
+    intruso, _ = _auth_headers("clipimg6@example.com")
+    agent = InstantAgent()
+    manager.register("dev-clipimg-5", agent)
+    try:
+        resp = _enviar_imagem("dev-clipimg-5", intruso, PNG_1X1)
+    finally:
+        manager.unregister("dev-clipimg-5")
+    assert resp.status_code == 404
+    assert agent.of_type("clipboard_set_image") == []
+
+
+def test_imagem_com_agente_offline_503():
+    headers, uid = _auth_headers("clipimg7@example.com")
+    _add_device(uid, "dev-clipimg-7")
+    assert _enviar_imagem("dev-clipimg-7", headers, PNG_1X1).status_code == 503
+
+
+def test_agente_antigo_que_nao_responde_vira_504_explicado(monkeypatch):
+    from app import devices
+
+    monkeypatch.setattr(devices, "_CLIPBOARD_IMAGE_TIMEOUT_SECONDS", 0.05)
+    headers, uid = _auth_headers("clipimg8@example.com")
+    _add_device(uid, "dev-clipimg-8")
+    manager.register("dev-clipimg-8", InstantAgent(responde_imagem=False))
+    try:
+        resp = _enviar_imagem("dev-clipimg-8", headers, PNG_1X1)
+    finally:
+        manager.unregister("dev-clipimg-8")
+    assert resp.status_code == 504
+    assert "atualize" in resp.json()["detail"]
+
+
+def test_parse_resposta_da_imagem():
+    ok = parse_client_message({"type": "clipboard_image_set", "request_id": "r1"})
+    assert ok.error is None
+    falhou = parse_client_message(
+        {"type": "clipboard_image_set", "request_id": "r1", "error": "x"}
+    )
+    assert falhou.error == "x"

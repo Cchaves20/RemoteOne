@@ -30,6 +30,7 @@ from app.protocol import (
     BrightnessState,
     Clipboard,
     ClipboardChanged,
+    ClipboardImageSet,
     Error,
     FileChunk,
     FileDone,
@@ -534,6 +535,8 @@ async def agent_ws(websocket: WebSocket) -> None:
                         message.transfer_id,
                         {"ok": message.ok, "detail": message.detail},
                     )
+            elif isinstance(message, ClipboardImageSet):
+                pending.resolve(message.request_id, {"error": message.error})
             elif isinstance(message, Clipboard):
                 pending.resolve(
                     message.request_id,

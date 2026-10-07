@@ -888,6 +888,30 @@ pub async fn run(
                                     eprintln!("{e}");
                                 }
                             }
+                            // Decodificar e converter custa uns cem
+                            // milissegundos numa foto: fora do event loop. Só
+                            // a gravação, que é rápida, fica aqui, porque a
+                            // área de transferência vive no laço.
+                            Some(Action::ClipboardSetImage { request_id, image }) => {
+                                let bmp = tokio::task::spawn_blocking(move || {
+                                    use base64::Engine;
+                                    let bytes = base64::engine::general_purpose::STANDARD
+                                        .decode(image.as_bytes())
+                                        .map_err(|_| "a imagem chegou corrompida".to_string())?;
+                                    crate::clipboard::imagem_para_bmp(&bytes)
+                                })
+                                .await
+                                .unwrap_or_else(|e| Err(format!("tarefa falhou: {e}")));
+                                let resultado = bmp.and_then(|b| clipboard.write_image(&b));
+                                if let Err(e) = &resultado {
+                                    crate::diario(&format!("Área de transferência: {e}"));
+                                }
+                                let reply = ClientMessage::ClipboardImageSet {
+                                    request_id,
+                                    error: resultado.err(),
+                                };
+                                ws.send(Message::Text(serde_json::to_string(&reply)?)).await?;
+                            }
                             Some(Action::ClipboardSync { enabled }) => {
                                 clipboard_sync = enabled;
                                 println!(
@@ -1813,6 +1837,8 @@ enum Action {
     ClipboardGet { request_id: String },
     /// Escrever na área de transferência do computador.
     ClipboardSet { text: String },
+    /// Pôr na área de transferência uma imagem vinda do telefone e responder.
+    ClipboardSetImage { request_id: String, image: String },
     /// Ligar/desligar o aviso automático de cópia nova.
     ClipboardSync { enabled: bool },
     /// Ligar/desligar o "manter o computador pronto", gravando a escolha.
@@ -2004,6 +2030,9 @@ fn handle_server_text(
         }
         Ok(ServerMessage::ClipboardSet { text }) => {
             return Some(Action::ClipboardSet { text });
+        }
+        Ok(ServerMessage::ClipboardSetImage { request_id, image }) => {
+            return Some(Action::ClipboardSetImage { request_id, image });
         }
         Ok(ServerMessage::ClipboardSync { enabled }) => {
             return Some(Action::ClipboardSync { enabled });

@@ -714,6 +714,42 @@ class Strings {
       '手机上没有已复制的内容。',
       "Rien n'est copié sur le téléphone.",
       'No hay nada copiado en el teléfono.');
+  String get clipboardImagemParaOPc => _t(
+      'Mandar imagem para o computador',
+      'Send an image to the computer',
+      '把图片发送到电脑',
+      "Envoyer une image à l'ordinateur",
+      'Enviar una imagen al equipo');
+  String get clipboardColarImagem => _t('Imagem copiada', 'Copied image',
+      '已复制的图片', 'Image copiée', 'Imagen copiada');
+  String get clipboardDaGaleria =>
+      _t('Da galeria', 'From gallery', '从相册', 'Depuis la galerie', 'De la galería');
+  String get clipboardSemImagemNoCelular => _t(
+      'Não há imagem copiada no celular.',
+      'There is no image copied on the phone.',
+      '手机上没有已复制的图片。',
+      "Aucune image n'est copiée sur le téléphone.",
+      'No hay ninguna imagen copiada en el teléfono.');
+  String get clipboardMandandoImagem => _t('Mandando a imagem…',
+      'Sending the image…', '正在发送图片…', "Envoi de l'image…", 'Enviando la imagen…');
+  String get clipboardImagemNoPc => _t(
+      'Imagem copiada no computador. Cole com Ctrl+V.',
+      'Image copied on the computer. Paste it with Ctrl+V.',
+      '图片已复制到电脑。用 Ctrl+V 粘贴。',
+      "Image copiée sur l'ordinateur. Collez-la avec Ctrl+V.",
+      'Imagen copiada en el equipo. Pégala con Ctrl+V.');
+  String get clipboardImagemIlegivel => _t(
+      'Não consegui ler essa imagem.',
+      "Couldn't read that image.",
+      '无法读取这张图片。',
+      'Impossible de lire cette image.',
+      'No se pudo leer esa imagen.');
+  String get clipboardImagemGrande => _t(
+      'Essa imagem é grande demais para mandar.',
+      'That image is too large to send.',
+      '这张图片太大，无法发送。',
+      'Cette image est trop grande pour être envoyée.',
+      'Esa imagen es demasiado grande para enviarla.');
   String get clipboardReceived => _t('Copiado do computador.',
       'Copied from the computer.', '已从电脑复制。', "Copié depuis l'ordinateur.",
       'Copiado desde el equipo.');

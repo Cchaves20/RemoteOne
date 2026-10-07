@@ -183,6 +183,35 @@ fn codificar_jpeg(img: &image::DynamicImage) -> Result<Vec<u8>, String> {
     Ok(buf.into_inner())
 }
 
+/// Maior lado de uma imagem vinda do telefone, depois de decodificada.
+///
+/// O app já reduz antes de mandar; isto é a segunda guarda, aqui, contra uma
+/// imagem que chegue enorme por outro caminho. 8192 px cobre qualquer foto de
+/// celular e põe um teto no bitmap que vai à memória do computador.
+pub const MAX_LADO_DO_TELEFONE: u32 = 8192;
+
+/// Converte a imagem que veio do telefone (PNG ou JPEG) no bitmap que a área
+/// de transferência do Windows guarda.
+///
+/// BMP de 24 bits, sem transparência: é o formato que **todo** programa do
+/// Windows sabe colar — do Paint ao Word e ao navegador. Uma área transparente
+/// vira preto, e para foto e captura de tela isso não aparece.
+///
+/// Pura, para ser testada em qualquer sistema.
+pub fn imagem_para_bmp(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut img = image::load_from_memory(bytes)
+        .map_err(|_| "a imagem chegou num formato que o computador não lê".to_string())?;
+    if img.width().max(img.height()) > MAX_LADO_DO_TELEFONE {
+        img = img.resize(
+            MAX_LADO_DO_TELEFONE,
+            MAX_LADO_DO_TELEFONE,
+            image::imageops::FilterType::Triangle,
+        );
+    }
+    let rgb = image::DynamicImage::ImageRgb8(img.to_rgb8());
+    codificar(&rgb, image::ImageFormat::Bmp)
+}
+
 /// O que estava copiado como arquivo — e quantos ficaram de fora.
 ///
 /// A contagem existe porque o zero tem dois significados muito diferentes:
@@ -241,6 +270,23 @@ mod imp {
             // duas linhas, o texto voltaria ao telefone como se fosse novo.
             self.last_seq = clipboard_win::raw::seq_num().map(|n| n.get());
             self.tracker.remember(&texto);
+            Ok(())
+        }
+
+        /// Põe uma imagem (já em BMP, ver `imagem_para_bmp`) na área de
+        /// transferência do computador.
+        ///
+        /// **Limpando** antes: o `set_bitmap` da biblioteca, sem isso, deixa o
+        /// texto que já estava lá junto da imagem, e colar num campo de texto
+        /// colaria o texto antigo em vez de nada.
+        pub fn write_image(&mut self, bmp: &[u8]) -> Result<(), String> {
+            let _aberta = clipboard_win::Clipboard::new_attempts(10)
+                .map_err(|e| format!("a área de transferência está ocupada: {e}"))?;
+            clipboard_win::raw::set_bitmap_with(bmp, clipboard_win::options::DoClear)
+                .map_err(|e| format!("não consegui pôr a imagem na área de transferência: {e}"))?;
+            // Mesmo motivo do `write`: a mudança é nossa, não novidade para
+            // mandar ao telefone.
+            self.last_seq = clipboard_win::raw::seq_num().map(|n| n.get());
             Ok(())
         }
 
@@ -391,6 +437,14 @@ mod imp {
             None
         }
 
+        pub fn write_image(&mut self, bmp: &[u8]) -> Result<(), String> {
+            println!(
+                "[clipboard-stub] escreveria uma imagem de {} bytes",
+                bmp.len()
+            );
+            Ok(())
+        }
+
         pub fn files(&mut self) -> CopiedFiles {
             CopiedFiles::default()
         }
@@ -406,6 +460,37 @@ pub use imp::Clipboard;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn png_de_teste(largura: u32, altura: u32) -> Vec<u8> {
+        let img = image::RgbaImage::from_pixel(largura, altura, image::Rgba([10, 200, 30, 128]));
+        codificar(
+            &image::DynamicImage::ImageRgba8(img),
+            image::ImageFormat::Png,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn imagem_do_telefone_vira_bmp_que_o_windows_cola() {
+        let bmp = imagem_para_bmp(&png_de_teste(40, 20)).unwrap();
+        // O cabeçalho de arquivo BMP é o que o `set_bitmap` espera ler.
+        assert_eq!(&bmp[..2], b"BM");
+        let volta = image::load_from_memory(&bmp).unwrap();
+        assert_eq!((volta.width(), volta.height()), (40, 20));
+    }
+
+    #[test]
+    fn jpeg_do_telefone_tambem_entra() {
+        let img = image::DynamicImage::ImageRgb8(image::RgbImage::new(16, 16));
+        let jpeg = codificar_jpeg(&img).unwrap();
+        assert_eq!(&imagem_para_bmp(&jpeg).unwrap()[..2], b"BM");
+    }
+
+    #[test]
+    fn o_que_nao_e_imagem_e_recusado_com_motivo() {
+        let erro = imagem_para_bmp(b"isto nao e uma imagem").unwrap_err();
+        assert!(erro.contains("formato"), "{erro}");
+    }
 
     #[test]
     fn texto_curto_passa_inteiro() {

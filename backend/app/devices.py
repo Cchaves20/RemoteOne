@@ -70,6 +70,15 @@ _BRIGHTNESS_TIMEOUT_SECONDS = 15
 _LAUNCH_MANY_TIMEOUT_SECONDS = 60
 # Listar uma pasta é ida e volta ao computador, como a lista de aplicativos.
 _FILES_TIMEOUT_SECONDS = 20
+#: Teto de uma imagem mandada do celular para a área de transferência.
+#:
+#: Vai ao agente numa mensagem só, em base64 (um terço maior): 8 MB viram uns
+#: 11 MB, abaixo dos 16 MB que o WebSocket do agente aceita por quadro. O app
+#: reduz antes de mandar, então isto só pega quem chegar por outro caminho.
+MAX_CLIPBOARD_IMAGE_BYTES = 8 * 1024 * 1024
+#: Decodificar e converter uma foto no computador leva algum tempo, e a
+#: mensagem é grande: mais folga que as métricas.
+_CLIPBOARD_IMAGE_TIMEOUT_SECONDS = 30
 # Quanto esperar por *cada* pedaço de um arquivo. Generoso: o computador pode
 # estar lendo de um disco lento, mas um silêncio longo é conexão morta.
 _CHUNK_TIMEOUT_SECONDS = 60
@@ -325,6 +334,71 @@ async def clipboard_set(
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post(
+    "/devices/{device_id}/clipboard/image", status_code=status.HTTP_204_NO_CONTENT
+)
+async def clipboard_set_image(
+    device_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Põe uma imagem do celular na área de transferência do computador.
+
+    O corpo é a imagem crua (PNG ou JPEG), sem multipart, como no envio de
+    arquivo. Quem confere se é imagem de verdade é o agente, que precisa
+    decodificá-la de qualquer jeito — e a recusa dele volta como 400 com o
+    motivo.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+
+    limite_mb = MAX_CLIPBOARD_IMAGE_BYTES // 1024 // 1024
+    declarado = request.headers.get("content-length")
+    if declarado and declarado.isdigit() and int(declarado) > MAX_CLIPBOARD_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"imagem grande demais (limite de {limite_mb} MB)",
+        )
+    corpo = await request.body()
+    if len(corpo) > MAX_CLIPBOARD_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"imagem grande demais (limite de {limite_mb} MB)",
+        )
+    if not corpo:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="nenhuma imagem enviada"
+        )
+
+    request_id, future = pending.create()
+    message = {
+        "type": "clipboard_set_image",
+        "request_id": request_id,
+        "image": base64.b64encode(corpo).decode(),
+    }
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(
+            future, timeout=_CLIPBOARD_IMAGE_TIMEOUT_SECONDS
+        )
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        # Um agente de antes desta função ignora o pedido, e o silêncio chega
+        # aqui como demora.
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador não respondeu; se o Deskside dele for antigo, atualize-o",
+        ) from exc
+    if reply.get("error"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=reply["error"]
         )
 
 

@@ -83,6 +83,13 @@ pub enum ClientMessage {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         app: Option<crate::foreground::ForegroundApp>,
     },
+    /// Resposta a um `clipboard_set_image`. Sem `error`, a imagem está na
+    /// área de transferência do computador.
+    ClipboardImageSet {
+        request_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     /// Resposta a um `clipboard_get`: o que está na área de transferência.
     Clipboard {
         request_id: String,
@@ -340,6 +347,12 @@ pub enum ServerMessage {
     /// Escreve na área de transferência do computador.
     ClipboardSet {
         text: String,
+    },
+    /// Põe na área de transferência do computador uma imagem vinda do
+    /// telefone (PNG ou JPEG, em base64). Responde com `clipboard_image_set`.
+    ClipboardSetImage {
+        request_id: String,
+        image: String,
     },
     /// Liga ou desliga o aviso automático de cópia nova no computador.
     ClipboardSync {

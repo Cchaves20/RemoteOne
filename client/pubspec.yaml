@@ -53,6 +53,12 @@ dependencies:
   # ShareParams) é a mesma desde a 11. Assim o pub escolhe o que couber no
   # Flutter de cada máquina em vez de recusar a resolução.
   share_plus: ">=11.0.0 <14.0.0"
+  # Ler a imagem copiada no celular, para mandá-la à área de transferência do
+  # computador. O `Clipboard` do Flutter só lê texto. Este lê pela API do
+  # próprio sistema (`UIPasteboard` no iOS, `ClipboardManager` no Android) e
+  # aplica o plugin de Kotlin por conta própria — não depende do Kotlin
+  # embutido do AGP 9, que foi o que derrubou o file_picker.
+  pasteboard: ^0.5.0
   # Compra dentro do app (StoreKit no iOS, Play Billing no Android).
   #
   # Só responde em build vindo da App Store ou do TestFlight. Num app instalado

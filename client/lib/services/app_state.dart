@@ -623,6 +623,9 @@ class AppState extends ChangeNotifier {
   Future<void> setClipboard(Device device, String text) =>
       api.setClipboard(device.deviceId, text);
 
+  Future<void> setClipboardImage(Device device, Uint8List imagem) =>
+      api.setClipboardImage(device.deviceId, imagem);
+
   /// Liga/desliga o aviso automático de cópia nova no computador, e guarda a
   /// escolha. Desligado por padrão: o que passa pela área de transferência de
   /// alguém costuma incluir senha, e mandar isso sozinho para outro aparelho

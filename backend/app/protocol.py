@@ -291,6 +291,14 @@ class Listing(BaseModel):
     shortcuts: list[FileEntry] = []
 
 
+class ClipboardImageSet(BaseModel):
+    """Resposta do agente a um `clipboard_set_image`. Sem `error`, deu certo."""
+
+    type: Literal["clipboard_image_set"] = "clipboard_image_set"
+    request_id: str
+    error: str | None = None
+
+
 class Clipboard(BaseModel):
     """Resposta do agente a um `clipboard_get`."""
 
@@ -378,6 +386,7 @@ ClientMessage = Annotated[
     | SystemStats
     | Foreground
     | Clipboard
+    | ClipboardImageSet
     | ClipboardChanged
     | KeepAwakeState
     | PresentationState

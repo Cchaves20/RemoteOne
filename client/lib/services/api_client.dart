@@ -812,6 +812,28 @@ class ApiClient {
     }
   }
 
+  /// Coloca uma imagem (PNG ou JPEG) na área de transferência do computador.
+  ///
+  /// Lança `ApiException(400)` com o motivo quando o computador não consegue
+  /// ler a imagem, e 413 quando ela passa do teto do servidor.
+  Future<void> setClipboardImage(String deviceId, Uint8List imagem) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/devices/$deviceId/clipboard/image'),
+          headers: {
+            ..._authHeaders,
+            'Content-Type': 'application/octet-stream',
+          },
+          body: imagem,
+        )
+        // Mais que os 30 s que o servidor espera pelo computador, somados
+        // ao tempo de subir alguns megabytes pelo 4G.
+        .timeout(const Duration(seconds: 90));
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
   /// Liga ou desliga o aviso automático de cópia nova no computador.
   Future<void> setClipboardSync(String deviceId, bool enabled) async {
     final res = await _http.post(
