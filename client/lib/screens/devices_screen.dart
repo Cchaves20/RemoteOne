@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config.dart';
+import '../models/automation.dart';
 import '../models/device.dart';
 import '../services/app_state.dart';
+import '../services/atalhos_do_icone.dart';
 import '../theme.dart';
 import '../widgets/plano.dart';
 import '../widgets/pulse.dart';
 import '../widgets/transitions.dart';
 import 'apps_screen.dart';
+import 'automations_screen.dart' show runAutomationFlow;
 import 'files_screen.dart';
 import 'keep_awake_screen.dart';
 import 'remote_screen.dart';
@@ -28,10 +31,16 @@ class _DevicesScreenState extends State<DevicesScreen>
     with WidgetsBindingObserver {
   bool _loading = true;
 
+  /// Um atalho do ícone está rodando: o segundo toque espera este terminar.
+  bool _rodandoAtalho = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.state.addListener(_talvezRodarAtalho);
+    // O app pode ter aberto **pelo** atalho: o pedido já está lá esperando.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _talvezRodarAtalho());
     // Atualiza a lista ao abrir. `recarregar` não lança: sem rede, marca
     // `semConexao` e tenta de novo sozinho.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -42,8 +51,51 @@ class _DevicesScreenState extends State<DevicesScreen>
 
   @override
   void dispose() {
+    widget.state.removeListener(_talvezRodarAtalho);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// Roda a automação que um atalho do ícone pediu, quando der.
+  ///
+  /// "Quando der" é: com sessão, e com o app **desbloqueado** — esta tela
+  /// fica montada por baixo do bloqueio, e rodar antes do desbloqueio seria
+  /// deixar o ícone de um celular perdido mexer no computador.
+  void _talvezRodarAtalho() {
+    final state = widget.state;
+    if (_rodandoAtalho ||
+        state.atalhoPendente == null ||
+        state.bloqueado ||
+        !state.isAuthenticated) {
+      return;
+    }
+    final id = automacaoDoAtalho(state.tomarAtalho()!);
+    if (id == null) return;
+    _rodandoAtalho = true;
+    // Depois do quadro: este método é chamado de dentro de um
+    // `notifyListeners`, e abrir diálogo ali seria mexer na árvore no meio
+    // de uma reconstrução.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        Automation? achar() =>
+            state.automations.where((a) => a.id == id).firstOrNull;
+        var automacao = achar();
+        if (automacao == null) {
+          await state.loadAutomations();
+          automacao = achar();
+        }
+        if (!mounted) return;
+        if (automacao == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(state.t.atalhoSemAutomacao)),
+          );
+          return;
+        }
+        await runAutomationFlow(context, state, automacao);
+      } finally {
+        _rodandoAtalho = false;
+      }
+    });
   }
 
   /// Volta do segundo plano: relê na hora.

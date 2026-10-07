@@ -714,6 +714,12 @@ class Strings {
       '手机上没有已复制的内容。',
       "Rien n'est copié sur le téléphone.",
       'No hay nada copiado en el teléfono.');
+  String get atalhoSemAutomacao => _t(
+      'Essa automação não existe mais. Os atalhos do ícone se atualizam sozinhos.',
+      'That automation no longer exists. The icon shortcuts update on their own.',
+      '该自动化已不存在。图标快捷方式会自动更新。',
+      "Cette automatisation n'existe plus. Les raccourcis de l'icône se mettent à jour seuls.",
+      'Esa automatización ya no existe. Los atajos del icono se actualizan solos.');
   String get clipboardImagemParaOPc => _t(
       'Mandar imagem para o computador',
       'Send an image to the computer',

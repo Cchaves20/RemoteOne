@@ -26,6 +26,9 @@ class _LockGateState extends State<LockGate> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     if (widget.state.appLockEnabled) {
       _locked = true;
+      // Direto, sem `notifyListeners`: estamos dentro de um build, e avisar
+      // agora redesenharia o app no meio dele.
+      widget.state.bloqueado = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => _tryUnlock());
     }
   }
@@ -41,6 +44,7 @@ class _LockGateState extends State<LockGate> with WidgetsBindingObserver {
     if (!widget.state.appLockEnabled) return;
     if (state == AppLifecycleState.paused) {
       if (mounted) setState(() => _locked = true);
+      widget.state.definirBloqueado(true);
     } else if (state == AppLifecycleState.resumed && _locked) {
       _tryUnlock();
     }
@@ -51,7 +55,10 @@ class _LockGateState extends State<LockGate> with WidgetsBindingObserver {
     _authenticating = true;
     final ok = await _lock.authenticate();
     _authenticating = false;
-    if (ok && mounted) setState(() => _locked = false);
+    if (ok && mounted) {
+      setState(() => _locked = false);
+      widget.state.definirBloqueado(false);
+    }
   }
 
   @override

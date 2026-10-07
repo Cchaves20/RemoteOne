@@ -6,6 +6,7 @@ import 'screens/lock_gate.dart';
 import 'screens/login_screen.dart';
 import 'services/api_client.dart';
 import 'services/app_state.dart';
+import 'services/atalhos_do_icone.dart';
 import 'theme.dart';
 import 'widgets/barra_do_sistema.dart';
 
@@ -20,6 +21,12 @@ Future<void> main() async {
   // branca — a UI reage via ChangeNotifier quando a sessão resolve.
   runApp(DesksideApp(state: state));
   state.restoreSession();
+
+  // Os atalhos do ícone: o toque vira um pedido guardado no estado, e o menu
+  // acompanha as automações da conta. Ver `services/atalhos_do_icone.dart`.
+  final atalhos = AtalhosDoIcone();
+  atalhos.iniciar(state.receberAtalho);
+  state.addListener(() => atalhos.sincronizar(state.automations));
 }
 
 class DesksideApp extends StatelessWidget {

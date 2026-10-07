@@ -69,6 +69,35 @@ class AppState extends ChangeNotifier {
   /// tentativa agendada não dispararem duas ao mesmo tempo.
   Future<void>? _recarregando;
 
+  /// O app está atrás da tela de bloqueio. Escrito pelo `LockGate`.
+  ///
+  /// Existe para os atalhos do ícone: a tela de computadores continua montada
+  /// por baixo do bloqueio, e sem isto uma automação pedida pelo ícone rodaria
+  /// antes de o dono desbloquear o app.
+  bool bloqueado = false;
+
+  void definirBloqueado(bool valor) {
+    if (bloqueado == valor) return;
+    bloqueado = valor;
+    notifyListeners();
+  }
+
+  /// Um atalho do ícone tocado e ainda não executado (`automacao:<id>`). Ver
+  /// `services/atalhos_do_icone.dart`.
+  String? atalhoPendente;
+
+  void receberAtalho(String tipo) {
+    atalhoPendente = tipo;
+    notifyListeners();
+  }
+
+  /// Entrega o atalho pendente uma vez só.
+  String? tomarAtalho() {
+    final tipo = atalhoPendente;
+    atalhoPendente = null;
+    return tipo;
+  }
+
   /// A conta de quem está logado. `null` enquanto o `/me` não respondeu — e a
   /// tela de conta trata isso mostrando o contato vazio em vez de adivinhar se
   /// a conta é de e-mail ou de telefone.
@@ -285,6 +314,13 @@ class AppState extends ChangeNotifier {
       conta = lida;
       twoFactorEnabled = lida.twoFactorEnabled;
       _conexaoVoltou();
+      // As automações também, porque os atalhos do ícone saem delas: sem
+      // isto, só existiriam depois de alguém abrir a tela de automações.
+      try {
+        automations = await api.automations();
+      } catch (_) {
+        // Backend antigo ou plano sem o recurso: os atalhos ficam vazios.
+      }
     } on ApiException {
       // O servidor respondeu, então há conexão. O erro em si (sessão
       // encerrada, servidor em manutenção) já tem quem trate.
@@ -767,6 +803,8 @@ class AppState extends ChangeNotifier {
   /// dado de outra pessoa.
   void _esquecerSessao() {
     _conexaoVoltou();
+    automations = const [];
+    atalhoPendente = null;
     devices = [];
     selected = null;
     conta = null;
