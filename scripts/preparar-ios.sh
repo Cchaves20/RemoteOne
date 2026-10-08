@@ -142,6 +142,57 @@ definir CFBundleDisplayName string Deskside
 # cifrar conteúdo por conta própria, esta linha precisa ser revista.
 definir ITSAppUsesNonExemptEncryption bool false
 
+# --- 5. Código Swift do Deskside: Siri e app Atalhos ----------------------
+# Os arquivos de `client/nativo/ios/Runner/` (hoje, as ações da Siri) entram
+# no alvo Runner. Copiar não basta: um .swift fora do projeto do Xcode não é
+# compilado, e o build passa verde sem a Siri — sem nada no log dizendo.
+#
+# Quem edita o projeto é a gema `xcodeproj`, a mesma que o CocoaPods usa e
+# que já vem na máquina do Codemagic.
+#
+# O idioma de desenvolvimento vai para pt-BR: é ele que diz à Siri em que
+# língua estão as frases de `DesksideAtalhos.swift`. No inglês do template,
+# a Siri em português não reconheceria nenhuma delas.
+ruby -e "require 'xcodeproj'" 2>/dev/null || gem install xcodeproj --no-document
+ruby - <<'RB'
+require 'fileutils'
+require 'xcodeproj'
+
+projeto = Xcodeproj::Project.open('ios/Runner.xcodeproj')
+alvo = projeto.targets.find { |t| t.name == 'Runner' } or abort('FALHOU: sem o alvo Runner')
+grupo = projeto.main_group['Runner'] or abort('FALHOU: sem o grupo Runner')
+
+arquivos = Dir.glob('nativo/ios/Runner/*.swift').sort
+abort('FALHOU: nenhum .swift em client/nativo/ios/Runner') if arquivos.empty?
+arquivos.each do |origem|
+  nome = File.basename(origem)
+  FileUtils.cp(origem, File.join('ios/Runner', nome))
+  ref = grupo.files.find { |f| f.path == nome } || grupo.new_reference(nome)
+  unless alvo.source_build_phase.files_references.include?(ref)
+    alvo.add_file_references([ref])
+  end
+  puts "Swift no alvo Runner: #{nome}"
+end
+
+raiz = projeto.root_object
+raiz.development_region = 'pt-BR'
+raiz.known_regions << 'pt-BR' unless raiz.known_regions.include?('pt-BR')
+projeto.save
+RB
+# Conferir no arquivo salvo, e não confiar no script: é a mesma regra do resto
+# deste arquivo.
+for f in nativo/ios/Runner/*.swift; do
+  nome=$(basename "$f")
+  grep -q "$nome in Sources" ios/Runner.xcodeproj/project.pbxproj || {
+    echo "FALHOU: $nome não entrou na compilação do Runner."
+    exit 1
+  }
+done
+grep -q "developmentRegion = \"pt-BR\"" ios/Runner.xcodeproj/project.pbxproj || {
+  echo "FALHOU: o idioma de desenvolvimento não ficou em pt-BR."
+  exit 1
+}
+
 echo "--- Info.plist ---"
 /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$PLIST"
 /usr/libexec/PlistBuddy -c "Print :ITSAppUsesNonExemptEncryption" "$PLIST"
