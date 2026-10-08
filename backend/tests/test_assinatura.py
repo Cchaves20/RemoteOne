@@ -23,7 +23,14 @@ from app.assinatura import (
     vale_como_pago,
 )
 
-AGORA = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
+#: O "agora" dos testes é o de verdade, e não uma data fixa.
+#:
+#: Era `datetime(2026, 9, 8, 12, 0)`, e virou uma bomba-relógio: `ate_quando`
+#: confere a validade contra o relógio real, e a compra de 30 dias do teste
+#: "venceu" em 8/10/2026 ao meio-dia — a suíte passou a falhar sozinha, sem
+#: nenhuma mudança no código. Os testes que precisam de um instante fixo passam
+#: `agora=AGORA` explicitamente, e para eles tanto faz qual instante é.
+AGORA = datetime.now(UTC).replace(microsecond=0)
 PRODUTO = "com.deskside.pro.mensal"
 
 
