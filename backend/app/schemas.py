@@ -856,3 +856,49 @@ class DeviceOut(BaseModel):
     teste_encerrado: bool = False
 
     model_config = {"from_attributes": True}
+
+
+# --- Widget do celular --------------------------------------------------------
+
+#: O que um botão do widget pode fazer. Os nomes são do protocolo entre app,
+#: widget e servidor — o texto que a pessoa lê é do app.
+TipoDeBotao = Literal[
+    "apresentacao",
+    "tocar_pausar",
+    "automacao",
+    "suspender",
+    "volume_mais",
+    "volume_menos",
+    "silenciar",
+]
+
+
+class BotaoDoWidget(BaseModel):
+    tipo: TipoDeBotao
+    #: Só no tipo `automacao`: qual delas.
+    automacao_id: str | None = Field(default=None, max_length=64)
+
+
+class WidgetIn(BaseModel):
+    """A escolha feita na tela "Widgets" do app."""
+
+    device_id: str | None = Field(default=None, max_length=64)
+    botoes: list[BotaoDoWidget] = Field(default_factory=list, max_length=3)
+    #: As automações ao segurar o ícone do app, na ordem. Vazio = as primeiras
+    #: da lista.
+    atalhos: list[str] = Field(default_factory=list, max_length=4)
+
+
+class BotaoDoWidgetOut(BotaoDoWidget):
+    #: O nome da automação, para o widget escrever no botão sem outra consulta.
+    automacao_nome: str | None = None
+
+
+class WidgetOut(BaseModel):
+    """O widget pronto para desenhar: nomes resolvidos e o estado de agora."""
+
+    device_id: str | None = None
+    device_name: str | None = None
+    online: bool = False
+    botoes: list[BotaoDoWidgetOut] = []
+    atalhos: list[str] = []

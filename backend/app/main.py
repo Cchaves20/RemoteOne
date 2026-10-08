@@ -62,6 +62,7 @@ from app.signaling import (
     to_viewer,
 )
 from app.transfers import transfers
+from app.widget import router as widget_router
 
 logger = logging.getLogger("deskside")
 
@@ -78,6 +79,7 @@ app.include_router(auth_router)
 app.include_router(devices_router)
 app.include_router(profiles_router)
 app.include_router(automations_router)
+app.include_router(widget_router)
 app.include_router(compras_router)
 
 # Registro de agentes conectados (em memória; ver app/agents.py).

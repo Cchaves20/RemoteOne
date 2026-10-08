@@ -122,6 +122,11 @@ class User(Base):
     assinaturas: Mapped[list["Assinatura"]] = relationship(
         cascade="all, delete-orphan"
     )
+    #: O que o widget do celular mostra. Mesma regra: a conta que nascer com
+    #: este id não pode herdar o widget de outra pessoa.
+    widget: Mapped["WidgetConfig | None"] = relationship(
+        cascade="all, delete-orphan"
+    )
 
 
 class PendingSignup(Base):
@@ -420,6 +425,24 @@ class ProfileLayout(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     #: JSON com a lista de ids, na ordem.
     order: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class WidgetConfig(Base):
+    """O que o widget do celular mostra: um computador e três botões.
+
+    No servidor, e não no aparelho, por dois motivos. O widget do iPhone é um
+    programa à parte do app, e compartilhar dados entre os dois pelo aparelho
+    exigiria configurar um "App Group" à mão no portal da Apple. E a mesma
+    escolha passa a valer no iPhone e no Android da mesma conta.
+
+    Guarda também quais automações aparecem ao segurar o ícone do app.
+    """
+
+    __tablename__ = "widget_configs"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    #: JSON: `{"device_id": ..., "botoes": [...], "atalhos": [...]}`.
+    dados: Mapped[str] = mapped_column(Text, default="{}")
 
 
 class Assinatura(Base):
