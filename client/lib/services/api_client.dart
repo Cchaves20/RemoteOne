@@ -15,6 +15,7 @@ import '../models/presentation.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
+import '../models/widget_config.dart';
 import '../models/window_zone.dart';
 import '../l10n/strings.dart';
 import 'erros.dart';
@@ -798,6 +799,26 @@ class ApiClient {
     if (res.statusCode != 204) {
       throw _error(res);
     }
+  }
+
+  /// O widget do celular, pronto para desenhar. Ver `models/widget_config.dart`.
+  Future<ConfigDoWidget> widget() async {
+    final res = await _http
+        .get(_uri('/api/v1/widget'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return ConfigDoWidget.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Guarda a escolha da tela de widgets e devolve o widget resolvido.
+  Future<ConfigDoWidget> salvarWidget(ConfigDoWidget config) async {
+    final res = await _http
+        .put(
+          _uri('/api/v1/widget'),
+          headers: _authHeaders,
+          body: jsonEncode(config.toJson()),
+        )
+        .timeout(const Duration(seconds: 10));
+    return ConfigDoWidget.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
   /// Coloca um texto na área de transferência do computador.

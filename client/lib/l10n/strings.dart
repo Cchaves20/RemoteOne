@@ -714,6 +714,62 @@ class Strings {
       '手机上没有已复制的内容。',
       "Rien n'est copié sur le téléphone.",
       'No hay nada copiado en el teléfono.');
+  // Widgets
+  String get widgetsTitulo =>
+      _t('Widgets', 'Widgets', '小组件', 'Widgets', 'Widgets');
+  String get widgetsDica => _t(
+      'O widget da tela inicial e os atalhos do ícone',
+      'The home screen widget and the icon shortcuts',
+      '主屏幕小组件和图标快捷方式',
+      "Le widget de l'écran d'accueil et les raccourcis de l'icône",
+      'El widget de la pantalla de inicio y los atajos del icono');
+  String get widgetsPrevia =>
+      _t('Prévia', 'Preview', '预览', 'Aperçu', 'Vista previa');
+  String get widgetsComputador => _t('Computador do widget',
+      'Widget computer', '小组件的电脑', 'Ordinateur du widget', 'Equipo del widget');
+  String get widgetsSemComputador => _t(
+      'Pareie um computador para montar o widget.',
+      'Pair a computer to set up the widget.',
+      '先配对一台电脑才能设置小组件。',
+      'Associez un ordinateur pour configurer le widget.',
+      'Vincula un equipo para configurar el widget.');
+  String widgetsBotao(int n) =>
+      _t('Botão $n', 'Button $n', '按钮 $n', 'Bouton $n', 'Botón $n');
+  String get widgetsNenhum =>
+      _t('Nenhum', 'None', '无', 'Aucun', 'Ninguno');
+  String get botaoTocarPausar =>
+      _t('Tocar/pausar', 'Play/pause', '播放/暂停', 'Lecture/pause', 'Reproducir/pausar');
+  String get botaoVolumeMais =>
+      _t('Volume +', 'Volume +', '音量 +', 'Volume +', 'Volumen +');
+  String get botaoVolumeMenos =>
+      _t('Volume −', 'Volume −', '音量 −', 'Volume −', 'Volumen −');
+  String get botaoSilenciar =>
+      _t('Silenciar', 'Mute', '静音', 'Couper le son', 'Silenciar');
+  String botaoAutomacao(String nome) => _t('Automação: $nome',
+      'Automation: $nome', '自动化：$nome', 'Automatisation : $nome', 'Automatización: $nome');
+  String get widgetsAtalhosTitulo => _t('Atalhos do ícone',
+      'Icon shortcuts', '图标快捷方式', "Raccourcis de l'icône", 'Atajos del icono');
+  String get widgetsAtalhosDica => _t(
+      'Segure o ícone do Deskside para ver estas automações. Até 4; sem escolher nenhuma, vão as primeiras da lista.',
+      'Press and hold the Deskside icon to see these automations. Up to 4; if you pick none, the first ones in the list are used.',
+      '长按 Deskside 图标即可看到这些自动化。最多 4 个；不选择则使用列表中的前几个。',
+      "Maintenez l'icône Deskside pour voir ces automatisations. Jusqu'à 4 ; sans choix, ce sont les premières de la liste.",
+      'Mantén pulsado el icono de Deskside para ver estas automatizaciones. Hasta 4; si no eliges ninguna, se usan las primeras de la lista.');
+  String get widgetsAtalhosMaximo => _t('Até 4 atalhos.', 'Up to 4 shortcuts.',
+      '最多 4 个快捷方式。', "Jusqu'à 4 raccourcis.", 'Hasta 4 atajos.');
+  String get widgetsSalvo => _t(
+      'Salvo. O widget se atualiza em alguns instantes.',
+      'Saved. The widget updates in a moment.',
+      '已保存。小组件稍后会更新。',
+      'Enregistré. Le widget se met à jour dans un instant.',
+      'Guardado. El widget se actualiza en unos instantes.');
+  String get widgetsComoAdicionar => _t(
+      'Para pôr o widget na tela inicial: segure um espaço vazio da tela, toque em "+" (iPhone) ou em "Widgets" (Android) e escolha Deskside.',
+      'To add the widget: press and hold an empty spot on the home screen, tap "+" (iPhone) or "Widgets" (Android) and choose Deskside.',
+      '添加小组件：长按主屏幕空白处，点“+”（iPhone）或“小组件”（Android），然后选择 Deskside。',
+      "Pour ajouter le widget : maintenez un espace vide de l'écran d'accueil, touchez « + » (iPhone) ou « Widgets » (Android) et choisissez Deskside.",
+      'Para añadir el widget: mantén pulsado un espacio vacío de la pantalla de inicio, toca "+" (iPhone) o "Widgets" (Android) y elige Deskside.');
+
   String get atalhoSemAutomacao => _t(
       'Essa automação não existe mais. Os atalhos do ícone se atualizam sozinhos.',
       'That automation no longer exists. The icon shortcuts update on their own.',

@@ -14,6 +14,7 @@ import 'gesture_tutorial_screen.dart';
 import 'profiles_screen.dart';
 import 'two_factor_screen.dart';
 import 'verify_screen.dart';
+import 'widgets_screen.dart';
 
 /// Configurações do app e da conta: tema, qualidade da tela, segurança,
 /// gerenciamento de conta (e-mail, senha, excluir) e "Sobre".
@@ -100,6 +101,12 @@ class SettingsScreen extends StatelessWidget {
                     () => Navigator.of(context)
                         .push(fadeThroughRoute(ProfilesScreen(state: state))),
                     subtitle: t.profilesHint),
+              ])),
+              staggered(_card(context, t.widgetsTitulo, Icons.widgets_outlined, [
+                _action(context, Icons.widgets_outlined, t.widgetsTitulo,
+                    () => Navigator.of(context)
+                        .push(fadeThroughRoute(WidgetsScreen(state: state))),
+                    subtitle: t.widgetsDica),
               ])),
               staggered(_card(
                   context, t.planoTitulo, Icons.workspace_premium_outlined, [

@@ -6,8 +6,9 @@
 ///
 /// ## Quais automações
 ///
-/// As quatro primeiras da lista da conta, na ordem dela. Escolher outras é da
-/// tela de widgets, que vem depois e reaproveita este arquivo.
+/// As escolhidas na tela de widgets (Configurações › Widgets), na ordem dos
+/// toques. Sem escolha, as quatro primeiras da lista da conta. Quem decide é
+/// `AppState.automacoesDoIcone`.
 ///
 /// ## Como o toque chega à automação
 ///

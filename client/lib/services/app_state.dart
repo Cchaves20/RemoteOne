@@ -18,6 +18,7 @@ import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/stream_quality.dart';
 import '../models/system_stats.dart';
+import '../models/widget_config.dart';
 import '../models/window_zone.dart';
 import 'api_client.dart';
 import 'word_suggester.dart';
@@ -320,6 +321,11 @@ class AppState extends ChangeNotifier {
         automations = await api.automations();
       } catch (_) {
         // Backend antigo ou plano sem o recurso: os atalhos ficam vazios.
+      }
+      try {
+        widget = await api.widget();
+      } catch (_) {
+        // Servidor antigo: os atalhos usam as primeiras automações.
       }
     } on ApiException {
       // O servidor respondeu, então há conexão. O erro em si (sessão
@@ -647,6 +653,36 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// O widget do celular (e os atalhos do ícone). `null` até o servidor
+  /// responder — ou num servidor antigo, que não tem o endpoint.
+  ConfigDoWidget? widget;
+
+  Future<void> carregarWidget() async {
+    try {
+      widget = await api.widget();
+      notifyListeners();
+    } catch (_) {
+      // Servidor antigo ou rede fora: os atalhos usam as primeiras automações.
+    }
+  }
+
+  Future<void> salvarWidget(ConfigDoWidget config) async {
+    widget = await api.salvarWidget(config);
+    notifyListeners();
+  }
+
+  /// As automações dos atalhos do ícone, na ordem escolhida na tela de
+  /// widgets — ou as primeiras da lista, se ninguém escolheu.
+  List<Automation> get automacoesDoIcone {
+    final escolhidas = widget?.atalhos ?? const [];
+    if (escolhidas.isEmpty) return automations;
+    final porId = {for (final a in automations) a.id: a};
+    return [
+      for (final id in escolhidas)
+        if (porId[id] != null) porId[id]!,
+    ];
+  }
+
   Future<List<StepResult>> runAutomation(Automation a, {String? deviceId}) =>
       api.runAutomation(a.id, deviceId: deviceId);
 
@@ -804,6 +840,7 @@ class AppState extends ChangeNotifier {
   void _esquecerSessao() {
     _conexaoVoltou();
     automations = const [];
+    widget = null;
     atalhoPendente = null;
     devices = [];
     selected = null;

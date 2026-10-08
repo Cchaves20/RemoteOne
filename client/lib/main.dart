@@ -26,7 +26,7 @@ Future<void> main() async {
   // acompanha as automações da conta. Ver `services/atalhos_do_icone.dart`.
   final atalhos = AtalhosDoIcone();
   atalhos.iniciar(state.receberAtalho);
-  state.addListener(() => atalhos.sincronizar(state.automations));
+  state.addListener(() => atalhos.sincronizar(state.automacoesDoIcone));
 }
 
 class DesksideApp extends StatelessWidget {
