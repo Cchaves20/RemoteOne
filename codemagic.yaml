@@ -316,6 +316,24 @@ workflows:
             --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
             --create
 
+          # O widget é um segundo programa dentro do app (ver
+          # scripts/preparar-ios-alvos.rb), com identificador e perfil
+          # próprios. Mesmo raciocínio do app: criar aqui o que faltar, com o
+          # identificador escrito uma vez, em vez de alguém digitá-lo no
+          # portal. Não precisa de App Group: a configuração do widget mora no
+          # servidor.
+          WIDGET="${ESPERADO}.DesksideWidget"
+          if ! grep -q "^Identifier: ${WIDGET}$" /tmp/ids.txt; then
+            echo "App ID '$WIDGET' não está registrado. Criando."
+            app-store-connect bundle-ids create "$WIDGET" \
+              --name "Deskside Widget" \
+              --platform IOS
+          fi
+          app-store-connect fetch-signing-files "$WIDGET" \
+            --type IOS_APP_STORE \
+            --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
+            --create
+
           keychain add-certificates
 
           # Aplica o perfil ao projeto do Xcode e escreve o export_options.plist

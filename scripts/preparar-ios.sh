@@ -142,53 +142,33 @@ definir CFBundleDisplayName string Deskside
 # cifrar conteúdo por conta própria, esta linha precisa ser revista.
 definir ITSAppUsesNonExemptEncryption bool false
 
-# --- 5. Código Swift do Deskside: Siri e app Atalhos ----------------------
-# Os arquivos de `client/nativo/ios/Runner/` (hoje, as ações da Siri) entram
-# no alvo Runner. Copiar não basta: um .swift fora do projeto do Xcode não é
-# compilado, e o build passa verde sem a Siri — sem nada no log dizendo.
+# --- 5. Código nativo do Deskside: Siri, app Atalhos e o widget -------------
+# Copia `client/nativo/ios/` para o projeto e o põe na compilação: as ações da
+# Siri no alvo Runner, e o widget num alvo próprio, embutido no app. Copiar não
+# basta — um .swift fora do projeto do Xcode não é compilado, e o build passa
+# verde sem a Siri e sem o widget, sem nada no log dizendo.
 #
-# Quem edita o projeto é a gema `xcodeproj`, a mesma que o CocoaPods usa e
-# que já vem na máquina do Codemagic.
-#
-# O idioma de desenvolvimento vai para pt-BR: é ele que diz à Siri em que
-# língua estão as frases de `DesksideAtalhos.swift`. No inglês do template,
-# a Siri em português não reconheceria nenhuma delas.
+# Quem edita o projeto é `preparar-ios-alvos.rb`, pela gema `xcodeproj` (a
+# mesma do CocoaPods, que já vem na máquina do Codemagic). Lá está também por
+# que o idioma de desenvolvimento vai para pt-BR.
 ruby -e "require 'xcodeproj'" 2>/dev/null || gem install xcodeproj --no-document
-ruby - <<'RB'
-require 'fileutils'
-require 'xcodeproj'
+ruby "$(dirname "$0")/preparar-ios-alvos.rb"
 
-projeto = Xcodeproj::Project.open('ios/Runner.xcodeproj')
-alvo = projeto.targets.find { |t| t.name == 'Runner' } or abort('FALHOU: sem o alvo Runner')
-grupo = projeto.main_group['Runner'] or abort('FALHOU: sem o grupo Runner')
-
-arquivos = Dir.glob('nativo/ios/Runner/*.swift').sort
-abort('FALHOU: nenhum .swift em client/nativo/ios/Runner') if arquivos.empty?
-arquivos.each do |origem|
-  nome = File.basename(origem)
-  FileUtils.cp(origem, File.join('ios/Runner', nome))
-  ref = grupo.files.find { |f| f.path == nome } || grupo.new_reference(nome)
-  unless alvo.source_build_phase.files_references.include?(ref)
-    alvo.add_file_references([ref])
-  end
-  puts "Swift no alvo Runner: #{nome}"
-end
-
-raiz = projeto.root_object
-raiz.development_region = 'pt-BR'
-raiz.known_regions << 'pt-BR' unless raiz.known_regions.include?('pt-BR')
-projeto.save
-RB
 # Conferir no arquivo salvo, e não confiar no script: é a mesma regra do resto
 # deste arquivo.
-for f in nativo/ios/Runner/*.swift; do
+PBX=ios/Runner.xcodeproj/project.pbxproj
+for f in nativo/ios/Comum/*.swift nativo/ios/Runner/*.swift nativo/ios/DesksideWidget/*.swift; do
   nome=$(basename "$f")
-  grep -q "$nome in Sources" ios/Runner.xcodeproj/project.pbxproj || {
-    echo "FALHOU: $nome não entrou na compilação do Runner."
+  grep -q "$nome in Sources" "$PBX" || {
+    echo "FALHOU: $nome não entrou na compilação."
     exit 1
   }
 done
-grep -q "developmentRegion = \"pt-BR\"" ios/Runner.xcodeproj/project.pbxproj || {
+grep -q "DesksideWidget.appex in Embed Foundation Extensions" "$PBX" || {
+  echo "FALHOU: o widget não foi embutido no app."
+  exit 1
+}
+grep -q "developmentRegion = \"pt-BR\"" "$PBX" || {
   echo "FALHOU: o idioma de desenvolvimento não ficou em pt-BR."
   exit 1
 }
