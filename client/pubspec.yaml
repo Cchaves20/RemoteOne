@@ -67,6 +67,12 @@ dependencies:
   # `android.builtInKotlin=false` do codemagic.yaml desliga. A 1.0.30 ainda
   # aplica o Kotlin por conta própria. Sai junto com aquele ajuste.
   quick_actions_android: 1.0.30
+  # O widget da tela inicial (ver `services/widget_da_tela.dart`): no Android,
+  # grava o que o widget mostra e roda os toques nos botões em segundo plano;
+  # no iPhone, só pede o redesenho. O `build.gradle` dela lê o
+  # `android.builtInKotlin=false` do codemagic.yaml e aplica o plugin de
+  # Kotlin por conta própria — o caminho que funciona hoje.
+  home_widget: ^0.10.0
   # Compra dentro do app (StoreKit no iOS, Play Billing no Android).
   #
   # Só responde em build vindo da App Store ou do TestFlight. Num app instalado

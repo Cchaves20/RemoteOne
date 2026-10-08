@@ -656,6 +656,11 @@ workflows:
           # linha que interessa.
           exigir "$APPGRADLE" "minSdk.*24"
 
+          # --- 4. Widget da tela inicial ------------------------------------
+          # O código e o desenho moram em client/nativo/android/; o script os
+          # copia e registra o widget no manifesto, conferindo cada passo.
+          python3 ../scripts/preparar-android.py
+
           echo "--- manifesto final ---"
           cat "$MANIFESTO"
       - name: Análise e testes

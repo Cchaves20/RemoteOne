@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nomes com prefixo `deskside_` para não colidir com o que o template do
+     Flutter ou um plugin trouxer. -->
+<resources>
+    <string name="deskside_widget_descricao">Seu computador e três botões, escolhidos em Configurações › Widgets no app.</string>
+    <string name="deskside_widget_abra_o_app">Abra o Deskside para configurar o widget.</string>
+
+    <style name="DesksideWidgetBotao">
+        <item name="android:background">@drawable/deskside_widget_botao</item>
+        <item name="android:gravity">center</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:padding">4dp</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+</resources>

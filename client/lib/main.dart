@@ -7,6 +7,7 @@ import 'screens/login_screen.dart';
 import 'services/api_client.dart';
 import 'services/app_state.dart';
 import 'services/atalhos_do_icone.dart';
+import 'services/widget_da_tela.dart';
 import 'theme.dart';
 import 'widgets/barra_do_sistema.dart';
 
@@ -27,6 +28,13 @@ Future<void> main() async {
   final atalhos = AtalhosDoIcone();
   atalhos.iniciar(state.receberAtalho);
   state.addListener(() => atalhos.sincronizar(state.automacoesDoIcone));
+
+  // O widget da tela inicial acompanha a escolha salva em Configurações ›
+  // Widgets. Ver `services/widget_da_tela.dart`.
+  registrarToquesDoWidget();
+  final widgetDaTela = SincronizadorDoWidget();
+  state.addListener(() => widgetDaTela.sincronizar(
+      state.widget, state.isAuthenticated, state.t, state.language));
 }
 
 class DesksideApp extends StatelessWidget {
