@@ -296,6 +296,14 @@ pub fn status_lines(s: &Status) -> Vec<String> {
         linhas.push("Não instalado (rodando de onde está).".to_string());
     }
     linhas.push(match (s.autostart, s.autostart_por_tarefa) {
+        _ if cfg!(target_os = "macos") => format!(
+            "Inicia com o Mac: {}",
+            if s.autostart {
+                "sim (LaunchAgent)"
+            } else {
+                "não"
+            }
+        ),
         (false, _) => "Inicia com o Windows: não".to_string(),
         (true, true) => "Inicia com o Windows: sim (tarefa agendada — a forma rápida)".to_string(),
         // A reserva. Funciona, e é a razão de o agente demorar a subir: a pasta
@@ -347,6 +355,83 @@ pub fn uninstall_entries(exe: &Path, versao: &str) -> Vec<(String, String)> {
         ("NoModify".into(), "1".into()),
         ("NoRepair".into(), "1".into()),
     ]
+}
+
+/// Se a cópia instalada **assume o lugar** de quem a instalou.
+///
+/// No Windows, sim: o `install` copia o executável para a pasta do usuário e
+/// sobe a cópia, e quem foi clicado sai. No Mac, não: o `.app` arrastado para
+/// Aplicativos já **é** a instalação, o `install` só registra o início junto
+/// com o Mac, e o processo que está rodando continua.
+pub const A_COPIA_INSTALADA_ASSUME: bool = cfg!(windows);
+
+/// O nome do agente para o `launchd`, no formato de domínio invertido que ele
+/// usa. É também o nome do arquivo em `~/Library/LaunchAgents`.
+pub const ROTULO_DO_MAC: &str = "com.deskside.agente";
+
+/// O arquivo que faz o Mac subir o agente no login.
+///
+/// - `RunAtLoad`: sobe ao entrar na conta.
+/// - `KeepAlive` só para saída **com erro**: se o agente travar, o Mac o sobe
+///   de novo; se a pessoa escolher Sair no menu (saída normal), fica parado.
+///   Sem essa distinção, Sair não sairia.
+/// - `LimitLoadToSessionType` = `Aqua`: só na sessão com tela. Numa entrada
+///   por SSH o agente não teria o que capturar.
+///
+/// Os caminhos vão escapados para XML: um usuário chamado "Ana & Bia" não pode
+/// produzir um arquivo que o `launchd` recusa calado.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn plist_do_mac(exe: &Path) -> String {
+    let caminho = exe
+        .display()
+        .to_string()
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{ROTULO_DO_MAC}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{caminho}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>
+"#
+    )
+}
+
+/// Se este executável está num lugar de onde **não** dá para instalar.
+///
+/// Dois casos, ambos comuns:
+///
+/// - Aberto direto do `.dmg` (`/Volumes/...`): o disco some quando a pessoa o
+///   ejeta, e o início automático passaria a apontar para o nada.
+/// - Aberto pela "translocação" do Gatekeeper (`.../AppTranslocation/...`): o
+///   Mac roda um app baixado de uma cópia temporária até ele ser movido para
+///   Aplicativos. O caminho muda a cada abertura.
+///
+/// Nos dois, o agente roda normalmente nesta sessão; só não se registra para
+/// subir com o Mac, e a janela pede para arrastar o Deskside para Aplicativos.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn lugar_provisorio(exe: &Path) -> bool {
+    let texto = exe.to_string_lossy();
+    texto.starts_with("/Volumes/") || texto.contains("/AppTranslocation/")
 }
 
 #[cfg(windows)]
@@ -774,12 +859,138 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 mod imp {
     use super::*;
 
-    const SO_WINDOWS: &str = "a instalação em segundo plano só existe no Windows; \
-                              em Linux/macOS rode o agente direto";
+    extern "C" {
+        fn getuid() -> u32;
+    }
+
+    fn caminho_do_plist() -> Result<PathBuf, String> {
+        let casa = std::env::var_os("HOME").ok_or("sem a variável HOME")?;
+        Ok(PathBuf::from(casa)
+            .join("Library/LaunchAgents")
+            .join(format!("{ROTULO_DO_MAC}.plist")))
+    }
+
+    fn exe_atual() -> Result<PathBuf, String> {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+    }
+
+    /// Tira o agente do `launchd` desta sessão.
+    ///
+    /// Se quem pede é o próprio agente rodando pelo `launchd`, o sistema o
+    /// encerra aqui mesmo — por isso é sempre o **último** passo.
+    fn tirar_do_launchd() {
+        let alvo = format!("gui/{}/{ROTULO_DO_MAC}", unsafe { getuid() });
+        match std::process::Command::new("/bin/launchctl")
+            .args(["bootout", &alvo])
+            .output()
+        {
+            // Não estar carregado é o caso comum (instalado e ainda sem novo
+            // login), e não erro.
+            Ok(_) => {}
+            Err(e) => crate::diario(&format!("launchctl não rodou: {e}")),
+        }
+    }
+
+    /// Registra o agente para subir no login.
+    ///
+    /// Só grava o arquivo, sem carregá-lo agora: o agente já está rodando
+    /// (é ele quem instala), e carregar subiria uma segunda cópia que a guarda
+    /// de instância mandaria embora. No próximo login o Mac o lê sozinho.
+    pub fn install(backend: Option<&str>) -> Result<(), String> {
+        let exe = exe_atual()?;
+        if lugar_provisorio(&exe) {
+            return Err(
+                "o Deskside está rodando de dentro do arquivo baixado; arraste-o para \
+                 a pasta Aplicativos e abra de lá"
+                    .to_string(),
+            );
+        }
+        if let Some(url) = backend {
+            let mut cfg = crate::load_config();
+            cfg.set("DESKSIDE_BACKEND_URL", url);
+            crate::save_config(&cfg)?;
+        }
+        let plist = caminho_do_plist()?;
+        if let Some(pai) = plist.parent() {
+            std::fs::create_dir_all(pai)
+                .map_err(|e| format!("não consegui criar {}: {e}", pai.display()))?;
+        }
+        std::fs::write(&plist, plist_do_mac(&exe))
+            .map_err(|e| format!("não consegui gravar {}: {e}", plist.display()))?;
+        crate::diario(&format!(
+            "início com o Mac registrado em {}",
+            plist.display()
+        ));
+        Ok(())
+    }
+
+    pub fn deve_oferecer_instalacao() -> bool {
+        let (Ok(exe), Ok(plist)) = (exe_atual(), caminho_do_plist()) else {
+            return false;
+        };
+        if lugar_provisorio(&exe) {
+            return false;
+        }
+        // Instalar de novo quando o arquivo aponta para outro lugar: o `.app`
+        // foi movido, ou é uma versão nova num caminho diferente.
+        std::fs::read_to_string(plist).ok().as_deref() != Some(plist_do_mac(&exe).as_str())
+    }
+
+    /// Para de subir com o Mac. Não apaga a identidade (ver
+    /// `arquivos_da_identidade`).
+    pub fn uninstall() -> Result<(), String> {
+        let plist = caminho_do_plist()?;
+        let r = match std::fs::remove_file(&plist) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("não consegui apagar {}: {e}", plist.display())),
+        };
+        tirar_do_launchd();
+        r
+    }
+
+    /// O botão da janela: sai da conta, para de subir com o Mac e apaga a
+    /// configuração. O `.app` fica — um programa não deve se apagar de
+    /// Aplicativos, e a janela diz para arrastá-lo para o Lixo.
+    pub fn uninstall_completo() -> Result<(), String> {
+        // A configuração antes: `uninstall` pode encerrar este processo.
+        let _ = std::fs::remove_dir_all(crate::config_dir());
+        uninstall()
+    }
+
+    pub fn status() -> Status {
+        let cfg = crate::load_config();
+        let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
+        let registrado = caminho_do_plist().map(|p| p.exists()).unwrap_or(false);
+        Status {
+            installed: registrado,
+            autostart: registrado,
+            autostart_por_tarefa: false,
+            exe: exe_atual().unwrap_or_default(),
+            backend: crate::config::resolve(&cfg, "DESKSIDE_BACKEND_URL")
+                .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
+            backend_from_env: do_ambiente,
+            device_id: std::fs::read_to_string(crate::device_id_path())
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+mod imp {
+    use super::*;
+
+    const SO_WINDOWS: &str = "a instalação em segundo plano só existe no Windows e no \
+                              Mac; no Linux rode o agente direto";
 
     pub fn install(_backend: Option<&str>) -> Result<(), String> {
         Err(SO_WINDOWS.to_string())
@@ -831,6 +1042,40 @@ pub use imp::{install, status, uninstall, uninstall_completo};
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn o_plist_do_mac_aponta_para_o_executavel() {
+        let p = plist_do_mac(Path::new(
+            "/Applications/Deskside.app/Contents/MacOS/deskside-agent",
+        ));
+        assert!(p.contains("<string>com.deskside.agente</string>"));
+        assert!(
+            p.contains("<string>/Applications/Deskside.app/Contents/MacOS/deskside-agent</string>")
+        );
+        assert!(p.contains("<key>RunAtLoad</key>\n    <true/>"));
+        // Sair pelo menu é saída normal, e não pode fazer o Mac subir de novo.
+        assert!(p.contains("<key>SuccessfulExit</key>\n        <false/>"));
+    }
+
+    #[test]
+    fn o_plist_do_mac_escapa_o_caminho() {
+        let p = plist_do_mac(Path::new("/Users/Ana & Bia/Deskside.app/x"));
+        assert!(p.contains("/Users/Ana &amp; Bia/"));
+        assert!(!p.contains("Ana & Bia"));
+    }
+
+    #[test]
+    fn do_dmg_ou_da_translocacao_nao_se_instala() {
+        assert!(lugar_provisorio(Path::new(
+            "/Volumes/Deskside/Deskside.app/Contents/MacOS/deskside-agent"
+        )));
+        assert!(lugar_provisorio(Path::new(
+            "/private/var/folders/x/AppTranslocation/ABC/d/Deskside.app/Contents/MacOS/a"
+        )));
+        assert!(!lugar_provisorio(Path::new(
+            "/Applications/Deskside.app/Contents/MacOS/deskside-agent"
+        )));
+    }
 
     fn p(s: &str) -> PathBuf {
         PathBuf::from(s)

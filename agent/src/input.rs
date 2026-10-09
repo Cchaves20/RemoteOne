@@ -96,6 +96,28 @@ pub enum Modifier {
     Meta,
 }
 
+impl Modifier {
+    /// O modificador que faz no Mac o que este faz no Windows.
+    ///
+    /// O app fala a língua do Windows: "copiar" chega como Ctrl+C, e a tecla
+    /// do logotipo chega como `meta`. No Mac quem copia é o ⌘, e o ⌘ é
+    /// justamente o que o `enigo` aperta para `meta`. Sem a troca, Ctrl+C no
+    /// Mac não copia nada — e cada atalho do app precisaria de uma segunda
+    /// versão só para o Mac.
+    ///
+    /// É troca, e não só "Ctrl vira ⌘": quem pediu `meta` (Win+D, o menu
+    /// Iniciar) ganha o Control, que é a tecla que sobrou. Assim nenhum dos
+    /// dois some, e um teclado físico ligado ao iPad, que já manda o ⌘ como
+    /// Ctrl, volta a ser ⌘ do outro lado.
+    pub fn no_mac(self) -> Self {
+        match self {
+            Self::Ctrl => Self::Meta,
+            Self::Meta => Self::Ctrl,
+            outro => outro,
+        }
+    }
+}
+
 /// Comandos de mídia: as teclas que um teclado multimídia tem a mais.
 ///
 /// Ficam fora do [`InputAction`] de propósito. São teclas globais, atendidas por
@@ -169,6 +191,14 @@ pub enum InputAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_mac_ctrl_e_command_trocam_de_lugar() {
+        assert_eq!(Modifier::Ctrl.no_mac(), Modifier::Meta);
+        assert_eq!(Modifier::Meta.no_mac(), Modifier::Ctrl);
+        assert_eq!(Modifier::Alt.no_mac(), Modifier::Alt);
+        assert_eq!(Modifier::Shift.no_mac(), Modifier::Shift);
+    }
 
     #[test]
     fn mouse_move_wire_format() {

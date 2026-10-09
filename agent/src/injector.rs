@@ -1,9 +1,11 @@
 //! Injeção de entrada (mouse e teclado) no sistema operacional.
 //!
-//! A implementação real usa o `enigo` e existe apenas no Windows — a única
-//! plataforma disponível para teste real neste projeto. Linux e macOS têm um
-//! stub que apenas registra a ação (permite desenvolver e testar todo o
-//! caminho — backend → agente — sem uma sessão gráfica).
+//! A implementação real usa o `enigo`, no Windows e no Mac. No Mac ela só tem
+//! efeito depois de a pessoa liberar o Deskside em "Acessibilidade" (ver
+//! `permissoes_mac.rs`): sem isso o sistema descarta os eventos **em silêncio**,
+//! sem erro nenhum para devolver. O Linux tem um stub que apenas registra a
+//! ação (permite desenvolver e testar todo o caminho — backend → agente — sem
+//! uma sessão gráfica).
 
 use crate::input::{InputAction, MediaAction};
 
@@ -18,7 +20,7 @@ pub trait InputInjector {
     fn media(&mut self, action: MediaAction) -> Result<(), String>;
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod imp {
     use super::InputInjector;
     use crate::input::{InputAction, MediaAction, Modifier, MouseButton, SpecialKey};
@@ -109,6 +111,9 @@ mod imp {
     }
 
     fn modifier_key(modifier: &Modifier) -> Key {
+        // Os atalhos chegam na língua do Windows; ver `Modifier::no_mac`.
+        #[cfg(target_os = "macos")]
+        let modifier = &modifier.no_mac();
         match modifier {
             Modifier::Ctrl => Key::Control,
             Modifier::Alt => Key::Alt,
@@ -224,7 +229,7 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use super::InputInjector;
     use crate::input::{InputAction, MediaAction};

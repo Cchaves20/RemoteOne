@@ -111,7 +111,30 @@ pub fn rodar(estado: Compartilhado) {
     imp::rodar(estado);
 }
 
-#[cfg(windows)]
+/// Um texto como literal de AppleScript: entre aspas, com `\` e `"` escapados.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn texto_applescript(texto: &str) -> String {
+    format!("\"{}\"", texto.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// O `display dialog` de uma caixa do Mac com estes botões.
+///
+/// Puro para ser testado: um nome de computador com aspas não pode quebrar o
+/// script e sumir com a caixa — numa caixa que pede confirmação para
+/// desinstalar, sumir seria responder "não" sem ninguém ter respondido.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn script_de_caixa(texto: &str, botoes: &[&str], padrao: &str) -> String {
+    let botoes: Vec<String> = botoes.iter().map(|b| texto_applescript(b)).collect();
+    format!(
+        "button returned of (display dialog {} with title \"Deskside\" buttons {{{}}} \
+         default button {})",
+        texto_applescript(texto),
+        botoes.join(", "),
+        texto_applescript(padrao)
+    )
+}
+
+#[cfg(any(windows, target_os = "macos"))]
 mod imp {
     use super::{Atualizacao, AvisoDeAgenda, Compartilhado, Estado};
     use eframe::egui;
@@ -127,9 +150,178 @@ mod imp {
     /// dentro de três threads que não têm nada a ver umas com as outras.
     static CONTEXTO: OnceLock<egui::Context> = OnceLock::new();
 
+    #[cfg(windows)]
+    const ONDE_SAIR: &str =
+        "Fechar esta janela não encerra o Deskside. Para sair, use o ícone ao lado do relógio.";
+    #[cfg(target_os = "macos")]
+    const ONDE_SAIR: &str = "Fechar esta janela não encerra o Deskside. Para sair, use o ícone \
+         na barra de menus, no alto da tela.";
+
+    #[cfg(windows)]
+    const O_QUE_DESINSTALAR_FAZ: &str = "• este computador sai da sua conta\n\
+         • o programa para de iniciar com o Windows\n\
+         • os arquivos do Deskside são apagados";
+    #[cfg(target_os = "macos")]
+    const O_QUE_DESINSTALAR_FAZ: &str = "• este computador sai da sua conta\n\
+         • o programa para de iniciar com o Mac\n\
+         • as configurações do Deskside são apagadas\n\n\
+         Depois, arraste o Deskside de Aplicativos para o Lixo.";
+
+    /// Traz a janela para a frente. Chamável de qualquer thread.
+    ///
+    /// No Mac, como no Windows, o pedido ao `egui` sozinho não basta: uma
+    /// janela escondida não redesenha, e é no redesenho que o `egui` aplica os
+    /// pedidos. Por isso a janela é trazida pela AppKit direto — na thread
+    /// principal, que é a única onde a AppKit aceita ser chamada.
+    ///
+    /// Pelo título, e só a nossa: o ícone da barra de menus também é uma
+    /// janela do processo, e trazê-lo "para a frente" não faria sentido.
+    #[cfg(target_os = "macos")]
+    pub fn mostrar_janela() {
+        dispatch2::DispatchQueue::main().exec_async(|| {
+            let Some(mtm) = objc2::MainThreadMarker::new() else {
+                return;
+            };
+            let app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+            // O agente não tem ícone no Dock (`LSUIElement`), e um app assim
+            // não vem para a frente sozinho.
+            #[allow(deprecated)]
+            app.activateIgnoringOtherApps(true);
+            for janela in app.windows().iter() {
+                if janela.title().to_string() == "Deskside" {
+                    janela.makeKeyAndOrderFront(None);
+                }
+            }
+        });
+        if let Some(ctx) = CONTEXTO.get() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            ctx.request_repaint();
+        }
+    }
+
+    /// Uma caixa do próprio Mac, pelo `osascript`, sem travar quem chamou.
+    ///
+    /// O `display dialog` do AppleScript é a caixa padrão do sistema, e o
+    /// `osascript` vem em todo Mac. Escrever a caixa em AppKit daria o mesmo
+    /// resultado com dez vezes mais código.
+    #[cfg(target_os = "macos")]
+    fn caixa(texto: &str) {
+        let script = super::script_de_caixa(texto, &["OK"], "OK");
+        std::thread::spawn(move || {
+            let _ = std::process::Command::new("/usr/bin/osascript")
+                .args(["-e", &script])
+                .output();
+        });
+    }
+
+    /// Pergunta sim ou não, e bloqueia até a resposta. `true` = `sim`.
+    #[cfg(target_os = "macos")]
+    fn pergunta(texto: &str, nao: &str, sim: &str, padrao: &str) -> bool {
+        let script = super::script_de_caixa(texto, &[nao, sim], padrao);
+        std::process::Command::new("/usr/bin/osascript")
+            .args(["-e", &script])
+            .output()
+            .map(|s| String::from_utf8_lossy(&s.stdout).trim() == sim)
+            .unwrap_or(false)
+    }
+
+    /// Com o "Agora não" como padrão: um Enter distraído não pode desinstalar.
+    #[cfg(target_os = "macos")]
+    fn caixa_de_desinstalar() -> bool {
+        pergunta(
+            &format!("Desinstalar o Deskside deste Mac?\n\n{O_QUE_DESINSTALAR_FAZ}"),
+            "Agora não",
+            "Desinstalar",
+            "Agora não",
+        )
+    }
+
+    #[cfg(target_os = "macos")]
+    fn caixa_de_atualizar() -> bool {
+        pergunta(
+            "Há uma versão nova do Deskside.\n\nAtualizar agora? Leva alguns segundos: o \
+             Deskside reinicia sozinho, e o celular reconecta em seguida.",
+            "Agora não",
+            "Atualizar",
+            "Atualizar",
+        )
+    }
+
+    /// O que falta liberar nos Ajustes do Sistema, com o botão que leva lá.
+    ///
+    /// Sem este quadro, um Mac sem as permissões mostraria "Conectado" e o
+    /// celular veria só o papel de parede — e nada diria por quê.
+    #[cfg(target_os = "macos")]
+    fn desenhar_permissoes(ui: &mut egui::Ui) {
+        use crate::permissoes_mac::{faltando, reabrir};
+        let falta = faltando();
+        if falta.is_empty() {
+            return;
+        }
+        let laranja = egui::Color32::from_rgb(0xd9, 0x7a, 0x00);
+        ui.group(|ui| {
+            ui.set_width(ui.available_width());
+            ui.label(
+                egui::RichText::new("Falta liberar o Deskside no Mac")
+                    .strong()
+                    .color(laranja),
+            );
+            for p in falta {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(format!("{}: {}", p.nome(), p.para_que()));
+                    if ui.button("Abrir Ajustes").clicked() {
+                        p.abrir_ajustes();
+                    }
+                });
+            }
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(
+                    "Em Ajustes do Sistema › Privacidade e Segurança, ligue o Deskside \
+                     nos dois itens. O Mac só aplica a Gravação de Tela depois de \
+                     reabrir o programa.",
+                )
+                .small()
+                .weak(),
+            );
+            if ui.button("Reabrir o Deskside").clicked() {
+                reabrir();
+            }
+        });
+        ui.add_space(12.0);
+    }
+
+    /// Aberto de dentro do arquivo baixado: funciona agora, mas não volta
+    /// sozinho depois de reiniciar o Mac. Ver `setup::lugar_provisorio`.
+    #[cfg(target_os = "macos")]
+    fn desenhar_lugar_provisorio(ui: &mut egui::Ui) {
+        let exe = std::env::current_exe().unwrap_or_default();
+        if !crate::setup::lugar_provisorio(&exe) {
+            return;
+        }
+        ui.group(|ui| {
+            ui.set_width(ui.available_width());
+            ui.label(egui::RichText::new("Arraste o Deskside para Aplicativos").strong());
+            ui.label(
+                egui::RichText::new(
+                    "Ele está rodando de dentro do arquivo baixado. Funciona agora, \
+                     mas só passa a abrir sozinho com o Mac depois de ir para a \
+                     pasta Aplicativos e ser aberto de lá.",
+                )
+                .small(),
+            );
+        });
+        ui.add_space(12.0);
+    }
+
+    #[cfg(windows)]
     const SW_SHOW: i32 = 5;
+    #[cfg(windows)]
     const SW_RESTORE: i32 = 9;
 
+    #[cfg(windows)]
     #[link(name = "user32")]
     extern "system" {
         fn FindWindowExW(pai: isize, apos: isize, classe: *const u16, titulo: *const u16) -> isize;
@@ -139,6 +331,7 @@ mod imp {
         fn IsIconic(janela: isize) -> i32;
     }
 
+    #[cfg(windows)]
     #[link(name = "kernel32")]
     extern "system" {
         fn GetCurrentProcessId() -> u32;
@@ -149,6 +342,7 @@ mod imp {
     /// Pelo título, e conferindo o **processo dono**: "Deskside" é um nome
     /// que uma pasta do Explorer pode ter, e mandar `ShowWindow` na janela de
     /// outra pessoa seria um jeito criativo de assombrar o usuário.
+    #[cfg(windows)]
     fn achar_janela() -> Option<isize> {
         let titulo: Vec<u16> = "Deskside".encode_utf16().chain(std::iter::once(0)).collect();
         let meu_pid = unsafe { GetCurrentProcessId() };
@@ -275,6 +469,7 @@ mod imp {
         });
     }
 
+    #[cfg(windows)]
     pub fn mostrar_janela() {
         match achar_janela() {
             Some(janela) => unsafe {
@@ -401,6 +596,44 @@ mod imp {
                 crate::diario("janela: pedida por automação agendada");
                 mostrar_janela();
             });
+
+            // No Mac o clique no menu chega por aqui, e não pela fila lida no
+            // `update`: com a janela escondida o `update` não roda, e o menu da
+            // barra é justamente o caminho para abri-la.
+            #[cfg(target_os = "macos")]
+            {
+                let (abrir, sair) = (id_abrir.clone(), id_sair.clone());
+                let (desinstalar, atualizar) = (id_desinstalar.clone(), id_atualizar.clone());
+                let do_menu = estado.clone();
+                MenuEvent::set_event_handler(Some(move |evento: MenuEvent| {
+                    if evento.id == abrir {
+                        mostrar_janela();
+                    } else if evento.id == desinstalar {
+                        // Numa thread: a pergunta espera a pessoa, e a thread
+                        // do menu é a da interface inteira.
+                        let estado = do_menu.clone();
+                        std::thread::spawn(move || {
+                            if caixa_de_desinstalar() {
+                                desinstalar_em_segundo_plano(estado);
+                            }
+                        });
+                    } else if evento.id == atualizar {
+                        procurar_atualizacao_pela_bandeja(do_menu.clone());
+                    } else if evento.id == sair {
+                        std::process::exit(0);
+                    }
+                }));
+
+                // Primeira abertura no Mac: sem as permissões, ou rodando de
+                // dentro do arquivo baixado, a pessoa precisa ver o que fazer —
+                // e uma janela escondida não ensina nada.
+                let exe = std::env::current_exe().unwrap_or_default();
+                if !crate::permissoes_mac::faltando().is_empty()
+                    || crate::setup::lugar_provisorio(&exe)
+                {
+                    mostrar_janela();
+                }
+            }
 
             crate::diario(&format!(
                 "interface iniciada (bandeja: {})",
@@ -541,6 +774,12 @@ mod imp {
                 ui.add_space(12.0);
             }
 
+            #[cfg(target_os = "macos")]
+            {
+                desenhar_permissoes(ui);
+                desenhar_lugar_provisorio(ui);
+            }
+
             if let Some(aviso) = estado.aviso.clone() {
                 self.desenhar_aviso(ui, &aviso);
                 ui.add_space(12.0);
@@ -585,14 +824,7 @@ mod imp {
             );
 
             ui.add_space(16.0);
-            ui.label(
-                egui::RichText::new(
-                    "Fechar esta janela não encerra o Deskside. \
-                     Para sair, use o ícone ao lado do relógio.",
-                )
-                .small()
-                .weak(),
-            );
+            ui.label(egui::RichText::new(ONDE_SAIR).small().weak());
 
             ui.add_space(20.0);
             self.desenhar_desinstalar(ui);
@@ -680,12 +912,7 @@ mod imp {
                 ui.add_space(4.0);
                 // O que vai acontecer, item a item. Um "tem certeza?" seco faz
                 // a pessoa clicar em sim sem saber o que perde.
-                ui.label(
-                    egui::RichText::new(
-                        "• este computador sai da sua conta\n                         • o programa para de iniciar com o Windows\n                         • os arquivos do Deskside são apagados",
-                    )
-                    .small(),
-                );
+                ui.label(egui::RichText::new(O_QUE_DESINSTALAR_FAZ).small());
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new(
@@ -825,8 +1052,26 @@ mod imp {
 
         // A janela não abrir não pode parar o agente, que roda noutra thread.
         if let Err(e) = resultado {
-            crate::diario(&format!("A janela não abriu ({e}); indo para a bandeja simples."));
-            bandeja_sem_placa_de_video(estado_reserva);
+            #[cfg(windows)]
+            {
+                crate::diario(&format!(
+                    "A janela não abriu ({e}); indo para a bandeja simples."
+                ));
+                bandeja_sem_placa_de_video(estado_reserva);
+            }
+            // Todo Mac desenha a janela (Metal existe desde 2012); falhar aqui
+            // seria raro demais para justificar uma interface de reserva. O
+            // agente continua alcançável, e o diário diz o que houve.
+            #[cfg(target_os = "macos")]
+            {
+                crate::diario(&format!(
+                    "A janela não abriu ({e}); o agente segue sem ela."
+                ));
+                drop(estado_reserva);
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(3600));
+                }
+            }
         }
     }
 
@@ -844,6 +1089,7 @@ mod imp {
     /// caixas do próprio Windows, que desenham sem placa de vídeo. É menos
     /// bonito e é infinitamente melhor que nada, que era o que essas máquinas
     /// tinham.
+    #[cfg(windows)]
     fn bandeja_sem_placa_de_video(estado: Compartilhado) {
         let abrir = MenuItem::new("Estado do Deskside", true, None);
         // Aqui é o **único** lugar de onde dá para desinstalar pela interface:
@@ -965,6 +1211,7 @@ mod imp {
     }
 
     /// O estado do agente numa caixa do Windows.
+    #[cfg(windows)]
     fn caixa_de_estado(estado: &Compartilhado) {
         let e = estado.lock().map(|e| e.clone()).unwrap_or_default();
         let texto = format!(
@@ -1062,23 +1309,33 @@ mod imp {
         cfg
     }
 
+    #[cfg(windows)]
     const MB_OK: u32 = 0x0000_0000;
+    #[cfg(windows)]
     const MB_YESNO: u32 = 0x0000_0004;
+    #[cfg(windows)]
     const MB_ICONINFORMATION: u32 = 0x0000_0040;
+    #[cfg(windows)]
     const MB_ICONWARNING: u32 = 0x0000_0030;
     /// Sem isto o botão em foco é o "Sim", e um Enter distraído cancelaria a
     /// automação. O padrão tem que ser deixar acontecer o que foi agendado.
+    #[cfg(windows)]
     const MB_DEFBUTTON2: u32 = 0x0000_0100;
+    #[cfg(windows)]
     const MB_SETFOREGROUND: u32 = 0x0001_0000;
+    #[cfg(windows)]
     const MB_TOPMOST: u32 = 0x0004_0000;
+    #[cfg(windows)]
     const ID_YES: i32 = 6;
 
+    #[cfg(windows)]
     #[link(name = "user32")]
     extern "system" {
         fn MessageBoxW(dono: isize, texto: *const u16, titulo: *const u16, tipo: u32) -> i32;
     }
 
     /// Última linha de defesa: o código numa caixa do próprio Windows.
+    #[cfg(windows)]
     fn caixa_de_pareamento(code: &str, expira_em: u64) {
         caixa(&format!(
             "Código de pareamento:\n\n{code}\n\nDigite este código no aplicativo.\n\
@@ -1093,6 +1350,7 @@ mod imp {
     /// agenda, criada só para isto, e a resposta é o motivo da caixa existir.
     /// Enquanto ela está aberta, essa thread não consulta o estado - e é
     /// exatamente o que se quer, porque a pergunta já está na tela.
+    #[cfg(windows)]
     fn caixa_de_aviso(aviso: &AvisoDeAgenda) -> bool {
         let faltam = faltam_minutos(aviso);
         let texto = format!(
@@ -1134,6 +1392,7 @@ mod imp {
     /// O `MB_DEFBUTTON2` põe o foco no "Não". Um Enter distraído no menu não
     /// pode desinstalar o programa — o padrão de uma pergunta destrutiva é
     /// sempre não fazer nada.
+    #[cfg(windows)]
     fn caixa_de_desinstalar() -> bool {
         let texto = "Desinstalar o Deskside deste computador?\n\n\
              • este computador sai da sua conta\n\
@@ -1165,6 +1424,7 @@ mod imp {
     ///
     /// Com o "Sim" como padrão, ao contrário da de desinstalar: atualizar não
     /// apaga nada, e dá errado voltando sozinho à versão de antes.
+    #[cfg(windows)]
     fn caixa_de_atualizar() -> bool {
         let texto = "Há uma versão nova do Deskside.\n\n\
              Atualizar agora? Leva alguns segundos: o Deskside reinicia \
@@ -1191,6 +1451,7 @@ mod imp {
     /// a caixa, e quem chama aqui costuma ser a thread de rede do agente ou a
     /// que bombeia as mensagens da bandeja. Bloquear qualquer uma das duas
     /// pararia o controle remoto até alguém clicar em OK.
+    #[cfg(windows)]
     fn caixa(texto: &str) {
         let texto = texto.to_string();
         std::thread::spawn(move || {
@@ -1212,6 +1473,7 @@ mod imp {
 
     /// A `MSG` do Windows. Só precisa do tamanho e da ordem certos: quem lê os
     /// campos é o próprio sistema.
+    #[cfg(windows)]
     #[repr(C)]
     #[derive(Default)]
     struct Msg {
@@ -1224,6 +1486,7 @@ mod imp {
         pt_y: i32,
     }
 
+    #[cfg(windows)]
     #[link(name = "user32")]
     extern "system" {
         fn GetMessageW(msg: *mut Msg, janela: isize, primeira: u32, ultima: u32) -> i32;
@@ -1232,7 +1495,7 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use super::Compartilhado;
 
@@ -1248,6 +1511,16 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn caixa_do_mac_escapa_aspas_e_barras() {
+        let script = script_de_caixa("PC \"da Ana\" \\ sala", &["Não", "Sim"], "Não");
+        assert_eq!(
+            script,
+            "button returned of (display dialog \"PC \\\"da Ana\\\" \\\\ sala\" with title \
+             \"Deskside\" buttons {\"Não\", \"Sim\"} default button \"Não\")"
+        );
+    }
 
     #[test]
     fn o_estado_atravessa_as_threads() {

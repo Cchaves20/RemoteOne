@@ -284,7 +284,13 @@ fn instalar_no_primeiro_uso() -> bool {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // `-psn_...` é o número de processo que versões antigas do macOS passam a
+    // um app aberto pelo Finder. Não é pedido de ninguém, e contá-lo como
+    // argumento faria o duplo clique parecer chamada pelo terminal.
+    let args: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|a| !a.starts_with("-psn_"))
+        .collect();
     // Só quando há argumentos: duplo clique não tem terminal para se pendurar,
     // e tentar não custa nada além de uma chamada que falha em silêncio.
     if !args.is_empty() {
@@ -340,7 +346,11 @@ fn main() {
     // `args.is_empty()` é o que separa "cliquei no ícone" de "chamei pelo
     // terminal": quem digita `deskside-agent run` pediu para rodar, não para
     // instalar, e perguntar ali seria atrapalhar quem sabe o que está fazendo.
-    if args.is_empty() && setup::deve_oferecer_instalacao() && instalar_no_primeiro_uso() {
+    if args.is_empty()
+        && setup::deve_oferecer_instalacao()
+        && instalar_no_primeiro_uso()
+        && setup::A_COPIA_INSTALADA_ASSUME
+    {
         return;
     }
 
@@ -365,6 +375,12 @@ fn main() {
     // apareceria no aplicativo como uma máquina nova, pedindo pareamento, e a
     // antiga ficaria na lista como um fantasma que nunca mais fica online.
     deskside_agent::migrar_configuracao_antiga();
+
+    // No Mac, as duas permissões sem as quais o controle remoto não funciona
+    // (ver `permissoes_mac.rs`). Aqui, na partida, porque a caixa do sistema
+    // aparece no Mac — e quem está diante dele agora é quem instalou.
+    #[cfg(target_os = "macos")]
+    deskside_agent::permissoes_mac::conferir_na_partida();
 
     let plat = platform::current();
     let cfg = load_config();

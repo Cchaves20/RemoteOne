@@ -35,6 +35,7 @@ pub use imp::{escutar_pedidos_de_janela, reivindicar, Guard};
 ///
 /// Fora do módulo de plataforma porque é conversão de texto, não chamada de
 /// sistema - e é a única parte disto que dá para testar em qualquer máquina.
+#[cfg_attr(not(windows), allow(dead_code))]
 /// O zero final não é detalhe: sem ele o Windows lê memória adiante até achar
 /// um, e o nome do mutex vira lixo diferente a cada execução.
 fn wide(s: &str) -> Vec<u16> {
@@ -140,7 +141,66 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+/// No Mac: um arquivo trancado no lugar do mutex, e um arquivo-sinal no lugar
+/// do evento.
+///
+/// A tranca (`flock`) é do sistema e some sozinha quando o processo morre —
+/// inclusive num travamento —, então nunca sobra um "já está rodando" falso. O
+/// sinal é um arquivo que a segunda cópia cria e a primeira, consultando de
+/// segundo em segundo, apaga ao mostrar a janela. Um segundo de atraso para
+/// abrir a janela não se percebe, e evita depender de mais uma API da Apple.
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::Start;
+    use std::fs::{File, OpenOptions};
+    use std::path::PathBuf;
+
+    pub struct Guard(#[allow(dead_code)] File);
+
+    fn tranca() -> PathBuf {
+        crate::config_dir().join("agente.lock")
+    }
+
+    fn sinal() -> PathBuf {
+        crate::config_dir().join("mostrar-janela")
+    }
+
+    pub fn reivindicar() -> Start {
+        let _ = std::fs::create_dir_all(crate::config_dir());
+        let arquivo = match OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(tranca())
+        {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Não consegui checar se já havia um agente rodando ({e}); seguindo");
+                return Start::Primeira(Guard(File::open("/dev/null").expect("/dev/null")));
+            }
+        };
+        match arquivo.try_lock() {
+            Ok(()) => Start::Primeira(Guard(arquivo)),
+            Err(_) => {
+                let _ = std::fs::write(sinal(), b"");
+                Start::JaRodando
+            }
+        }
+    }
+
+    pub fn escutar_pedidos_de_janela(mostrar: impl Fn()) {
+        // Um pedido que sobrou de antes desta execução não conta.
+        let _ = std::fs::remove_file(sinal());
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            if std::fs::remove_file(sinal()).is_ok() {
+                mostrar();
+            }
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use super::Start;
 
@@ -178,7 +238,7 @@ mod tests {
     /// poder subir duas vezes. No Windows este teste não vale: se houver um
     /// agente instalado rodando, a resposta correta é `JaRodando` - e chamar
     /// `reivindicar` aqui ainda pediria a janela dele.
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     #[test]
     fn no_desenvolvimento_a_segunda_copia_tambem_sobe() {
         assert!(matches!(reivindicar(), Start::Primeira(_)));

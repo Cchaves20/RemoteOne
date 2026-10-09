@@ -26,4 +26,14 @@ void main() {
   test('servidor antigo, sem o campo, não inventa aviso', () {
     expect(Device.fromJson(resposta()).testeEncerrado, isFalse);
   });
+
+  test('o sistema aparece escrito como as pessoas escrevem', () {
+    Device com(String os) => Device.fromJson({...resposta(), 'os': os});
+    expect(com('windows').nomeDoSistema, 'Windows');
+    expect(com('macos').nomeDoSistema, 'macOS');
+    expect(com('macos').ehMac, isTrue);
+    expect(com('windows').ehMac, isFalse);
+    // Um sistema que o app ainda não conhece aparece como veio.
+    expect(com('haiku').nomeDoSistema, 'haiku');
+  });
 }

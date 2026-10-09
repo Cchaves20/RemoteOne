@@ -574,7 +574,7 @@ class _DevicesScreenState extends State<DevicesScreen>
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
-                    Text('${d.os} · ${d.hostname}',
+                    Text('${d.nomeDoSistema} · ${d.hostname}',
                         style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant),
                         maxLines: 1,
@@ -595,7 +595,9 @@ class _DevicesScreenState extends State<DevicesScreen>
   Widget _osAvatar(Device d) {
     final icon = d.os.toLowerCase().contains('win')
         ? Icons.desktop_windows
-        : Icons.computer;
+        : d.ehMac
+            ? Icons.laptop_mac
+            : Icons.computer;
     return Container(
       width: 48,
       height: 48,

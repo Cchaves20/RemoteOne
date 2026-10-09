@@ -1,10 +1,12 @@
 //! Captura da tela e codificação em JPEG (Etapa 7).
 //!
-//! A captura real usa o `xcap` e existe apenas no Windows — a única plataforma
-//! com tela para testar aqui. No Linux/macOS um stub gera um frame sintético,
-//! o que permite validar todo o pipeline (agente → backend → app) sem uma
-//! sessão gráfica. A codificação JPEG é compartilhada e testável em qualquer
-//! plataforma.
+//! A captura real usa o `xcap`, no Windows e no Mac — a biblioteca tem a mesma
+//! interface nos dois, e o código abaixo serve aos dois sem mudança. No Mac ela
+//! só entrega a tela depois de a pessoa liberar "Gravação de Tela" (ver
+//! `permissoes_mac.rs`); antes disso, os quadros vêm só com o papel de parede.
+//! No Linux um stub gera um frame sintético, o que permite validar todo o
+//! pipeline (agente → backend → app) sem uma sessão gráfica. A codificação
+//! JPEG é compartilhada e testável em qualquer plataforma.
 //!
 //! ## A ordem das duas operações
 //!
@@ -177,7 +179,7 @@ pub struct MonitorInfo {
 ///
 /// O principal vem primeiro de propósito: é o que a maioria quer ver, e é o
 /// escolhido quando ninguém escolheu.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn monitors() -> Vec<MonitorInfo> {
     let todos = match xcap::Monitor::all() {
         Ok(lista) => lista,
@@ -209,7 +211,7 @@ pub fn monitors() -> Vec<MonitorInfo> {
 }
 
 /// Stub: uma tela sintética só, do mesmo tamanho que o gerador produz.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn monitors() -> Vec<MonitorInfo> {
     vec![MonitorInfo {
         id: 0,
@@ -225,7 +227,7 @@ pub fn monitors() -> Vec<MonitorInfo> {
 /// Sumir é normal: um monitor pode ser desligado com a sessão aberta. Cair no
 /// principal é melhor do que devolver erro — a tela continua chegando, e a
 /// pessoa vê que mudou.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn pick_monitor(id: Option<u32>) -> Result<xcap::Monitor, String> {
     let todos = xcap::Monitor::all().map_err(|e| e.to_string())?;
     if let Some(alvo) = id {
@@ -250,26 +252,26 @@ fn pick_monitor(id: Option<u32>) -> Result<xcap::Monitor, String> {
 /// estatísticas, mais caro que codificar. Resolver o monitor uma vez e guardá-lo
 /// tira esse trabalho do caminho quente.
 pub struct Screen {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     monitor: xcap::Monitor,
 }
 
 impl Screen {
     /// Resolve o monitor a ser capturado. Chame uma vez por sessão.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     pub fn new(monitor: Option<u32>) -> Result<Self, String> {
         Ok(Self {
             monitor: pick_monitor(monitor)?,
         })
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     pub fn new(_monitor: Option<u32>) -> Result<Self, String> {
         Ok(Self {})
     }
 
     /// Captura a tela em RGBA, devolvendo `(pixels, largura, altura)`.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     fn grab_rgba(&self) -> Result<(Vec<u8>, u32, u32), String> {
         let image = self.monitor.capture_image().map_err(|e| e.to_string())?;
         let (width, height) = (image.width(), image.height());
@@ -278,7 +280,7 @@ impl Screen {
 
     /// Stub (não-Windows): gera um frame sintético — um gradiente com uma faixa
     /// vertical que se move com o tempo, para dar movimento visível ao testar.
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     fn grab_rgba(&self) -> Result<(Vec<u8>, u32, u32), String> {
         let (width, height) = (640u32, 360u32);
         let ticks = std::time::SystemTime::now()
@@ -314,20 +316,20 @@ impl Screen {
 /// chamada**. Medido no agente, isso custava 70–100 ms por quadro. O
 /// `video_recorder()` abre a sessão uma vez e entrega os quadros por um canal.
 struct ContinuousCapture {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     recorder: xcap::VideoRecorder,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     frames: std::sync::mpsc::Receiver<xcap::Frame>,
     /// Quanto esperar por um quadro antes de devolver o controle ao laço.
     timeout: std::time::Duration,
     /// Vive aqui para reaproveitar os buffers internos entre os quadros.
     scaler: Scaler,
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     screen: Screen,
 }
 
 impl ContinuousCapture {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     fn start(monitor: Option<u32>, interval: std::time::Duration) -> Result<Self, String> {
         let monitor = pick_monitor(monitor)?;
         let (recorder, frames) = monitor
@@ -346,7 +348,7 @@ impl ContinuousCapture {
         })
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     fn start(monitor: Option<u32>, interval: std::time::Duration) -> Result<Self, String> {
         Ok(Self {
             timeout: interval,
@@ -356,9 +358,9 @@ impl ContinuousCapture {
     }
 
     /// Próximo quadro já reduzido, ou `None` se nada chegou no prazo.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     fn next_frame(&mut self, max_width: u32) -> Result<Option<CapturedFrame>, String> {
-        use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
+        use std::sync::mpsc::RecvTimeoutError;
         let mut frame = match self.frames.recv_timeout(self.timeout) {
             Ok(frame) => frame,
             Err(RecvTimeoutError::Timeout) => return Ok(None),
@@ -371,14 +373,12 @@ impl ContinuousCapture {
         // fila, cada volta processa o quadro **mais antigo** e o atraso cresce
         // sem limite — reduzir todos seria gastar CPU para exibir imagem velha.
         // O que vale é sempre o último.
-        loop {
-            match self.frames.try_recv() {
-                Ok(newer) => frame = newer,
-                // Fila vazia, ou o gravador acabou: em ambos os casos o quadro
-                // em mãos é o mais recente que existe. Se foi encerrado, a
-                // próxima chamada devolve o erro.
-                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
-            }
+        //
+        // Fila vazia, ou o gravador acabou: em ambos os casos o quadro em mãos
+        // é o mais recente que existe. Se foi encerrado, a próxima chamada
+        // devolve o erro.
+        while let Ok(newer) = self.frames.try_recv() {
+            frame = newer;
         }
         // `raw` já vem em RGBA: o xcap converte de BGRA antes de entregar.
         Ok(Some(self.scaler.scale(
@@ -389,7 +389,7 @@ impl ContinuousCapture {
         )?))
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     fn next_frame(&mut self, max_width: u32) -> Result<Option<CapturedFrame>, String> {
         // O stub é síncrono: gera na hora e respeita o ritmo pedido.
         let frame = self.screen.frame(&mut self.scaler, max_width)?;
@@ -398,7 +398,7 @@ impl ContinuousCapture {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl Drop for ContinuousCapture {
     fn drop(&mut self) {
         if let Err(e) = self.recorder.stop() {

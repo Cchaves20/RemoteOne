@@ -25,6 +25,18 @@ class Device {
   /// alguma coisa.
   final bool testeEncerrado;
 
+  /// Se o computador é um Mac. O agente manda `macos`.
+  bool get ehMac => os.toLowerCase().contains('mac');
+
+  /// O sistema como as pessoas o escrevem: "Windows", "macOS". O agente
+  /// manda em minúsculas, que é bom para comparar e feio para mostrar.
+  String get nomeDoSistema => switch (os.toLowerCase()) {
+        'windows' => 'Windows',
+        'macos' => 'macOS',
+        'linux' => 'Linux',
+        _ => os,
+      };
+
   factory Device.fromJson(Map<String, dynamic> json) {
     return Device(
       deviceId: json['device_id'] as String,

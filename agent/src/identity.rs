@@ -141,10 +141,35 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+/// O identificador de hardware do Mac, na saída do `ioreg`.
+///
+/// A linha que interessa é `"IOPlatformUUID" = "XXXXXXXX-..."`. É o
+/// equivalente do `MachineGuid`: fixo para a máquina, igual entre usuários, e
+/// sobrevive a reinstalar o Deskside.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn uuid_do_ioreg(saida: &str) -> Option<String> {
+    let linha = saida.lines().find(|l| l.contains("\"IOPlatformUUID\""))?;
+    let valor = linha.split('=').nth(1)?.trim().trim_matches('"').trim();
+    (!valor.is_empty()).then(|| valor.to_string())
+}
+
+#[cfg(target_os = "macos")]
 mod imp {
-    /// Fora do Windows não há `MachineGuid`, e o Deskside só controla
-    /// Windows. `None` aqui é o mesmo "não sei" de um agente antigo.
+    /// Pelo `ioreg`, que vem em todo Mac. Ler o mesmo valor pela API do
+    /// IOKit seria mais uma dependência para uma leitura feita uma vez.
+    pub fn machine_guid() -> Option<String> {
+        let saida = std::process::Command::new("/usr/sbin/ioreg")
+            .args(["-rd1", "-c", "IOPlatformExpertDevice"])
+            .output()
+            .ok()?;
+        super::uuid_do_ioreg(&String::from_utf8_lossy(&saida.stdout))
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+mod imp {
+    /// No Linux não há `MachineGuid`, e o Deskside não controla Linux ainda.
+    /// `None` aqui é o mesmo "não sei" de um agente antigo.
     pub fn machine_guid() -> Option<String> {
         None
     }
@@ -199,6 +224,26 @@ mod maquina {
             resumo_da_maquina(GUID).unwrap(),
             "66c07f84e530b9ca810fa035126eca7d3bc2fd98791276b102c469d9e0c69e63"
         );
+    }
+
+    #[test]
+    fn o_uuid_do_mac_sai_do_ioreg() {
+        let saida = r#"+-o J314sAP  <class IOPlatformExpertDevice, id 0x100000255>
+    {
+      "IOPlatformSerialNumber" = "C02XXXXXXX"
+      "IOPlatformUUID" = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
+      "manufacturer" = <"Apple Inc.">
+    }"#;
+        assert_eq!(
+            super::uuid_do_ioreg(saida).as_deref(),
+            Some("3F2504E0-4F89-11D3-9A0C-0305E82C3301")
+        );
+        // E o resumo é o mesmo de um GUID igual em minúsculas.
+        assert_eq!(
+            resumo_da_maquina(&super::uuid_do_ioreg(saida).unwrap()),
+            resumo_da_maquina(GUID)
+        );
+        assert_eq!(super::uuid_do_ioreg("nada aqui"), None);
     }
 
     #[test]

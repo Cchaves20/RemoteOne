@@ -1,0 +1,41 @@
+# O agente no Mac, num Mac de verdade: testes e o Deskside.app para baixar.
+#
+# Roda a cada push que mexe no agente, em qualquer ramo. O repositório é
+# público, e para repositório público as máquinas Mac do GitHub não cobram.
+# Ver docs/agente-mac.md.
+name: Agente no Mac
+
+on:
+  push:
+    paths:
+      - "agent/**"
+      - "scripts/montar-app-mac.sh"
+      - ".github/workflows/agente-mac.yml"
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+
+      - name: Testes
+        working-directory: agent
+        run: cargo test
+
+      - name: Montar o Deskside.app
+        run: sh scripts/montar-app-mac.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Deskside-mac
+          path: agent/target/mac/Deskside-mac.zip
+          retention-days: 30

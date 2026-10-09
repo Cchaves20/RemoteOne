@@ -224,10 +224,80 @@ pub struct CopiedFiles {
     pub ignored: usize,
 }
 
+/// Os arquivos copiados, a partir dos caminhos que o sistema entregou.
+///
+/// Só volta o que está dentro da pasta do usuário: é o mesmo limite do
+/// download, e mostrar o que não dá para buscar seria oferecer um botão que
+/// falha. Igual no Windows e no Mac; só a leitura dos caminhos muda.
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+fn montar_lista(caminhos: Vec<String>) -> CopiedFiles {
+    let mut fora = 0usize;
+    let mut entradas = Vec::new();
+    for texto in caminhos {
+        let Ok(real) = crate::files::resolve(&texto) else {
+            fora += 1;
+            continue;
+        };
+        let meta = std::fs::metadata(&real).ok();
+        entradas.push(crate::files::FileEntry {
+            name: real
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| texto.clone()),
+            path: real.to_string_lossy().to_string(),
+            is_dir: meta.as_ref().is_some_and(|m| m.is_dir()),
+            size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
+        });
+    }
+    if fora > 0 {
+        println!(
+            "Área de transferência: {fora} arquivo(s) copiado(s) fora da \
+             pasta do usuário, ignorado(s)"
+        );
+    }
+    CopiedFiles {
+        entries: entradas,
+        ignored: fora,
+    }
+}
+
+/// O caminho de um `file:///Users/ana/Meus%20Documentos/a.pdf`, como o Mac
+/// põe na área de transferência ao copiar um arquivo no Finder.
+///
+/// `None` para o que não for arquivo local (um link `https://` copiado cai no
+/// mesmo tipo de dado) ou não decodificar como texto.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn caminho_do_url_de_arquivo(url: &str) -> Option<String> {
+    let resto = url.strip_prefix("file://")?;
+    // `file://localhost/...` é a forma longa do mesmo endereço.
+    let resto = resto.strip_prefix("localhost").unwrap_or(resto);
+    if !resto.starts_with('/') {
+        return None;
+    }
+    let bytes = resto.as_bytes();
+    let mut saida = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok()?;
+            saida.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            saida.push(bytes[i]);
+            i += 1;
+        }
+    }
+    let caminho = String::from_utf8(saida).ok()?;
+    // A pasta vem com barra no fim (`.../Fotos/`); o resto do agente não usa.
+    Some(match caminho.trim_end_matches('/') {
+        "" => "/".to_string(),
+        sem => sem.to_string(),
+    })
+}
+
 #[cfg(windows)]
 mod imp {
     use super::{limited, CopiedFiles, Tracker};
-    use crate::files::FileEntry;
 
     /// Acompanha a área de transferência do Windows.
     pub struct Clipboard {
@@ -327,34 +397,7 @@ mod imp {
                         return CopiedFiles::default();
                     }
                 };
-            let mut fora = 0usize;
-            let mut entradas = Vec::new();
-            for texto in caminhos {
-                let Ok(real) = crate::files::resolve(&texto) else {
-                    fora += 1;
-                    continue;
-                };
-                let meta = std::fs::metadata(&real).ok();
-                entradas.push(FileEntry {
-                    name: real
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| texto.clone()),
-                    path: real.to_string_lossy().to_string(),
-                    is_dir: meta.as_ref().is_some_and(|m| m.is_dir()),
-                    size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
-                });
-            }
-            if fora > 0 {
-                println!(
-                    "Área de transferência: {fora} arquivo(s) copiado(s) fora da \
-                     pasta do usuário, ignorado(s)"
-                );
-            }
-            CopiedFiles {
-                entries: entradas,
-                ignored: fora,
-            }
+            super::montar_lista(caminhos)
         }
 
         /// A imagem que está na área de transferência agora, se houver.
@@ -408,7 +451,151 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::{limited, CopiedFiles, Tracker};
+    use objc2_app_kit::{
+        NSPasteboard, NSPasteboardType, NSPasteboardTypeFileURL, NSPasteboardTypePNG,
+        NSPasteboardTypeString, NSPasteboardTypeTIFF,
+    };
+    use objc2_foundation::{NSData, NSString};
+
+    /// Acompanha a área de transferência do Mac.
+    ///
+    /// O mesmo desenho da do Windows: o `changeCount` do Mac é o equivalente
+    /// do contador de cópias do Windows, e é ele que deixa perceber uma cópia
+    /// nova sem ler o conteúdo a cada segundo.
+    pub struct Clipboard {
+        tracker: Tracker,
+        last_seq: isize,
+    }
+
+    impl Default for Clipboard {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    fn quadro() -> objc2::rc::Retained<NSPasteboard> {
+        NSPasteboard::generalPasteboard()
+    }
+
+    // As constantes de tipo são estáticas da AppKit; ler uma é `unsafe` só
+    // porque o Rust não sabe que o sistema as inicializa antes do `main`.
+    fn tipo_texto() -> &'static NSPasteboardType {
+        unsafe { NSPasteboardTypeString }
+    }
+
+    fn texto_atual() -> Option<String> {
+        quadro().stringForType(tipo_texto()).map(|t| t.to_string())
+    }
+
+    impl Clipboard {
+        pub fn new() -> Self {
+            Self {
+                tracker: Tracker::new(),
+                last_seq: quadro().changeCount(),
+            }
+        }
+
+        /// O texto que está na área de transferência agora.
+        pub fn read(&mut self) -> Option<String> {
+            let texto = limited(&texto_atual()?);
+            self.tracker.remember(&texto);
+            Some(texto)
+        }
+
+        /// Escreve na área de transferência do computador.
+        pub fn write(&mut self, text: &str) -> Result<(), String> {
+            let texto = limited(text);
+            let q = quadro();
+            // `clearContents` é obrigatório antes de escrever: é ele que diz
+            // ao Mac que este programa passou a ser o dono do conteúdo.
+            q.clearContents();
+            if !q.setString_forType(&NSString::from_str(&texto), tipo_texto()) {
+                return Err("o Mac recusou o texto na área de transferência".to_string());
+            }
+            // A mudança é nossa: não volta ao telefone como novidade.
+            self.last_seq = q.changeCount();
+            self.tracker.remember(&texto);
+            Ok(())
+        }
+
+        /// Põe uma imagem na área de transferência.
+        ///
+        /// Recebe o BMP que o caminho comum prepara para o Windows (ver
+        /// `imagem_para_bmp`) e grava em PNG, que é o que os programas do Mac
+        /// colam. A conversão de volta custa pouco perto de manter um segundo
+        /// caminho só para o Mac.
+        pub fn write_image(&mut self, bmp: &[u8]) -> Result<(), String> {
+            let img = image::load_from_memory_with_format(bmp, image::ImageFormat::Bmp)
+                .map_err(|e| format!("não consegui ler a imagem: {e}"))?;
+            let mut png = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut png, image::ImageFormat::Png)
+                .map_err(|e| format!("não consegui preparar a imagem: {e}"))?;
+            let dados = NSData::with_bytes(png.get_ref());
+            let q = quadro();
+            q.clearContents();
+            if !q.setData_forType(Some(&dados), unsafe { NSPasteboardTypePNG }) {
+                return Err("o Mac recusou a imagem na área de transferência".to_string());
+            }
+            self.last_seq = q.changeCount();
+            Ok(())
+        }
+
+        /// Os arquivos copiados no Finder.
+        ///
+        /// Cada arquivo é um item da área de transferência com o endereço
+        /// `file://` dele. Mesmo limite do Windows: só o que está dentro da
+        /// pasta do usuário.
+        pub fn files(&mut self) -> CopiedFiles {
+            let Some(itens) = quadro().pasteboardItems() else {
+                return CopiedFiles::default();
+            };
+            let tipo = unsafe { NSPasteboardTypeFileURL };
+            let caminhos: Vec<String> = itens
+                .iter()
+                .filter_map(|item| item.stringForType(tipo))
+                .filter_map(|url| super::caminho_do_url_de_arquivo(&url.to_string()))
+                .collect();
+            if caminhos.is_empty() {
+                return CopiedFiles::default();
+            }
+            super::montar_lista(caminhos)
+        }
+
+        /// A imagem copiada, se houver.
+        ///
+        /// PNG primeiro (capturas de tela), TIFF depois: é o formato que o
+        /// Preview, o Safari e o próprio sistema usam por padrão ao copiar uma
+        /// imagem, e às vezes o único que vem.
+        pub fn image(&mut self) -> Option<super::Imagem> {
+            let q = quadro();
+            let dados = q
+                .dataForType(unsafe { NSPasteboardTypePNG })
+                .or_else(|| q.dataForType(unsafe { NSPasteboardTypeTIFF }))?;
+            match super::preparar_imagem(&dados.to_vec()) {
+                Ok(img) => Some(img),
+                Err(motivo) => {
+                    crate::diario(&format!("Área de transferência: {motivo}"));
+                    None
+                }
+            }
+        }
+
+        /// Novidade desde a última chamada, se houver.
+        pub fn changed(&mut self) -> Option<String> {
+            let seq = quadro().changeCount();
+            if seq == self.last_seq {
+                return None;
+            }
+            self.last_seq = seq;
+            self.tracker.accept(limited(&texto_atual()?))
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use super::{CopiedFiles, Tracker};
 
@@ -641,9 +828,38 @@ mod tests {
     }
 
     #[test]
+    fn url_de_arquivo_do_finder_vira_caminho() {
+        assert_eq!(
+            caminho_do_url_de_arquivo("file:///Users/ana/Meus%20Documentos/a%C3%A7%C3%A3o.pdf"),
+            Some("/Users/ana/Meus Documentos/ação.pdf".to_string())
+        );
+        // Pasta: o Finder põe a barra no fim.
+        assert_eq!(
+            caminho_do_url_de_arquivo("file:///Users/ana/Fotos/"),
+            Some("/Users/ana/Fotos".to_string())
+        );
+        assert_eq!(
+            caminho_do_url_de_arquivo("file://localhost/tmp/x"),
+            Some("/tmp/x".to_string())
+        );
+    }
+
+    #[test]
+    fn o_que_nao_e_arquivo_local_fica_de_fora() {
+        assert_eq!(caminho_do_url_de_arquivo("https://exemplo.com/a.pdf"), None);
+        assert_eq!(caminho_do_url_de_arquivo("file://servidor/a.pdf"), None);
+        // Um `%` sem os dois dígitos não pode virar pânico.
+        assert_eq!(
+            caminho_do_url_de_arquivo("file:///a%2"),
+            Some("/a%2".to_string())
+        );
+        assert_eq!(caminho_do_url_de_arquivo("file:///a%zz"), None);
+    }
+
+    #[test]
     fn fora_do_windows_nao_ha_o_que_ler() {
         let mut c = Clipboard::new();
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             assert!(c.read().is_none());
             assert!(c.changed().is_none());
@@ -651,7 +867,7 @@ mod tests {
             assert!(c.files().entries.is_empty());
             assert_eq!(c.files().ignored, 0);
         }
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         let _ = c.changed();
     }
 }

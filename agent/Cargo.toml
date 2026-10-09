@@ -107,6 +107,29 @@ mslnk = "0.1"
 eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts"] }
 tray-icon = "0.19"
 
+# O Mac. As mesmas bibliotecas do Windows onde elas cobrem os dois sistemas
+# (tela, mouse e teclado), e as APIs da Apple direto onde não cobrem (área de
+# transferência, permissões). Ver `docs/agente-mac.md`.
+#
+# O `xcap` daqui é **sem** a feature `wgc`: ela é a captura do Windows; no Mac
+# a biblioteca usa a captura da Apple sozinha.
+[target.'cfg(target_os = "macos")'.dependencies]
+enigo = "0.2"
+xcap = "0.9"
+# A mesma janela e o mesmo ícone do Windows (ver `gui.rs`). No Mac o `wgpu`
+# desenha pelo Metal, que todo Mac tem.
+eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts"] }
+tray-icon = "0.19"
+# Trazer a janela para a frente a partir de outra thread: a AppKit só aceita
+# ser chamada na principal, e é pela fila dela que o pedido chega lá.
+dispatch2 = "0.3"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSArray", "NSDictionary", "NSValue"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSResponder", "NSWindow"] }
+# O Mac entrega a imagem copiada em TIFF quando ela vem do Preview ou do
+# Safari. Só aqui: no Windows a área de transferência nunca usa TIFF.
+image = { version = "0.25", default-features = false, features = ["tiff"] }
+
 # Embute o icone e a versao no .exe (ver build.rs). So roda no alvo Windows.
 [build-dependencies]
 winresource = "0.1"

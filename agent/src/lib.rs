@@ -31,6 +31,8 @@ pub mod janelas;
 pub mod lote;
 pub mod notify;
 pub mod pairing;
+#[cfg(target_os = "macos")]
+pub mod permissoes_mac;
 pub mod platform;
 pub mod power;
 pub mod protocol;
