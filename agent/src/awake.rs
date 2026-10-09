@@ -241,7 +241,94 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+/// No Mac, pelo `caffeinate`, o mesmo comando que qualquer pessoa usaria no
+/// Terminal: enquanto ele roda, o Mac não dorme.
+///
+/// Um processo por `Keeper`, guardado na thread dele (cada `Keeper` tem a sua,
+/// ver `criar`). O `-w` amarra o `caffeinate` a este agente: se o agente
+/// morrer de repente, o `caffeinate` sai junto e o Mac volta a dormir
+/// normalmente, em vez de ficar acordado para sempre por um processo órfão.
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::PowerSource;
+    use std::cell::RefCell;
+    use std::process::Child;
+
+    thread_local! {
+        static CAFE: RefCell<Option<Child>> = const { RefCell::new(None) };
+    }
+
+    pub fn set(hold: bool, tela: bool) {
+        CAFE.with(|cafe| {
+            let mut cafe = cafe.borrow_mut();
+            if hold && cafe.is_none() {
+                // `-i` segura o sistema; `-d` também a tela, para apresentação.
+                let modo = if tela { "-di" } else { "-i" };
+                let pid = std::process::id().to_string();
+                match std::process::Command::new("/usr/bin/caffeinate")
+                    .args([modo, "-w", &pid])
+                    .spawn()
+                {
+                    Ok(filho) => *cafe = Some(filho),
+                    Err(e) => crate::diario(&format!("caffeinate não subiu: {e}")),
+                }
+            } else if !hold {
+                if let Some(mut filho) = cafe.take() {
+                    let _ = filho.kill();
+                    let _ = filho.wait();
+                }
+            }
+        });
+    }
+
+    fn pmset() -> String {
+        std::process::Command::new("/usr/bin/pmset")
+            .args(["-g", "batt"])
+            .output()
+            .map(|s| String::from_utf8_lossy(&s.stdout).to_string())
+            .unwrap_or_default()
+    }
+
+    pub fn power_source() -> PowerSource {
+        super::fonte_do_pmset(&pmset())
+    }
+
+    pub fn battery_percent() -> Option<u8> {
+        super::bateria_do_pmset(&pmset())
+    }
+}
+
+/// De onde vem a energia, pela saída do `pmset -g batt`:
+/// `Now drawing from 'AC Power'` ou `'Battery Power'`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn fonte_do_pmset(saida: &str) -> PowerSource {
+    if saida.contains("'AC Power'") {
+        PowerSource::Ac
+    } else if saida.contains("'Battery Power'") {
+        PowerSource::Battery
+    } else {
+        PowerSource::Unknown
+    }
+}
+
+/// A carga da bateria, pela linha `-InternalBattery-0 (id=...)\t85%; ...`.
+/// Um Mac de mesa não tem essa linha, e a resposta é `None`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn bateria_do_pmset(saida: &str) -> Option<u8> {
+    let linha = saida.lines().find(|l| l.contains("InternalBattery"))?;
+    let antes = linha.split('%').next()?;
+    let numero: String = antes
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    numero.parse::<u8>().ok().filter(|p| *p <= 100)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use super::PowerSource;
 
@@ -261,6 +348,23 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn o_pmset_diz_de_onde_vem_a_energia() {
+        let notebook_na_tomada = "Now drawing from 'AC Power'\n \
+             -InternalBattery-0 (id=4653155)\t100%; charged; 0:00 remaining present: true\n";
+        let notebook_na_bateria = "Now drawing from 'Battery Power'\n \
+             -InternalBattery-0 (id=4653155)\t7%; discharging; 0:21 remaining present: true\n";
+        let mac_de_mesa = "Now drawing from 'AC Power'\n";
+
+        assert_eq!(fonte_do_pmset(notebook_na_tomada), PowerSource::Ac);
+        assert_eq!(fonte_do_pmset(notebook_na_bateria), PowerSource::Battery);
+        assert_eq!(fonte_do_pmset(""), PowerSource::Unknown);
+
+        assert_eq!(bateria_do_pmset(notebook_na_tomada), Some(100));
+        assert_eq!(bateria_do_pmset(notebook_na_bateria), Some(7));
+        assert_eq!(bateria_do_pmset(mac_de_mesa), None);
+    }
 
     #[test]
     fn desligado_nunca_segura() {

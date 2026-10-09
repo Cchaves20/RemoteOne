@@ -299,7 +299,12 @@ mod tests {
     fn a_espera_fica_entre_as_aberturas_e_nao_no_fim() {
         // Três programas = duas esperas. Uma espera a mais no fim seria o
         // agente dormindo à toa em toda lista.
-        let espera = Duration::from_millis(30);
+        //
+        // 200 ms e não 30: o teste mede o relógio, e uma máquina de CI ocupada
+        // atrasa um `sleep` em mais de 100 ms (o Mac do GitHub atrasou 127).
+        // Com esperas maiores, a folga entre "duas" e "três" passa a caber o
+        // atraso sem deixar de pegar a espera a mais.
+        let espera = Duration::from_millis(200);
         let comeco = std::time::Instant::now();
         abrir_todos(&itens(&["a", "b", "c"]), espera, |_| Passo::Ok);
         let gasto = comeco.elapsed();

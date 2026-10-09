@@ -234,14 +234,97 @@ pub fn agora_local() -> Option<(u32, u8, u16)> {
     Some((dia, semana, t.hora * 60 + t.minuto))
 }
 
-#[cfg(not(windows))]
+/// No Mac (e no Linux), pelo `localtime_r` da biblioteca C, que já sabe o fuso
+/// e o horário de verão do sistema.
+///
+/// O `struct tm` começa igual nos dois: nove inteiros, nesta ordem. Os campos
+/// que vêm depois (`tm_gmtoff`, `tm_zone`) só precisam caber, e por isso o
+/// espaço de sobra no fim.
+#[cfg(unix)]
+pub fn agora_local() -> Option<(u32, u8, u16)> {
+    use std::os::raw::{c_int, c_long};
+
+    #[repr(C)]
+    struct Tm {
+        segundo: c_int,
+        minuto: c_int,
+        hora: c_int,
+        dia: c_int,
+        mes: c_int,
+        ano: c_int,
+        dia_da_semana: c_int,
+        dia_do_ano: c_int,
+        horario_de_verao: c_int,
+        _resto: [c_long; 4],
+    }
+
+    extern "C" {
+        fn time(saida: *mut c_long) -> c_long;
+        fn localtime_r(agora: *const c_long, saida: *mut Tm) -> *mut Tm;
+    }
+
+    let mut t: Tm = unsafe { std::mem::zeroed() };
+    let agora = unsafe { time(std::ptr::null_mut()) };
+    if unsafe { localtime_r(&agora, &mut t) }.is_null() {
+        return None;
+    }
+    // O `struct tm` conta o ano desde 1900 e o mês a partir de zero.
+    Some(do_relogio(
+        (t.ano + 1900) as u32,
+        (t.mes + 1) as u32,
+        t.dia as u32,
+        t.dia_da_semana as u16,
+        t.hora as u16,
+        t.minuto as u16,
+    ))
+}
+
+#[cfg(not(any(windows, unix)))]
 pub fn agora_local() -> Option<(u32, u8, u16)> {
     None
+}
+
+/// Monta a resposta de [`agora_local`] a partir do relógio do sistema, com o
+/// domingo valendo 0 (como no Windows e no `struct tm`).
+#[cfg_attr(windows, allow(dead_code))]
+fn do_relogio(
+    ano: u32,
+    mes: u32,
+    dia: u32,
+    domingo_zero: u16,
+    hora: u16,
+    minuto: u16,
+) -> (u32, u8, u16) {
+    // A semana do app começa na segunda.
+    let semana = ((domingo_zero + 6) % 7) as u8;
+    (ano * 10_000 + mes * 100 + dia, semana, hora * 60 + minuto)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn o_relogio_do_sistema_vira_dia_semana_e_minuto() {
+        // Sexta, 9 de outubro de 2026, 18:05. Domingo é 0 no sistema; no app a
+        // semana começa na segunda, então sexta é 4.
+        assert_eq!(
+            do_relogio(2026, 10, 9, 5, 18, 5),
+            (20261009, 4, 18 * 60 + 5)
+        );
+        // O domingo vai para o fim da semana.
+        assert_eq!(do_relogio(2026, 10, 11, 0, 0, 0).1, 6);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fora_do_windows_o_relogio_existe() {
+        // Sem isto as automações agendadas nunca disparavam no Mac.
+        let (dia, semana, minuto) = agora_local().expect("relógio local");
+        assert!(dia > 20_200_000);
+        assert!(semana < 7);
+        assert!(minuto < 24 * 60);
+    }
 
     fn item(id: &str, hora: u8, minuto: u8, dias: Vec<u8>) -> Item {
         Item {

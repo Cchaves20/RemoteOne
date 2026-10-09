@@ -124,8 +124,9 @@ tray-icon = "0.19"
 # ser chamada na principal, e é pela fila dela que o pedido chega lá.
 dispatch2 = "0.3"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSArray", "NSDictionary", "NSValue"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSResponder", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSArray", "NSDictionary", "NSValue", "NSGeometry", "NSURL"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "objc2-core-graphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSResponder", "NSWindow", "NSWorkspace", "NSRunningApplication", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGImage"] }
 # O Mac entrega a imagem copiada em TIFF quando ela vem do Preview ou do
 # Safari. Só aqui: no Windows a área de transferência nunca usa TIFF.
 image = { version = "0.25", default-features = false, features = ["tiff"] }

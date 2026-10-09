@@ -326,7 +326,61 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+/// No Mac: `pmset` para suspender, e o `loginwindow` para desligar e
+/// reiniciar.
+///
+/// O `shutdown` da linha de comando exigiria administrador. O `loginwindow` é
+/// quem faz o desligar do menu Apple: pede aos programas que fechem (e um
+/// documento sem salvar segura o desligamento, como no menu), sem senha.
+///
+/// O Mac pode pedir, uma vez, para o Deskside "controlar o loginwindow"
+/// (Ajustes › Privacidade e Segurança › Automação). Enquanto ninguém liberar,
+/// o pedido falha com o erro -1743, e a resposta diz o que fazer em vez de
+/// fingir que desligou.
+#[cfg(target_os = "macos")]
+mod imp {
+    use crate::protocol::PowerAction;
+
+    pub fn apply(action: PowerAction) -> Result<(), String> {
+        let (programa, args): (&str, Vec<&str>) = match action {
+            PowerAction::Suspend => ("/usr/bin/pmset", vec!["sleepnow"]),
+            PowerAction::Shutdown => (
+                "/usr/bin/osascript",
+                vec!["-e", "tell application \"loginwindow\" to «event aevtshut»"],
+            ),
+            PowerAction::Restart => (
+                "/usr/bin/osascript",
+                vec!["-e", "tell application \"loginwindow\" to «event aevtrest»"],
+            ),
+        };
+        let saida = std::process::Command::new(programa)
+            .args(&args)
+            .output()
+            .map_err(|e| format!("não consegui pedir ao Mac: {e}"))?;
+        if saida.status.success() {
+            crate::diario(&format!("energia: {action:?} pedido ao Mac"));
+            return Ok(());
+        }
+        let erro = String::from_utf8_lossy(&saida.stderr);
+        Err(super::motivo_no_mac(&erro))
+    }
+}
+
+/// O que dizer quando o Mac recusa desligar ou reiniciar.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn motivo_no_mac(erro: &str) -> String {
+    if erro.contains("-1743") {
+        "o Mac não deixou: libere o Deskside em Ajustes do Sistema › Privacidade e \
+         Segurança › Automação"
+            .to_string()
+    } else if erro.contains("-128") {
+        "um programa no Mac pediu para salvar antes e o desligamento foi cancelado".to_string()
+    } else {
+        format!("o Mac recusou: {}", erro.trim())
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use crate::protocol::PowerAction;
 
@@ -338,7 +392,16 @@ mod imp {
 
 #[cfg(test)]
 mod tests {
-    use super::{capacidades, como_suspender, ComoSuspender};
+    use super::{capacidades, como_suspender, motivo_no_mac, ComoSuspender};
+
+    #[test]
+    fn no_mac_a_recusa_diz_o_que_fazer() {
+        let sem_permissao = "execution error: Not authorized to send Apple events to \
+                             loginwindow. (-1743)";
+        assert!(motivo_no_mac(sem_permissao).contains("Automação"));
+        assert!(motivo_no_mac("User canceled. (-128)").contains("salvar"));
+        assert!(motivo_no_mac("outra coisa").contains("outra coisa"));
+    }
 
     /// Uma estrutura crua com só os dois campos que interessam preenchidos.
     fn estrutura(s3: bool, espera_moderna: bool) -> Vec<u8> {

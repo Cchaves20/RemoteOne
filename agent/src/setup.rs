@@ -1291,7 +1291,11 @@ mod tests {
         assert!(linhas[0].contains("Deskside"));
         // A linha agora diz **por qual mecanismo**, porque um deles é
         // muito mais rápido e é a primeira coisa a olhar numa queixa de demora.
+        #[cfg(not(target_os = "macos"))]
         assert!(linhas[1].contains("sim") && linhas[1].contains("tarefa agendada"));
+        // No Mac não há tarefa agendada: o mecanismo é um só.
+        #[cfg(target_os = "macos")]
+        assert_eq!(linhas[1], "Inicia com o Mac: sim (LaunchAgent)");
         assert!(linhas[2].contains("deskside.com.br"));
         assert!(linhas[3].contains("abc123"));
     }

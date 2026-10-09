@@ -29,6 +29,8 @@ pub mod injector;
 pub mod input;
 pub mod janelas;
 pub mod lote;
+#[cfg(target_os = "macos")]
+pub mod mac;
 pub mod notify;
 pub mod pairing;
 #[cfg(target_os = "macos")]
