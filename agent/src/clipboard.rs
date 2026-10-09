@@ -267,7 +267,7 @@ fn montar_lista(caminhos: Vec<String>) -> CopiedFiles {
 /// `None` para o que não for arquivo local (um link `https://` copiado cai no
 /// mesmo tipo de dado) ou não decodificar como texto.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn caminho_do_url_de_arquivo(url: &str) -> Option<String> {
+pub(crate) fn caminho_do_url_de_arquivo(url: &str) -> Option<String> {
     let resto = url.strip_prefix("file://")?;
     // `file://localhost/...` é a forma longa do mesmo endereço.
     let resto = resto.strip_prefix("localhost").unwrap_or(resto);

@@ -159,7 +159,71 @@ Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness `
     }
 }
 
-#[cfg(not(windows))]
+/// No Mac, pelo `DisplayServices`: a biblioteca do próprio sistema que a
+/// tecla de brilho usa, e a mesma que os utilitários de brilho do Mac usam.
+///
+/// Não é API pública — a Apple não oferece uma. Por isso é aberta em tempo de
+/// execução (`dlopen`), e não ligada ao programa: se uma versão futura do
+/// macOS a tirar, o agente continua abrindo e só o brilho responde que não dá.
+///
+/// Vale para a tela **embutida** (MacBook, iMac). Monitor externo responde
+/// por outro caminho (DDC), que fica de fora, como no Windows.
+#[cfg(target_os = "macos")]
+mod imp {
+    use std::ffi::{c_char, c_int, c_void, CStr};
+
+    const BIBLIOTECA: &CStr =
+        c"/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices";
+    const RTLD_LAZY: c_int = 1;
+
+    extern "C" {
+        fn dlopen(caminho: *const c_char, modo: c_int) -> *mut c_void;
+        fn dlsym(biblioteca: *mut c_void, nome: *const c_char) -> *mut c_void;
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGMainDisplayID() -> u32;
+    }
+
+    type Ler = unsafe extern "C" fn(u32, *mut f32) -> c_int;
+    type Definir = unsafe extern "C" fn(u32, f32) -> c_int;
+
+    const SEM_TELA: &str = "este Mac não deixa ajustar o brilho por software \
+                            (só a tela embutida de MacBook e iMac)";
+
+    fn simbolo(nome: &CStr) -> Result<*mut c_void, String> {
+        let biblioteca = unsafe { dlopen(BIBLIOTECA.as_ptr(), RTLD_LAZY) };
+        if biblioteca.is_null() {
+            return Err(SEM_TELA.to_string());
+        }
+        let f = unsafe { dlsym(biblioteca, nome.as_ptr()) };
+        if f.is_null() {
+            return Err(SEM_TELA.to_string());
+        }
+        Ok(f)
+    }
+
+    pub fn ler() -> Result<u8, String> {
+        let ler: Ler = unsafe { std::mem::transmute(simbolo(c"DisplayServicesGetBrightness")?) };
+        let mut valor = 0f32;
+        if unsafe { ler(CGMainDisplayID(), &mut valor) } != 0 {
+            return Err(SEM_TELA.to_string());
+        }
+        Ok((valor.clamp(0.0, 1.0) * 100.0).round() as u8)
+    }
+
+    pub fn definir(nivel: u8) -> Result<(), String> {
+        let definir: Definir =
+            unsafe { std::mem::transmute(simbolo(c"DisplayServicesSetBrightness")?) };
+        if unsafe { definir(CGMainDisplayID(), nivel.min(100) as f32 / 100.0) } != 0 {
+            return Err(SEM_TELA.to_string());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     pub fn ler() -> Result<u8, String> {
         Err("ajuste de brilho só no Windows".to_string())
@@ -207,7 +271,9 @@ mod tests {
         assert!(ajustar(None, None).is_err());
     }
 
-    #[cfg(not(windows))]
+    // No Mac o brilho é de verdade, e um teste não deve mexer na tela de
+    // ninguém.
+    #[cfg(not(any(windows, target_os = "macos")))]
     #[test]
     fn fora_do_windows_falha_com_explicacao() {
         // Falhar é o certo aqui; o que não pode é falhar em silêncio.

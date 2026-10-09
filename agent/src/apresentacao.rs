@@ -193,7 +193,29 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+/// No Mac a tela fica acesa (é o `Keeper::da_tela`, pelo `caffeinate`) e a
+/// tela cheia é reconhecida. O que não dá é silenciar: a Apple não oferece
+/// jeito de um programa ligar o "Não Perturbe" — só a pessoa, na Central de
+/// Controle. Dizer isso é melhor que um botão que finge.
+#[cfg(target_os = "macos")]
+mod imp {
+    pub fn silenciar(ligar: bool) -> Result<(), String> {
+        if !ligar {
+            return Ok(());
+        }
+        Err(
+            "no Mac a tela fica acesa, mas as notificações só silenciam pelo \
+             \"Não Perturbe\", na Central de Controle"
+                .into(),
+        )
+    }
+
+    pub fn detectar() -> Option<String> {
+        crate::janelas::em_tela_cheia()
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     pub fn silenciar(_ligar: bool) -> Result<(), String> {
         Err("modo apresentação só no Windows".into())

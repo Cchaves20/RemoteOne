@@ -841,7 +841,221 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
 #[cfg(windows)]
 pub(crate) use imp::{run_powershell, ICON_HELPER};
 
-#[cfg(not(windows))]
+/// O nome com que o `open -a` do Mac acha um programa, a partir do que veio
+/// do app.
+///
+/// Um perfil feito no Windows guarda o caminho do atalho de lá
+/// (`C:\\...\\Spotify.lnk`), e uma automação guarda o nome do processo
+/// (`chrome.exe`). Os dois viram o nome do programa: `Spotify`, `chrome`. É o
+/// que faz um perfil nascido num PC abrir o mesmo programa num Mac — o
+/// `open -a` procura pelo nome em Aplicativos sem diferenciar maiúsculas.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn nome_para_o_mac(id: &str) -> String {
+    let ultimo = id.rsplit(['\\', '/']).next().unwrap_or(id).trim();
+    let sem_extensao = match ultimo.rsplit_once('.') {
+        Some((nome, ext))
+            if !nome.is_empty()
+                && ["lnk", "exe", "app", "url"].contains(&ext.to_lowercase().as_str()) =>
+        {
+            nome
+        }
+        _ => ultimo,
+    };
+    sem_extensao.to_string()
+}
+
+/// Se o nome pedido é o deste programa aberto: pelo nome que aparece no Dock
+/// ou pelo do executável, sem diferenciar maiúsculas.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn mesmo_programa(pedido: &str, nome: &str, executavel: &str) -> bool {
+    let pedido = nome_para_o_mac(pedido).to_lowercase();
+    !pedido.is_empty() && (pedido == nome.to_lowercase() || pedido == executavel.to_lowercase())
+}
+
+/// Os programas fixados no Dock, pela saída de
+/// `defaults read com.apple.dock persistent-apps`.
+///
+/// É o equivalente dos atalhos da área de trabalho do Windows: o conjunto que
+/// a própria pessoa montou, e por isso o que o app mostra primeiro.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn apps_do_dock(saida: &str) -> Vec<String> {
+    saida
+        .lines()
+        .filter(|l| l.contains("\"_CFURLString\""))
+        .filter_map(|l| l.split('"').nth(3))
+        .filter_map(crate::clipboard::caminho_do_url_de_arquivo)
+        .filter(|c| c.ends_with(".app"))
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::AppInfo;
+    use crate::mac;
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::sync::Mutex;
+
+    /// Ícones já extraídos, por caminho. A lista de instalados tem dezenas de
+    /// programas, e extrair cada ícone de novo a cada abertura da tela seria
+    /// fazer a pessoa esperar pelo mesmo trabalho.
+    static ICONES: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
+
+    fn icone(caminho: &str) -> Option<String> {
+        let mut cache = ICONES.lock().ok()?;
+        let cache = cache.get_or_insert_with(HashMap::new);
+        cache
+            .entry(caminho.to_string())
+            .or_insert_with(|| mac::icone_do_caminho(caminho))
+            .clone()
+    }
+
+    fn do_pacote(caminho: &Path) -> AppInfo {
+        let texto = caminho.to_string_lossy().to_string();
+        AppInfo {
+            name: caminho
+                .file_stem()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| texto.clone()),
+            icon: icone(&texto),
+            id: texto,
+        }
+    }
+
+    pub fn list_desktop() -> Vec<AppInfo> {
+        let saida = Command::new("/usr/bin/defaults")
+            .args(["read", "com.apple.dock", "persistent-apps"])
+            .output()
+            .map(|s| String::from_utf8_lossy(&s.stdout).to_string())
+            .unwrap_or_default();
+        super::apps_do_dock(&saida)
+            .into_iter()
+            .map(|c| do_pacote(Path::new(&c)))
+            .collect()
+    }
+
+    /// Os `.app` das pastas de Aplicativos (a do sistema, a de todos e a do
+    /// usuário), mais um nível abaixo — é onde ficam os Utilitários e as
+    /// pastas que alguns instaladores criam.
+    pub fn list_installed() -> Vec<AppInfo> {
+        let mut raizes = vec![
+            PathBuf::from("/Applications"),
+            PathBuf::from("/System/Applications"),
+        ];
+        if let Some(casa) = std::env::var_os("HOME") {
+            raizes.push(PathBuf::from(casa).join("Applications"));
+        }
+        let mut pacotes = Vec::new();
+        for raiz in raizes {
+            let Ok(entradas) = std::fs::read_dir(&raiz) else {
+                continue;
+            };
+            for entrada in entradas.flatten() {
+                let caminho = entrada.path();
+                if caminho.extension().is_some_and(|e| e == "app") {
+                    pacotes.push(caminho);
+                } else if caminho.is_dir() {
+                    if let Ok(dentro) = std::fs::read_dir(&caminho) {
+                        pacotes.extend(
+                            dentro
+                                .flatten()
+                                .map(|e| e.path())
+                                .filter(|p| p.extension().is_some_and(|e| e == "app")),
+                        );
+                    }
+                }
+            }
+        }
+        let mut lista: Vec<AppInfo> = pacotes.iter().map(|p| do_pacote(p)).collect();
+        lista.sort_by_key(|a| a.name.to_lowercase());
+        lista.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
+        lista
+    }
+
+    pub fn list_running() -> Vec<AppInfo> {
+        mac::programas_abertos()
+            .into_iter()
+            .map(|p| AppInfo {
+                id: p.pid.to_string(),
+                icon: mac::icone_do_programa(&p.app),
+                name: p.nome,
+            })
+            .collect()
+    }
+
+    /// Abre pelo caminho, se ele existe neste Mac; senão, pelo nome.
+    pub fn launch(id: &str) -> Result<(), String> {
+        let mut abrir = Command::new("/usr/bin/open");
+        if Path::new(id).exists() {
+            abrir.arg(id);
+        } else {
+            abrir.args(["-a", &super::nome_para_o_mac(id)]);
+        }
+        let saida = abrir
+            .output()
+            .map_err(|e| format!("não foi possível abrir: {e}"))?;
+        if saida.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "o Mac não achou o programa: {}",
+                String::from_utf8_lossy(&saida.stderr).trim()
+            ))
+        }
+    }
+
+    /// Pelo botão da tela de aplicativos: quem tocou está vendo a lista e
+    /// decidiu encerrar. Forçado, como o `/F` do Windows.
+    pub fn close(id: &str) -> Result<(), String> {
+        let pid: i32 = id
+            .parse()
+            .map_err(|_| format!("identificador inválido: {id}"))?;
+        let app = mac::pelo_pid(pid).ok_or("o programa já não estava aberto")?;
+        if app.forceTerminate() {
+            Ok(())
+        } else {
+            Err("o Mac não encerrou o programa".into())
+        }
+    }
+
+    /// Pelas automações: **pede** para fechar, e o programa pergunta sobre o
+    /// que não foi salvo. Mesma regra do Windows.
+    pub fn close_by_name(name: &str) -> Result<(), String> {
+        let alvos: Vec<_> = mac::programas_abertos()
+            .into_iter()
+            .filter(|p| super::mesmo_programa(name, &p.nome, &p.executavel))
+            .collect();
+        if alvos.is_empty() {
+            return Err(format!(
+                "{} não estava aberto",
+                super::nome_para_o_mac(name)
+            ));
+        }
+        for p in &alvos {
+            p.app.terminate();
+        }
+        Ok(())
+    }
+
+    /// Fecha todos os programas abertos, menos o Finder — que no Mac é a área
+    /// de trabalho, como o Explorer no Windows. O próprio Deskside já fica de
+    /// fora da lista de abertos.
+    pub fn close_all() -> Result<usize, String> {
+        let mut fechados = 0;
+        for p in mac::programas_abertos() {
+            if p.executavel == "finder" {
+                continue;
+            }
+            if p.app.terminate() {
+                fechados += 1;
+            }
+        }
+        Ok(fechados)
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use super::AppInfo;
 
@@ -1114,6 +1328,66 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn no_mac_o_programa_e_achado_pelo_nome() {
+        // Um perfil feito no Windows guarda o atalho de lá.
+        assert_eq!(
+            nome_para_o_mac(r"C:\Users\ana\Desktop\Spotify.lnk"),
+            "Spotify"
+        );
+        // Uma automação guarda o nome do processo.
+        assert_eq!(nome_para_o_mac("chrome.exe"), "chrome");
+        assert_eq!(nome_para_o_mac("/Applications/Safari.app"), "Safari");
+        // Ponto no meio do nome não é extensão.
+        assert_eq!(
+            nome_para_o_mac("Visual Studio Code.2"),
+            "Visual Studio Code.2"
+        );
+        assert_eq!(nome_para_o_mac("Slack"), "Slack");
+    }
+
+    #[test]
+    fn no_mac_fechar_pelo_nome_casa_dock_ou_executavel() {
+        assert!(mesmo_programa("slack.exe", "Slack", "slack"));
+        assert!(mesmo_programa(
+            "Google Chrome",
+            "Google Chrome",
+            "google chrome"
+        ));
+        assert!(!mesmo_programa("chrome", "Google Chrome", "google chrome"));
+        assert!(!mesmo_programa("", "Slack", "slack"));
+    }
+
+    #[test]
+    fn os_apps_do_dock_saem_do_defaults() {
+        let saida = r#"(
+        {
+        "tile-data" =         {
+            "file-data" =             {
+                "_CFURLString" = "file:///Applications/Safari.app/";
+                "_CFURLStringType" = 15;
+            };
+            "file-label" = Safari;
+        };
+    },
+        {
+        "tile-data" =         {
+            "file-data" =             {
+                "_CFURLString" = "file:///System/Applications/Utilities/Terminal.app/";
+                "_CFURLStringType" = 15;
+            };
+        };
+    }
+)"#;
+        assert_eq!(
+            apps_do_dock(saida),
+            vec![
+                "/Applications/Safari.app".to_string(),
+                "/System/Applications/Utilities/Terminal.app".to_string()
+            ]
+        );
+    }
 
     #[test]
     fn tidy_sorts_and_dedups_by_name() {

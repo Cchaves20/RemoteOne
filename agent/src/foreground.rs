@@ -31,7 +31,7 @@ pub struct ForegroundApp {
 /// novo enquanto ninguém trocou de janela, e o **nome do programa** evita
 /// extrair o ícone de novo de alguém que já apareceu (extrair passa de 100 ms,
 /// e alternar entre duas janelas é o caso comum).
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 pub struct Watcher {
     last_pid: Option<u32>,
     last: Option<ForegroundApp>,
@@ -156,7 +156,36 @@ try {{ if ($p.Description) {{ $nome = $p.Description }} }} catch {{ }}
     parse_process(&String::from_utf8_lossy(&output.stdout))
 }
 
-#[cfg(not(windows))]
+/// No Mac a pergunta "quem está na frente" tem resposta direta no
+/// `NSWorkspace`, sem varrer janelas. O ícone sai uma vez por programa e fica
+/// guardado em `known`, como no Windows.
+#[cfg(target_os = "macos")]
+impl Watcher {
+    pub fn current(&mut self) -> Option<ForegroundApp> {
+        let p = crate::mac::em_primeiro_plano()?;
+        let pid = p.pid as u32;
+        if self.last_pid == Some(pid) {
+            return self.last.clone();
+        }
+        self.last_pid = Some(pid);
+        let app = match self.known.get(&p.executavel) {
+            Some(conhecido) => conhecido.clone(),
+            None => {
+                let novo = ForegroundApp {
+                    icon: crate::mac::icone_do_programa(&p.app),
+                    name: p.nome,
+                    exe: p.executavel.clone(),
+                };
+                self.known.insert(p.executavel, novo.clone());
+                novo
+            }
+        };
+        self.last = Some(app.clone());
+        Some(app)
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 impl Watcher {
     /// Sem sessão gráfica não há primeiro plano. O app trata a ausência como
     /// "nenhum ícone real", que é exatamente o que acontece aqui.
@@ -208,9 +237,9 @@ mod tests {
         // No Linux não há primeiro plano: o stub devolve None, e é isso que o
         // resto do caminho (backend e app) precisa saber tratar.
         let mut w = Watcher::new();
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         assert!(w.current().is_none());
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         let _ = w.current();
     }
 }

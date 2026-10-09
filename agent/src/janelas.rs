@@ -422,12 +422,97 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+/// Se a janela cobre o monitor inteiro — a definição de tela cheia nos dois
+/// sistemas. "Pelo menos", e não exatamente: há programa que pede um pixel a
+/// mais para fora. Uma janela só maximizada fica de fora: no Mac ela para
+/// abaixo da barra de menus, no Windows acima da barra de tarefas.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn cobre(janela: (i32, i32, u32, u32), monitor: (i32, i32, u32, u32)) -> bool {
+    let fim = |(x, y, l, a): (i32, i32, u32, u32)| (x as i64 + l as i64, y as i64 + a as i64);
+    let (jx, jy) = fim(janela);
+    let (mx, my) = fim(monitor);
+    janela.0 <= monitor.0 && janela.1 <= monitor.1 && jx >= mx && jy >= my
+}
+
+#[cfg(target_os = "macos")]
 pub use imp::{
     area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela,
 };
 
-#[cfg(not(windows))]
+/// No Mac: trazer para a frente e reconhecer a tela cheia. Pôr a janela nova
+/// numa zona da tela (as zonas dos perfis) ainda não existe aqui — exige a API
+/// de Acessibilidade janela a janela, e fica para depois. O programa abre; só
+/// não vai para o lugar.
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::{Retangulo, Zona};
+    use std::collections::HashSet;
+
+    pub fn janelas_visiveis() -> HashSet<isize> {
+        HashSet::new()
+    }
+
+    pub fn area_de_trabalho() -> Option<Retangulo> {
+        None
+    }
+
+    pub fn posicionar_nova_janela(_antes: &HashSet<isize>, _zona: &Zona) -> Result<(), String> {
+        Err(
+            "no Mac o Deskside ainda não posiciona a janela; o programa abriu onde o Mac quis"
+                .into(),
+        )
+    }
+
+    pub fn focar(pid: u32) -> Result<(), String> {
+        crate::mac::trazer_para_frente(pid as i32)
+    }
+
+    /// A janela em foco, se ela cobre o monitor dela. No Mac é assim que um
+    /// programa em tela cheia (ou o Keynote apresentando) aparece.
+    pub fn em_tela_cheia() -> Option<String> {
+        let janela = xcap::Window::all()
+            .ok()?
+            .into_iter()
+            .find(|j| j.is_focused().unwrap_or(false))?;
+        // O Finder "em foco" é a mesa, que cobre a tela sem ser apresentação.
+        if janela.app_name().ok()?.eq_ignore_ascii_case("finder") {
+            return None;
+        }
+        let monitor = janela.current_monitor().ok()?;
+        let r = |x: xcap::XCapResult<i32>| x.ok();
+        let u = |x: xcap::XCapResult<u32>| x.ok();
+        let dela = (
+            r(janela.x())?,
+            r(janela.y())?,
+            u(janela.width())?,
+            u(janela.height())?,
+        );
+        let dele = (
+            r(monitor.x())?,
+            r(monitor.y())?,
+            u(monitor.width())?,
+            u(monitor.height())?,
+        );
+        if !super::cobre(dela, dele) {
+            return None;
+        }
+        // O título só vem com a Gravação de Tela liberada; sem ele, o nome do
+        // programa ainda explica quem ligou o modo.
+        Some(
+            janela
+                .title()
+                .ok()
+                .filter(|t| !t.is_empty())
+                .or_else(|| janela.app_name().ok())
+                .unwrap_or_default(),
+        )
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub use imp::{area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela};
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use super::{Retangulo, Zona};
     use std::collections::HashSet;
@@ -456,6 +541,19 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tela_cheia_e_cobrir_o_monitor_inteiro() {
+        let monitor = (0, 0, 1512, 982);
+        assert!(cobre((0, 0, 1512, 982), monitor));
+        // Um pixel a mais para fora ainda é tela cheia.
+        assert!(cobre((-1, -1, 1514, 984), monitor));
+        // Maximizada no Mac: começa abaixo da barra de menus.
+        assert!(!cobre((0, 33, 1512, 949), monitor));
+        // Segundo monitor, à direita do primeiro.
+        assert!(cobre((1512, 0, 1920, 1080), (1512, 0, 1920, 1080)));
+        assert!(!cobre((0, 0, 1920, 1080), (1512, 0, 1920, 1080)));
+    }
 
     /// Uma tela de 1920×1080 com a barra de tarefas embaixo.
     fn tela() -> Retangulo {
