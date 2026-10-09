@@ -116,6 +116,10 @@ jobs:
             --prerelease --target "$GITHUB_SHA" \
             --title "Deskside para Mac (teste)" --notes "$NOTAS"
 
-      - name: Limpar o chaveiro
-        if: always() && env.TEM_CERTIFICADO == 'true'
-        run: security delete-keychain "$RUNNER_TEMP/deskside.keychain-db" || true
+      - name: Limpar o chaveiro e a chave da Apple
+        if: always() && (env.TEM_CERTIFICADO == 'true' || env.TEM_CHAVE_DA_APPLE == 'true')
+        run: |
+          # A máquina é descartada no fim, mas segredo não fica esperando por
+          # isso: sai assim que o build termina, deu certo ou não.
+          security delete-keychain "$RUNNER_TEMP/deskside.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/chave-da-apple.p8"
