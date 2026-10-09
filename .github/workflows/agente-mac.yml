@@ -1,8 +1,16 @@
-# O agente no Mac, num Mac de verdade: testes e o Deskside.app para baixar.
+# O agente no Mac, num Mac de verdade: testes, o Deskside.app e o instalador.
 #
 # Roda a cada push que mexe no agente, em qualquer ramo. O repositório é
 # público, e para repositório público as máquinas Mac do GitHub não cobram.
-# Ver docs/agente-mac.md.
+#
+# No fim, publica tudo no pré-lançamento "agente-mac" do GitHub (sempre o
+# mesmo, substituído a cada build). É de lá que o servidor busca a versão
+# para o site com `scripts/publicar-mac.sh` — publicar no GitHub não põe nada
+# no ar para ninguém; quem decide isso é quem roda o script no servidor.
+#
+# A assinatura com o Developer ID e a notarização só acontecem com os
+# segredos do repositório configurados; sem eles, sai a versão de teste
+# (assinatura ad hoc). Ver docs/agente-mac.md.
 name: Agente no Mac
 
 on:
@@ -16,6 +24,12 @@ on:
 jobs:
   mac:
     runs-on: macos-latest
+    permissions:
+      # Para criar o pré-lançamento com os arquivos.
+      contents: write
+    env:
+      TEM_CERTIFICADO: ${{ secrets.MAC_CERTIFICADO_P12 != '' }}
+      TEM_CHAVE_DA_APPLE: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,11 +45,77 @@ jobs:
         working-directory: agent
         run: cargo test
 
-      - name: Montar o Deskside.app
+      - name: Certificado Developer ID
+        if: env.TEM_CERTIFICADO == 'true'
+        env:
+          P12: ${{ secrets.MAC_CERTIFICADO_P12 }}
+          SENHA: ${{ secrets.MAC_CERTIFICADO_SENHA }}
+        run: |
+          set -eu
+          # Um chaveiro só para este build, apagado com a máquina. A senha dele
+          # é aleatória e nunca aparece no log.
+          CHAVEIRO="$RUNNER_TEMP/deskside.keychain-db"
+          SENHA_CHAVEIRO=$(openssl rand -hex 24)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/certificado.p12"
+          security create-keychain -p "$SENHA_CHAVEIRO" "$CHAVEIRO"
+          security set-keychain-settings -lut 3600 "$CHAVEIRO"
+          security unlock-keychain -p "$SENHA_CHAVEIRO" "$CHAVEIRO"
+          security import "$RUNNER_TEMP/certificado.p12" -k "$CHAVEIRO" -P "$SENHA" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/certificado.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$SENHA_CHAVEIRO" "$CHAVEIRO" >/dev/null
+          security list-keychains -d user -s "$CHAVEIRO" $(security list-keychains -d user | tr -d '"')
+          IDENTIDADE=$(security find-identity -v -p codesigning "$CHAVEIRO" \
+            | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)
+          if [ -z "$IDENTIDADE" ]; then
+            echo "FALHOU: o certificado importado não é um Developer ID Application."
+            exit 1
+          fi
+          echo "MAC_IDENTIDADE=$IDENTIDADE" >> "$GITHUB_ENV"
+          echo "Certificado Developer ID importado."
+
+      - name: Chave da API da Apple (notarização)
+        if: env.TEM_CHAVE_DA_APPLE == 'true'
+        env:
+          CHAVE: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -eu
+          printf '%s\n' "$CHAVE" > "$RUNNER_TEMP/chave-da-apple.p8"
+          {
+            echo "APP_STORE_CONNECT_KEY_FILE=$RUNNER_TEMP/chave-da-apple.p8"
+            echo "APP_STORE_CONNECT_KEY_ID=$KEY_ID"
+            echo "APP_STORE_CONNECT_ISSUER_ID=$ISSUER_ID"
+          } >> "$GITHUB_ENV"
+          echo "Chave da API da Apple pronta."
+
+      - name: Montar o Deskside.app e o instalador
         run: sh scripts/montar-app-mac.sh
 
       - uses: actions/upload-artifact@v4
         with:
           name: Deskside-mac
-          path: agent/target/mac/Deskside-mac.zip
+          path: |
+            agent/target/mac/Deskside.dmg
+            agent/target/mac/Deskside-mac.zip
+            agent/target/mac/*.sha256
           retention-days: 30
+
+      - name: Publicar no pré-lançamento "agente-mac"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd agent/target/mac
+          NOTAS=$(printf 'Agente do Deskside para Mac, do commit %s (ramo %s).\n\nPara testar: baixe o Deskside.dmg, abra e arraste o Deskside para Aplicativos. Ver docs/agente-mac.md no repositório.' "$GITHUB_SHA" "$GITHUB_REF_NAME")
+          # Sempre o mesmo pré-lançamento: o anterior sai, com a marca dele.
+          gh release delete agente-mac --yes --cleanup-tag 2>/dev/null || true
+          gh release create agente-mac \
+            Deskside.dmg Deskside-mac.zip Deskside-mac.zip.sha256 Deskside-mac-agente.sha256 \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "Deskside para Mac (teste)" --notes "$NOTAS"
+
+      - name: Limpar o chaveiro
+        if: always() && env.TEM_CERTIFICADO == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/deskside.keychain-db" || true

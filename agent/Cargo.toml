@@ -124,9 +124,19 @@ tray-icon = "0.19"
 # ser chamada na principal, e é pela fila dela que o pedido chega lá.
 dispatch2 = "0.3"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSArray", "NSDictionary", "NSValue", "NSGeometry", "NSURL"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSArray", "NSDictionary", "NSValue", "NSGeometry", "NSURL", "NSError", "NSObject"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "objc2-core-graphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSResponder", "NSWindow", "NSWorkspace", "NSRunningApplication", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGImage"] }
+# O som do computador (ver `audio.rs`). A captura pelo ScreenCaptureKit, que
+# é o único jeito de pegar o som do sistema no Mac sem instalar driver. E o
+# Opus em Rust puro (o mesmo libopus, convertido): o `audiopus` do Windows só
+# compila no Mac com autotools, e não para as duas arquiteturas de uma vez.
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-media", "SCStream", "SCShareableContent", "SCError"] }
+objc2-core-media = { version = "0.3", default-features = false, features = ["std", "CMSampleBuffer", "CMBlockBuffer", "CMFormatDescription", "CMTime", "objc2-core-audio-types"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std"] }
+objc2-core-audio-types = { version = "0.3", default-features = false, features = ["std", "CoreAudioBaseTypes"] }
+block2 = "0.6"
+unsafe-libopus = "0.2"
 # O Mac entrega a imagem copiada em TIFF quando ela vem do Preview ou do
 # Safari. Só aqui: no Windows a área de transferência nunca usa TIFF.
 image = { version = "0.25", default-features = false, features = ["tiff"] }
@@ -137,6 +147,8 @@ winresource = "0.1"
 
 [dev-dependencies]
 image = { version = "0.25", features = ["png"] }
+# O Opus do Mac é Rust puro, e por isso é testado em qualquer sistema.
+unsafe-libopus = "0.2"
 
 # O ICE do webrtc-rs com o repasse (TURN) por TCP, que a versão publicada não
 # tem: no código dela, o caso TCP é um `TODO` e a URL é ignorada com um aviso.

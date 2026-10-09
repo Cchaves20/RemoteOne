@@ -214,6 +214,92 @@ impl Shaper {
     }
 }
 
+/// Junta canais separados (`[esquerdo...]`, `[direito...]`) em amostras
+/// intercaladas (`[e, d, e, d...]`), que é como o resto deste arquivo trabalha.
+///
+/// O Mac entrega o som assim, um bloco por canal; o Windows já entrega
+/// intercalado. Canais de tamanhos diferentes param no menor.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn intercalar(canais: &[&[f32]], saida: &mut Vec<f32>) {
+    let quadros = canais.iter().map(|c| c.len()).min().unwrap_or(0);
+    saida.clear();
+    saida.reserve(quadros * canais.len());
+    for i in 0..quadros {
+        for canal in canais {
+            saida.push(canal[i]);
+        }
+    }
+}
+
+/// O caminho do som depois da captura: ajusta para 48 kHz estéreo, aplica o
+/// ganho, codifica em Opus e entrega à conexão.
+///
+/// É o mesmo que a chamada de retorno do Windows faz por dentro, separado aqui
+/// para o Mac usar e para ser testado em qualquer sistema.
+#[cfg(any(target_os = "macos", test))]
+pub struct Processador {
+    shaper: Shaper,
+    codificador: crate::opus_puro::Codificador,
+    ganho: std::sync::Arc<Gain>,
+    tx: tokio::sync::mpsc::Sender<Packet>,
+    quadros: Vec<f32>,
+    saida: Vec<u8>,
+    avisou_corte: bool,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl Processador {
+    pub fn novo(
+        taxa: u32,
+        canais: usize,
+        tx: tokio::sync::mpsc::Sender<Packet>,
+        ganho: std::sync::Arc<Gain>,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            shaper: Shaper::new(taxa, canais),
+            codificador: crate::opus_puro::Codificador::novo()?,
+            ganho,
+            tx,
+            quadros: Vec::with_capacity(FRAME_INTERLEAVED * 4),
+            // Teto folgado para um quadro de 20 ms a 96 kbps (~240 bytes).
+            saida: vec![0u8; 4000],
+            avisou_corte: false,
+        })
+    }
+
+    /// Um bloco de amostras intercaladas, do tamanho que vier.
+    pub fn empurrar(&mut self, amostras: &[f32]) {
+        self.shaper.push(amostras, &mut self.quadros);
+        if apply_gain(&mut self.quadros, self.ganho.get()) && !self.avisou_corte {
+            self.avisou_corte = true;
+            eprintln!(
+                "Áudio: o ganho está alto demais para o volume do computador e o \
+                 som está sendo cortado."
+            );
+        }
+        for quadro in self.quadros.chunks_exact(FRAME_INTERLEAVED) {
+            match self.codificador.codificar(quadro, &mut self.saida) {
+                // `try_send`, como no Windows: quem chama é a fila do sistema,
+                // e esperar a rede ali engasgaria a captura.
+                Ok(n) => {
+                    if self
+                        .tx
+                        .try_send(Packet {
+                            data: self.saida[..n].to_vec(),
+                            duration: FRAME,
+                        })
+                        .is_err()
+                    {
+                        DROPPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+                Err(e) => eprintln!("Falha ao codificar áudio: {e}"),
+            }
+        }
+        self.quadros.clear();
+    }
+}
+
 // A condição acompanha a das dependências no Cargo.toml, e o motivo está lá:
 // o Opus do `audiopus_sys` só existe pronto para x86 e x64. Windows em ARM cai
 // no stub abaixo, junto com Linux e macOS.
@@ -400,7 +486,318 @@ mod imp {
     }
 }
 
-#[cfg(not(all(windows, any(target_arch = "x86", target_arch = "x86_64"))))]
+/// No Mac: o som do sistema pelo ScreenCaptureKit (macOS 13 ou mais novo).
+///
+/// É o mesmo mecanismo da Gravação de Tela, e vale a mesma permissão — não há
+/// driver de som para instalar, que era o jeito antigo (Soundflower,
+/// BlackHole) e que ninguém deveria precisar fazer para ouvir o computador.
+///
+/// O ScreenCaptureKit não sabe capturar só som: ele abre um fluxo de tela e
+/// entrega o som junto. A tela daqui é pedida no menor tamanho e no menor
+/// ritmo possíveis, porque quem manda a imagem ao celular é o `capture.rs`.
+///
+/// O som do próprio Deskside fica de fora (`excludesCurrentProcessAudio`).
+#[cfg(target_os = "macos")]
+mod imp {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{mpsc, Arc, Mutex};
+    use std::time::Duration;
+
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2::runtime::ProtocolObject;
+    use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
+    use objc2_core_audio_types::{AudioBuffer, AudioBufferList};
+    use objc2_core_media::{
+        CMAudioFormatDescriptionGetStreamBasicDescription, CMSampleBuffer, CMTime,
+    };
+    use objc2_foundation::{NSArray, NSError, NSObject, NSObjectProtocol};
+    use objc2_screen_capture_kit::{
+        SCContentFilter, SCShareableContent, SCStream, SCStreamConfiguration, SCStreamOutput,
+        SCStreamOutputType,
+    };
+
+    use super::{Packet, Processador};
+
+    /// Captura em curso. Cair fora de escopo para a captura.
+    pub struct Capture {
+        stop: Arc<AtomicBool>,
+        thread: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Relaxed);
+            if let Some(t) = self.thread.take() {
+                let _ = t.join();
+            }
+        }
+    }
+
+    /// O que a captura precisa entre um bloco e outro. `None` até o primeiro
+    /// bloco dizer a taxa e o número de canais.
+    struct Estado {
+        processador: Option<Processador>,
+        tx: tokio::sync::mpsc::Sender<Packet>,
+        ganho: Arc<super::Gain>,
+        intercalado: Vec<f32>,
+    }
+
+    define_class!(
+        // SAFETY: NSObject não exige nada de quem herda dele, e esta classe
+        // não implementa `Drop`.
+        #[unsafe(super(NSObject))]
+        #[name = "DesksideSaidaDeSom"]
+        #[ivars = Mutex<Estado>]
+        struct SaidaDeSom;
+
+        unsafe impl NSObjectProtocol for SaidaDeSom {}
+
+        unsafe impl SCStreamOutput for SaidaDeSom {
+            #[unsafe(method(stream:didOutputSampleBuffer:ofType:))]
+            fn chegou(&self, _stream: &SCStream, amostra: &CMSampleBuffer, tipo: SCStreamOutputType) {
+                if tipo != SCStreamOutputType::Audio {
+                    return;
+                }
+                if let Ok(mut estado) = self.ivars().lock() {
+                    receber(&mut estado, amostra);
+                }
+            }
+        }
+    );
+
+    impl SaidaDeSom {
+        fn nova(estado: Estado) -> Retained<Self> {
+            let this = Self::alloc().set_ivars(Mutex::new(estado));
+            unsafe { msg_send![super(this), init] }
+        }
+    }
+
+    /// Lugar para até oito canais. O `AudioBufferList` do sistema declara um
+    /// só e conta com quem chama reservar o resto logo depois — é o que este
+    /// tipo faz, com o mesmo começo de memória.
+    #[repr(C)]
+    struct ListaDeCanais {
+        quantos: u32,
+        canais: [AudioBuffer; 8],
+    }
+
+    /// `kAudioFormatFlagIsFloat` e `kAudioFormatFlagIsNonInterleaved`.
+    const EM_FLOAT: u32 = 1 << 0;
+    const SEPARADOS: u32 = 1 << 5;
+    /// `kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment`.
+    const ALINHADO: u32 = 1 << 0;
+
+    fn receber(estado: &mut Estado, amostra: &CMSampleBuffer) {
+        let Some(formato) = (unsafe { amostra.format_description() }) else {
+            return;
+        };
+        let asbd = unsafe { CMAudioFormatDescriptionGetStreamBasicDescription(&formato) };
+        if asbd.is_null() {
+            return;
+        }
+        let asbd = unsafe { *asbd };
+        if asbd.mFormatFlags & EM_FLOAT == 0 || asbd.mBitsPerChannel != 32 {
+            // O ScreenCaptureKit entrega float de 32 bits; qualquer outra
+            // coisa viraria ruído se lida como float.
+            return;
+        }
+
+        let mut lista: ListaDeCanais = unsafe { std::mem::zeroed() };
+        let mut bloco: *mut objc2_core_media::CMBlockBuffer = std::ptr::null_mut();
+        let r = unsafe {
+            amostra.audio_buffer_list_with_retained_block_buffer(
+                std::ptr::null_mut(),
+                (&mut lista as *mut ListaDeCanais).cast::<AudioBufferList>(),
+                std::mem::size_of::<ListaDeCanais>(),
+                None,
+                None,
+                ALINHADO,
+                &mut bloco,
+            )
+        };
+        if r != 0 {
+            return;
+        }
+        // O bloco devolvido é nosso; soltá-lo no fim desta função é o que
+        // libera a memória do som.
+        let _bloco = std::ptr::NonNull::new(bloco)
+            .map(|b| unsafe { objc2_core_foundation::CFRetained::from_raw(b) });
+
+        let quantos = (lista.quantos as usize).min(lista.canais.len());
+        let canais: Vec<&[f32]> = lista.canais[..quantos]
+            .iter()
+            .filter(|b| !b.mData.is_null())
+            .map(|b| unsafe {
+                std::slice::from_raw_parts(
+                    b.mData as *const f32,
+                    b.mDataByteSize as usize / std::mem::size_of::<f32>(),
+                )
+            })
+            .collect();
+        if canais.is_empty() {
+            return;
+        }
+
+        let (dados, n_canais): (&[f32], usize) = if asbd.mFormatFlags & SEPARADOS != 0 {
+            super::intercalar(&canais, &mut estado.intercalado);
+            (&estado.intercalado, canais.len())
+        } else {
+            (canais[0], asbd.mChannelsPerFrame.max(1) as usize)
+        };
+
+        if estado.processador.is_none() {
+            let taxa = asbd.mSampleRate.round() as u32;
+            println!("Áudio: capturando a {taxa} Hz, {n_canais} canal(is)");
+            match Processador::novo(taxa, n_canais, estado.tx.clone(), estado.ganho.clone()) {
+                Ok(p) => estado.processador = Some(p),
+                Err(e) => {
+                    eprintln!("Áudio: {e}");
+                    return;
+                }
+            }
+        }
+        if let Some(p) = estado.processador.as_mut() {
+            p.empurrar(dados);
+        }
+    }
+
+    /// Espera um bloco de conclusão do sistema, com prazo.
+    fn esperar<T>(rx: &mpsc::Receiver<T>, o_que: &str) -> Result<T, String> {
+        rx.recv_timeout(Duration::from_secs(5))
+            .map_err(|_| format!("o Mac não respondeu ao {o_que}"))
+    }
+
+    fn erro(e: *mut NSError) -> Option<String> {
+        unsafe { e.as_ref() }.map(|e| e.localizedDescription().to_string())
+    }
+
+    fn abrir(
+        tx: tokio::sync::mpsc::Sender<Packet>,
+        ganho: Arc<super::Gain>,
+    ) -> Result<(Retained<SCStream>, Retained<SaidaDeSom>), String> {
+        if !objc2::available!(macos = 13.0) {
+            return Err("o som do computador exige macOS 13 ou mais novo".into());
+        }
+
+        // 1. Qual tela. O som não depende dela, mas o fluxo exige uma.
+        let (conteudo_tx, conteudo_rx) =
+            mpsc::channel::<Result<Retained<SCShareableContent>, String>>();
+        let ao_listar = RcBlock::new(move |conteudo: *mut SCShareableContent, e: *mut NSError| {
+            let r = match unsafe { Retained::retain(conteudo) } {
+                Some(c) => Ok(c),
+                None => Err(erro(e).unwrap_or_else(|| "sem tela para capturar".into())),
+            };
+            let _ = conteudo_tx.send(r);
+        });
+        unsafe { SCShareableContent::getShareableContentWithCompletionHandler(&ao_listar) };
+        let conteudo = esperar(&conteudo_rx, "pedido das telas")?
+            .map_err(|e| format!("sem acesso à captura do Mac ({e}); libere a Gravação de Tela"))?;
+        let tela = unsafe { conteudo.displays() }
+            .firstObject()
+            .ok_or("o Mac não listou nenhuma tela")?;
+
+        // 2. O fluxo: som em 48 kHz estéreo, tela mínima.
+        let filtro = unsafe {
+            SCContentFilter::initWithDisplay_excludingWindows(
+                SCContentFilter::alloc(),
+                &tela,
+                &NSArray::new(),
+            )
+        };
+        let config = unsafe { SCStreamConfiguration::new() };
+        unsafe {
+            config.setCapturesAudio(true);
+            config.setExcludesCurrentProcessAudio(true);
+            config.setSampleRate(super::SAMPLE_RATE as isize);
+            config.setChannelCount(super::CHANNELS as isize);
+            config.setWidth(2);
+            config.setHeight(2);
+            config.setMinimumFrameInterval(CMTime::new(1, 1));
+        }
+        let fluxo = unsafe {
+            SCStream::initWithFilter_configuration_delegate(
+                SCStream::alloc(),
+                &filtro,
+                &config,
+                None,
+            )
+        };
+
+        let saida = SaidaDeSom::nova(Estado {
+            processador: None,
+            tx,
+            ganho,
+            intercalado: Vec::new(),
+        });
+        // Uma fila só para o som: os blocos chegam em ordem, um de cada vez.
+        let fila = dispatch2::DispatchQueue::new("br.com.deskside.som", None);
+        unsafe {
+            fluxo.addStreamOutput_type_sampleHandlerQueue_error(
+                ProtocolObject::from_ref(&*saida),
+                SCStreamOutputType::Audio,
+                Some(&fila),
+            )
+        }
+        .map_err(|e| format!("não consegui ligar o som: {}", e.localizedDescription()))?;
+
+        // 3. Começa.
+        let (inicio_tx, inicio_rx) = mpsc::channel::<Option<String>>();
+        let ao_comecar = RcBlock::new(move |e: *mut NSError| {
+            let _ = inicio_tx.send(erro(e));
+        });
+        unsafe { fluxo.startCaptureWithCompletionHandler(Some(&ao_comecar)) };
+        if let Some(e) = esperar(&inicio_rx, "início da captura")? {
+            return Err(format!("o Mac não começou a captura do som: {e}"));
+        }
+        Ok((fluxo, saida))
+    }
+
+    /// Liga a captura do som do computador.
+    ///
+    /// Numa thread própria, como no Windows: os objetos do ScreenCaptureKit
+    /// não podem mudar de thread, então nascem, vivem e param na mesma.
+    pub fn start(
+        tx: tokio::sync::mpsc::Sender<Packet>,
+        gain: Arc<super::Gain>,
+    ) -> Result<Capture, String> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let sinal = Arc::clone(&stop);
+        let (pronto_tx, pronto_rx) = mpsc::channel::<Result<(), String>>();
+
+        let thread = std::thread::spawn(move || match abrir(tx, gain) {
+            Err(e) => {
+                let _ = pronto_tx.send(Err(e));
+            }
+            Ok((fluxo, _saida)) => {
+                let _ = pronto_tx.send(Ok(()));
+                while !sinal.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                let (fim_tx, fim_rx) = mpsc::channel::<()>();
+                let ao_parar = RcBlock::new(move |_e: *mut NSError| {
+                    let _ = fim_tx.send(());
+                });
+                unsafe { fluxo.stopCaptureWithCompletionHandler(Some(&ao_parar)) };
+                let _ = fim_rx.recv_timeout(Duration::from_secs(2));
+            }
+        });
+
+        match pronto_rx.recv_timeout(Duration::from_secs(12)) {
+            Ok(Ok(())) => Ok(Capture {
+                stop,
+                thread: Some(thread),
+            }),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err("o Mac não respondeu ao pedido de som".to_string()),
+        }
+    }
+}
+
+#[cfg(not(any(
+    all(windows, any(target_arch = "x86", target_arch = "x86_64")),
+    target_os = "macos"
+)))]
 mod imp {
     use super::Packet;
 
@@ -422,6 +819,41 @@ pub use imp::{start, Capture};
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canais_separados_viram_intercalados() {
+        let mut saida = Vec::new();
+        intercalar(&[&[1.0, 2.0, 3.0], &[-1.0, -2.0, -3.0]], &mut saida);
+        assert_eq!(saida, vec![1.0, -1.0, 2.0, -2.0, 3.0, -3.0]);
+        // Tamanhos diferentes param no menor, em vez de ler fora do bloco.
+        intercalar(&[&[1.0, 2.0], &[9.0]], &mut saida);
+        assert_eq!(saida, vec![1.0, 9.0]);
+    }
+
+    #[test]
+    fn o_processador_entrega_um_pacote_por_quadro_de_20_ms() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        let ganho = std::sync::Arc::new(Gain::new(1.0));
+        let mut p = Processador::novo(48_000, 2, tx, ganho).unwrap();
+        // Blocos de tamanho que não casa com 20 ms, como a captura entrega:
+        // cada um tem 500 quadros estéreo (1000 amostras intercaladas).
+        let bloco: Vec<f32> = (0..1_000)
+            .map(|i| ((i as f32) * 0.05).sin() * 0.3)
+            .collect();
+        for _ in 0..4 {
+            p.empurrar(&bloco);
+        }
+        p.empurrar(&bloco[..800]);
+        // 2400 quadros estéreo são 50 ms: dois quadros de 20 ms cheios, e o
+        // resto espera o próximo bloco.
+        let mut pacotes = 0;
+        while let Ok(pacote) = rx.try_recv() {
+            assert_eq!(pacote.duration, FRAME);
+            assert!(!pacote.data.is_empty());
+            pacotes += 1;
+        }
+        assert_eq!(pacotes, 2);
+    }
 
     /// Um bloco de `frames` quadros com um valor por canal, para conferir de
     /// onde cada amostra veio.

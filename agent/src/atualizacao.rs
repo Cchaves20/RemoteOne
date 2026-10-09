@@ -36,6 +36,22 @@
 //! Menu Iniciar e a entrada em "Aplicativos instalados" continuam valendo sem
 //! ninguém tocar neles.
 //!
+//! ## No Mac
+//!
+//! A mesma ideia, com três diferenças (ver o `imp` do Mac, no fim):
+//!
+//! - O que se publica é o `Deskside.app` inteiro, num `.zip`
+//!   (`/baixar/Deskside-mac.zip`). Para saber se há versão nova, compara-se o
+//!   executável de dentro do pacote com `/baixar/Deskside-mac-agente.sha256` —
+//!   o resumo do `.zip` não diria nada sobre o que está instalado.
+//! - O download vai para a pasta de configuração, e não para dentro do `.app`:
+//!   mexer num pacote assinado quebra a assinatura.
+//! - O ajudante põe o `.app` velho de lado (`Deskside.old.app`, na mesma
+//!   pasta), copia o novo para o lugar e o abre pelo `open`, como se a pessoa
+//!   tivesse clicado — é isso que faz o Mac atribuir as permissões de Gravação
+//!   de Tela e Acessibilidade ao programa certo. Sem a prova em 90 segundos,
+//!   devolve o velho.
+//!
 //! ## Por que não uma biblioteca de HTTP
 //!
 //! O agente já fala TLS — é o `native-tls` do WebSocket, que no Windows usa o
@@ -76,6 +92,12 @@ pub const AJUDANTE: &str = "deskside-atualizador.exe";
 /// A prova de que o novo conectou.
 pub const PROVA: &str = "atualizacao.ok";
 
+/// No Mac: onde o `.zip` baixado é aberto antes de ir para o lugar.
+pub const DESEMPACOTADO: &str = "novo";
+/// No Mac: qual `.app` o ajudante deve trocar. O ajudante roda de uma cópia
+/// fora do pacote e não teria como descobrir sozinho.
+pub const DESTINO: &str = "destino";
+
 /// Tudo o que uma atualização pode deixar na pasta. A desinstalação apaga
 /// estes também: o `rmdir` do fim dela só remove pasta vazia.
 pub const SOBRAS: [&str; 5] = [NOVO, VELHO, FALHOU, AJUDANTE, PROVA];
@@ -100,12 +122,27 @@ const LIMITE_DO_CABECALHO: usize = 16 * 1024;
 /// este binário foi compilado, e não pela do Windows: um agente x64 rodando
 /// emulado num ARM64 tem que continuar recebendo x64, que é o que ele é.
 pub fn nome_publicado() -> Option<&'static str> {
-    if cfg!(target_arch = "x86_64") {
+    if cfg!(target_os = "macos") {
+        // Um pacote só, universal: Apple Silicon e Intel no mesmo `.app`.
+        Some("Deskside-mac.zip")
+    } else if cfg!(target_arch = "x86_64") {
         Some("Deskside.exe")
     } else if cfg!(target_arch = "aarch64") {
         Some("Deskside-ARM64.exe")
     } else {
         None
+    }
+}
+
+/// O nome do resumo que descreve o **executável** publicado.
+///
+/// No Windows é o mesmo arquivo que se baixa. No Mac se baixa um `.zip`, mas o
+/// que está instalado é o executável de dentro dele, e é esse que se compara.
+pub fn nome_do_resumo_do_executavel() -> Option<&'static str> {
+    if cfg!(target_os = "macos") {
+        Some("Deskside-mac-agente")
+    } else {
+        nome_publicado()
     }
 }
 
@@ -444,7 +481,8 @@ pub fn verificar(backend: &str) -> Result<Situacao, String> {
         return Ok(Situacao::NaoSeAplica("este não é o Deskside instalado"));
     };
     let local = resumo_de_arquivo(&exe)?;
-    Ok(comparar(&local, &resumo_publicado(&origem, nome)?))
+    let do_executavel = nome_do_resumo_do_executavel().unwrap_or(nome);
+    Ok(comparar(&local, &resumo_publicado(&origem, do_executavel)?))
 }
 
 /// Baixa, confere e passa a vez ao ajudante.
@@ -456,10 +494,10 @@ pub fn aplicar(backend: &str) -> Result<(), String> {
     let nome = nome_publicado().ok_or("não há versão publicada para este processador")?;
     let origem = Origem::do_backend(backend).ok_or("o servidor configurado não usa HTTPS")?;
     let exe = imp::exe_instalado_em_uso().ok_or("este não é o Deskside instalado")?;
-    let pasta = exe
-        .parent()
-        .ok_or("pasta de instalação desconhecida")?
-        .to_path_buf();
+    // No Windows é a pasta do executável; no Mac, uma pasta de trabalho fora
+    // do `.app` (ver o começo deste arquivo).
+    let pasta = imp::pasta_instalada().ok_or("pasta de instalação desconhecida")?;
+    let _ = std::fs::create_dir_all(&pasta);
 
     let novo = pasta.join(NOVO);
     let _ = std::fs::remove_file(&novo);
@@ -499,7 +537,11 @@ pub fn aplicar(backend: &str) -> Result<(), String> {
             "o arquivo baixado não confere com o publicado; tente de novo em instantes".into(),
         );
     }
-    if resumo_de_arquivo(&exe)? == esperado {
+    let do_executavel = match nome_do_resumo_do_executavel() {
+        Some(n) if n != nome => resumo_publicado(&origem, n)?,
+        _ => esperado.clone(),
+    };
+    if resumo_de_arquivo(&exe)? == do_executavel {
         let _ = std::fs::remove_file(&novo);
         return Err("este computador já está com a versão publicada".into());
     }
@@ -628,6 +670,8 @@ pub fn limpar_sobras() {
         // Falhar é normal: o ajudante pode ainda estar de pé.
         let _ = std::fs::remove_file(pasta.join(nome));
     }
+    // O `.app` desempacotado no Mac; no Windows a pasta não existe.
+    let _ = std::fs::remove_dir_all(pasta.join(DESEMPACOTADO));
 }
 
 /// O que o ajudante faz. Chamado por `main` com o PID do agente velho.
@@ -794,7 +838,203 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::*;
+    use std::os::unix::process::CommandExt;
+    use std::process::Command;
+    use std::time::{Duration, Instant};
+
+    extern "C" {
+        fn kill(pid: i32, sinal: i32) -> i32;
+    }
+
+    /// A pasta de trabalho da atualização, fora do `.app`.
+    pub fn pasta_instalada() -> Option<PathBuf> {
+        Some(crate::config_dir().join("atualizacao"))
+    }
+
+    /// O `.app` de onde este executável roda, se ele for uma instalação de
+    /// verdade (e não o arquivo baixado, ver `setup::lugar_provisorio`).
+    fn pacote_de(exe: &Path) -> Option<PathBuf> {
+        let pacote = exe.ancestors().nth(3)?;
+        (pacote.extension()? == "app").then(|| pacote.to_path_buf())
+    }
+
+    pub fn exe_instalado_em_uso() -> Option<PathBuf> {
+        let exe = std::env::current_exe().ok()?;
+        let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+        if crate::setup::lugar_provisorio(&exe) {
+            return None;
+        }
+        pacote_de(&exe).map(|_| exe)
+    }
+
+    /// Copia este executável para fora do pacote e o chama como ajudante.
+    ///
+    /// Num grupo de processos próprio: o `launchd` encerra o grupo inteiro do
+    /// agente quando ele sai, e o ajudante precisa sobreviver a isso — sair é
+    /// justamente o que o agente faz logo depois de chamá-lo.
+    pub fn chamar_ajudante(exe: &Path, pasta: &Path) -> Result<(), String> {
+        let pacote = pacote_de(exe).ok_or("o Deskside não está dentro de um .app")?;
+        std::fs::write(pasta.join(DESTINO), pacote.to_string_lossy().as_bytes())
+            .map_err(|e| format!("não preparei o ajudante: {e}"))?;
+        let ajudante = pasta.join(AJUDANTE);
+        let _ = std::fs::remove_file(&ajudante);
+        std::fs::copy(exe, &ajudante).map_err(|e| format!("não preparei o ajudante: {e}"))?;
+        let pid = std::process::id().to_string();
+        Command::new(&ajudante)
+            .args([ARG_APLICAR, &pid])
+            .process_group(0)
+            .spawn()
+            .map_err(|e| format!("não consegui chamar o ajudante: {e}"))?;
+        Ok(())
+    }
+
+    fn vivo(pid: i32) -> bool {
+        unsafe { kill(pid, 0) == 0 }
+    }
+
+    fn esperar_sair(pid: u32, prazo: Duration) {
+        let limite = Instant::now() + prazo;
+        while vivo(pid as i32) && Instant::now() < limite {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+
+    /// Um comando do sistema que precisa dar certo.
+    fn rodar(programa: &str, args: &[&str]) -> Result<(), String> {
+        let saida = Command::new(programa)
+            .args(args)
+            .output()
+            .map_err(|e| format!("{programa} não rodou: {e}"))?;
+        if saida.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "{programa}: {}",
+                String::from_utf8_lossy(&saida.stderr).trim()
+            ))
+        }
+    }
+
+    /// Abre o `.app` como se a pessoa tivesse clicado nele.
+    fn abrir(pacote: &Path, args: &[&str]) {
+        let mut c = Command::new("/usr/bin/open");
+        c.arg("-n").arg(pacote);
+        if !args.is_empty() {
+            c.arg("--args").args(args);
+        }
+        if let Err(e) = c.spawn() {
+            crate::diario(&format!("atualizador: não abri {} ({e})", pacote.display()));
+        }
+    }
+
+    /// Encerra o agente que roda de dentro deste pacote, se houver.
+    fn encerrar(pacote: &Path) {
+        let exe = pacote.join("Contents/MacOS/deskside-agent");
+        let _ = Command::new("/usr/bin/pkill")
+            .args(["-f", &exe.to_string_lossy()])
+            .status();
+        std::thread::sleep(Duration::from_secs(1));
+    }
+
+    pub fn executar_ajudante(pid_do_velho: u32) {
+        let Some(pasta) = pasta_instalada() else {
+            return;
+        };
+        let diario = |t: &str| crate::diario(&format!("atualizador: {t}"));
+        let Ok(destino) = std::fs::read_to_string(pasta.join(DESTINO)) else {
+            diario("não sei qual Deskside trocar; nada mudou");
+            return;
+        };
+        let pacote = PathBuf::from(destino.trim());
+        let velho = pacote.with_file_name("Deskside.old.app");
+        let (zip, prova) = (pasta.join(NOVO), pasta.join(PROVA));
+        let desempacotado = pasta.join(DESEMPACOTADO);
+
+        esperar_sair(pid_do_velho, Duration::from_secs(30));
+
+        // 1. Abre o `.zip` e confere a assinatura do que veio. O resumo já
+        //    garantiu que é o arquivo publicado; isto garante que ele está
+        //    inteiro e que o Mac vai aceitar abri-lo.
+        let _ = std::fs::remove_dir_all(&desempacotado);
+        let novo = desempacotado.join("Deskside.app");
+        let preparado = rodar(
+            "/usr/bin/ditto",
+            &[
+                "-x",
+                "-k",
+                &zip.to_string_lossy(),
+                &desempacotado.to_string_lossy(),
+            ],
+        )
+        .and_then(|_| {
+            rodar(
+                "/usr/bin/codesign",
+                &["--verify", "--deep", "--strict", &novo.to_string_lossy()],
+            )
+        });
+        if let Err(e) = preparado {
+            diario(&format!("o pacote baixado não serve ({e}); nada mudou"));
+            abrir(&pacote, &[]);
+            return;
+        }
+
+        // 2. O velho de lado, o novo no lugar. O velho fica na mesma pasta
+        //    para a troca ser um renomear, que não falha pela metade.
+        let _ = std::fs::remove_dir_all(&velho);
+        let _ = std::fs::remove_file(&prova);
+        if let Err(e) = std::fs::rename(&pacote, &velho) {
+            diario(&format!(
+                "não tirei o Deskside velho do lugar ({e}); nada mudou"
+            ));
+            abrir(&pacote, &[]);
+            return;
+        }
+        if let Err(e) = rodar(
+            "/usr/bin/ditto",
+            &[&novo.to_string_lossy(), &pacote.to_string_lossy()],
+        ) {
+            diario(&format!("não pus o novo no lugar ({e}); voltando o velho"));
+            let _ = std::fs::remove_dir_all(&pacote);
+            let _ = std::fs::rename(&velho, &pacote);
+            abrir(&pacote, &[]);
+            return;
+        }
+
+        // 3. Sobe o novo e espera a prova.
+        abrir(&pacote, &[ARG_ATUALIZADO]);
+        let limite = Instant::now() + Duration::from_secs(PRAZO_DA_PROVA_SECS);
+        while Instant::now() < limite {
+            if prova.exists() {
+                let _ = std::fs::remove_file(&prova);
+                let _ = std::fs::remove_dir_all(&velho);
+                let _ = std::fs::remove_dir_all(&desempacotado);
+                let _ = std::fs::remove_file(&zip);
+                diario("versão nova no ar");
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+
+        // 4. Sem prova: o velho volta.
+        diario(&format!(
+            "o novo não conectou em {PRAZO_DA_PROVA_SECS}s; voltando o velho"
+        ));
+        encerrar(&pacote);
+        let _ = std::fs::remove_dir_all(&pacote);
+        match std::fs::rename(&velho, &pacote) {
+            Ok(()) => abrir(&pacote, &[]),
+            Err(e) => diario(&format!(
+                "não devolvi o velho ({e}); ele está em {}",
+                velho.display()
+            )),
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use super::*;
 
@@ -822,8 +1062,13 @@ mod tests {
         // Os nomes de `scripts/lib-arquitetura.ps1`. Um ARM64 que baixasse o
         // x64 funcionaria emulado e mais lento, sem ninguém perceber por quê.
         let nome = nome_publicado();
-        if cfg!(target_arch = "x86_64") {
+        if cfg!(target_os = "macos") {
+            // Universal: o mesmo pacote para Apple Silicon e Intel.
+            assert_eq!(nome, Some("Deskside-mac.zip"));
+            assert_eq!(nome_do_resumo_do_executavel(), Some("Deskside-mac-agente"));
+        } else if cfg!(target_arch = "x86_64") {
             assert_eq!(nome, Some("Deskside.exe"));
+            assert_eq!(nome_do_resumo_do_executavel(), nome);
         } else if cfg!(target_arch = "aarch64") {
             assert_eq!(nome, Some("Deskside-ARM64.exe"));
         }
