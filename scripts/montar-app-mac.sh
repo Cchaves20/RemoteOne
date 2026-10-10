@@ -46,11 +46,32 @@ notarizar() {
     [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ] || return 1
     [ -f "${APP_STORE_CONNECT_KEY_FILE:-}" ] || return 1
     echo "--- notarizando $1"
+    resposta="$SAIDA/notarizacao.txt"
+    # 20 minutos: os envios comuns levam de um a cinco. O primeiro de uma
+    # conta nova a Apple analisa com calma (o deste projeto passou de 30), e
+    # não vale prender o build por isso — sai assinado, e o próximo tenta.
     xcrun notarytool submit "$1" \
         --key "$APP_STORE_CONNECT_KEY_FILE" \
         --key-id "$APP_STORE_CONNECT_KEY_ID" \
         --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
-        --wait --timeout 30m
+        --wait --timeout 20m >"$resposta" 2>&1 || true
+    cat "$resposta"
+    if grep -q "status: Accepted" "$resposta"; then
+        return 0
+    fi
+    envio=$(sed -n 's/^ *id: \([0-9a-f-]*\).*/\1/p' "$resposta" | head -1)
+    if grep -q "status: Invalid" "$resposta" && [ -n "$envio" ]; then
+        # Recusado: o relatório da Apple diz o porquê, arquivo por arquivo.
+        echo "--- a Apple recusou a notarização; o motivo:"
+        xcrun notarytool log "$envio" \
+            --key "$APP_STORE_CONNECT_KEY_FILE" \
+            --key-id "$APP_STORE_CONNECT_KEY_ID" \
+            --issuer "$APP_STORE_CONNECT_ISSUER_ID" || true
+    elif grep -q "Timeout" "$resposta"; then
+        echo "A Apple ainda está analisando (envio $envio). O pacote sai assinado,"
+        echo "sem o recibo; o próximo build envia de novo."
+    fi
+    return 1
 }
 
 assinar() {
