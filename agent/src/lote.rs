@@ -96,9 +96,27 @@ pub struct Resultado {
 /// `espera` entra por parâmetro para os testes poderem passar zero. Sem isso,
 /// verificar a ordem de uma lista de quatro custaria mais de um segundo de
 /// espera real por execução do teste.
-pub fn abrir_todos<F>(itens: &[Item], espera: Duration, mut executar: F) -> Vec<Resultado>
+pub fn abrir_todos<F>(itens: &[Item], espera: Duration, executar: F) -> Vec<Resultado>
 where
     F: FnMut(&Item) -> Passo,
+{
+    abrir_todos_com(itens, espera, executar, std::thread::sleep)
+}
+
+/// [`abrir_todos`] com o "dormir" por parâmetro.
+///
+/// Para os testes contarem as esperas em vez de cronometrá-las: medir o relógio
+/// numa máquina de CI ocupada falhava sem defeito nenhum (o Mac do GitHub
+/// chegou a atrasar 261 ms numa espera de 400).
+fn abrir_todos_com<F, D>(
+    itens: &[Item],
+    espera: Duration,
+    mut executar: F,
+    mut dormir: D,
+) -> Vec<Resultado>
+where
+    F: FnMut(&Item) -> Passo,
+    D: FnMut(Duration),
 {
     let mut saida = Vec::new();
     for (posicao, item) in itens.iter().take(MAX_PROGRAMAS).enumerate() {
@@ -109,7 +127,7 @@ where
         // a janela aparecer); esta pausa continua valendo porque abrir quatro
         // programas pesados no mesmo instante faz os quatro demorarem mais.
         if posicao > 0 && !espera.is_zero() {
-            std::thread::sleep(espera);
+            dormir(espera);
         }
         let (ok, error) = match executar(item) {
             Passo::Ok => (true, None),
@@ -299,24 +317,45 @@ mod tests {
     fn a_espera_fica_entre_as_aberturas_e_nao_no_fim() {
         // Três programas = duas esperas. Uma espera a mais no fim seria o
         // agente dormindo à toa em toda lista.
-        //
-        // 200 ms e não 30: o teste mede o relógio, e uma máquina de CI ocupada
-        // atrasa um `sleep` em mais de 100 ms (o Mac do GitHub atrasou 127).
-        // Com esperas maiores, a folga entre "duas" e "três" passa a caber o
-        // atraso sem deixar de pegar a espera a mais.
-        let espera = Duration::from_millis(200);
-        let comeco = std::time::Instant::now();
-        abrir_todos(&itens(&["a", "b", "c"]), espera, |_| Passo::Ok);
-        let gasto = comeco.elapsed();
-        assert!(gasto >= espera * 2, "esperou de menos: {gasto:?}");
-        assert!(gasto < espera * 3, "esperou de mais: {gasto:?}");
+        let espera = Duration::from_millis(400);
+        let ordem = RefCell::new(Vec::new());
+        abrir_todos_com(
+            &itens(&["a", "b", "c"]),
+            espera,
+            |i| {
+                ordem.borrow_mut().push(format!("abre {}", i.id));
+                Passo::Ok
+            },
+            |d| ordem.borrow_mut().push(format!("espera {}", d.as_millis())),
+        );
+        assert_eq!(
+            ordem.into_inner(),
+            ["abre a", "espera 400", "abre b", "espera 400", "abre c"]
+        );
     }
 
     #[test]
     fn um_programa_so_nao_espera() {
-        let comeco = std::time::Instant::now();
-        abrir_todos(&itens(&["a"]), Duration::from_millis(200), |_| Passo::Ok);
-        assert!(comeco.elapsed() < Duration::from_millis(100));
+        let esperas = RefCell::new(0);
+        abrir_todos_com(
+            &itens(&["a"]),
+            Duration::from_millis(400),
+            |_| Passo::Ok,
+            |_| *esperas.borrow_mut() += 1,
+        );
+        assert_eq!(esperas.into_inner(), 0);
+    }
+
+    #[test]
+    fn espera_zero_nao_chama_o_dormir() {
+        let esperas = RefCell::new(0);
+        abrir_todos_com(
+            &itens(&["a", "b"]),
+            Duration::ZERO,
+            |_| Passo::Ok,
+            |_| *esperas.borrow_mut() += 1,
+        );
+        assert_eq!(esperas.into_inner(), 0);
     }
 
     #[test]
