@@ -77,6 +77,12 @@ def _migrate() -> None:
         "users": {
             "totp_secret": "VARCHAR(64)",
             "totp_enabled": "BOOLEAN DEFAULT 0 NOT NULL",
+            # Contra reuso do código do autenticador e para os códigos de
+            # recuperação (ver `app/segundo_fator.py`). Conta antiga nasce sem
+            # nenhum dos dois, que é o estado certo: nenhum passo usado, nenhum
+            # código gerado.
+            "totp_ultimo_passo": "INTEGER",
+            "recovery_codes": "TEXT DEFAULT '[]' NOT NULL",
             # Cadastro completo. Todas nulas ou com padrão: `ALTER TABLE ADD
             # COLUMN` com `NOT NULL` e sem padrão é recusado numa tabela que já
             # tem linhas, e o servidor não subiria.

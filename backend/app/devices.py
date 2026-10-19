@@ -4,11 +4,21 @@ import asyncio
 import base64
 import logging
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app import cobranca, pairing, plano, teste
+from app import alertas, cobranca, pairing, plano, teste
 from app.auth import get_current_user
 from app.connections import manager
 from app.db import get_db
@@ -110,6 +120,7 @@ def _owned_device_or_404(db: Session, device_id: str, user: User) -> Device:
 @router.post("/pairing/claim", response_model=DeviceOut, status_code=status.HTTP_201_CREATED)
 def claim_device(
     body: ClaimRequest,
+    tarefas: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DeviceOut:
@@ -131,6 +142,11 @@ def claim_device(
     # teste, e recusar o pareamento puniria a pessoa duas vezes pelo mesmo
     # motivo.
     encerrado = teste.ao_parear(db, current_user, device.maquina)
+    # Daqui em diante o computador pode ser controlado pela conta: é o passo
+    # que mais interessa a quem entrou nela sem ser o dono.
+    tarefas.add_task(
+        alertas.enviar, alertas.montar(current_user, "computador", detalhe=device.name)
+    )
     saida = _device_out(device)
     saida.teste_encerrado = encerrado
     return saida

@@ -1,5 +1,7 @@
 """Testes da verificação em duas etapas (TOTP)."""
 
+import time
+
 import pyotp
 from conftest import SENHA, criar_conta
 from fastapi.testclient import TestClient
@@ -14,6 +16,15 @@ CREDS = {"email": "2fa@example.com", "password": SENHA}
 def _register_headers(creds=CREDS) -> dict:
     tokens = criar_conta(client, email=creds["email"], password=creds["password"])
     return {"Authorization": f"Bearer {tokens['access_token']}"}
+
+
+def _proximo(secret: str) -> str:
+    """O código do passo seguinte ao da ativação.
+
+    O da ativação já foi usado, e o servidor recusa o reuso (ver
+    `app/segundo_fator.py`); o seguinte ainda cabe na janela de relógio.
+    """
+    return pyotp.TOTP(secret).at(time.time() + 30)
 
 
 def _enable_2fa(headers) -> str:
@@ -60,7 +71,7 @@ def test_login_requires_code_when_2fa_on():
     assert r2.json()["detail"] == "two_factor_invalid"
 
     # Código certo: sucesso.
-    code = pyotp.TOTP(secret).now()
+    code = _proximo(secret)
     r3 = client.post("/api/v1/auth/login", json={**CREDS, "totp_code": code})
     assert r3.status_code == 200
     assert r3.json()["access_token"]
@@ -68,10 +79,12 @@ def test_login_requires_code_when_2fa_on():
 
 def test_disable_2fa_restores_normal_login():
     headers = _register_headers()
-    _enable_2fa(headers)
-    # Desativa com a senha.
+    secret = _enable_2fa(headers)
+    # Desativa com a senha e o código.
     resp = client.post(
-        "/api/v1/auth/2fa/disable", json={"password": CREDS["password"]}, headers=headers
+        "/api/v1/auth/2fa/disable",
+        json={"password": CREDS["password"], "totp_code": _proximo(secret)},
+        headers=headers,
     )
     assert resp.status_code == 204
     # Login volta a funcionar sem código.

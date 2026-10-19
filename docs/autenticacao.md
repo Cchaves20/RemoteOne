@@ -233,6 +233,37 @@ padrão. Quem apaga é o SQLAlchemy. Uma coleção nova que não seja declarada 
 não vira uma linha esquecida e inofensiva no banco — vira a linha que aparece
 na conta seguinte.
 
+## Verificação em duas etapas em toda porta
+
+Ligada a verificação, o código do autenticador (ou um código de recuperação) é
+pedido no login **e** em toda ação que entregaria a conta a outra pessoa:
+recuperar a senha, trocar a senha, trocar o contato, desligar a verificação e
+excluir a conta. Antes, só o login pedia — e "esqueci a senha" abria a conta de
+quem tivesse o e-mail ou o chip da pessoa, com a verificação ligada ou não.
+
+- **Códigos de recuperação**: dez, de uso único, devolvidos ao ligar com
+  `recovery_codes: true` e por `POST /2fa/recovery-codes` (que anula os
+  anteriores). Guardados como HMAC. O `/me` diz quantos restam.
+- **O mesmo código não vale duas vezes**: guarda-se o último passo de 30 s
+  aceito, e só um posterior passa.
+- **Erros contam**: no login e nas ações sensíveis pelo mesmo limite do login;
+  na recuperação de senha, nas tentativas do próprio pedido.
+
+Ver `backend/app/segundo_fator.py`.
+
+## Avisos de segurança
+
+O contato da conta recebe um aviso a cada login, computador pareado, senha
+trocada ou redefinida, verificação ligada ou desligada, códigos novos ou usados.
+A troca de contato avisa o endereço **antigo**, com o novo mascarado. O envio
+roda depois da resposta e nunca a derruba. Ver `backend/app/alertas.py`.
+
+O aviso de troca de contato indica o suporte, se configurado:
+
+```
+DESKSIDE_SUPORTE=suporte@seu-dominio
+```
+
 ## Tokens
 
 - **access token** — curta duração (padrão 15 min), enviado no header
@@ -328,14 +359,22 @@ consentimento dos pais).
 | POST | `/api/v1/auth/signup/verify` | `{destination, code}` | 201 + `{access_token, refresh_token}` |
 | POST | `/api/v1/auth/signup/resend` | `{destination}` | `{destination, channel, …}` |
 | POST | `/api/v1/auth/password/forgot` | `{email\|phone+country}` | `{destination, channel, resend_in_seconds, delivered}` — igual exista a conta ou não |
-| POST | `/api/v1/auth/password/reset` | `{destination, code, password, password_confirm}` | `{access_token, refresh_token}` |
-| POST | `/api/v1/auth/login` | `{email\|phone+country, password}` | `{access_token, refresh_token}` |
+| POST | `/api/v1/auth/password/reset` | `{destination, code, password, password_confirm, totp_code?}` | `{access_token, refresh_token}` |
+| POST | `/api/v1/auth/login` | `{email\|phone+country, password, totp_code?}` | `{access_token, refresh_token}` |
 | POST | `/api/v1/auth/refresh` | `{refresh_token}` | `{access_token}` |
 | GET | `/api/v1/auth/me` | — (Bearer) | `{id, email, phone, first_name, …}` |
-| POST | `/api/v1/auth/me/contact/start` | `{current_password, email\|phone+country}` | `{destination, channel, resend_in_seconds, delivered}` |
+| POST | `/api/v1/auth/me/contact/start` | `{current_password, email\|phone+country, totp_code?}` | `{destination, channel, resend_in_seconds, delivered}` |
 | POST | `/api/v1/auth/me/contact/resend` | — (Bearer) | idem |
 | POST | `/api/v1/auth/me/contact/verify` | `{code}` | a conta atualizada |
-| PATCH | `/api/v1/auth/me/password` | `{current_password, new_password}` | `{access_token, refresh_token}` — os antigos param de valer |
+| PATCH | `/api/v1/auth/me/password` | `{current_password, new_password, totp_code?}` | `{access_token, refresh_token}` — os antigos param de valer |
+| POST | `/api/v1/auth/2fa/enable` | `{code, recovery_codes?}` | 204, ou `{codes}` com `recovery_codes: true` |
+| POST | `/api/v1/auth/2fa/recovery-codes` | `{totp_code}` | `{codes}` — os anteriores param de valer |
+| POST | `/api/v1/auth/2fa/disable` | `{password, totp_code}` | 204 |
+| DELETE | `/api/v1/auth/me` | `{password, totp_code?}` | 204 |
+
+`totp_code?`: exigido só com a verificação ligada; aceita o código do
+autenticador ou um de recuperação. Faltando, 401 `two_factor_required`; errado,
+401 `two_factor_invalid`.
 
 **`/api/v1/auth/register` não existe mais.** Enquanto existisse, o código de
 seis dígitos seria decoração: bastaria chamar a rota velha para ter conta sem

@@ -45,6 +45,13 @@ class User(Base):
     # confirmar um código; só então `totp_enabled` vira verdadeiro.
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False)
+    #: O último passo de 30 s do autenticador já aceito (ver
+    #: `app/segundo_fator.py`). Um código vale por um minuto e meio; sem isto,
+    #: quem o visse por cima do ombro poderia usá-lo de novo nesse intervalo.
+    totp_ultimo_passo: Mapped[int | None] = mapped_column(nullable=True)
+    #: Os códigos de recuperação ainda não usados, como lista JSON de resumos.
+    #: Nunca o código em si: ele só existe na tela, uma vez, quando é gerado.
+    recovery_codes: Mapped[str] = mapped_column(Text, default="[]")
 
     #: "gratis" ou "pago". Ver `app/plano.py`.
     #:

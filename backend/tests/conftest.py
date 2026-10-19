@@ -45,6 +45,11 @@ class EntregadorEspiao(entrega.Entregador):
         # passaria por um teste que olhasse só o título.
         self.avisos.append((destino, assunto, corpo))
 
+    def aviso_sms(self, destino: str, texto: str) -> None:
+        # No mesmo lugar dos e-mails, com o texto no lugar do assunto: o que os
+        # testes conferem é se o aviso saiu, e para quem.
+        self.avisos.append((destino, texto, texto))
+
     def ultimo_codigo(self, destino: str | None = None) -> str:
         for canal, alvo, codigo in reversed(self.enviados):  # noqa: B007
             if destino is None or alvo == destino:

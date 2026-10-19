@@ -26,7 +26,8 @@ class Credentials(BaseModel):
     #: a pessoa fora da própria conta em nome de uma regra que só vale para
     #: senhas novas.
     password: str = Field(min_length=1, max_length=72)
-    totp_code: str | None = Field(default=None, max_length=10)
+    #: O código do autenticador, ou um código de recuperação (`ABCDE-FGHJK`).
+    totp_code: str | None = Field(default=None, max_length=16)
 
     @model_validator(mode="after")
     def um_identificador(self) -> "Credentials":
@@ -125,6 +126,10 @@ class ResetPasswordRequest(BaseModel):
     #: poder listar o que falta — igual ao cadastro.
     password: str = Field(min_length=1, max_length=72)
     password_confirm: str = Field(min_length=1, max_length=72)
+    #: O código do autenticador **ou** um código de recuperação. Exigido só
+    #: quando a conta tem a verificação em duas etapas ligada; ver
+    #: `app/segundo_fator.py`.
+    totp_code: str | None = Field(default=None, max_length=16)
 
     @model_validator(mode="after")
     def senhas_conferem(self) -> "ResetPasswordRequest":
@@ -153,12 +158,31 @@ class TwoFactorEnableRequest(BaseModel):
     """Confirma a ativação do 2FA com um código do autenticador."""
 
     code: str = Field(min_length=6, max_length=10)
+    #: Pedir os códigos de recuperação na resposta. Opcional para o app antigo,
+    #: que espera 204 sem corpo, continuar funcionando; o novo sempre pede.
+    recovery_codes: bool = False
+
+
+class RecoveryCodesRequest(BaseModel):
+    """Gerar códigos de recuperação novos: exige o segundo fator."""
+
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class RecoveryCodesOut(BaseModel):
+    """Os códigos, em texto, **uma vez só**: o servidor guarda apenas o resumo."""
+
+    codes: list[str]
 
 
 class TwoFactorDisableRequest(BaseModel):
     """Desativa o 2FA (exige a senha atual)."""
 
     password: str = Field(min_length=1, max_length=72)
+    #: O código do autenticador **ou** um código de recuperação. Exigido só
+    #: quando a conta tem a verificação em duas etapas ligada; ver
+    #: `app/segundo_fator.py`.
+    totp_code: str | None = Field(default=None, max_length=16)
 
 
 class ContactChangeStart(BaseModel):
@@ -176,6 +200,10 @@ class ContactChangeStart(BaseModel):
     current_password: str = Field(min_length=1, max_length=72)
     email: EmailStr | None = None
     phone: str | None = Field(default=None, max_length=32)
+    #: O código do autenticador **ou** um código de recuperação. Exigido só
+    #: quando a conta tem a verificação em duas etapas ligada; ver
+    #: `app/segundo_fator.py`.
+    totp_code: str | None = Field(default=None, max_length=16)
     country: str | None = Field(default=None, max_length=2)
 
     @model_validator(mode="after")
@@ -204,12 +232,20 @@ class UpdatePasswordRequest(BaseModel):
 
     current_password: str = Field(min_length=1, max_length=72)
     new_password: str = Field(min_length=8, max_length=72)
+    #: O código do autenticador **ou** um código de recuperação. Exigido só
+    #: quando a conta tem a verificação em duas etapas ligada; ver
+    #: `app/segundo_fator.py`.
+    totp_code: str | None = Field(default=None, max_length=16)
 
 
 class DeleteAccountRequest(BaseModel):
     """Exclusão de conta: exige a senha atual como confirmação."""
 
     password: str = Field(min_length=1, max_length=72)
+    #: O código do autenticador **ou** um código de recuperação. Exigido só
+    #: quando a conta tem a verificação em duas etapas ligada; ver
+    #: `app/segundo_fator.py`.
+    totp_code: str | None = Field(default=None, max_length=16)
 
 
 class RefreshRequest(BaseModel):
@@ -237,6 +273,10 @@ class UserOut(BaseModel):
     birth_date: date | None = None
     created_at: datetime
     totp_enabled: bool = False
+    #: Quantos códigos de recuperação ainda valem. O app avisa quando acabam:
+    #: zero com a verificação ligada é uma conta a um celular perdido de ficar
+    #: trancada.
+    recovery_codes_left: int = 0
     #: "gratis" ou "pago" — o plano **efetivo**, já considerando a validade.
     #:
     #: Calculado, e não copiado da coluna: uma conta com `plano="pago"` e prazo

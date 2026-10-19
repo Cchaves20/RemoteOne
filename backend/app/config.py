@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DESKSIDE_")
 
     app_name: str = "Deskside Backend"
+    #: Para onde os avisos de segurança mandam quem perdeu o acesso à conta
+    #: (um e-mail ou um endereço de página). Vazio, o aviso só diz para
+    #: procurar o suporte. Ver `app/alertas.py`.
+    suporte: str = ""
     version: str = "0.1.0"
     database_url: str = "postgresql://deskside:deskside@localhost:5432/deskside"
     redis_url: str = "redis://localhost:6379/0"

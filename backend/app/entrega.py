@@ -77,6 +77,14 @@ class Entregador:
         """
         raise NotImplementedError
 
+    def aviso_sms(self, destino: str, texto: str) -> None:  # pragma: no cover - interface
+        """Um SMS que não é código: o aviso de segurança para conta sem e-mail.
+
+        Separado do `sms` pelo mesmo motivo do `aviso`: o caminho do código tem
+        um texto fixo, e não deveria aceitar outro.
+        """
+        raise NotImplementedError
+
 
 class NoDiario(Entregador):
     """O modo de teste: o código vai para a saída do servidor.
@@ -96,6 +104,9 @@ class NoDiario(Entregador):
 
     def aviso(self, destino: str, assunto: str, corpo: str) -> None:
         print(f"[aviso] e-mail para {destino}: {assunto}")
+
+    def aviso_sms(self, destino: str, texto: str) -> None:
+        print(f"[aviso] SMS para {destino}: {texto}")
 
 
 class PorSmtp(Entregador):
@@ -158,15 +169,18 @@ class PorTwilio(Entregador):
     URL = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
 
     def sms(self, destino: str, codigo: str) -> None:
+        self._enviar(
+            destino,
+            f"{codigo} é o seu código do Deskside. "
+            "Vale por 10 minutos. Se não foi você, ignore.",
+        )
+
+    def aviso_sms(self, destino: str, texto: str) -> None:
+        self._enviar(destino, texto)
+
+    def _enviar(self, destino: str, corpo: str) -> None:
         dados = urllib.parse.urlencode(
-            {
-                "To": destino,
-                "From": settings.twilio_from,
-                "Body": (
-                    f"{codigo} é o seu código do Deskside. "
-                    "Vale por 10 minutos. Se não foi você, ignore."
-                ),
-            }
+            {"To": destino, "From": settings.twilio_from, "Body": corpo}
         ).encode()
         pedido = urllib.request.Request(
             self.URL.format(sid=settings.twilio_sid), data=dados
@@ -181,8 +195,10 @@ class PorTwilio(Entregador):
         except urllib.error.HTTPError as exc:
             # O corpo do erro da Twilio diz o motivo ("número não verificado",
             # "sem saldo"). Perdê-lo transformaria toda falha em "deu erro".
-            corpo = exc.read().decode("utf-8", "replace")[:300]
-            raise EntregaError(f"a operadora recusou ({exc.code}): {corpo}") from exc
+            corpo_do_erro = exc.read().decode("utf-8", "replace")[:300]
+            raise EntregaError(
+                f"a operadora recusou ({exc.code}): {corpo_do_erro}"
+            ) from exc
         except OSError as exc:
             raise EntregaError(f"não consegui falar com a operadora: {exc}") from exc
 
@@ -205,6 +221,16 @@ class Composto(Entregador):
 
     def sms(self, destino: str, codigo: str) -> None:
         self._sms.sms(destino, codigo)
+
+    # Os dois avisos **faltavam** aqui, e o `Composto` é justamente o entregador
+    # de produção: o aviso de fim de teste caía no `NotImplementedError` da
+    # interface toda vez que havia SMTP configurado — e como o script só
+    # esperava `EntregaError`, ele morria no primeiro e-mail.
+    def aviso(self, destino: str, assunto: str, corpo: str) -> None:
+        self._email.aviso(destino, assunto, corpo)
+
+    def aviso_sms(self, destino: str, texto: str) -> None:
+        self._sms.aviso_sms(destino, texto)
 
 
 def _escolher() -> Entregador:

@@ -22,12 +22,22 @@ import logging
 from datetime import UTC, date, datetime
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import cobranca, cofre, entrega, limite, telefone, teste, verificacao
+from app import (
+    alertas,
+    cobranca,
+    cofre,
+    entrega,
+    limite,
+    segundo_fator,
+    telefone,
+    teste,
+    verificacao,
+)
 from app import senha as politica_de_senha
 from app.config import settings
 from app.db import get_db
@@ -40,6 +50,8 @@ from app.schemas import (
     Credentials,
     DeleteAccountRequest,
     ForgotPasswordRequest,
+    RecoveryCodesOut,
+    RecoveryCodesRequest,
     RefreshRequest,
     ResetPasswordRequest,
     SignupPending,
@@ -63,7 +75,6 @@ from app.security import (
     nova_chave_de_sessao,
     totp_uri,
     verify_password,
-    verify_totp,
 )
 
 logger = logging.getLogger("deskside")
@@ -144,6 +155,55 @@ def _rotulo(user: User) -> str:
 
 def _erro(codigo: int, detalhe: str) -> HTTPException:
     return HTTPException(status_code=codigo, detail=detalhe)
+
+
+def _exigir_segundo_fator(user: User, codigo: str | None, request: Request) -> str | None:
+    """Cobra o segundo fator numa ação sensível de quem já está logado.
+
+    Com limite de tentativas, como o login: quem chegou aqui tem a sessão e a
+    senha, e só falta adivinhar seis dígitos. Contado por **conta** (e não pelo
+    contato, como no login) porque aqui a conta já está identificada.
+    """
+    if not user.totp_enabled:
+        return None
+    chave, ip = f"2fa:{user.id}", limite.ip_do_pedido(request)
+    limite.cobrar_login(chave, ip)
+    tipo = segundo_fator.exigir(user, codigo, ao_errar=lambda: limite.punir_login(chave, ip))
+    limite.perdoar_login(chave, ip)
+    return tipo
+
+
+def _avisar_codigo_usado(
+    tarefas: BackgroundTasks, user: User, tipo: str | None, ip: str | None
+) -> None:
+    """Um código de recuperação usado é sempre notícia — e diz quantos restam."""
+    if tipo != "recuperacao":
+        return
+    sobram = segundo_fator.restantes(user)
+    tarefas.add_task(
+        alertas.enviar,
+        alertas.montar(
+            user,
+            "codigo_usado",
+            ip=ip,
+            detalhe=f"Restam {sobram} código{'s' if sobram != 1 else ''}.",
+        ),
+    )
+
+
+#: Um hash de verdade, calculado uma vez, para o login de conta que não existe.
+#:
+#: Sem ele, "não existe" respondia na hora e "senha errada" depois de um bcrypt:
+#: a diferença de tempo dizia a um estranho quais contas existem — exatamente o
+#: que a mensagem igual para os dois casos foi escrita para esconder.
+_HASH_PARA_CONTA_QUE_NAO_EXISTE: str | None = None
+
+
+def _hash_falso() -> str:
+    global _HASH_PARA_CONTA_QUE_NAO_EXISTE
+    if _HASH_PARA_CONTA_QUE_NAO_EXISTE is None:
+        _HASH_PARA_CONTA_QUE_NAO_EXISTE = hash_password("nao-existe-conta-com-esta-senha")
+    return _HASH_PARA_CONTA_QUE_NAO_EXISTE
 
 
 def _idade(nascimento: date, hoje: date | None = None) -> int:
@@ -485,7 +545,10 @@ def forgot_password(
 
 @router.post("/password/reset", response_model=TokenPair)
 def reset_password(
-    body: ResetPasswordRequest, db: Session = Depends(get_db)
+    body: ResetPasswordRequest,
+    request: Request,
+    tarefas: BackgroundTasks,
+    db: Session = Depends(get_db),
 ) -> TokenPair:
     """Confere o código e troca a senha, devolvendo a sessão já aberta.
 
@@ -540,6 +603,28 @@ def reset_password(
         db.commit()
         raise _erro(status.HTTP_404_NOT_FOUND, "conta não encontrada")
 
+    # Com a verificação em duas etapas ligada, o código do e-mail ou do SMS
+    # **não basta**. Sem esta conferência, tomar o e-mail ou clonar o chip da
+    # pessoa abria a conta mesmo com a verificação ligada — e a conta abre os
+    # computadores dela. O pedido continua de pé enquanto o código não vem, e
+    # um código errado conta nas mesmas tentativas do código do e-mail.
+    tipo = None
+    if user.totp_enabled:
+        if not body.totp_code:
+            raise _erro(status.HTTP_401_UNAUTHORIZED, segundo_fator.FALTA_CODIGO)
+        tipo = segundo_fator.confere(user, body.totp_code)
+        if tipo is None:
+            pedido.attempts += 1
+            if pedido.attempts >= verificacao.MAX_TENTATIVAS:
+                db.delete(pedido)
+                db.commit()
+                raise _erro(
+                    status.HTTP_429_TOO_MANY_REQUESTS,
+                    "tentativas demais; peça a recuperação de novo",
+                )
+            db.commit()
+            raise _erro(status.HTTP_401_UNAUTHORIZED, segundo_fator.CODIGO_ERRADO)
+
     user.hashed_password = hash_password(body.password)
     # Aqui a derrubada das sessões vale ainda mais do que na troca comum: quem
     # usa "esqueci minha senha" ou perdeu o acesso ou desconfia que alguém o
@@ -554,12 +639,18 @@ def reset_password(
         db.delete(aberto)
     db.commit()
     db.refresh(user)
+    ip = limite.ip_do_pedido(request)
+    tarefas.add_task(alertas.enviar, alertas.montar(user, "senha_redefinida", ip=ip))
+    _avisar_codigo_usado(tarefas, user, tipo, ip)
     return _tokens_for(user)
 
 
 @router.post("/login", response_model=TokenPair)
 def login(
-    body: Credentials, request: Request, db: Session = Depends(get_db)
+    body: Credentials,
+    request: Request,
+    tarefas: BackgroundTasks,
+    db: Session = Depends(get_db),
 ) -> TokenPair:
     destino, canal = _destino(body)
     ip = limite.ip_do_pedido(request)
@@ -571,6 +662,10 @@ def login(
 
     coluna = User.email if canal == "email" else User.phone
     user = db.scalar(select(User).where(coluna == destino))
+    if user is None:
+        # O mesmo bcrypt de uma conta que existe, para o tempo de resposta não
+        # contar o que a mensagem esconde.
+        verify_password(body.password, _hash_falso())
     if user is None or not verify_password(body.password, user.hashed_password):
         limite.punir_login(destino, ip)
         # Uma mensagem só para "não existe" e "senha errada": distinguir as duas
@@ -579,23 +674,23 @@ def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="e-mail, telefone ou senha inválidos",
         )
-    # 2FA: com a senha correta, ainda exige o código do autenticador. O app
-    # reconhece os detalhes "two_factor_required"/"two_factor_invalid".
-    if user.totp_enabled:
-        if not body.totp_code:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="two_factor_required"
-            )
-        if not verify_totp(cofre.abrir(user.totp_secret) or "", body.totp_code):
-            # Conta como falha, e aqui importa mais que no erro de senha: quem
-            # chegou até este ponto **já tem a senha certa**. Sem contabilizar, o
-            # segundo fator seriam seis dígitos com tentativas infinitas — um
-            # milhão de combinações que um laço percorre numa tarde.
-            limite.punir_login(destino, ip)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="two_factor_invalid"
-            )
+    # 2FA: com a senha correta, ainda exige o código do autenticador (ou um de
+    # recuperação). O app reconhece os detalhes "two_factor_required" e
+    # "two_factor_invalid".
+    #
+    # Um erro aqui conta como falha, e importa mais que no erro de senha: quem
+    # chegou até este ponto **já tem a senha certa**. Sem contabilizar, o
+    # segundo fator seriam seis dígitos com tentativas infinitas — um milhão de
+    # combinações que um laço percorre numa tarde.
+    tipo = segundo_fator.exigir(
+        user, body.totp_code, ao_errar=lambda: limite.punir_login(destino, ip)
+    )
     limite.perdoar_login(destino, ip)
+    # O código aceito muda a conta (o passo usado, ou o código de recuperação
+    # que deixa de existir).
+    db.commit()
+    tarefas.add_task(alertas.enviar, alertas.montar(user, "login", ip=ip))
+    _avisar_codigo_usado(tarefas, user, tipo, ip)
     return _tokens_for(user)
 
 
@@ -639,6 +734,7 @@ def me(
     contagem que ela exibe é um convite ou um susto.
     """
     saida = UserOut.model_validate(current_user)
+    saida.recovery_codes_left = segundo_fator.restantes(current_user)
     saida.plano = cobranca.plano_de(current_user)
     saida.em_teste, saida.renova = cobranca.situacao_de(db, current_user)
     return saida
@@ -679,12 +775,19 @@ def _resposta_de_codigo(destino: str, canal: str, entregue: bool) -> SignupPendi
 @router.post("/me/contact/start", response_model=SignupPending)
 def contact_change_start(
     body: ContactChangeStart,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SignupPending:
-    """Manda um código para o contato **novo**. Nada muda na conta ainda."""
+    """Manda um código para o contato **novo**. Nada muda na conta ainda.
+
+    Pede a senha **e** o segundo fator: trocar o contato é o passo que tira a
+    conta do dono de vez, porque a recuperação de senha passa a ir para o
+    endereço novo.
+    """
     if not verify_password(body.current_password, current_user.hashed_password):
         raise _erro(status.HTTP_401_UNAUTHORIZED, "senha atual incorreta")
+    _exigir_segundo_fator(current_user, body.totp_code, request)
 
     # O telefone passa pela **mesma normalização** do cadastro (dentro do
     # `_destino`). Sem isso, gravar "(11) 98765-4321" produziria uma forma que o
@@ -769,6 +872,7 @@ def contact_change_resend(
 @router.post("/me/contact/verify", response_model=UserOut)
 def contact_change_verify(
     body: ContactChangeVerify,
+    tarefas: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
@@ -806,6 +910,16 @@ def contact_change_verify(
     # `commit` estouraria a unicidade e viraria um 500.
     _livre(db, pendente.destino, pendente.canal)
 
+    # O aviso vai para o contato **antigo**: se quem trocou foi um invasor, o
+    # novo é dele, e o antigo é o único que o dono ainda lê.
+    antigo = alertas.para(current_user)
+    aviso = alertas.montar(
+        current_user,
+        "contato_trocado",
+        detalhe=alertas.mascarar(pendente.destino),
+        destino=antigo,
+    )
+
     # O contato novo **substitui** o antigo: a conta se identifica por um só, e é
     # por ele que se entra. Deixar os dois preenchidos daria duas formas de login
     # para uma conta que só provou uma delas.
@@ -819,12 +933,15 @@ def contact_change_verify(
     db.delete(pendente)
     db.commit()
     db.refresh(current_user)
+    tarefas.add_task(alertas.enviar, aviso)
     return current_user
 
 
 @router.patch("/me/password", response_model=TokenPair)
 def update_password(
     body: UpdatePasswordRequest,
+    request: Request,
+    tarefas: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TokenPair:
@@ -844,10 +961,14 @@ def update_password(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="senha atual incorreta"
         )
+    tipo = _exigir_segundo_fator(current_user, body.totp_code, request)
     current_user.hashed_password = hash_password(body.new_password)
     current_user.token_key = nova_chave_de_sessao()
     db.commit()
     db.refresh(current_user)
+    ip = limite.ip_do_pedido(request)
+    tarefas.add_task(alertas.enviar, alertas.montar(current_user, "senha_trocada", ip=ip))
+    _avisar_codigo_usado(tarefas, current_user, tipo, ip)
     return _tokens_for(current_user)
 
 
@@ -869,13 +990,20 @@ def two_factor_setup(
     )
 
 
-@router.post("/2fa/enable", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/2fa/enable", response_model=None)
 def two_factor_enable(
     body: TwoFactorEnableRequest,
+    tarefas: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> None:
-    """Ativa o 2FA confirmando um código do autenticador."""
+) -> Response | RecoveryCodesOut:
+    """Ativa o 2FA confirmando um código do autenticador.
+
+    Com `recovery_codes: true` (o app novo sempre manda), devolve os dez códigos
+    de recuperação. Sem, responde 204 como antes — o app que já está nos
+    celulares confere esse 204, e quebrá-lo seria quebrar a ativação para quem
+    ainda não atualizou.
+    """
     if current_user.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="2FA já está ativo"
@@ -885,40 +1013,80 @@ def two_factor_enable(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="inicie a configuração do 2FA antes",
         )
-    if not verify_totp(cofre.abrir(current_user.totp_secret) or "", body.code):
+    if segundo_fator.confere(current_user, body.code) != "totp":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="código inválido"
         )
     current_user.totp_enabled = True
+    codigos = segundo_fator.gerar_codigos(current_user) if body.recovery_codes else None
     db.commit()
+    tarefas.add_task(alertas.enviar, alertas.montar(current_user, "2fa_ligado"))
+    if codigos is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return RecoveryCodesOut(codes=codigos)
+
+
+@router.post("/2fa/recovery-codes", response_model=RecoveryCodesOut)
+def recovery_codes(
+    body: RecoveryCodesRequest,
+    request: Request,
+    tarefas: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RecoveryCodesOut:
+    """Gera códigos de recuperação novos; os anteriores param de valer."""
+    if not current_user.totp_enabled:
+        raise _erro(status.HTTP_409_CONFLICT, "ligue a verificação em duas etapas antes")
+    _exigir_segundo_fator(current_user, body.totp_code, request)
+    codigos = segundo_fator.gerar_codigos(current_user)
+    db.commit()
+    tarefas.add_task(alertas.enviar, alertas.montar(current_user, "codigos_novos"))
+    return RecoveryCodesOut(codes=codigos)
 
 
 @router.post("/2fa/disable", status_code=status.HTTP_204_NO_CONTENT)
 def two_factor_disable(
     body: TwoFactorDisableRequest,
+    request: Request,
+    tarefas: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    """Desativa o 2FA (exige a senha atual) e apaga o segredo."""
+    """Desativa o 2FA e apaga o segredo e os códigos de recuperação.
+
+    Exige a senha **e** o código: com só a senha, quem tivesse o celular
+    desbloqueado da pessoa desligaria a proteção que existe justamente para
+    quando a senha vaza.
+    """
     if not verify_password(body.password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="senha incorreta"
         )
+    _exigir_segundo_fator(current_user, body.totp_code, request)
     current_user.totp_enabled = False
     current_user.totp_secret = None
+    current_user.totp_ultimo_passo = None
+    current_user.recovery_codes = "[]"
     db.commit()
+    tarefas.add_task(
+        alertas.enviar,
+        alertas.montar(current_user, "2fa_desligado", ip=limite.ip_do_pedido(request)),
+    )
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 def delete_account(
     body: DeleteAccountRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    """Exclui a conta e todos os dispositivos vinculados (exige a senha)."""
+    """Exclui a conta e todos os dispositivos vinculados (senha e, se ligada, a
+    verificação em duas etapas)."""
     if not verify_password(body.password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="senha incorreta"
         )
+    _exigir_segundo_fator(current_user, body.totp_code, request)
     db.delete(current_user)
     db.commit()
