@@ -278,6 +278,22 @@ todas as outras, e sair do app encerra a do aparelho no servidor.
   sessão na primeira renovação, achada depois pelo resumo do próprio token.
 - Trocar a senha encerra as outras sessões; redefinir encerra todas.
 
+## Barra de controle no computador
+
+Enquanto alguém está com a tela do PC aberta pelo app, o agente mostra uma barra
+no alto da tela, por cima de tudo: "Caio está controlando este computador
+(iPhone · iOS 18.1)", com o botão **Desconectar** (`agent/src/barra.rs`).
+
+- O servidor manda ao agente quem está vendo a cada entrada e saída
+  (`controle`).
+- **Desconectar** manda `encerrar_controle` (exige o segredo do agente): o
+  servidor fecha a tela com o código 4403, encerra o login dos aparelhos que
+  estavam vendo e avisa o dono (`backend/app/controle.py`). O app mostra
+  "Controle encerrado no computador" e volta ao login.
+- A barra é nativa (GDI no Windows, AppKit no Mac), para aparecer também onde a
+  janela do Deskside não abre, e fica fora da imagem enviada ao celular onde o
+  sistema permite.
+
 ## Tokens
 
 - **access token** — curta duração (padrão 15 min), enviado no header

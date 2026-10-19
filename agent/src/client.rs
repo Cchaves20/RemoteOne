@@ -318,6 +318,9 @@ pub async fn run(
     if let Ok(mut e) = estado.lock() {
         e.conectado = true;
         e.ultimo_erro = None;
+        // Conexão nova, lista nova: se alguém ainda estiver com a tela
+        // aberta, o servidor a manda de novo logo em seguida.
+        e.controladores.clear();
     }
 
     // Envia o hello e aguarda o welcome.
@@ -378,6 +381,11 @@ pub async fn run(
     // "travou". Uma trava por segundo não custa nada.
     let mut saida_ticker = interval(Duration::from_secs(1));
     let mut avisou_que_sai = false;
+
+    // O "Desconectar" da barra. Rápido, porque quem clica está com pressa: é o
+    // botão de quem acabou de ver alguém mexendo no computador.
+    let mut controle_ticker = interval(Duration::from_millis(300));
+    controle_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     let mut clipboard_ticker = interval(Duration::from_secs(1));
     clipboard_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -517,6 +525,26 @@ pub async fn run(
                         &ClientMessage::ClipboardChanged { text: texto },
                     )?;
                     ws.send(Message::Text(aviso)).await?;
+                }
+            }
+            _ = controle_ticker.tick() => {
+                let pedido = estado
+                    .lock()
+                    .map(|mut e| std::mem::take(&mut e.encerrar_controle))
+                    .unwrap_or(false);
+                if pedido {
+                    crate::diario("controle encerrado pelo Desconectar da barra");
+                    let msg = serde_json::to_string(&ClientMessage::EncerrarControle)?;
+                    ws.send(Message::Text(msg)).await?;
+                    // Sem esperar o servidor: a tela e o canal direto com o
+                    // celular caem daqui, na hora. O servidor fecha o lado
+                    // dele e encerra o login do aparelho.
+                    video.close_all().await;
+                    let _ = audio.take();
+                    streaming = false;
+                    if let Ok(mut e) = estado.lock() {
+                        e.controladores.clear();
+                    }
                 }
             }
             _ = saida_ticker.tick(), if !avisou_que_sai => {
@@ -786,6 +814,11 @@ pub async fn run(
                             &text, identity, injector.as_mut(), &mut streaming,
                             &mut active, &mut last_frame,
                         ) {
+                            Some(Action::Controle { viewers }) => {
+                                if let Ok(mut e) = estado.lock() {
+                                    e.controladores = viewers;
+                                }
+                            }
                             Some(Action::Desparelhado) => {
                                 // Quem desinstala é a thread da janela; aqui só
                                 // se registra que o servidor confirmou, para ela
@@ -1816,6 +1849,8 @@ fn abrir_e_posicionar(item: &crate::lote::Item) -> crate::lote::Passo {
 enum Action {
     /// O servidor confirmou que o vínculo com a conta acabou.
     Desparelhado,
+    /// A lista de quem está com a tela aberta mudou.
+    Controle { viewers: Vec<crate::protocol::Controlador> },
     /// A agenda mudou: trocar a lista do que dispara sozinho.
     ///
     /// Volta como ação em vez de ser aplicada onde chega porque quem guarda a
@@ -1950,6 +1985,9 @@ fn handle_server_text(
         }
         Ok(ServerMessage::Unpaired) => {
             return Some(Action::Desparelhado);
+        }
+        Ok(ServerMessage::Controle { viewers }) => {
+            return Some(Action::Controle { viewers });
         }
         Ok(ServerMessage::Paired { user_email, secret }) => {
             identity.guardar_segredo(secret);

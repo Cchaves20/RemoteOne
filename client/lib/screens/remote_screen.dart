@@ -628,7 +628,11 @@ class _RemoteScreenState extends State<RemoteScreen>
         _decodeFrame(frame);
       },
       onError: (Object _) => _scheduleReconnect(),
-      onDone: _scheduleReconnect,
+      // Fechado pelo "Desconectar" da barra do computador: não reconecta — o
+      // login deste aparelho já foi encerrado no servidor.
+      onDone: () => channel.closeCode == fechadoNoComputador
+          ? _encerradoNoComputador()
+          : _scheduleReconnect(),
       cancelOnError: true,
     );
 
@@ -812,6 +816,35 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   /// Reconecta automaticamente se a conexão de tela cair (#12).
+  /// O código com que o servidor fecha a tela quando alguém clica em
+  /// "Desconectar" na barra do computador (ver `backend/app/controle.py`).
+  static const fechadoNoComputador = 4403;
+
+  Future<void> _encerradoNoComputador() async {
+    if (_disposed) return;
+    _reconnectTimer?.cancel();
+    final t = widget.state.t;
+    if (mounted) {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: Text(t.controlEndedTitle),
+          content: Text(t.controlEndedBody),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.ok),
+            ),
+          ],
+        ),
+      );
+    }
+    if (!mounted) return;
+    Navigator.of(context).popUntil((rota) => rota.isFirst);
+    await widget.state.encerradoNoComputador();
+  }
+
   void _scheduleReconnect() {
     if (_disposed) return;
     if (mounted) setState(() => _error = widget.state.t.reconnecting);

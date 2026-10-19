@@ -66,6 +66,13 @@ class Viewer:
         # Identifica esta sessão nas mensagens trocadas com o agente, que pode
         # estar negociando com vários apps ao mesmo tempo.
         self.session_id = uuid.uuid4().hex
+        # De quem é esta tela aberta, para a barra do computador dizer quem
+        # está controlando e o "Desconectar" saber qual login encerrar. Ver
+        # `controle.identificar`.
+        self.user_id: int | None = None
+        self.sid: str | None = None
+        self.nome = ""
+        self.aparelho = ""
         self._latest: bytes | None = None
         self._signals: deque[dict] = deque()
         self._event = asyncio.Event()
@@ -133,6 +140,11 @@ class ViewerRegistry:
             return None
         owner, viewer = entry
         return viewer if owner == device_id else None
+
+    def de(self, device_id: str) -> list[Viewer]:
+        """Os viewers de um dispositivo, numa lista que pode ser percorrida
+        enquanto eles saem."""
+        return list(self._viewers.get(device_id, ()))
 
     def count(self, device_id: str) -> int:
         return len(self._viewers.get(device_id, ()))

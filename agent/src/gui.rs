@@ -71,6 +71,12 @@ pub struct Estado {
     pub desparear_ok: bool,
     /// Se há versão nova no site. Escrito por `atualizacao::vigiar`.
     pub atualizacao: Atualizacao,
+    /// Quem está com a tela aberta agora. Escrito pelo laço de rede, lido pela
+    /// barra de controle (ver `barra.rs`).
+    pub controladores: Vec<crate::protocol::Controlador>,
+    /// A pessoa clicou em "Desconectar" na barra. A barra escreve, o laço de
+    /// rede lê, avisa o servidor e limpa.
+    pub encerrar_controle: bool,
 }
 
 /// Em que pé está a atualização, para a janela mostrar o botão certo.
@@ -108,6 +114,9 @@ pub fn compartilhar(inicial: Estado) -> Compartilhado {
 /// Fora do Windows não há bandeja nem instalação: o agente de desenvolvimento
 /// roda no terminal, e a função apenas dorme para não deixar a `main` acabar.
 pub fn rodar(estado: Compartilhado) {
+    // Antes da janela, e independente dela: a barra de controle precisa
+    // aparecer mesmo onde a janela não abre (ver `barra.rs`).
+    crate::barra::iniciar(estado.clone());
     imp::rodar(estado);
 }
 

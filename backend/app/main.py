@@ -9,7 +9,7 @@ import jwt
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from app import entrega, lojas, pairing
+from app import controle, entrega, lojas, pairing
 from app.agents import AgentRegistry
 from app.auth import get_current_user, sessao_valida
 from app.auth import router as auth_router
@@ -31,6 +31,7 @@ from app.protocol import (
     Clipboard,
     ClipboardChanged,
     ClipboardImageSet,
+    EncerrarControle,
     Error,
     FileChunk,
     FileDone,
@@ -441,6 +442,11 @@ async def agent_ws(websocket: WebSocket) -> None:
         # antes de a hora chegar, e ninguém vai abrir o app para "sincronizar".
         await _mandar_agenda(device_id)
 
+        # Quem estava com a tela aberta continua lá enquanto o agente
+        # reconecta: a barra precisa voltar junto.
+        if viewers.count(device_id):
+            await controle.avisar_agente(device_id)
+
         while True:
             # Com prazo, e não um `receive()` nu. Um socket TCP pode morrer sem
             # que nenhum dos lados saiba - a máquina virtual suspende, o Wi-Fi
@@ -495,6 +501,16 @@ async def agent_ws(websocket: WebSocket) -> None:
                 logger.info("aparelho desparelhado pelo próprio agente: %s", device_id)
                 await websocket.send_json(Unpaired().model_dump())
                 paired_notified = False
+            elif isinstance(message, EncerrarControle):
+                # Segredo provado, como no desparear: sem isso, quem soubesse o
+                # `device_id` derrubaria o login do dono à vontade.
+                if not autenticado:
+                    await websocket.send_json(
+                        Error(message="encerrar o controle exige o segredo do aparelho")
+                        .model_dump()
+                    )
+                    continue
+                await controle.encerrar(device_id)
             elif isinstance(message, AppList):
                 # Resposta a um pedido de lista de aplicativos: entrega a quem
                 # está esperando (o endpoint HTTP que fez a pergunta).
@@ -887,8 +903,12 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
             await websocket.close(code=4401)  # não autorizado
             return
 
+        controle.identificar(viewer, credencial)
         count = viewers.add(device_id, viewer)
         registered = True
+        # A barra do computador aparece agora, e não quando o vídeo começar:
+        # quem está vendo a tela já está vendo a tela.
+        await controle.avisar_agente(device_id)
         sender_task = asyncio.create_task(viewer.run_sender())
 
         # Se havia uma parada agendada, o agente ainda está transmitindo
@@ -957,6 +977,7 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
             # Avisa o agente que a sessão morreu, para ele soltar a conexão
             # WebRTC correspondente em vez de mantê-la pendurada.
             await manager.send_to_agent(device_id, close_session(viewer.session_id))
+            await controle.avisar_agente(device_id)
             if remaining == 0 and device_id not in _pending_stops:
                 # Agenda a parada com carência (mantém o stream aquecido).
                 _pending_stops[device_id] = asyncio.create_task(

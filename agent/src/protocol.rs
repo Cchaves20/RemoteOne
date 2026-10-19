@@ -53,6 +53,10 @@ pub enum ClientMessage {
     /// pior dos dois mundos se a rede falhasse no meio — o computador some do
     /// disco e continua na conta, sem ninguém para desfazer o vínculo.
     Unpair,
+    /// Alguém clicou em "Desconectar" na barra de controle deste computador.
+    /// O servidor fecha a tela de quem está vendo e encerra o login daquele
+    /// aparelho — ver `barra.rs`.
+    EncerrarControle,
     /// Resposta a um `list_apps`: a lista pedida, com o mesmo `request_id`
     /// para o backend casar com quem está esperando.
     AppList {
@@ -261,6 +265,17 @@ pub struct AgendaItem {
     pub steps: Vec<crate::automacao::Passo>,
 }
 
+/// Quem está controlando o computador, como o servidor descreve.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Controlador {
+    /// O primeiro nome da conta. Vazio numa conta sem nome.
+    #[serde(default)]
+    pub nome: String,
+    /// Como o app se descreveu ("iPhone · iOS 18.1"). Vazio no app antigo.
+    #[serde(default)]
+    pub aparelho: String,
+}
+
 /// Mensagens que o backend envia ao agente.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -290,6 +305,12 @@ pub enum ServerMessage {
     /// O dispositivo foi vinculado a uma conta.
     /// O servidor confirma que o vínculo com a conta acabou.
     Unpaired,
+    /// Quem está com a tela deste computador aberta agora. Chega a cada
+    /// entrada e saída, com a lista inteira; vazia quando ninguém está vendo.
+    Controle {
+        #[serde(default)]
+        viewers: Vec<Controlador>,
+    },
     Paired {
         user_email: String,
         /// O segredo deste computador, entregue no instante do pareamento.

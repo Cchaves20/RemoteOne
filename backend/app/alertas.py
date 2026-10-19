@@ -12,7 +12,8 @@ não foi a própria pessoa:
   novos ou usados;
 - o contato trocado — e esse aviso vai para o contato **antigo**, que é o único
   que o dono legítimo ainda lê se foi ele quem perdeu a conta;
-- uma sessão encerrada porque o acesso dela foi copiado (ver `app/sessoes.py`).
+- uma sessão encerrada porque o acesso dela foi copiado (ver `app/sessoes.py`);
+- o controle encerrado pelo botão "Desconectar" do próprio computador.
 
 ## Nunca atrapalha o pedido
 
@@ -214,6 +215,19 @@ def montar(
         curto = (
             f"Deskside: encerramos um acesso à sua conta em {quando} por suspeita de "
             "cópia. Entre de novo no app; se estranhar, redefina a senha."
+        )
+    elif evento == "controle_encerrado":
+        assunto = "Controle encerrado no computador"
+        texto = (
+            f"Em {quando} (horário de Brasília), alguém no computador \"{detalhe}\" "
+            "clicou em Desconectar enquanto ele era controlado pela sua conta. "
+            "Os aparelhos que estavam vendo a tela foram desconectados e "
+            f"precisam entrar de novo.\n\nSe não era você controlando, alguém "
+            f"tem acesso à sua conta.\n\n{_SE_NAO_FOI_VOCE}"
+        )
+        curto = (
+            f"Deskside: o controle do computador \"{detalhe}\" foi encerrado nele "
+            f"em {quando}. Não era você? Redefina a senha no app."
         )
     else:  # pragma: no cover - evento novo sem texto é defeito de quem chamou
         raise ValueError(f"evento sem aviso: {evento}")

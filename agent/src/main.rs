@@ -223,6 +223,8 @@ async fn laco_de_conexao(
             if let Ok(mut s) = estado.lock() {
                 s.conectado = false;
                 s.ultimo_erro = Some(e.to_string());
+                // Sem servidor não há tela aberta: a barra some.
+                s.controladores.clear();
             }
         }
 
@@ -476,6 +478,8 @@ fn main() {
         desinstalar: false,
         desparear_ok: false,
         atualizacao: Default::default(),
+        controladores: Vec::new(),
+        encerrar_controle: false,
     });
 
     if atualizado {

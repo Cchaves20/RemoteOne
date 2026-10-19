@@ -377,10 +377,22 @@ class WebrtcIce(BaseModel):
     sdp_mline_index: int | None = None
 
 
+class EncerrarControle(BaseModel):
+    """Alguém clicou em "Desconectar" na barra do computador.
+
+    O servidor fecha a tela de todos que estão vendo e encerra o login dos
+    aparelhos deles: só fechar a tela não protegeria de nada, porque quem
+    invadiu reconectaria no segundo seguinte. Ver `app/controle.py`.
+    """
+
+    type: Literal["encerrar_controle"] = "encerrar_controle"
+
+
 ClientMessage = Annotated[
     Hello
     | Heartbeat
     | Unpair
+    | EncerrarControle
     | AppList
     | MonitorList
     | SystemStats
@@ -434,6 +446,18 @@ class Error(BaseModel):
 
     type: Literal["error"] = "error"
     message: str
+
+
+class Controle(BaseModel):
+    """Quem está com a tela deste computador aberta agora.
+
+    Vai ao agente a cada entrada e saída, com a lista inteira: é o que a barra
+    "está controlando este computador" mostra. Um agente antigo não conhece a
+    mensagem e a ignora.
+    """
+
+    type: Literal["controle"] = "controle"
+    viewers: list[dict] = []
 
 
 class Unpaired(BaseModel):

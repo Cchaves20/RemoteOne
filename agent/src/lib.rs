@@ -12,6 +12,7 @@ pub mod agenda;
 pub mod audio;
 pub mod automacao;
 pub mod awake;
+pub mod barra;
 pub mod brightness;
 pub mod capture;
 pub mod client;

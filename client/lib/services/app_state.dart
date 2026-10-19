@@ -841,6 +841,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// O computador encerrou o controle pelo botão "Desconectar" da barra, e o
+  /// servidor encerrou o login deste aparelho junto. Só esquece: avisar o
+  /// servidor seria pedir para encerrar o que ele já encerrou.
+  Future<void> encerradoNoComputador() async {
+    await api.logout();
+    _esquecerSessao();
+    notifyListeners();
+  }
+
   Future<void> logout() async {
     await api.sair();
     _esquecerSessao();

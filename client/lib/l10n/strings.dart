@@ -1784,6 +1784,18 @@ class Strings {
       'Two-step verification disabled.', '两步验证已停用。',
       'Vérification en deux étapes désactivée.', 'Verificación en dos pasos desactivada.');
 
+  // Controle encerrado pela barra do computador
+  String get ok => _t('OK', 'OK', '好', 'OK', 'Aceptar');
+  String get controlEndedTitle => _t('Controle encerrado no computador',
+      'Control ended on the computer', '已在电脑上结束控制',
+      "Contrôle arrêté sur l'ordinateur", 'Control finalizado en el equipo');
+  String get controlEndedBody => _t(
+      'Alguém no computador clicou em Desconectar. Por segurança, este aparelho saiu da conta: entre de novo para continuar.',
+      'Someone at the computer clicked Disconnect. For security, this device was signed out: sign in again to continue.',
+      '有人在电脑上点击了“断开连接”。为安全起见，本设备已退出账户：请重新登录以继续。',
+      "Quelqu'un sur l'ordinateur a cliqué sur Déconnecter. Par sécurité, cet appareil a été déconnecté : reconnectez-vous pour continuer.",
+      'Alguien en el equipo hizo clic en Desconectar. Por seguridad, este dispositivo salió de la cuenta: inicia sesión de nuevo para continuar.');
+
   // Aparelhos conectados
   String get connectedDevices => _t('Aparelhos conectados', 'Signed-in devices',
       '已登录的设备', 'Appareils connectés', 'Dispositivos conectados');
