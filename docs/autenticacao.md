@@ -264,6 +264,20 @@ O aviso de troca de contato indica o suporte, se configurado:
 DESKSIDE_SUPORTE=suporte@seu-dominio
 ```
 
+## Aparelhos conectados
+
+Cada login abre uma sessão (`backend/app/sessoes.py`), e todo token aponta para
+a dele (`sid`). A tela "Aparelhos conectados" lista as sessões, encerra uma ou
+todas as outras, e sair do app encerra a do aparelho no servidor.
+
+- **O refresh muda a cada renovação** quando o app pede (`rotacao: true`). O
+  usado de novo depois de 30 s é cópia: a sessão cai e o dono é avisado.
+- **O nome do aparelho** vem no cabeçalho `X-Deskside-Aparelho`, codificado
+  como em URL. Sem cidade: localizar pelo IP pediria uma base externa.
+- **O app antigo** segue entrando sem novo login: o token sem `sid` ganha uma
+  sessão na primeira renovação, achada depois pelo resumo do próprio token.
+- Trocar a senha encerra as outras sessões; redefinir encerra todas.
+
 ## Tokens
 
 - **access token** — curta duração (padrão 15 min), enviado no header
@@ -361,7 +375,11 @@ consentimento dos pais).
 | POST | `/api/v1/auth/password/forgot` | `{email\|phone+country}` | `{destination, channel, resend_in_seconds, delivered}` — igual exista a conta ou não |
 | POST | `/api/v1/auth/password/reset` | `{destination, code, password, password_confirm, totp_code?}` | `{access_token, refresh_token}` |
 | POST | `/api/v1/auth/login` | `{email\|phone+country, password, totp_code?}` | `{access_token, refresh_token}` |
-| POST | `/api/v1/auth/refresh` | `{refresh_token}` | `{access_token}` |
+| POST | `/api/v1/auth/refresh` | `{refresh_token, rotacao?}` | `{access_token}`, e `refresh_token` com `rotacao: true` |
+| POST | `/api/v1/auth/logout` | — (Bearer) | 204 — encerra a sessão deste aparelho |
+| GET | `/api/v1/auth/sessions` | — (Bearer) | lista de `{id, aparelho, criada_em, ultimo_uso, atual}` |
+| DELETE | `/api/v1/auth/sessions/{id}` | — (Bearer) | 204 |
+| POST | `/api/v1/auth/sessions/revoke-others` | — (Bearer) | `{access_token, refresh_token}` — os antigos param de valer |
 | GET | `/api/v1/auth/me` | — (Bearer) | `{id, email, phone, first_name, …}` |
 | POST | `/api/v1/auth/me/contact/start` | `{current_password, email\|phone+country, totp_code?}` | `{destination, channel, resend_in_seconds, delivered}` |
 | POST | `/api/v1/auth/me/contact/resend` | — (Bearer) | idem |

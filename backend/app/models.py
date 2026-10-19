@@ -134,6 +134,51 @@ class User(Base):
     widget: Mapped["WidgetConfig | None"] = relationship(
         cascade="all, delete-orphan"
     )
+    #: Os aparelhos com sessão aberta. Mesma regra: uma sessão que sobrasse
+    #: apareceria na lista de "aparelhos conectados" da conta seguinte.
+    sessoes: Mapped[list["Sessao"]] = relationship(cascade="all, delete-orphan")
+
+
+class Sessao(Base):
+    """Um aparelho com a conta aberta: o que a tela "Aparelhos conectados" lista.
+
+    Todo token carrega o `id` daqui (`sid`), e só vale enquanto a sessão
+    existir e não tiver sido encerrada. É o que permite tirar **um** aparelho
+    sem derrubar os outros — a `token_key` da conta só sabe derrubar todos.
+
+    ## A geração do refresh
+
+    O refresh token muda a cada renovação, e cada um leva a `geracao` em que
+    foi emitido. Só o da geração atual renova. Um da geração anterior chegando
+    depois é sinal de cópia: o dono e quem copiou estão usando o mesmo token, e
+    não há como saber qual é qual — então a sessão cai para os dois e o dono é
+    avisado. A exceção é a renovação repetida em poucos segundos (ver
+    `auth.FOLGA_DA_RENOVACAO`), que é rede ruim e não roubo.
+
+    Encerrada fica marcada em vez de apagada pelo mesmo motivo do token antigo
+    (`legado`): apagar deixaria o próximo pedido daquele token criar uma sessão
+    nova no lugar.
+    """
+
+    __tablename__ = "sessoes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    #: Como o app se descreve ("iPhone · iOS 18.1"). Vazio no app antigo.
+    aparelho: Mapped[str] = mapped_column(String(80), default="")
+    criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    #: Atualizado no login e a cada renovação (de 15 em 15 minutos de uso), e
+    #: não a cada pedido: uma escrita no banco por toque na tela seria caro
+    #: demais para uma informação que se lê em "há 3 dias".
+    ultimo_uso: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    geracao: Mapped[int] = mapped_column(Integer, default=0)
+    geracao_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    encerrada_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: Resumo do refresh token de antes das sessões, que não traz `sid`. É
+    #: como o login de um app antigo continua valendo e aparece na lista.
+    legado: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
 class PendingSignup(Base):

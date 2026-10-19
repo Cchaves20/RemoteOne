@@ -11,7 +11,8 @@ não foi a própria pessoa:
 - a verificação em duas etapas ligada ou desligada, códigos de recuperação
   novos ou usados;
 - o contato trocado — e esse aviso vai para o contato **antigo**, que é o único
-  que o dono legítimo ainda lê se foi ele quem perdeu a conta.
+  que o dono legítimo ainda lê se foi ele quem perdeu a conta;
+- uma sessão encerrada porque o acesso dela foi copiado (ver `app/sessoes.py`).
 
 ## Nunca atrapalha o pedido
 
@@ -115,8 +116,9 @@ def montar(
 
     if evento == "login":
         assunto = "Novo acesso à sua conta Deskside"
+        pelo = f" pelo aparelho \"{detalhe}\"" if detalhe else ""
         texto = (
-            f"Sua conta Deskside foi acessada em {quando} (horário de Brasília)"
+            f"Sua conta Deskside foi acessada{pelo} em {quando} (horário de Brasília)"
             f"{de_onde}.\n\nSe foi você, não precisa fazer nada.\n\n{_SE_NAO_FOI_VOCE}"
         )
         curto = (
@@ -199,6 +201,19 @@ def montar(
         curto = (
             f"Deskside: o contato da sua conta passou a ser {detalhe} em {quando}. "
             f"Não foi você?{suporte}"
+        )
+    elif evento == "sessao_copiada":
+        qual = f" do aparelho \"{detalhe}\"" if detalhe else ""
+        assunto = "Encerramos um acesso à sua conta Deskside"
+        texto = (
+            f"Em {quando} (horário de Brasília), o acesso{qual} à sua conta foi "
+            f"usado de dois lugares ao mesmo tempo{de_onde}. Isso indica que ele "
+            "foi copiado, então o encerramos: nesse aparelho, entre de novo.\n\n"
+            f"{_SE_NAO_FOI_VOCE}"
+        )
+        curto = (
+            f"Deskside: encerramos um acesso à sua conta em {quando} por suspeita de "
+            "cópia. Entre de novo no app; se estranhar, redefina a senha."
         )
     else:  # pragma: no cover - evento novo sem texto é defeito de quem chamou
         raise ValueError(f"evento sem aviso: {evento}")

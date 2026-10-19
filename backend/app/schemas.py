@@ -250,6 +250,9 @@ class DeleteAccountRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+    #: O app sabe trocar de refresh token: devolve um novo e o usado deixa de
+    #: valer. O app antigo não manda, e continua com o mesmo.
+    rotacao: bool = False
 
 
 class TokenPair(BaseModel):
@@ -260,7 +263,21 @@ class TokenPair(BaseModel):
 
 class AccessToken(BaseModel):
     access_token: str
+    #: Só quando o pedido trouxe `rotacao`.
+    refresh_token: str | None = None
     token_type: str = "bearer"
+
+
+class SessaoOut(BaseModel):
+    """Um aparelho na lista de "Aparelhos conectados"."""
+
+    id: str
+    #: Vazio no app de antes das sessões.
+    aparelho: str
+    criada_em: datetime
+    ultimo_uso: datetime
+    #: A sessão de quem está pedindo a lista.
+    atual: bool
 
 
 class UserOut(BaseModel):

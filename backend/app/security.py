@@ -49,7 +49,11 @@ def nova_chave_de_sessao() -> str:
 
 
 def _create_token(
-    subject: str, token_type: str, expires_delta: timedelta, key: str
+    subject: str,
+    token_type: str,
+    expires_delta: timedelta,
+    key: str,
+    extra: dict | None = None,
 ) -> str:
     now = datetime.now(UTC)
     payload = {
@@ -58,19 +62,32 @@ def _create_token(
         "tk": key,
         "iat": now,
         "exp": now + expires_delta,
+        **(extra or {}),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(subject: str, key: str) -> str:
+def create_access_token(subject: str, key: str, sid: str | None = None) -> str:
+    """`sid` é a sessão do aparelho (ver `models.Sessao`)."""
     return _create_token(
-        subject, "access", timedelta(minutes=settings.access_token_ttl_minutes), key
+        subject,
+        "access",
+        timedelta(minutes=settings.access_token_ttl_minutes),
+        key,
+        {"sid": sid} if sid else None,
     )
 
 
-def create_refresh_token(subject: str, key: str) -> str:
+def create_refresh_token(
+    subject: str, key: str, sid: str | None = None, geracao: int = 0
+) -> str:
+    """`geracao` é a da sessão quando o token saiu: só a atual renova."""
     return _create_token(
-        subject, "refresh", timedelta(days=settings.refresh_token_ttl_days), key
+        subject,
+        "refresh",
+        timedelta(days=settings.refresh_token_ttl_days),
+        key,
+        {"sid": sid, "g": geracao} if sid else None,
     )
 
 

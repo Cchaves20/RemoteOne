@@ -23,6 +23,7 @@ from datetime import UTC, date, datetime
 
 import jwt
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -34,6 +35,7 @@ from app import (
     entrega,
     limite,
     segundo_fator,
+    sessoes,
     telefone,
     teste,
     verificacao,
@@ -41,7 +43,7 @@ from app import (
 from app import senha as politica_de_senha
 from app.config import settings
 from app.db import get_db
-from app.models import PasswordReset, PendingContactChange, PendingSignup, User
+from app.models import PasswordReset, PendingContactChange, PendingSignup, Sessao, User
 from app.schemas import (
     AccessToken,
     ContactChangeStart,
@@ -54,6 +56,7 @@ from app.schemas import (
     RecoveryCodesRequest,
     RefreshRequest,
     ResetPasswordRequest,
+    SessaoOut,
     SignupPending,
     SignupResend,
     SignupStart,
@@ -83,7 +86,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 _bearer = HTTPBearer(auto_error=True)
 
 
-def sessao_valida(payload: dict, user: User) -> bool:
+def sessao_valida(payload: dict, user: User, db: Session) -> bool:
     """O token continua valendo para **esta** conta?
 
     Uma pergunta que a assinatura do JWT não responde, porque ele é conferido
@@ -102,19 +105,42 @@ def sessao_valida(payload: dict, user: User) -> bool:
     existir não é dela) e foi descartada: `iat` só tem segundos inteiros, então
     apagar e recriar a conta dentro do mesmo segundo passava direto. A chave
     sorteada não depende de relógio nem de folga.
+
+    E uma terceira, por aparelho: o token aponta para uma sessão (`sid`) que
+    pode ter sido encerrada sozinha — ver `app/sessoes.py`.
     """
-    return chave_confere(payload, user.token_key)
+    return chave_confere(payload, user.token_key) and sessoes.valida(db, payload, user)
 
 
-def _tokens_for(user: User) -> TokenPair:
+def _tokens_for(user: User, sessao: Sessao) -> TokenPair:
     subject = str(user.id)
     return TokenPair(
-        access_token=create_access_token(subject, user.token_key),
-        refresh_token=create_refresh_token(subject, user.token_key),
+        access_token=create_access_token(subject, user.token_key, sessao.id),
+        refresh_token=create_refresh_token(
+            subject, user.token_key, sessao.id, sessao.geracao
+        ),
     )
 
 
+def _entrar(db: Session, user: User, request: Request | None) -> TokenPair:
+    """Abre uma sessão para este aparelho e devolve os tokens dela."""
+    sessao = sessoes.abrir(db, user, request)
+    db.commit()
+    return _tokens_for(user, sessao)
+
+
+def _sessao_de_quem_pede(db: Session, user: User, request: Request) -> Sessao:
+    """A sessão do token desta requisição, ou uma nova se o token é de antes
+    das sessões (não traz `sid`)."""
+    sid = getattr(request.state, "sid", None)
+    sessao = db.get(Sessao, sid) if sid else None
+    if sessao is None or sessao.user_id != user.id:
+        sessao = sessoes.abrir(db, user, request)
+    return sessao
+
+
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     db: Session = Depends(get_db),
 ) -> User:
@@ -138,8 +164,10 @@ def get_current_user(
     # A assinatura confere e o prazo não venceu — e ainda assim o token pode
     # estar cancelado. É aqui que a troca de senha faz efeito nas sessões que
     # já estavam abertas em outros aparelhos.
-    if not sessao_valida(payload, user):
+    if not sessao_valida(payload, user, db):
         raise invalid
+    # As rotas de sessão precisam saber **qual** é a de quem pede.
+    request.state.sid = payload.get("sid")
     return user
 
 
@@ -407,7 +435,9 @@ def signup_resend(body: SignupResend, db: Session = Depends(get_db)) -> SignupPe
 @router.post(
     "/signup/verify", response_model=TokenPair, status_code=status.HTTP_201_CREATED
 )
-def signup_verify(body: SignupVerify, db: Session = Depends(get_db)) -> TokenPair:
+def signup_verify(
+    body: SignupVerify, request: Request, db: Session = Depends(get_db)
+) -> TokenPair:
     """Confere o código e cria a conta."""
     pendente = _pendente(db, body.destination)
 
@@ -462,7 +492,7 @@ def signup_verify(body: SignupVerify, db: Session = Depends(get_db)) -> TokenPai
     db.delete(pendente)
     db.commit()
     db.refresh(user)
-    return _tokens_for(user)
+    return _entrar(db, user, request)
 
 
 def _pendente(db: Session, destino: str) -> PendingSignup:
@@ -637,12 +667,13 @@ def reset_password(
         select(PasswordReset).where(PasswordReset.user_id == user.id)
     ).all():
         db.delete(aberto)
+    sessoes.encerrar_todas(db, user)
     db.commit()
     db.refresh(user)
     ip = limite.ip_do_pedido(request)
     tarefas.add_task(alertas.enviar, alertas.montar(user, "senha_redefinida", ip=ip))
     _avisar_codigo_usado(tarefas, user, tipo, ip)
-    return _tokens_for(user)
+    return _entrar(db, user, request)
 
 
 @router.post("/login", response_model=TokenPair)
@@ -688,14 +719,31 @@ def login(
     limite.perdoar_login(destino, ip)
     # O código aceito muda a conta (o passo usado, ou o código de recuperação
     # que deixa de existir).
-    db.commit()
-    tarefas.add_task(alertas.enviar, alertas.montar(user, "login", ip=ip))
+    tokens = _entrar(db, user, request)
+    tarefas.add_task(
+        alertas.enviar,
+        alertas.montar(user, "login", ip=ip, detalhe=sessoes.nome_do_aparelho(request)),
+    )
     _avisar_codigo_usado(tarefas, user, tipo, ip)
-    return _tokens_for(user)
+    return tokens
 
 
-@router.post("/refresh", response_model=AccessToken)
-def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> AccessToken:
+@router.post(
+    "/refresh",
+    response_model=AccessToken,
+    response_model_exclude_none=True,
+    responses={401: {"description": "refresh token inválido"}},
+)
+def refresh(
+    body: RefreshRequest,
+    request: Request,
+    tarefas: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> AccessToken | JSONResponse:
+    """Um access token novo e, para o app que pede (`rotacao`), um refresh novo.
+
+    O refresh usado deixa de valer quando o novo sai. Ver `app/sessoes.py`.
+    """
     invalid = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED, detail="refresh token inválido"
     )
@@ -711,9 +759,45 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> AccessToken:
         raise invalid
     # O ponto que decide: é o refresh que dura 30 dias, e é ele que mantinha a
     # sessão viva depois da troca de senha renovando o access a cada hora.
-    if not sessao_valida(payload, user):
+    if not chave_confere(payload, user.token_key):
         raise invalid
-    return AccessToken(access_token=create_access_token(str(user.id), user.token_key))
+    try:
+        renovada = sessoes.renovar(
+            db, user, payload, body.refresh_token, body.rotacao, request
+        )
+    except sessoes.Copiada as copia:
+        # O mesmo refresh nas mãos de dois: não há como saber qual é o dono,
+        # então a sessão cai para os dois e o dono fica sabendo. Ele entra de
+        # novo; quem copiou, não.
+        sessoes.encerrar(copia.sessao)
+        db.commit()
+        # O aviso vai junto da resposta de erro: as tarefas de um `raise`
+        # nunca rodam no FastAPI.
+        tarefas.add_task(
+            alertas.enviar,
+            alertas.montar(
+                user,
+                "sessao_copiada",
+                ip=limite.ip_do_pedido(request),
+                detalhe=copia.sessao.aparelho,
+            ),
+        )
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": invalid.detail},
+            background=tarefas,
+        )
+    if renovada is None:
+        raise invalid
+    sessao, geracao = renovada
+    db.commit()
+    subject = str(user.id)
+    return AccessToken(
+        access_token=create_access_token(subject, user.token_key, sessao.id),
+        refresh_token=None
+        if geracao is None
+        else create_refresh_token(subject, user.token_key, sessao.id, geracao),
+    )
 
 
 @router.get("/me", response_model=UserOut)
@@ -738,6 +822,82 @@ def me(
     saida.plano = cobranca.plano_de(current_user)
     saida.em_teste, saida.renova = cobranca.situacao_de(db, current_user)
     return saida
+
+
+# --- aparelhos conectados -------------------------------------------------------
+
+
+@router.get("/sessions", response_model=list[SessaoOut])
+def list_sessions(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[SessaoOut]:
+    """Os aparelhos com a conta aberta, do uso mais recente para o mais antigo."""
+    atual = getattr(request.state, "sid", None)
+    return [
+        SessaoOut(
+            id=s.id,
+            aparelho=s.aparelho,
+            # Com fuso: o SQLite devolve sem, e o app leria como hora local.
+            criada_em=sessoes.utc(s.criada_em),
+            ultimo_uso=sessoes.utc(s.ultimo_uso),
+            atual=s.id == atual,
+        )
+        for s in sessoes.abertas(db, current_user)
+    ]
+
+
+@router.delete("/sessions/{sessao_id}", status_code=status.HTTP_204_NO_CONTENT)
+def end_session(
+    sessao_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Encerra a sessão de um aparelho. Ele cai na próxima requisição."""
+    sessao = db.get(Sessao, sessao_id)
+    if not sessoes.ativa(sessao, current_user):
+        raise _erro(status.HTTP_404_NOT_FOUND, "sessão não encontrada")
+    sessoes.encerrar(sessao)
+    db.commit()
+
+
+@router.post("/sessions/revoke-others", response_model=TokenPair)
+def end_other_sessions(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TokenPair:
+    """Encerra todas as sessões menos a de quem pede.
+
+    Troca também a `token_key`, como a troca de senha: é o que derruba os
+    tokens de antes das sessões, que não têm uma para encerrar. Por isso
+    devolve tokens novos para este aparelho.
+    """
+    current_user.token_key = nova_chave_de_sessao()
+    sessao = _sessao_de_quem_pede(db, current_user, request)
+    sessoes.encerrar_todas(db, current_user, menos=sessao.id)
+    db.commit()
+    db.refresh(current_user)
+    return _tokens_for(current_user, sessao)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Encerra a sessão deste aparelho no servidor.
+
+    Antes, sair só apagava os tokens do celular: o refresh continuava valendo
+    por 30 dias para quem tivesse uma cópia.
+    """
+    sid = getattr(request.state, "sid", None)
+    sessao = db.get(Sessao, sid) if sid else None
+    if sessao is not None and sessao.user_id == current_user.id:
+        sessoes.encerrar(sessao)
+        db.commit()
 
 
 # --- trocar o contato da conta ------------------------------------------------
@@ -964,12 +1124,14 @@ def update_password(
     tipo = _exigir_segundo_fator(current_user, body.totp_code, request)
     current_user.hashed_password = hash_password(body.new_password)
     current_user.token_key = nova_chave_de_sessao()
+    sessao = _sessao_de_quem_pede(db, current_user, request)
+    sessoes.encerrar_todas(db, current_user, menos=sessao.id)
     db.commit()
     db.refresh(current_user)
     ip = limite.ip_do_pedido(request)
     tarefas.add_task(alertas.enviar, alertas.montar(current_user, "senha_trocada", ip=ip))
     _avisar_codigo_usado(tarefas, current_user, tipo, ip)
-    return _tokens_for(current_user)
+    return _tokens_for(current_user, sessao)
 
 
 @router.post("/2fa/setup", response_model=TwoFactorSetupOut)

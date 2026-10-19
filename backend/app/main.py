@@ -793,7 +793,7 @@ def _vinculo_do_viewer_vale(payload: dict, device_id: str) -> bool:
         if device is None or str(device.user_id) != str(payload.get("sub")):
             return False
         user = db.get(User, device.user_id)
-        return user is not None and sessao_valida(payload, user)
+        return user is not None and sessao_valida(payload, user, db)
 
 
 def _authenticate_viewer(token: str, device_id: str) -> dict | None:
