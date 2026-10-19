@@ -125,7 +125,7 @@ tray-icon = "0.19"
 dispatch2 = "0.3"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSArray", "NSDictionary", "NSValue", "NSGeometry", "NSURL", "NSError", "NSObject"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "objc2-core-graphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSResponder", "NSWindow", "NSWorkspace", "NSRunningApplication", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "NSPanel", "NSView", "NSControl", "NSTextField", "NSButton", "NSColor", "NSFont", "NSScreen", "NSParagraphStyle", "NSText"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "objc2-core-graphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSResponder", "NSWindow", "NSWorkspace", "NSRunningApplication", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "NSPanel", "NSView", "NSControl", "NSTextField", "NSButton", "NSColor", "NSFont", "NSScreen", "NSParagraphStyle", "NSText", "NSEvent"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGImage"] }
 # O som do computador (ver `audio.rs`). A captura pelo ScreenCaptureKit, que
 # é o único jeito de pegar o som do sistema no Mac sem instalar driver. E o

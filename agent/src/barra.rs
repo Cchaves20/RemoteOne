@@ -22,6 +22,17 @@
 //! olhando. No Windows 10 de 2020 em diante ela fica fora de qualquer captura
 //! de tela; no Mac, o pedido equivalente vale em parte das versões.
 //!
+//! ## O toque do celular passa por baixo
+//!
+//! Escondida da imagem, a barra continuava lá para o mouse: um toque do
+//! celular no alto da tela caía no "Desconectar" que ninguém via, e quem
+//! estava controlando era desconectado sem entender por quê. Agora, antes de
+//! apertar, soltar ou rolar o mouse a pedido do celular, o agente confere se o
+//! cursor está sobre a barra e, se estiver, a tira do caminho por um instante
+//! (ver [`desviar`]). O toque chega ao que está embaixo — que é o que o
+//! celular está vendo —, e só quem está diante do computador consegue clicar
+//! em "Desconectar".
+//!
 //! ## Sem botão de fechar
 //!
 //! Só o "Desconectar". Uma barra que se fecha sem desconectar esconderia
@@ -29,6 +40,42 @@
 
 use crate::gui::Compartilhado;
 use crate::protocol::Controlador;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+/// Por quanto tempo a barra sai do caminho depois de um toque do celular
+/// sobre ela. Cobre o apertar e soltar de um clique e o duplo clique; depois
+/// disso ela volta.
+const DESVIO: Duration = Duration::from_millis(1500);
+
+static DESVIO_ATE: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// A barra está fora do caminho de um toque do celular agora?
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+fn desviando() -> bool {
+    DESVIO_ATE
+        .lock()
+        .ok()
+        .and_then(|d| *d)
+        .is_some_and(|ate| Instant::now() < ate)
+}
+
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+fn marcar_desvio() {
+    if let Ok(mut d) = DESVIO_ATE.lock() {
+        *d = Some(Instant::now() + DESVIO);
+    }
+}
+
+/// Tira a barra do caminho se o cursor estiver sobre ela.
+///
+/// O injetor chama isto antes de apertar, soltar ou rolar o mouse a pedido do
+/// celular. **Volta só depois de a barra sumir**: o Windows decide para quem
+/// vai o clique pela janela que está sob o cursor no momento em que o recebe,
+/// e com a barra ainda ali o toque iria para o botão dela.
+pub fn desviar() {
+    imp::desviar();
+}
 
 /// A frase da barra, ou vazia quando ninguém está controlando.
 ///
@@ -84,13 +131,32 @@ pub fn iniciar(estado: Compartilhado) {
 
 #[cfg(windows)]
 mod imp {
-    use super::{desconectar, texto};
+    use super::{desconectar, desviando, marcar_desvio, texto};
     use crate::gui::Compartilhado;
+    use std::sync::atomic::{AtomicIsize, Ordering};
     use std::sync::OnceLock;
 
     static ESTADO: OnceLock<Compartilhado> = OnceLock::new();
+    /// A janela da barra, para o injetor (outra thread) conferir onde ela está.
+    static JANELA: AtomicIsize = AtomicIsize::new(0);
 
     type Hwnd = isize;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct Ponto {
+        x: i32,
+        y: i32,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct Retangulo {
+        esquerda: i32,
+        topo: i32,
+        direita: i32,
+        base: i32,
+    }
 
     #[repr(C)]
     struct ClasseDeJanela {
@@ -158,6 +224,8 @@ mod imp {
         fn SetWindowDisplayAffinity(janela: Hwnd, afinidade: u32) -> i32;
         fn LoadCursorW(instancia: isize, nome: usize) -> isize;
         fn GetDC(janela: Hwnd) -> isize;
+        fn GetCursorPos(ponto: *mut Ponto) -> i32;
+        fn GetWindowRect(janela: Hwnd, retangulo: *mut Retangulo) -> i32;
         fn ReleaseDC(janela: Hwnd, dc: isize) -> i32;
     }
 
@@ -385,6 +453,7 @@ mod imp {
         SendMessageW(botao, WM_SETFONT, fonte_do_botao as usize, 1);
         SetWindowDisplayAffinity(janela, WDA_EXCLUDEFROMCAPTURE);
 
+        JANELA.store(janela, Ordering::SeqCst);
         BARRA = Some(Barra {
             janela,
             rotulo,
@@ -438,6 +507,34 @@ mod imp {
         }
     }
 
+    pub fn desviar() {
+        let janela = JANELA.load(Ordering::SeqCst);
+        if janela == 0 {
+            return;
+        }
+        unsafe {
+            // Escondida porque ninguém está controlando: não há o que desviar.
+            if IsWindowVisible(janela) == 0 && !desviando() {
+                return;
+            }
+            let mut cursor = Ponto::default();
+            let mut quadro = Retangulo::default();
+            if GetCursorPos(&mut cursor) == 0 || GetWindowRect(janela, &mut quadro) == 0 {
+                return;
+            }
+            let dentro = cursor.x >= quadro.esquerda
+                && cursor.x < quadro.direita
+                && cursor.y >= quadro.topo
+                && cursor.y < quadro.base;
+            if dentro {
+                marcar_desvio();
+                // Síncrono de propósito: a janela é de outra thread, e o
+                // `ShowWindow` só volta depois de ela sumir de fato.
+                ShowWindow(janela, SW_HIDE);
+            }
+        }
+    }
+
     unsafe fn atualizar(barra: &mut Barra) {
         let atual = ESTADO
             .get()
@@ -454,6 +551,10 @@ mod imp {
             let linha = largo(&format!("●  {atual}"));
             SetWindowTextW(barra.rotulo, linha.as_ptr());
             barra.mostrado = atual;
+        }
+        // Fora do caminho de um toque do celular: volta quando o desvio acabar.
+        if desviando() {
+            return;
         }
         if IsWindowVisible(barra.janela) == 0 {
             ShowWindow(barra.janela, SW_SHOWNOACTIVATE);
@@ -474,13 +575,13 @@ mod imp {
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use super::{desconectar, texto};
+    use super::{desconectar, desviando, marcar_desvio, texto};
     use crate::gui::Compartilhado;
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
     use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
-        NSBackingStoreType, NSButton, NSColor, NSFont, NSLineBreakMode, NSPanel, NSScreen,
+        NSBackingStoreType, NSButton, NSColor, NSEvent, NSFont, NSLineBreakMode, NSPanel, NSScreen,
         NSStatusWindowLevel, NSTextField, NSWindowCollectionBehavior, NSWindowSharingType,
         NSWindowStyleMask,
     };
@@ -550,18 +651,54 @@ mod imp {
             .name("deskside-barra".into())
             .spawn(|| {
                 let mut anterior = String::new();
+                let mut desviada = false;
                 loop {
                     let atual = ESTADO
                         .get()
                         .and_then(|e| e.lock().ok().map(|e| texto(&e.controladores)))
                         .unwrap_or_default();
-                    if atual != anterior {
+                    // Também quando um desvio acaba: é o que traz a barra de
+                    // volta depois do toque do celular.
+                    let agora_desviada = desviando();
+                    if atual != anterior || (desviada && !agora_desviada) {
                         anterior = atual.clone();
                         dispatch2::DispatchQueue::main().exec_async(move || aplicar(&atual));
                     }
+                    desviada = agora_desviada;
                     std::thread::sleep(std::time::Duration::from_millis(400));
                 }
             });
+    }
+
+    pub fn desviar() {
+        // Na thread principal, e esperando: a AppKit só aceita ser chamada
+        // ali, e o clique só pode sair depois de a barra sumir.
+        dispatch2::DispatchQueue::main().exec_sync(|| {
+            if MainThreadMarker::new().is_none() {
+                return;
+            }
+            BARRA.with(|celula| {
+                let celula = celula.borrow();
+                let Some(barra) = celula.as_ref() else {
+                    return;
+                };
+                if !barra.painel.isVisible() && !desviando() {
+                    return;
+                }
+                // As duas medidas na mesma régua: pontos, com a origem no
+                // canto de baixo da tela principal.
+                let cursor = NSEvent::mouseLocation();
+                let quadro = barra.painel.frame();
+                let dentro = cursor.x >= quadro.origin.x
+                    && cursor.x < quadro.origin.x + quadro.size.width
+                    && cursor.y >= quadro.origin.y
+                    && cursor.y < quadro.origin.y + quadro.size.height;
+                if dentro {
+                    marcar_desvio();
+                    barra.painel.orderOut(None);
+                }
+            });
+        });
     }
 
     fn aplicar(atual: &str) {
@@ -584,7 +721,9 @@ mod imp {
                     .setStringValue(&NSString::from_str(&format!("●  {atual}")));
                 barra.mostrado = atual.to_string();
             }
-            barra.painel.orderFrontRegardless();
+            if !desviando() {
+                barra.painel.orderFrontRegardless();
+            }
         });
     }
 
@@ -670,6 +809,8 @@ mod imp {
 
     /// Fora do Windows e do Mac o agente roda no terminal, sem interface.
     pub fn iniciar(_estado: Compartilhado) {}
+
+    pub fn desviar() {}
 }
 
 #[cfg(test)]

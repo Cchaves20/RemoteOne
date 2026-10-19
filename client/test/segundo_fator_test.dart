@@ -58,6 +58,7 @@ void main() {
 
     expect(find.text('Código de verificação'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump(); // o botão só se ativa no quadro seguinte
     await tester.tap(find.text('Confirmar'));
     await tester.pumpAndSettle();
 
@@ -74,11 +75,13 @@ void main() {
     });
 
     await tester.enterText(find.byType(TextField), '000000');
+    await tester.pump(); // o botão só se ativa no quadro seguinte
     await tester.tap(find.text('Confirmar'));
     await tester.pumpAndSettle();
     expect(find.text('Código inválido. Tente de novo.'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '654321');
+    await tester.pump(); // o botão só se ativa no quadro seguinte
     await tester.tap(find.text('Confirmar'));
     await tester.pumpAndSettle();
 
@@ -96,6 +99,7 @@ void main() {
     await tester.tap(find.text('Usar um código de recuperação'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'abcde-fghjk');
+    await tester.pump(); // o botão só se ativa no quadro seguinte
     await tester.tap(find.text('Confirmar'));
     await tester.pumpAndSettle();
 

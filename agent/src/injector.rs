@@ -160,6 +160,18 @@ mod imp {
 
     impl InputInjector for EnigoInjector {
         fn apply(&mut self, action: &InputAction) -> Result<(), String> {
+            // O toque do celular não pode cair na barra de controle, que ele
+            // nem vê: ela sai do caminho e o clique chega ao que está embaixo.
+            // Ver `barra::desviar`.
+            if matches!(
+                action,
+                InputAction::MouseClick { .. }
+                    | InputAction::MousePress { .. }
+                    | InputAction::MouseRelease { .. }
+                    | InputAction::MouseScroll { .. }
+            ) {
+                crate::barra::desviar();
+            }
             match action {
                 InputAction::MouseMove { dx, dy } => self
                     .enigo
