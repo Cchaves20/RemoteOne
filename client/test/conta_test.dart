@@ -2,6 +2,18 @@ import 'package:deskside_client/models/conta.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('lê quantos códigos de recuperação restam', () {
+    final conta = Conta.fromJson({
+      'id': 1,
+      'email': 'a@b.com',
+      'totp_enabled': true,
+      'recovery_codes_left': 7,
+    });
+    expect(conta.recoveryCodesLeft, 7);
+    // Servidor antigo, sem o campo: zero, que é o que ele de fato tem.
+    expect(Conta.fromJson({'id': 1}).recoveryCodesLeft, 0);
+  });
+
   group('plano da conta', () {
     test('lê o plano e o prazo que o servidor mandou', () {
       final conta = Conta.fromJson({

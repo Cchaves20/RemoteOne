@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../services/app_state.dart';
+import 'recovery_codes_screen.dart';
 
 /// Ativa a verificação em duas etapas: mostra o QR Code (e o segredo) para o
-/// app autenticador e confirma com um código.
+/// app autenticador e confirma com um código. Ao ligar, mostra os códigos de
+/// recuperação.
 class TwoFactorScreen extends StatefulWidget {
   const TwoFactorScreen({super.key, required this.state});
 
@@ -55,11 +57,23 @@ class _TwoFactorScreenState extends State<TwoFactorScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     try {
-      await widget.state.enableTwoFactor(_code.text.trim());
+      final codigos = await widget.state.enableTwoFactor(_code.text.trim());
       messenger.showSnackBar(
         SnackBar(content: Text(widget.state.t.twoFactorEnabled)),
       );
-      navigator.pop();
+      if (codigos.isEmpty) {
+        // Servidor ainda sem códigos de recuperação: volta como antes.
+        navigator.pop();
+        return;
+      }
+      // **Substitui** esta tela: voltar ao QR Code depois de ligar não serve
+      // para nada, e a única saída dos códigos deve ser o "Guardei".
+      await navigator.pushReplacement(
+        MaterialPageRoute(
+          builder: (_) =>
+              RecoveryCodesScreen(t: widget.state.t, codigos: codigos),
+        ),
+      );
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
       if (mounted) setState(() => _busy = false);

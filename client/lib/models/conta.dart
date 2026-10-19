@@ -12,6 +12,7 @@ class Conta {
     this.firstName = '',
     this.lastName = '',
     this.twoFactorEnabled = false,
+    this.recoveryCodesLeft = 0,
     this.plano = 'gratis',
     this.planoAte,
     this.emTeste = false,
@@ -28,6 +29,11 @@ class Conta {
   final String firstName;
   final String lastName;
   final bool twoFactorEnabled;
+
+  /// Quantos códigos de recuperação ainda valem. Zero com a verificação ligada
+  /// é o caso de quem a ligou antes de os códigos existirem — e é quem mais
+  /// precisa do aviso para gerá-los.
+  final int recoveryCodesLeft;
 
   /// `'gratis'` ou `'pago'`, **já considerando a validade**.
   ///
@@ -91,6 +97,7 @@ class Conta {
         firstName: (json['first_name'] as String?) ?? '',
         lastName: (json['last_name'] as String?) ?? '',
         twoFactorEnabled: json['totp_enabled'] as bool? ?? false,
+        recoveryCodesLeft: (json['recovery_codes_left'] as num?)?.toInt() ?? 0,
         plano: (json['plano'] as String?) ?? 'gratis',
         // `tryParse` e não `parse`: um backend antigo não manda o campo, e um
         // formato inesperado não pode derrubar a tela da conta inteira por

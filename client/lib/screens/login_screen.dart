@@ -51,6 +51,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _busy = false;
   // Vira true quando a conta tem 2FA e o backend pede o código.
   bool _needsCode = false;
+  // Digitando um código de recuperação em vez do autenticador.
+  bool _recuperacao = false;
 
   @override
   void dispose() {
@@ -174,13 +176,42 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (_needsCode) ...[
                               const SizedBox(height: 12),
                               TextField(
+                                // A chave muda com o modo para o campo nascer
+                                // de novo com o teclado certo.
+                                key: ValueKey(_recuperacao),
                                 controller: _code,
-                                keyboardType: TextInputType.number,
+                                keyboardType: _recuperacao
+                                    ? TextInputType.text
+                                    : TextInputType.number,
+                                textCapitalization: _recuperacao
+                                    ? TextCapitalization.characters
+                                    : TextCapitalization.none,
+                                autocorrect: false,
                                 autofocus: true,
                                 decoration: InputDecoration(
-                                  labelText: t.twoFactorCode,
-                                  helperText: t.twoFactorCodeHint,
-                                  prefixIcon: const Icon(Icons.verified_user_outlined),
+                                  labelText: _recuperacao
+                                      ? t.recoveryCode
+                                      : t.twoFactorCode,
+                                  helperText: _recuperacao
+                                      ? t.secondFactorRecoveryBody
+                                      : t.twoFactorCodeHint,
+                                  helperMaxLines: 2,
+                                  hintText: _recuperacao ? 'ABCDE-FGHJK' : null,
+                                  prefixIcon: Icon(_recuperacao
+                                      ? Icons.key_outlined
+                                      : Icons.verified_user_outlined),
+                                ),
+                              ),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton(
+                                  onPressed: () => setState(() {
+                                    _recuperacao = !_recuperacao;
+                                    _code.clear();
+                                  }),
+                                  child: Text(_recuperacao
+                                      ? t.useAuthenticatorCode
+                                      : t.useRecoveryCode),
                                 ),
                               ),
                             ],

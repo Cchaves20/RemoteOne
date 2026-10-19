@@ -8,10 +8,12 @@ import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/compra.dart';
 import '../widgets/brand.dart';
+import '../widgets/segundo_fator.dart';
 import '../widgets/transitions.dart';
 import 'assinatura_screen.dart';
 import 'gesture_tutorial_screen.dart';
 import 'profiles_screen.dart';
+import 'recovery_codes_screen.dart';
 import 'two_factor_screen.dart';
 import 'verify_screen.dart';
 import 'widgets_screen.dart';
@@ -95,6 +97,7 @@ class SettingsScreen extends StatelessWidget {
                       ? _startTwoFactor(context)
                       : _disableTwoFactor(context),
                 ),
+                if (state.twoFactorEnabled) ..._codigosDeRecuperacao(context),
               ])),
               staggered(_card(context, t.profilesTitle, Icons.tune, [
                 _action(context, Icons.dashboard_customize, t.profilesTitle,
@@ -476,6 +479,99 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  /// A linha dos códigos de recuperação, e o aviso quando eles acabam.
+  ///
+  /// Zero com a verificação ligada é quem a ligou antes de os códigos
+  /// existirem: está a um celular perdido de ficar sem a conta, e o aviso diz
+  /// isso com todas as letras.
+  List<Widget> _codigosDeRecuperacao(BuildContext context) {
+    final t = state.t;
+    final theme = Theme.of(context);
+    final conta = state.conta;
+    final restantes = conta?.recoveryCodesLeft;
+    final aviso = restantes == null
+        ? null
+        : restantes == 0
+            ? t.recoveryCodesNone
+            : restantes <= 3
+                ? t.recoveryCodesFew
+                : null;
+    return [
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.key_outlined),
+        title: Text(t.recoveryCodesTitle),
+        subtitle: restantes == null ? null : Text(t.recoveryCodesLeft(restantes)),
+        trailing: TextButton(
+          onPressed: () => _gerarCodigos(context),
+          child: Text(t.recoveryCodesGenerate),
+        ),
+      ),
+      if (aviso != null)
+        Container(
+          key: const Key('aviso-codigos-de-recuperacao'),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            // Âmbar e não vermelho: é um "faça logo", não um "deu errado".
+            // 46 ≈ 18%, como o selo do plano.
+            color: Colors.amber.withAlpha(46),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.amber),
+              const SizedBox(width: 10),
+              Expanded(child: Text(aviso, style: theme.textTheme.bodySmall)),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  Future<void> _gerarCodigos(BuildContext context) async {
+    final t = state.t;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final seguir = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(t.recoveryCodesTitle),
+        content: Text(t.recoveryCodesRegenerateBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t.recoveryCodesGenerate),
+          ),
+        ],
+      ),
+    );
+    if (seguir != true || !context.mounted) return;
+    var codigos = const <String>[];
+    try {
+      final gerou = await comSegundoFator(
+        context,
+        t,
+        (codigo) async {
+          codigos = await state.regenerateRecoveryCodes(codigo!);
+        },
+        pedirAntes: true,
+      );
+      if (!gerou) return;
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+      return;
+    }
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (_) => RecoveryCodesScreen(t: t, codigos: codigos),
+      ),
+    );
+  }
+
   Future<void> _disableTwoFactor(BuildContext context) async {
     final t = state.t;
     final password = TextEditingController();
@@ -509,9 +605,14 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !context.mounted) return;
     try {
-      await state.disableTwoFactor(password.text);
+      final desligou = await comSegundoFator(
+        context,
+        t,
+        (codigo) => state.disableTwoFactor(password.text, totpCode: codigo),
+      );
+      if (!desligou) return;
       messenger.showSnackBar(
         SnackBar(content: Text(t.twoFactorDisabled)),
       );
@@ -567,9 +668,10 @@ class SettingsScreen extends StatelessWidget {
     await _verificarContato(
       context,
       messenger,
-      () => state.contactChangeStart(
+      (codigo) => state.contactChangeStart(
         currentPassword: password.text,
         email: email.text.trim(),
+        totpCode: codigo,
       ),
       t.emailUpdated,
     );
@@ -589,13 +691,22 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _verificarContato(
     BuildContext context,
     ScaffoldMessengerState messenger,
-    Future<SignupPending> Function() comecar,
+    Future<SignupPending> Function(String? codigo) comecar,
     String sucesso,
   ) async {
     final t = state.t;
-    final SignupPending pendente;
+    SignupPending? pendente;
     try {
-      pendente = await comecar();
+      // Trocar o contato pede o segundo fator: é o passo que tira a conta do
+      // dono de vez, porque a recuperação de senha passa a ir para lá.
+      final comecou = await comSegundoFator(
+        context,
+        t,
+        (codigo) async {
+          pendente = await comecar(codigo);
+        },
+      );
+      if (!comecou) return;
     } on ApiException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
       return;
@@ -609,7 +720,7 @@ class SettingsScreen extends StatelessWidget {
       MaterialPageRoute(
         builder: (_) => VerifyScreen(
           state: state,
-          pendente: pendente,
+          pendente: pendente!,
           confirmar: (_, codigo) => state.contactChangeVerify(codigo),
           reenviar: (_) => state.contactChangeResend(),
           aoConcluir: (telaDoCodigo) {
@@ -658,12 +769,20 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
-    if (ok != true) return;
-    await _run(
-      messenger,
-      () => state.updatePassword(current.text, next.text),
-      t.passwordUpdated,
-    );
+    if (ok != true || !context.mounted) return;
+    try {
+      final trocou = await comSegundoFator(
+        context,
+        t,
+        (codigo) =>
+            state.updatePassword(current.text, next.text, totpCode: codigo),
+      );
+      if (trocou) {
+        messenger.showSnackBar(SnackBar(content: Text(t.passwordUpdated)));
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   Future<void> _showDeleteAccount(BuildContext context) async {
@@ -703,26 +822,16 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !context.mounted) return;
     try {
-      await state.deleteAccount(password.text);
+      final excluiu = await comSegundoFator(
+        context,
+        t,
+        (codigo) => state.deleteAccount(password.text, totpCode: codigo),
+      );
+      if (!excluiu) return;
       // Conta excluída: volta à raiz (LoginScreen assume via isAuthenticated).
       navigator.popUntil((route) => route.isFirst);
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
-    }
-  }
-
-  /// Executa uma ação assíncrona mostrando erro/sucesso via SnackBar. Recebe o
-  /// messenger já resolvido (capturado antes de qualquer await no chamador).
-  Future<void> _run(
-    ScaffoldMessengerState messenger,
-    Future<void> Function() action,
-    String successMessage,
-  ) async {
-    try {
-      await action();
-      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
     }

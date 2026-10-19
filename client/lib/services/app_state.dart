@@ -413,15 +413,26 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, String>> setupTwoFactor() => api.setupTwoFactor();
 
-  Future<void> enableTwoFactor(String code) async {
-    await api.enableTwoFactor(code);
+  /// Liga a verificação e devolve os códigos de recuperação para mostrar.
+  Future<List<String>> enableTwoFactor(String code) async {
+    final codigos = await api.enableTwoFactor(code);
     twoFactorEnabled = true;
+    // Relê para o contador de códigos restantes aparecer nas configurações.
+    await recarregarConta();
     notifyListeners();
+    return codigos;
   }
 
-  Future<void> disableTwoFactor(String password) async {
-    await api.disableTwoFactor(password);
+  Future<List<String>> regenerateRecoveryCodes(String totpCode) async {
+    final codigos = await api.regenerateRecoveryCodes(totpCode);
+    await recarregarConta();
+    return codigos;
+  }
+
+  Future<void> disableTwoFactor(String password, {String? totpCode}) async {
+    await api.disableTwoFactor(password, totpCode: totpCode);
     twoFactorEnabled = false;
+    await recarregarConta();
     notifyListeners();
   }
 
@@ -480,9 +491,11 @@ class AppState extends ChangeNotifier {
     String destination,
     String code,
     String password,
-    String passwordConfirm,
-  ) async {
-    await api.resetPassword(destination, code, password, passwordConfirm);
+    String passwordConfirm, {
+    String? totpCode,
+  }) async {
+    await api.resetPassword(destination, code, password, passwordConfirm,
+        totpCode: totpCode);
     await refreshDevices();
     await recarregarConta();
     notifyListeners();
@@ -775,12 +788,14 @@ class AppState extends ChangeNotifier {
     String? email,
     String? phone,
     String? country,
+    String? totpCode,
   }) =>
       api.contactChangeStart(
         currentPassword: currentPassword,
         email: email,
         phone: phone,
         country: country,
+        totpCode: totpCode,
       );
 
   Future<SignupPending> contactChangeResend() => api.contactChangeResend();
@@ -807,11 +822,12 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> updatePassword(String currentPassword, String newPassword) =>
-      api.updatePassword(currentPassword, newPassword);
+  Future<void> updatePassword(String currentPassword, String newPassword,
+          {String? totpCode}) =>
+      api.updatePassword(currentPassword, newPassword, totpCode: totpCode);
 
-  Future<void> deleteAccount(String password) async {
-    await api.deleteAccount(password);
+  Future<void> deleteAccount(String password, {String? totpCode}) async {
+    await api.deleteAccount(password, totpCode: totpCode);
     _esquecerSessao();
     notifyListeners();
   }

@@ -10,6 +10,7 @@ import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/senha.dart';
 import '../widgets/brand.dart';
+import '../widgets/segundo_fator.dart';
 
 /// Esqueci minha senha: pedir o código e trocar a senha.
 ///
@@ -110,13 +111,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       _erro = null;
     });
     try {
-      await widget.state.resetPassword(
-        _pedido!.destination,
-        _codigo.text.trim(),
-        _senha.text,
-        _confirmacao.text,
+      // Com a verificação em duas etapas ligada, o código do e-mail não basta:
+      // o servidor pede também o do autenticador (ou um de recuperação), e o
+      // pedido de recuperação continua de pé enquanto ele não vem.
+      final trocou = await comSegundoFator(
+        context,
+        widget.state.t,
+        (totp) => widget.state.resetPassword(
+          _pedido!.destination,
+          _codigo.text.trim(),
+          _senha.text,
+          _confirmacao.text,
+          totpCode: totp,
+        ),
       );
-      if (!mounted) return;
+      if (!trocou || !mounted) return;
       // A sessão já começou: o servidor devolve os tokens junto. Volta ao
       // início em vez de ao login — pedir para entrar agora seria pedir a senha
       // que a pessoa acabou de criar, que é justamente a que ainda não decorou.

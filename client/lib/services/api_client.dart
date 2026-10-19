@@ -27,6 +27,15 @@ class ApiException implements Exception {
   final int statusCode;
   final String message;
 
+  /// O servidor pede o segundo fator (a conta tem a verificação ligada e o
+  /// código não veio). Ver `widgets/segundo_fator.dart`.
+  bool get pedeSegundoFator =>
+      statusCode == 401 && message == 'two_factor_required';
+
+  /// O código do segundo fator veio, e não vale.
+  bool get segundoFatorErrado =>
+      statusCode == 401 && message == 'two_factor_invalid';
+
   @override
   String toString() => message;
 }
@@ -181,12 +190,17 @@ class ApiClient {
   }
 
   /// Troca a senha com o código recebido e **já abre a sessão**.
+  ///
+  /// Com a verificação em duas etapas ligada, o código do e-mail não basta: o
+  /// servidor responde [ApiException.pedeSegundoFator] e o pedido continua de
+  /// pé até chegar o [totpCode].
   Future<void> resetPassword(
     String destination,
     String code,
     String password,
-    String passwordConfirm,
-  ) async {
+    String passwordConfirm, {
+    String? totpCode,
+  }) async {
     final res = await _http
         .post(
           _uri('/api/v1/auth/password/reset'),
@@ -196,6 +210,7 @@ class ApiClient {
             'code': code,
             'password': password,
             'password_confirm': passwordConfirm,
+            if (totpCode != null) 'totp_code': totpCode,
           }),
         )
         .timeout(_timeout);
@@ -244,24 +259,46 @@ class ApiClient {
     };
   }
 
-  /// Confirma a ativação do 2FA com um código do autenticador.
-  Future<void> enableTwoFactor(String code) async {
+  /// Confirma a ativação do 2FA com um código do autenticador e devolve os
+  /// códigos de recuperação.
+  ///
+  /// Lista vazia quando o servidor ainda não os gera (responde 204, como
+  /// antes): o app novo pode chegar ao celular antes de o servidor ser
+  /// atualizado, e a ativação não pode quebrar por isso.
+  Future<List<String>> enableTwoFactor(String code) async {
     final res = await _http.post(
       _uri('/api/v1/auth/2fa/enable'),
       headers: _authHeaders,
-      body: jsonEncode({'code': code}),
+      body: jsonEncode({'code': code, 'recovery_codes': true}),
     );
-    if (res.statusCode != 204) {
-      throw _error(res);
-    }
+    if (res.statusCode == 204) return const [];
+    return _codigos(_decode(res));
   }
 
-  /// Desativa o 2FA (exige a senha atual).
-  Future<void> disableTwoFactor(String password) async {
+  /// Gera códigos de recuperação novos; os anteriores param de valer.
+  Future<List<String>> regenerateRecoveryCodes(String totpCode) async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/2fa/recovery-codes'),
+      headers: _authHeaders,
+      body: jsonEncode({'totp_code': totpCode}),
+    );
+    return _codigos(_decode(res));
+  }
+
+  List<String> _codigos(dynamic body) =>
+      ((body as Map<String, dynamic>)['codes'] as List<dynamic>)
+          .cast<String>()
+          .toList();
+
+  /// Desativa o 2FA (exige a senha atual e o código).
+  Future<void> disableTwoFactor(String password, {String? totpCode}) async {
     final res = await _http.post(
       _uri('/api/v1/auth/2fa/disable'),
       headers: _authHeaders,
-      body: jsonEncode({'password': password}),
+      body: jsonEncode({
+        'password': password,
+        if (totpCode != null) 'totp_code': totpCode,
+      }),
     );
     if (res.statusCode != 204) {
       throw _error(res);
@@ -395,6 +432,7 @@ class ApiClient {
     String? email,
     String? phone,
     String? country,
+    String? totpCode,
   }) async {
     final res = await _http
         .post(
@@ -405,6 +443,7 @@ class ApiClient {
             if (email != null) 'email': email,
             if (phone != null) 'phone': phone,
             if (country != null) 'country': country,
+            if (totpCode != null) 'totp_code': totpCode,
           }),
         )
         .timeout(_timeout);
@@ -442,14 +481,15 @@ class ApiClient {
   /// junto, e sem trocar pelo par novo o app seria deslogado na requisição
   /// seguinte — a pessoa trocaria a senha e cairia na tela de login sem
   /// entender por quê.
-  Future<void> updatePassword(
-      String currentPassword, String newPassword) async {
+  Future<void> updatePassword(String currentPassword, String newPassword,
+      {String? totpCode}) async {
     final res = await _http.patch(
       _uri('/api/v1/auth/me/password'),
       headers: _authHeaders,
       body: jsonEncode({
         'current_password': currentPassword,
         'new_password': newPassword,
+        if (totpCode != null) 'totp_code': totpCode,
       }),
     );
     _storeTokens(_decode(res));
@@ -488,12 +528,16 @@ class ApiClient {
     return _decode(res) as Map<String, dynamic>;
   }
 
-  /// Exclui a conta (exige a senha). Ao concluir, limpa a sessão local.
-  Future<void> deleteAccount(String password) async {
+  /// Exclui a conta (exige a senha e, se ligada, a verificação em duas
+  /// etapas). Ao concluir, limpa a sessão local.
+  Future<void> deleteAccount(String password, {String? totpCode}) async {
     final res = await _http.delete(
       _uri('/api/v1/auth/me'),
       headers: _authHeaders,
-      body: jsonEncode({'password': password}),
+      body: jsonEncode({
+        'password': password,
+        if (totpCode != null) 'totp_code': totpCode,
+      }),
     );
     if (res.statusCode != 204) {
       throw _error(res);

@@ -1784,6 +1784,82 @@ class Strings {
       'Two-step verification disabled.', '两步验证已停用。',
       'Vérification en deux étapes désactivée.', 'Verificación en dos pasos desactivada.');
 
+  // Códigos de recuperação e o código nas ações sensíveis
+  String get recoveryCodesTitle => _t('Códigos de recuperação', 'Recovery codes',
+      '恢复码', 'Codes de récupération', 'Códigos de recuperación');
+  String get recoveryCodesHeadline => _t('Guarde estes códigos', 'Save these codes',
+      '请保存这些恢复码', 'Conservez ces codes', 'Guarda estos códigos');
+  String get recoveryCodesExplain => _t(
+      'Se perder o celular do autenticador, cada código abre a conta uma vez. '
+          'Guarde num lugar seguro, fora deste celular. Eles não aparecem de novo.',
+      'If you lose the phone with your authenticator, each code opens the account once. '
+          "Keep them somewhere safe, off this phone. They won't be shown again.",
+      '如果丢失装有身份验证器的手机，每个恢复码可登录一次。请存放在此手机以外的安全位置。它们不会再次显示。',
+      "Si vous perdez le téléphone de l'authentificateur, chaque code ouvre le compte une fois. "
+          "Gardez-les en lieu sûr, hors de ce téléphone. Ils ne seront plus affichés.",
+      'Si pierdes el móvil del autenticador, cada código abre la cuenta una vez. '
+          'Guárdalos en un lugar seguro, fuera de este móvil. No se volverán a mostrar.');
+  String get recoveryCodesCopied => _t('Códigos copiados.', 'Codes copied.',
+      '恢复码已复制。', 'Codes copiés.', 'Códigos copiados.');
+  String get share => _t('Compartilhar', 'Share', '分享', 'Partager', 'Compartir');
+  String get recoveryCodesSaved => _t('Guardei num lugar seguro',
+      'I saved them somewhere safe', '我已妥善保存', "Je les ai mis en lieu sûr",
+      'Los guardé en un lugar seguro');
+  String get recoveryCodesDone =>
+      _t('Concluir', 'Done', '完成', 'Terminer', 'Listo');
+  String get recoveryCodesMustConfirm => _t(
+      'Marque que guardou os códigos antes de sair.',
+      'Check that you saved the codes before leaving.',
+      '请先勾选已保存恢复码再离开。',
+      'Cochez que vous avez conservé les codes avant de quitter.',
+      'Marca que guardaste los códigos antes de salir.');
+  String recoveryCodesLeft(int n) => _t(
+      n == 1 ? '1 restante' : '$n restantes',
+      n == 1 ? '1 left' : '$n left',
+      '剩余 $n 个',
+      n == 1 ? '1 restant' : '$n restants',
+      n == 1 ? '1 restante' : '$n restantes');
+  String get recoveryCodesNone => _t(
+      'Você ainda não tem códigos de recuperação. Gere agora: sem eles, perder o celular é perder a conta.',
+      "You don't have recovery codes yet. Generate them now: without them, losing your phone means losing the account.",
+      '你还没有恢复码。请立即生成：没有恢复码，丢失手机就会失去账户。',
+      "Vous n'avez pas encore de codes de récupération. Générez-les maintenant : sans eux, perdre le téléphone, c'est perdre le compte.",
+      'Aún no tienes códigos de recuperación. Généralos ahora: sin ellos, perder el móvil es perder la cuenta.');
+  String get recoveryCodesFew => _t(
+      'Restam poucos códigos. Gere novos e guarde num lugar seguro.',
+      'Only a few codes left. Generate new ones and keep them safe.',
+      '恢复码所剩无几。请生成新的并妥善保存。',
+      'Il reste peu de codes. Générez-en de nouveaux et gardez-les en lieu sûr.',
+      'Quedan pocos códigos. Genera nuevos y guárdalos en un lugar seguro.');
+  String get recoveryCodesGenerate =>
+      _t('Gerar novos', 'Generate new', '生成新的', 'En générer', 'Generar nuevos');
+  String get recoveryCodesRegenerateBody => _t(
+      'Os códigos atuais param de valer.',
+      'Your current codes will stop working.',
+      '当前的恢复码将失效。',
+      'Les codes actuels ne fonctionneront plus.',
+      'Los códigos actuales dejarán de funcionar.');
+  String get secondFactorTitle => _t('Código de verificação', 'Verification code',
+      '验证码', 'Code de vérification', 'Código de verificación');
+  String get secondFactorBody => _t('Digite o código do seu app autenticador.',
+      'Enter the code from your authenticator app.', '请输入身份验证器应用中的验证码。',
+      "Saisissez le code de votre application d'authentification.",
+      'Introduce el código de tu app de autenticación.');
+  String get secondFactorRecoveryBody => _t(
+      'Digite um dos seus códigos de recuperação. Cada um vale uma vez.',
+      'Enter one of your recovery codes. Each works once.',
+      '请输入一个恢复码。每个只能使用一次。',
+      'Saisissez un de vos codes de récupération. Chacun ne sert qu’une fois.',
+      'Introduce uno de tus códigos de recuperación. Cada uno sirve una vez.');
+  String get useRecoveryCode => _t('Usar um código de recuperação',
+      'Use a recovery code', '使用恢复码', 'Utiliser un code de récupération',
+      'Usar un código de recuperación');
+  String get useAuthenticatorCode => _t('Usar o código do autenticador',
+      'Use the authenticator code', '使用身份验证器验证码',
+      "Utiliser le code de l'authentificateur", 'Usar el código del autenticador');
+  String get recoveryCode => _t('Código de recuperação', 'Recovery code', '恢复码',
+      'Code de récupération', 'Código de recuperación');
+
   // Tela de controle
   String get waitingScreen => _t('Aguardando a tela do computador...',
       'Waiting for the computer screen...', '正在等待电脑画面…',

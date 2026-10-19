@@ -213,8 +213,95 @@ void main() {
         return http.Response('', 204);
       }),
     );
-    await client.enableTwoFactor('654321');
+    // Servidor ainda sem códigos de recuperação: liga do mesmo jeito.
+    expect(await client.enableTwoFactor('654321'), isEmpty);
     expect(body?['code'], '654321');
+    expect(body?['recovery_codes'], isTrue);
+  });
+
+  test('enableTwoFactor devolve os códigos de recuperação', () async {
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async => http.Response(
+            jsonEncode({
+              'codes': ['ABCDE-FGHJK', 'MNPQR-STUVW']
+            }),
+            200,
+          )),
+    );
+    expect(await client.enableTwoFactor('654321'),
+        ['ABCDE-FGHJK', 'MNPQR-STUVW']);
+  });
+
+  test('regenerateRecoveryCodes manda o código e devolve os novos', () async {
+    Map<String, dynamic>? body;
+    String? path;
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        path = req.url.path;
+        body = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response(jsonEncode({'codes': ['ABCDE-FGHJK']}), 200);
+      }),
+    );
+    expect(await client.regenerateRecoveryCodes('123456'), ['ABCDE-FGHJK']);
+    expect(path, '/api/v1/auth/2fa/recovery-codes');
+    expect(body?['totp_code'], '123456');
+  });
+
+  test('ações sensíveis levam o totp_code só quando há um', () async {
+    final bodies = <String, Map<String, dynamic>>{};
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient((req) async {
+        bodies['${req.method} ${req.url.path}'] =
+            jsonDecode(req.body) as Map<String, dynamic>;
+        if (req.url.path == '/api/v1/auth/password/reset' ||
+            req.url.path == '/api/v1/auth/me/password') {
+          return http.Response(
+              jsonEncode({'access_token': 'a', 'refresh_token': 'r'}), 200);
+        }
+        return http.Response('', 204);
+      }),
+    );
+    await client.disableTwoFactor('senha', totpCode: '111111');
+    await client.updatePassword('senha', 'nova', totpCode: 'ABCDE-FGHJK');
+    await client.resetPassword('a@b.com', '123456', 'nova', 'nova');
+    await client.deleteAccount('senha', totpCode: '222222');
+
+    expect(bodies['POST /api/v1/auth/2fa/disable']?['totp_code'], '111111');
+    expect(bodies['PATCH /api/v1/auth/me/password']?['totp_code'], 'ABCDE-FGHJK');
+    expect(bodies['POST /api/v1/auth/password/reset']!.containsKey('totp_code'),
+        isFalse);
+    expect(bodies['DELETE /api/v1/auth/me']?['totp_code'], '222222');
+  });
+
+  test('o pedido do segundo fator é reconhecível', () async {
+    var detalhe = 'two_factor_required';
+    final client = ApiClient(
+      baseUrl: 'http://test',
+      tokenStore: InMemoryTokenStore(),
+      httpClient: MockClient(
+          (req) async => http.Response(jsonEncode({'detail': detalhe}), 401)),
+    );
+    try {
+      await client.disableTwoFactor('senha');
+      fail('devia ter recusado');
+    } on ApiException catch (e) {
+      expect(e.pedeSegundoFator, isTrue);
+      expect(e.segundoFatorErrado, isFalse);
+    }
+    detalhe = 'two_factor_invalid';
+    try {
+      await client.disableTwoFactor('senha', totpCode: '000000');
+      fail('devia ter recusado');
+    } on ApiException catch (e) {
+      expect(e.pedeSegundoFator, isFalse);
+      expect(e.segundoFatorErrado, isTrue);
+    }
   });
 
   test('listApps pede o kind certo e devolve os aplicativos', () async {
