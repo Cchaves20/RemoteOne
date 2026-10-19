@@ -11,6 +11,7 @@ import '../widgets/brand.dart';
 import '../widgets/segundo_fator.dart';
 import '../widgets/transitions.dart';
 import 'assinatura_screen.dart';
+import 'connected_devices_screen.dart';
 import 'gesture_tutorial_screen.dart';
 import 'profiles_screen.dart';
 import 'recovery_codes_screen.dart';
@@ -98,6 +99,13 @@ class SettingsScreen extends StatelessWidget {
                       : _disableTwoFactor(context),
                 ),
                 if (state.twoFactorEnabled) ..._codigosDeRecuperacao(context),
+                _action(
+                    context,
+                    Icons.devices_outlined,
+                    t.connectedDevices,
+                    () => Navigator.of(context).push(fadeThroughRoute(
+                        ConnectedDevicesScreen(state: state))),
+                    subtitle: t.connectedDevicesSub),
               ])),
               staggered(_card(context, t.profilesTitle, Icons.tune, [
                 _action(context, Icons.dashboard_customize, t.profilesTitle,

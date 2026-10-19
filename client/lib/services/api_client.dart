@@ -14,6 +14,7 @@ import '../models/keep_awake.dart';
 import '../models/presentation.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
+import '../models/sessao.dart';
 import '../models/system_stats.dart';
 import '../models/widget_config.dart';
 import '../models/window_zone.dart';
@@ -93,7 +94,18 @@ class ApiClient {
 
   bool get isAuthenticated => _accessToken != null;
 
-  Map<String, String> get _jsonHeaders => {'Content-Type': 'application/json'};
+  /// Como este aparelho aparece em "Aparelhos conectados" (ver
+  /// `services/aparelho.dart`). Vai em todo pedido, e o servidor o lê ao abrir
+  /// a sessão — no login, no cadastro e na recuperação de senha.
+  String aparelho = '';
+
+  Map<String, String> get _jsonHeaders => {
+        'Content-Type': 'application/json',
+        // Codificado como em URL: cabeçalho HTTP só leva ASCII, e o nome tem
+        // "·" e pode ter acento.
+        if (aparelho.isNotEmpty)
+          'X-Deskside-Aparelho': Uri.encodeComponent(aparelho),
+      };
 
   Map<String, String> get _authHeaders => {
         ..._jsonHeaders,
@@ -359,20 +371,76 @@ class ApiClient {
     }
   }
 
-  /// Troca o refresh token por um novo access token.
+  /// Troca o refresh token por um novo access token **e um refresh novo**.
+  ///
+  /// O servidor invalida o refresh usado assim que entrega o novo, e um usado
+  /// de novo fora de uma folga curta derruba a sessão (é como ele percebe uma
+  /// cópia). Por isso o refresh é relido do armazenamento antes: o widget da
+  /// tela inicial renova num processo próprio, com o mesmo armazenamento, e o
+  /// que este objeto tem na memória pode já ter sido trocado por ele.
   Future<void> refreshAccess() async {
+    final (_, guardado) = await _store.load();
+    if (guardado != null) _refreshToken = guardado;
     final res = await _http
         .post(
           _uri('/api/v1/auth/refresh'),
           headers: _jsonHeaders,
-          body: jsonEncode({'refresh_token': _refreshToken}),
+          body: jsonEncode({'refresh_token': _refreshToken, 'rotacao': true}),
         )
         .timeout(_timeout);
     final body = _decode(res) as Map<String, dynamic>;
     _accessToken = body['access_token'] as String?;
+    // Ausente num servidor de antes das sessões: segue com o mesmo.
+    _refreshToken = body['refresh_token'] as String? ?? _refreshToken;
     await _persist();
   }
 
+  /// Sai: encerra a sessão deste aparelho no servidor e esquece os tokens.
+  ///
+  /// O servidor primeiro, e sem deixar uma falha de rede impedir a saída: o
+  /// pior caso é a sessão ficar na lista até vencer, o que é melhor do que
+  /// prender a pessoa dentro do app por causa do Wi-Fi.
+  Future<void> sair() async {
+    if (_accessToken != null) {
+      try {
+        await _http
+            .post(_uri('/api/v1/auth/logout'), headers: _authHeaders)
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {}
+    }
+    await logout();
+  }
+
+  /// Os aparelhos com a conta aberta.
+  Future<List<Sessao>> listSessions() async {
+    final res = await _http
+        .get(_uri('/api/v1/auth/sessions'), headers: _authHeaders)
+        .timeout(_timeout);
+    return (_decode(res) as List<dynamic>)
+        .map((e) => Sessao.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Encerra a sessão de outro aparelho.
+  Future<void> endSession(String id) async {
+    final res = await _http
+        .delete(_uri('/api/v1/auth/sessions/$id'), headers: _authHeaders)
+        .timeout(_timeout);
+    if (res.statusCode != 204) throw _error(res);
+  }
+
+  /// Encerra todas as outras sessões. Guarda os tokens novos que vêm na
+  /// resposta: o servidor troca a chave da conta, e os deste aparelho também
+  /// mudam.
+  Future<void> endOtherSessions() async {
+    final res = await _http
+        .post(_uri('/api/v1/auth/sessions/revoke-others'), headers: _authHeaders)
+        .timeout(_timeout);
+    _storeTokens(_decode(res));
+    await _persist();
+  }
+
+  /// Esquece os tokens deste aparelho, sem falar com o servidor.
   Future<void> logout() async {
     _accessToken = null;
     _refreshToken = null;

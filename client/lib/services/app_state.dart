@@ -16,6 +16,7 @@ import '../models/foreground_app.dart';
 import '../models/keep_awake.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
+import '../models/sessao.dart';
 import '../models/stream_quality.dart';
 import '../models/system_stats.dart';
 import '../models/widget_config.dart';
@@ -826,14 +827,22 @@ class AppState extends ChangeNotifier {
           {String? totpCode}) =>
       api.updatePassword(currentPassword, newPassword, totpCode: totpCode);
 
-  Future<void> deleteAccount(String password, {String? totpCode}) async {
+  // --- aparelhos conectados -------------------------------------------------
+
+  Future<List<Sessao>> listSessions() => api.listSessions();
+
+  Future<void> endSession(String id) => api.endSession(id);
+
+  Future<void> endOtherSessions() => api.endOtherSessions();
+
+    Future<void> deleteAccount(String password, {String? totpCode}) async {
     await api.deleteAccount(password, totpCode: totpCode);
     _esquecerSessao();
     notifyListeners();
   }
 
   Future<void> logout() async {
-    await api.logout();
+    await api.sair();
     _esquecerSessao();
     notifyListeners();
   }

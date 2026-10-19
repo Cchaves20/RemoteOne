@@ -1784,6 +1784,62 @@ class Strings {
       'Two-step verification disabled.', '两步验证已停用。',
       'Vérification en deux étapes désactivée.', 'Verificación en dos pasos desactivada.');
 
+  // Aparelhos conectados
+  String get connectedDevices => _t('Aparelhos conectados', 'Signed-in devices',
+      '已登录的设备', 'Appareils connectés', 'Dispositivos conectados');
+  String get connectedDevicesSub => _t(
+      'Veja onde sua conta está aberta e desconecte',
+      'See where your account is open and sign out',
+      '查看账户在哪些设备上登录并退出',
+      'Voyez où votre compte est ouvert et déconnectez',
+      'Mira dónde está abierta tu cuenta y cierra sesión');
+  String get thisDevice =>
+      _t('Este aparelho', 'This device', '本设备', 'Cet appareil', 'Este dispositivo');
+  String get signOutDevice => _t('Sair', 'Sign out', '退出', 'Déconnecter', 'Salir');
+  String get signOutOthers => _t('Sair de todos os outros',
+      'Sign out all others', '退出其他所有设备', 'Déconnecter tous les autres',
+      'Salir de todos los demás');
+  String get oldAppDevice => _t('Aparelho com versão antiga do app',
+      'Device with an older app version', '使用旧版应用的设备',
+      "Appareil avec une ancienne version de l'app",
+      'Dispositivo con una versión antigua de la app');
+  String endSessionTitle(String nome) => _t('Desconectar "$nome"?',
+      'Sign out "$nome"?', '退出“$nome”？', 'Déconnecter « $nome » ?',
+      '¿Cerrar sesión en "$nome"?');
+  String get endSessionBody => _t('Ele sai da conta na hora.',
+      'It will be signed out right away.', '该设备将立即退出账户。',
+      'Il sera déconnecté immédiatement.', 'Saldrá de la cuenta de inmediato.');
+  String get endOthersBody => _t(
+      'Todos os outros aparelhos saem da conta na hora. Este continua conectado.',
+      'All other devices will be signed out right away. This one stays signed in.',
+      '其他所有设备将立即退出。本设备保持登录。',
+      'Tous les autres appareils seront déconnectés immédiatement. Celui-ci reste connecté.',
+      'Todos los demás dispositivos saldrán de inmediato. Este sigue conectado.');
+  String get sessionEnded => _t('Aparelho desconectado.', 'Device signed out.',
+      '设备已退出。', 'Appareil déconnecté.', 'Dispositivo desconectado.');
+  String get othersEnded => _t('Os outros aparelhos foram desconectados.',
+      'Other devices were signed out.', '其他设备已退出。',
+      'Les autres appareils ont été déconnectés.',
+      'Los demás dispositivos se desconectaron.');
+  String get onlyThisDevice => _t('Só este aparelho está conectado.',
+      'Only this device is signed in.', '仅本设备已登录。',
+      'Seul cet appareil est connecté.', 'Solo este dispositivo está conectado.');
+  String usadoHa(Duration ha) {
+    if (ha.inMinutes < 1) return _t('agora', 'now', '刚刚', "à l'instant", 'ahora');
+    if (ha.inHours < 1) {
+      final n = ha.inMinutes;
+      return _t('há $n min', '$n min ago', '$n 分钟前', 'il y a $n min', 'hace $n min');
+    }
+    if (ha.inDays < 1) {
+      final n = ha.inHours;
+      return _t('há $n h', '$n h ago', '$n 小时前', 'il y a $n h', 'hace $n h');
+    }
+    final n = ha.inDays;
+    return _t(n == 1 ? 'há 1 dia' : 'há $n dias', n == 1 ? '1 day ago' : '$n days ago',
+        '$n 天前', n == 1 ? 'il y a 1 jour' : 'il y a $n jours',
+        n == 1 ? 'hace 1 día' : 'hace $n días');
+  }
+
   // Códigos de recuperação e o código nas ações sensíveis
   String get recoveryCodesTitle => _t('Códigos de recuperação', 'Recovery codes',
       '恢复码', 'Codes de récupération', 'Códigos de recuperación');

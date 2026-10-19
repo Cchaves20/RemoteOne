@@ -4,6 +4,7 @@ import 'config.dart';
 import 'screens/devices_screen.dart';
 import 'screens/lock_gate.dart';
 import 'screens/login_screen.dart';
+import 'services/aparelho.dart';
 import 'services/api_client.dart';
 import 'services/app_state.dart';
 import 'services/atalhos_do_icone.dart';
@@ -14,7 +15,8 @@ import 'widgets/barra_do_sistema.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final state = AppState(ApiClient(baseUrl: backendPadrao));
+  final state = AppState(
+      ApiClient(baseUrl: backendPadrao)..aparelho = nomeDoAparelho());
   // Só o carregamento local (rápido) roda antes de desenhar a tela.
   await state.loadPreferences();
   // Mostra a UI imediatamente; a restauração da sessão (rede) roda depois,
