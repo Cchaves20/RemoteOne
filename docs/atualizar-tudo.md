@@ -14,11 +14,11 @@ palavra).
 No PowerShell, na pasta do projeto:
 
 ```powershell
-.\scripts\atualizar
+.\scripts\atualizar.cmd
 ```
 
-Repare que é `atualizar`, sem o `.ps1`: quem responde é o `atualizar.cmd`, um
-atalho de três linhas. Ele existe porque o Windows **bloqueia qualquer `.ps1`
+Com o `.cmd` escrito: sem extensão, o PowerShell procura o `.ps1` **primeiro**
+e esbarra no bloqueio abaixo. O `atualizar.cmd` é um atalho curto. Ele existe porque o Windows **bloqueia qualquer `.ps1`
 por padrão** (a política de execução). O `.cmd` não passa por essa política e
 chama o PowerShell já com a exceção — assim o comando funciona em qualquer
 máquina sem afrouxar a política do sistema inteiro, que é a solução que se
