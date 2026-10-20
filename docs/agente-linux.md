@@ -7,7 +7,7 @@ automático, ícone ou barra de controle — roda-se no terminal.
 
 | Sessão gráfica | Tela | Mouse e teclado |
 |---|---|---|
-| Wayland (Ubuntu 24.04+, Fedora) | portal do sistema + PipeWire | portal do sistema |
+| Wayland (Ubuntu, Fedora) | portal do sistema + PipeWire | portal do sistema |
 | X11 | `xcap` (como no Windows e no Mac) | `enigo` |
 | Nenhuma (servidor, CI) | quadro sintético | só registra no diário |
 
@@ -56,13 +56,17 @@ O GitHub monta o executável a cada push no agente
 (`.github/workflows/agente-linux.yml`) e publica no pré-lançamento
 `agente-linux`:
 
-    wget https://github.com/Cchaves20/RemoteOne/releases/download/agente-linux/Deskside-linux-x86_64.tar.gz
-    tar xzf Deskside-linux-x86_64.tar.gz
+    uname -m   # x86_64 (Intel e AMD) ou aarch64 (ARM)
+    wget https://github.com/Cchaves20/RemoteOne/releases/download/agente-linux/Deskside-linux-$(uname -m).tar.gz
+    tar xzf Deskside-linux-$(uname -m).tar.gz
     cd deskside && ./deskside-agent
+
+Os pacotes são compilados no Debian 12 (glibc 2.36): rodam em sistemas de
+2023 para cá. Num mais antigo, a mensagem é sobre `GLIBC_2.xx`.
 
 O código de pareamento aparece no terminal.
 
-Para compilar à mão (Ubuntu 24.04+):
+Para compilar à mão (Debian 12, Ubuntu 22.04 ou mais novos):
 
     sudo apt install libpipewire-0.3-dev libclang-dev clang pkg-config \
       libwayland-dev libgbm-dev libegl-dev libxcb1-dev libxcb-randr0-dev \

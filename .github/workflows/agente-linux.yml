@@ -2,12 +2,15 @@
 #
 # Roda a cada push que mexe no agente, em qualquer ramo. Publica no
 # pré-lançamento "agente-linux" do GitHub (sempre o mesmo, substituído a cada
-# build) um .tar.gz com o executável. Ainda não há instalador nem início
-# automático: roda-se no terminal. Ver docs/agente-linux.md.
+# build) um .tar.gz por processador: x86_64 (Intel e AMD) e aarch64 (ARM, como
+# o MateBook Fold). Ainda não há instalador nem início automático: roda-se no
+# terminal. Ver docs/agente-linux.md.
 #
-# Ubuntu 24.04 e não o mais novo: o executável roda em sistemas iguais ou mais
-# novos que o da máquina que compilou (por causa da glibc), e o 24.04 é o mais
-# antigo com o PipeWire que a biblioteca pede.
+# Compilado **dentro do Debian 12**, e não no Ubuntu da máquina do GitHub: o
+# executável só roda em sistemas com glibc igual ou mais nova que a de quem
+# compilou. O Ubuntu 24.04 (glibc 2.39) deixava de fora o Linux do MateBook
+# (2.38); o Debian 12 (2.36) cobre os sistemas de 2023 para cá, e ainda tem o
+# PipeWire que a biblioteca pede.
 name: Agente no Linux
 
 on:
@@ -19,27 +22,36 @@ on:
 
 jobs:
   linux:
-    runs-on: ubuntu-24.04
-    permissions:
-      # Para criar o pré-lançamento com o arquivo.
-      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arquitetura: x86_64
+            maquina: ubuntu-24.04
+          - arquitetura: aarch64
+            maquina: ubuntu-24.04-arm
+    runs-on: ${{ matrix.maquina }}
+    container: debian:bookworm
     steps:
-      - uses: actions/checkout@v4
-
       - name: Bibliotecas de compilação
         run: |
-          sudo apt-get update -qq
+          apt-get update -qq
           # PipeWire (a tela no Wayland), clang (o PipeWire em Rust gera a
-          # ligação com o C na compilação), e o que o xcap pede para o X11.
-          sudo apt-get install -y -qq libpipewire-0.3-dev libclang-dev clang \
-            pkg-config libwayland-dev libgbm-dev libegl-dev libxcb1-dev \
+          # ligação com o C na compilação), o que o xcap pede para o X11, e o
+          # básico para o rustup e o checkout.
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            build-essential curl ca-certificates git pkg-config clang libclang-dev \
+            libpipewire-0.3-dev libwayland-dev libgbm-dev libegl-dev libxcb1-dev \
             libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libssl-dev
+
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: agent
+          key: ${{ matrix.arquitetura }}
 
       - name: Testes
         working-directory: agent
@@ -47,6 +59,8 @@ jobs:
 
       - name: Montar o pacote
         working-directory: agent
+        env:
+          ARQUITETURA: ${{ matrix.arquitetura }}
         run: |
           set -eu
           cargo build --release --bin deskside-agent
@@ -64,32 +78,51 @@ jobs:
 
           Com Wayland (Ubuntu, Fedora), na primeira vez o sistema pede
           permissão para compartilhar a tela e o controle. Aprove: depois ele
-          lembra, e o celular entra sem perguntar de novo.
+          lembra, e o celular entra sem perguntar de novo. Com X11 não há
+          pedido nenhum.
+
+          Se aparecer "error while loading shared libraries", falta uma
+          biblioteca do sistema; o nome dela vem na mensagem.
 
           Para parar, Ctrl+C no terminal.
           TEXTO
           sed -i 's/^          //' "$PASTA/LEIA-ME.txt"
-          tar -C target/linux -czf target/linux/Deskside-linux-x86_64.tar.gz deskside
-          ( cd target/linux && sha256sum Deskside-linux-x86_64.tar.gz > Deskside-linux-x86_64.tar.gz.sha256 )
+          NOME="Deskside-linux-$ARQUITETURA.tar.gz"
+          tar -C target/linux -czf "target/linux/$NOME" deskside
+          ( cd target/linux && sha256sum "$NOME" > "$NOME.sha256" )
           ls -la target/linux
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Deskside-linux
+          name: Deskside-linux-${{ matrix.arquitetura }}
           path: |
-            agent/target/linux/Deskside-linux-x86_64.tar.gz
-            agent/target/linux/Deskside-linux-x86_64.tar.gz.sha256
+            agent/target/linux/Deskside-linux-*.tar.gz
+            agent/target/linux/Deskside-linux-*.tar.gz.sha256
           retention-days: 30
+
+  publicar:
+    needs: linux
+    runs-on: ubuntu-24.04
+    permissions:
+      # Para criar o pré-lançamento com os arquivos.
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Deskside-linux-*
+          merge-multiple: true
+          path: pacotes
 
       - name: Publicar no pré-lançamento "agente-linux"
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -eu
-          cd agent/target/linux
-          NOTAS=$(printf 'Agente do Deskside para Linux, do commit %s (ramo %s).\n\nFase 1: tela, mouse e teclado (Wayland e X11). Baixe o .tar.gz, descompacte e rode ./deskside-agent no terminal. Ver docs/agente-linux.md no repositório.' "$GITHUB_SHA" "$GITHUB_REF_NAME")
+          cd pacotes
+          ls -la
+          NOTAS=$(printf 'Agente do Deskside para Linux, do commit %s (ramo %s).\n\nFase 1: tela, mouse e teclado (Wayland e X11). Baixe o .tar.gz do seu processador (x86_64 para Intel e AMD, aarch64 para ARM), descompacte e rode ./deskside-agent no terminal. Ver docs/agente-linux.md no repositório.' "$GITHUB_SHA" "$GITHUB_REF_NAME")
           gh release delete agente-linux --yes --cleanup-tag 2>/dev/null || true
-          gh release create agente-linux \
-            Deskside-linux-x86_64.tar.gz Deskside-linux-x86_64.tar.gz.sha256 \
+          gh release create agente-linux Deskside-linux-*.tar.gz Deskside-linux-*.tar.gz.sha256 \
             --prerelease --target "$GITHUB_SHA" \
             --title "Deskside para Linux (teste)" --notes "$NOTAS"
