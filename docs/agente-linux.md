@@ -38,8 +38,14 @@ agente regrava a nova em `~/.config/deskside/wayland-ficha` (só o dono lê).
 - **Ficha recusada:** o sistema volta a mostrar a janela. O agente espera 3 s,
   avisa o celular ("o computador está pedindo permissão…") e desiste em 2 min,
   em vez de ficar preso.
-- **Teclado pelo símbolo** (keysym), e não pela posição da tecla: "ç" sai "ç"
-  em qualquer layout.
+- **Teclado pelo símbolo** (keysym), e não pela posição da tecla. O símbolo
+  só sai se o teclado do computador tiver a tecla, então o agente lê o layout
+  em uso (`teclado_linux.rs`) e digita como uma pessoa: tecla própria ("ç" no
+  ABNT2) ou acento + letra ("´" e "e" para "é"). Se o layout não faz o
+  caractere — acentos no inglês (EUA) —, ele fica de fora e o celular recebe
+  um aviso com o que mudar no computador. (Digitar pelo código Unicode, com
+  Ctrl+Shift+U, foi tentado e descartado: onde o atalho não é tratado, os
+  programas recebem Ctrl e Shift como atalhos e o mouse sai clicando.)
 - **Uma tela só**, a escolhida na janela de permissão.
 
 ## Limites conhecidos
@@ -70,7 +76,7 @@ Para compilar à mão (Debian 12, Ubuntu 22.04 ou mais novos):
 
     sudo apt install libpipewire-0.3-dev libclang-dev clang pkg-config \
       libwayland-dev libgbm-dev libegl-dev libxcb1-dev libxcb-randr0-dev \
-      libxcb-shm0-dev libxcb-xfixes0-dev libssl-dev
+      libxcb-shm0-dev libxcb-xfixes0-dev libssl-dev libxkbcommon-dev xkb-data
     cd agent && cargo build --release
 
 ## Próximas fases
