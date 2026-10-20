@@ -114,8 +114,8 @@ pub fn texto(quem: &[Controlador]) -> String {
 /// Esconder antes de o servidor confirmar é deliberado: o laço de rede derruba
 /// a tela deste lado no tique seguinte, e um botão que continua ali depois de
 /// clicado faz a pessoa clicar de novo, achando que não pegou.
-#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
-fn desconectar(estado: &Compartilhado) {
+#[cfg_attr(not(any(windows, target_os = "macos", target_os = "linux")), allow(dead_code))]
+pub(crate) fn desconectar(estado: &Compartilhado) {
     if let Ok(mut e) = estado.lock() {
         e.encerrar_controle = true;
         e.controladores.clear();
@@ -807,7 +807,14 @@ mod imp {
 mod imp {
     use crate::gui::Compartilhado;
 
-    /// Fora do Windows e do Mac o agente roda no terminal, sem interface.
+    /// No Linux a barra vira uma notificação com o botão Desconectar (ver
+    /// `interface_linux.rs`).
+    #[cfg(target_os = "linux")]
+    pub fn iniciar(estado: Compartilhado) {
+        crate::interface_linux::vigiar_controle(estado);
+    }
+
+    #[cfg(not(target_os = "linux"))]
     pub fn iniciar(_estado: Compartilhado) {}
 
     pub fn desviar() {}

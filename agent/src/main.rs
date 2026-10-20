@@ -124,8 +124,9 @@ Deskside Agent — controla este computador pelo celular.
   deskside-agent                    roda o agente (o que acontece ao dar
                                      dois cliques no executável)
   deskside-agent install [URL]      instala: passa a subir junto com o
-                                     Windows, oculto, e aparece em
-                                     \"Aplicativos instalados\"
+                                     sistema (no Windows, oculto e em
+                                     \"Aplicativos instalados\"; no Linux,
+                                     no login e no menu de aplicativos)
   deskside-agent uninstall          desfaz a instalação
   deskside-agent status             onde está instalado e para onde aponta
 

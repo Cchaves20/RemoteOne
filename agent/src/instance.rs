@@ -141,15 +141,18 @@ mod imp {
     }
 }
 
-/// No Mac: um arquivo trancado no lugar do mutex, e um arquivo-sinal no lugar
-/// do evento.
+/// No Mac e no Linux: um arquivo trancado no lugar do mutex, e um
+/// arquivo-sinal no lugar do evento.
 ///
 /// A tranca (`flock`) é do sistema e some sozinha quando o processo morre —
 /// inclusive num travamento —, então nunca sobra um "já está rodando" falso. O
 /// sinal é um arquivo que a segunda cópia cria e a primeira, consultando de
 /// segundo em segundo, apaga ao mostrar a janela. Um segundo de atraso para
 /// abrir a janela não se percebe, e evita depender de mais uma API da Apple.
-#[cfg(target_os = "macos")]
+///
+/// No Linux, desde que há instalação: o agente instalado sobe no login, e um
+/// segundo aberto pelo menu ou pelo terminal entraria com o mesmo `device_id`.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod imp {
     use super::Start;
     use std::fs::{File, OpenOptions};
@@ -200,11 +203,11 @@ mod imp {
     }
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod imp {
     use super::Start;
 
-    /// Fora do Windows não há instalação nem atalho: o agente roda no
+    /// Sem instalação nem atalho: o agente roda no
     /// terminal do desenvolvimento, e travar a segunda cópia só atrapalharia
     /// quem está testando duas configurações lado a lado.
     pub struct Guard;
@@ -234,11 +237,11 @@ mod tests {
         assert_eq!(wide(""), vec![0]);
     }
 
-    /// No Linux não há mutex nomeado, e o agente de desenvolvimento tem que
-    /// poder subir duas vezes. No Windows este teste não vale: se houver um
+    /// Sem mutex nomeado, o agente de desenvolvimento tem que poder subir
+    /// duas vezes. No Windows este teste não vale: se houver um
     /// agente instalado rodando, a resposta correta é `JaRodando` - e chamar
     /// `reivindicar` aqui ainda pediria a janela dele.
-    #[cfg(not(any(windows, target_os = "macos")))]
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     #[test]
     fn no_desenvolvimento_a_segunda_copia_tambem_sobe() {
         assert!(matches!(reivindicar(), Start::Primeira(_)));

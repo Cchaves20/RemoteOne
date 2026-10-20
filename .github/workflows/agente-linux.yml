@@ -1,10 +1,10 @@
-# O agente no Linux: testes e o executável para testar (fase 1).
+# O agente no Linux: testes e o executável para testar.
 #
 # Roda a cada push que mexe no agente, em qualquer ramo. Publica no
 # pré-lançamento "agente-linux" do GitHub (sempre o mesmo, substituído a cada
 # build) um .tar.gz por processador: x86_64 (Intel e AMD) e aarch64 (ARM, como
-# o MateBook Fold). Ainda não há instalador nem início automático: roda-se no
-# terminal. Ver docs/agente-linux.md.
+# o MateBook Fold). Instala-se com `./deskside-agent install`. Ver
+# docs/agente-linux.md.
 #
 # Compilado **dentro do Debian 12**, e não no Ubuntu da máquina do GitHub: o
 # executável só roda em sistemas com glibc igual ou mais nova que a de quem
@@ -69,13 +69,18 @@ jobs:
           rm -rf target/linux && mkdir -p "$PASTA"
           cp target/release/deskside-agent "$PASTA/"
           cat > "$PASTA/LEIA-ME.txt" <<'TEXTO'
-          Deskside para Linux (teste, fase 1)
+          Deskside para Linux (teste)
 
-          Para rodar, num terminal, nesta pasta:
+          Para instalar, num terminal, nesta pasta:
 
-              ./deskside-agent
+              ./deskside-agent install
 
-          O código de pareamento aparece no terminal: digite-o no app.
+          Ele passa a subir sozinho quando você entra na conta, aparece no
+          menu de aplicativos e ganha um ícone ao lado do relógio. O código
+          de pareamento chega numa notificação: digite-o no app.
+
+          Para só testar, sem instalar: ./deskside-agent run (o código
+          aparece no terminal; Ctrl+C para parar).
 
           Com Wayland (Ubuntu, Fedora), na primeira vez o sistema pede
           permissão para compartilhar a tela e o controle. Aprove: depois ele
@@ -85,7 +90,8 @@ jobs:
           Se aparecer "error while loading shared libraries", falta uma
           biblioteca do sistema; o nome dela vem na mensagem.
 
-          Para parar, Ctrl+C no terminal.
+          Para desinstalar: Desinstalar, no ícone ao lado do relógio, ou
+          ~/.local/share/deskside/deskside-agent uninstall
           TEXTO
           sed -i 's/^          //' "$PASTA/LEIA-ME.txt"
           NOME="Deskside-linux-$ARQUITETURA.tar.gz"
@@ -122,7 +128,7 @@ jobs:
           set -eu
           cd pacotes
           ls -la
-          NOTAS=$(printf 'Agente do Deskside para Linux, do commit %s (ramo %s).\n\nFase 1: tela, mouse e teclado (Wayland e X11). Baixe o .tar.gz do seu processador (x86_64 para Intel e AMD, aarch64 para ARM), descompacte e rode ./deskside-agent no terminal. Ver docs/agente-linux.md no repositório.' "$GITHUB_SHA" "$GITHUB_REF_NAME")
+          NOTAS=$(printf 'Agente do Deskside para Linux, do commit %s (ramo %s).\n\nTela, mouse e teclado (Wayland e X11), instalador, início no login, ícone e aviso de controle. Baixe o .tar.gz do seu processador (x86_64 para Intel e AMD, aarch64 para ARM), descompacte e rode ./deskside-agent install no terminal. Ver docs/agente-linux.md no repositório.' "$GITHUB_SHA" "$GITHUB_REF_NAME")
           gh release delete agente-linux --yes --cleanup-tag 2>/dev/null || true
           gh release create agente-linux Deskside-linux-*.tar.gz Deskside-linux-*.tar.gz.sha256 \
             --prerelease --target "$GITHUB_SHA" \

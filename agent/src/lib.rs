@@ -25,6 +25,8 @@ pub mod gui;
 pub mod h264;
 pub mod identity;
 pub mod instance;
+#[cfg(target_os = "linux")]
+pub mod interface_linux;
 pub mod migracao;
 pub mod injector;
 pub mod input;

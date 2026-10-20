@@ -1,4 +1,5 @@
-//! Instalação do agente no Windows, sem terminal e sem administrador.
+//! Instalação do agente no Windows, sem terminal e sem administrador (e, mais
+//! abaixo, no Mac e no Linux).
 //!
 //! O que existia antes era um script de PowerShell que compilava o projeto e
 //! punha um atalho na pasta Inicializar apontando para `target\release`. Isso
@@ -304,6 +305,14 @@ pub fn status_lines(s: &Status) -> Vec<String> {
                 "não"
             }
         ),
+        _ if cfg!(target_os = "linux") => format!(
+            "Inicia com o login: {}",
+            if s.autostart {
+                "sim (~/.config/autostart/deskside.desktop)"
+            } else {
+                "não"
+            }
+        ),
         (false, _) => "Inicia com o Windows: não".to_string(),
         (true, true) => "Inicia com o Windows: sim (tarefa agendada — a forma rápida)".to_string(),
         // A reserva. Funciona, e é a razão de o agente demorar a subir: a pasta
@@ -432,6 +441,120 @@ pub fn plist_do_mac(exe: &Path) -> String {
 pub fn lugar_provisorio(exe: &Path) -> bool {
     let texto = exe.to_string_lossy();
     texto.starts_with("/Volumes/") || texto.contains("/AppTranslocation/")
+}
+
+/// Os lugares da instalação no Linux, todos na conta do usuário (padrão XDG).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LugaresLinux {
+    /// `~/.local/share/deskside`: o executável e o ícone.
+    pub pasta: PathBuf,
+    pub exe: PathBuf,
+    pub icone: PathBuf,
+    /// `~/.config/autostart/deskside.desktop`: o que faz subir no login.
+    pub inicio: PathBuf,
+    /// `~/.local/share/applications/deskside.desktop`: a entrada no menu de
+    /// aplicativos. O nome casa com o `desktop-entry` das notificações, que
+    /// pegam dali o ícone.
+    pub menu: PathBuf,
+}
+
+/// Onde cada coisa vai, a partir da pasta pessoal e das variáveis XDG.
+///
+/// Pura para ser testada em qualquer sistema. Variável vazia ou relativa não
+/// vale, como manda o padrão XDG.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn lugares_linux(
+    casa: &Path,
+    xdg_dados: Option<&Path>,
+    xdg_config: Option<&Path>,
+) -> LugaresLinux {
+    let valida = |p: Option<&Path>| p.filter(|p| p.is_absolute()).map(Path::to_path_buf);
+    let dados = valida(xdg_dados).unwrap_or_else(|| casa.join(".local/share"));
+    let config = valida(xdg_config).unwrap_or_else(|| casa.join(".config"));
+    let pasta = dados.join("deskside");
+    LugaresLinux {
+        exe: pasta.join("deskside-agent"),
+        icone: pasta.join("deskside.png"),
+        pasta,
+        inicio: config.join("autostart/deskside.desktop"),
+        menu: dados.join("applications/deskside.desktop"),
+    }
+}
+
+/// Um caminho escrito como argumento da linha `Exec=` de um `.desktop`.
+///
+/// Duas camadas de escape, nesta ordem: as aspas da linha de comando (`"`,
+/// `` ` ``, `$` e `\` ganham uma barra) e depois a do próprio arquivo, em que
+/// toda barra vira duas. `%` vira `%%`, senão seria lido como `%f`, `%u`...
+fn argumento_do_exec(caminho: &Path) -> String {
+    let mut s = String::from("\"");
+    for c in caminho.to_string_lossy().chars() {
+        match c {
+            '"' | '`' | '$' => {
+                s.push_str("\\\\");
+                s.push(c);
+            }
+            '\\' => s.push_str("\\\\\\\\"),
+            '%' => s.push_str("%%"),
+            _ => s.push(c),
+        }
+    }
+    s.push('"');
+    s
+}
+
+/// O `.desktop` do Deskside. O mesmo texto serve ao menu e ao início no
+/// login; só o do login leva a linha que o GNOME consulta para saber se está
+/// ligado.
+///
+/// `StartupNotify=false`: o agente não abre janela, e sem isto o cursor ficaria
+/// girando à espera de uma.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn desktop_do_linux(exe: &Path, icone: &Path, no_login: bool) -> String {
+    let icone = icone.to_string_lossy().replace('\\', "\\\\");
+    let mut texto = format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name={APP_NAME}\n\
+         Comment=Controle este computador pelo celular\n\
+         Exec={} run\n\
+         Icon={icone}\n\
+         Terminal=false\n\
+         StartupNotify=false\n\
+         Categories=Network;RemoteAccess;\n",
+        argumento_do_exec(exe)
+    );
+    if no_login {
+        texto.push_str("X-GNOME-Autostart-enabled=true\n");
+    }
+    texto
+}
+
+/// O que o `install` explica no fim, no Linux.
+///
+/// O login automático vai **explicado**, e não ligado: é decisão de quem usa o
+/// computador (qualquer um que o ligue entra na conta), e mexer nele pediria
+/// a senha de administrador.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn explicacao_do_linux(l: &LugaresLinux) -> Vec<String> {
+    vec![
+        format!("Deskside instalado em {}", l.pasta.display()),
+        "- Sobe sozinho quando você entra na sua conta.".into(),
+        "- Aparece no menu de aplicativos como \"Deskside\".".into(),
+        "- Já está rodando: o código de pareamento chega numa notificação.".into(),
+        "- Com Wayland, na primeira vez o sistema pede permissão para compartilhar \
+         a tela e o controle. Aprove e marque para lembrar."
+            .into(),
+        String::new(),
+        "Depois de ligar o computador, o Deskside só fica disponível quando alguém \
+         entra na conta. Para não depender disso, ligue o login automático:"
+            .into(),
+        "  Configurações › Usuários › Login automático".into(),
+        "  (no Ubuntu 24.04 em diante: Configurações › Sistema › Usuários)".into(),
+        String::new(),
+        "Para desfazer: Desinstalar, no ícone ao lado do relógio, ou".into(),
+        format!("  \"{}\" uninstall", l.exe.display()),
+    ]
 }
 
 #[cfg(windows)]
@@ -989,31 +1112,132 @@ mod imp {
 mod imp {
     use super::*;
 
-    const SO_WINDOWS: &str = "a instalação em segundo plano só existe no Windows e no \
-                              Mac; no Linux rode o agente direto";
-
-    pub fn install(_backend: Option<&str>) -> Result<(), String> {
-        Err(SO_WINDOWS.to_string())
+    fn lugares() -> Result<LugaresLinux, String> {
+        let casa = std::env::var_os("HOME").ok_or("sem a variável HOME")?;
+        let dados = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+        let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+        Ok(lugares_linux(
+            Path::new(&casa),
+            dados.as_deref(),
+            config.as_deref(),
+        ))
     }
 
-    pub fn uninstall_completo() -> Result<(), String> {
-        // Fora do Windows não há instalação para desfazer, mas a identidade
-        // existe — e é ela que mantém o computador na conta. Apagá-la aqui faz
-        // o botão significar a mesma coisa em qualquer sistema.
-        for arquivo in super::arquivos_da_identidade(&crate::config_dir()) {
-            let _ = std::fs::remove_file(&arquivo);
+    fn exe_atual() -> Result<PathBuf, String> {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+    }
+
+    fn gravar(caminho: &Path, conteudo: &[u8]) -> Result<(), String> {
+        if let Some(pai) = caminho.parent() {
+            std::fs::create_dir_all(pai)
+                .map_err(|e| format!("não consegui criar {}: {e}", pai.display()))?;
         }
-        Err(SO_WINDOWS.to_string())
+        std::fs::write(caminho, conteudo)
+            .map_err(|e| format!("não consegui gravar {}: {e}", caminho.display()))
+    }
+
+    /// Copia o executável para a pasta do Deskside.
+    ///
+    /// Por um arquivo ao lado e uma troca de nome: gravar por cima de um
+    /// executável que está rodando (reinstalar com o agente aberto) dá "text
+    /// file busy"; trocar o nome não, e quem está rodando segue com o antigo.
+    fn copiar_executavel(de: &Path, para: &Path) -> Result<(), String> {
+        use std::os::unix::fs::PermissionsExt;
+        let provisorio = para.with_extension("novo");
+        if let Some(pai) = para.parent() {
+            std::fs::create_dir_all(pai)
+                .map_err(|e| format!("não consegui criar {}: {e}", pai.display()))?;
+        }
+        std::fs::copy(de, &provisorio)
+            .map_err(|e| format!("não consegui copiar o executável: {e}"))?;
+        std::fs::set_permissions(&provisorio, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| format!("não consegui marcar o executável: {e}"))?;
+        std::fs::rename(&provisorio, para)
+            .map_err(|e| format!("não consegui pôr o executável no lugar: {e}"))
+    }
+
+    /// Sobe a cópia instalada, solta deste terminal: fechá-lo não a derruba.
+    fn subir(exe: &Path) {
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command, Stdio};
+        let r = Command::new(exe)
+            .arg("run")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            // Fora do grupo do terminal: o Ctrl+C e o fechar da janela não
+            // chegam a ela.
+            .process_group(0)
+            .spawn();
+        if let Err(e) = r {
+            eprintln!("Não consegui abrir o Deskside instalado ({e}); ele sobe no próximo login.");
+        }
+    }
+
+    /// Copia para `~/.local/share/deskside`, registra no login e no menu, e
+    /// sobe a cópia instalada.
+    pub fn install(backend: Option<&str>) -> Result<(), String> {
+        let l = lugares()?;
+        if let Some(url) = backend {
+            let mut cfg = crate::load_config();
+            cfg.set("DESKSIDE_BACKEND_URL", url);
+            crate::save_config(&cfg)?;
+        }
+        let exe = exe_atual()?;
+        if exe != l.exe {
+            copiar_executavel(&exe, &l.exe)?;
+        }
+        gravar(&l.icone, include_bytes!("../assets/tray.png"))?;
+        gravar(&l.inicio, desktop_do_linux(&l.exe, &l.icone, true).as_bytes())?;
+        gravar(&l.menu, desktop_do_linux(&l.exe, &l.icone, false).as_bytes())?;
+        crate::diario(&format!("instalado em {}", l.pasta.display()));
+        // Se um Deskside já estiver rodando, este novo sai sozinho (uma
+        // instância só); o instalado assume no próximo login.
+        subir(&l.exe);
+        for linha in explicacao_do_linux(&l) {
+            println!("{linha}");
+        }
+        Ok(())
     }
 
     pub fn deve_oferecer_instalacao() -> bool {
-        // Não há instalação em segundo plano fora do Windows; oferecer seria
-        // prometer algo que a próxima linha recusaria.
+        // No Linux instalar é pedido explícito (`install`): dois cliques num
+        // executável quase nunca chegam a rodá-lo, e quem usa o terminal
+        // escolhe.
         false
     }
 
+    /// Para de subir no login e tira do menu. Não apaga a identidade (ver
+    /// `arquivos_da_identidade`). O agente que estiver rodando segue até o
+    /// fim da sessão ou até alguém escolher Sair.
     pub fn uninstall() -> Result<(), String> {
-        Err(SO_WINDOWS.to_string())
+        let l = lugares()?;
+        let mut erros = Vec::new();
+        for arquivo in [&l.inicio, &l.menu] {
+            match std::fs::remove_file(arquivo) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => erros.push(format!("{}: {e}", arquivo.display())),
+            }
+        }
+        match std::fs::remove_dir_all(&l.pasta) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => erros.push(format!("{}: {e}", l.pasta.display())),
+        }
+        if erros.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("não consegui apagar {}", erros.join("; ")))
+        }
+    }
+
+    /// O Desinstalar do ícone: sai da conta, para de subir no login e apaga a
+    /// configuração — como no Windows e no Mac.
+    pub fn uninstall_completo() -> Result<(), String> {
+        let _ = std::fs::remove_dir_all(crate::config_dir());
+        uninstall()
     }
 
     pub fn status() -> Status {
@@ -1021,11 +1245,16 @@ mod imp {
         let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
             .map(|v| !v.trim().is_empty())
             .unwrap_or(false);
+        let l = lugares().ok();
+        let instalado = l.as_ref().is_some_and(|l| l.exe.exists());
         Status {
-            installed: false,
-            autostart: false,
+            installed: instalado,
+            autostart: l.as_ref().is_some_and(|l| l.inicio.exists()),
             autostart_por_tarefa: false,
-            exe: std::env::current_exe().unwrap_or_default(),
+            exe: match (&l, instalado) {
+                (Some(l), true) => l.exe.clone(),
+                _ => exe_atual().unwrap_or_default(),
+            },
             backend: crate::config::resolve(&cfg, "DESKSIDE_BACKEND_URL")
                 .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
             backend_from_env: do_ambiente,
@@ -1291,8 +1520,10 @@ mod tests {
         assert!(linhas[0].contains("Deskside"));
         // A linha agora diz **por qual mecanismo**, porque um deles é
         // muito mais rápido e é a primeira coisa a olhar numa queixa de demora.
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
         assert!(linhas[1].contains("sim") && linhas[1].contains("tarefa agendada"));
+        #[cfg(target_os = "linux")]
+        assert!(linhas[1].starts_with("Inicia com o login: sim"));
         // No Mac não há tarefa agendada: o mecanismo é um só.
         #[cfg(target_os = "macos")]
         assert_eq!(linhas[1], "Inicia com o Mac: sim (LaunchAgent)");
@@ -1372,5 +1603,71 @@ mod testes_da_identidade {
         // sozinho mantém o computador na conta.
         assert_eq!(nomes, vec!["device_id", "agent_secret"]);
         assert!(caminhos.iter().all(|p| p.starts_with("C:\\cfg\\deskside")));
+    }
+}
+
+#[cfg(test)]
+mod testes_do_linux {
+    use super::*;
+
+    #[test]
+    fn os_lugares_seguem_o_padrao_xdg() {
+        let l = lugares_linux(Path::new("/home/ana"), None, None);
+        assert_eq!(l.exe, Path::new("/home/ana/.local/share/deskside/deskside-agent"));
+        assert_eq!(l.icone, Path::new("/home/ana/.local/share/deskside/deskside.png"));
+        assert_eq!(l.inicio, Path::new("/home/ana/.config/autostart/deskside.desktop"));
+        assert_eq!(
+            l.menu,
+            Path::new("/home/ana/.local/share/applications/deskside.desktop")
+        );
+    }
+
+    #[test]
+    fn variavel_xdg_relativa_nao_vale() {
+        // O padrão manda ignorar: um caminho relativo dependeria da pasta de
+        // onde o agente foi aberto.
+        let l = lugares_linux(
+            Path::new("/home/ana"),
+            Some(Path::new("dados")),
+            Some(Path::new("/etc/xdg-ana")),
+        );
+        assert!(l.exe.starts_with("/home/ana/.local/share"));
+        assert_eq!(l.inicio, Path::new("/etc/xdg-ana/autostart/deskside.desktop"));
+    }
+
+    #[test]
+    fn o_desktop_roda_o_agente_instalado() {
+        let t = desktop_do_linux(
+            Path::new("/home/ana/.local/share/deskside/deskside-agent"),
+            Path::new("/home/ana/.local/share/deskside/deskside.png"),
+            true,
+        );
+        assert!(t.starts_with("[Desktop Entry]\n"));
+        assert!(t.contains("\nExec=\"/home/ana/.local/share/deskside/deskside-agent\" run\n"));
+        assert!(t.contains("\nIcon=/home/ana/.local/share/deskside/deskside.png\n"));
+        assert!(t.contains("\nTerminal=false\n"));
+        assert!(t.contains("\nX-GNOME-Autostart-enabled=true\n"));
+        // O do menu não leva a linha do login.
+        let menu = desktop_do_linux(Path::new("/x"), Path::new("/i.png"), false);
+        assert!(!menu.contains("Autostart"));
+    }
+
+    #[test]
+    fn caminho_com_espaco_e_simbolos_vai_escapado() {
+        // Espaço fica entre aspas; `$` e `"` levam barra (que o arquivo
+        // dobra), e `%` vira `%%` para não ser lido como `%f`.
+        assert_eq!(
+            argumento_do_exec(Path::new("/home/Ana Bia/$x\"%y")),
+            "\"/home/Ana Bia/\\\\$x\\\\\"%%y\""
+        );
+    }
+
+    #[test]
+    fn a_explicacao_fala_do_login_automatico_sem_liga_lo() {
+        let l = lugares_linux(Path::new("/home/ana"), None, None);
+        let texto = explicacao_do_linux(&l).join("\n");
+        assert!(texto.contains("Login automático"));
+        assert!(texto.contains("/home/ana/.local/share/deskside"));
+        assert!(texto.contains("uninstall"));
     }
 }

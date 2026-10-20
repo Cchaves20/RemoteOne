@@ -1508,9 +1508,14 @@ mod imp {
 mod imp {
     use super::Compartilhado;
 
+    /// No Linux: notificações e o ícone ao lado do relógio, sem janela.
+    #[cfg(target_os = "linux")]
+    pub fn rodar(estado: Compartilhado) {
+        crate::interface_linux::rodar(estado);
+    }
+
+    #[cfg(not(target_os = "linux"))]
     pub fn rodar(_estado: Compartilhado) {
-        // No desenvolvimento o agente roda à vista, no terminal: a saída dele
-        // já é a interface. Uma janela aqui seria peso sem uso.
         loop {
             std::thread::sleep(std::time::Duration::from_secs(3600));
         }

@@ -2,8 +2,8 @@
 
 ## Onde está
 
-**Fase 1 (esta): tela, mouse e teclado.** Ainda sem instalador, início
-automático, ícone ou barra de controle — roda-se no terminal.
+**Fases 1 e 2: tela, mouse e teclado; instalador, início no login, ícone e o
+aviso "está controlando".** Sem a janela de configurações do Windows e do Mac.
 
 | Sessão gráfica | Tela | Mouse e teclado |
 |---|---|---|
@@ -33,8 +33,7 @@ agente regrava a nova em `~/.config/deskside/wayland-ficha` (só o dono lê).
 - **Na primeira vez**, o agente pede a permissão logo ao iniciar, enquanto há
   alguém diante do computador (quem acabou de abri-lo).
 - **A sessão só existe enquanto alguém vê a tela.** Com ela aberta, o GNOME
-  acende um ícone de "tela compartilhada" no alto — que assim vira o aviso de
-  que alguém está vendo, até a barra de controle chegar na fase 2.
+  acende um ícone de "tela compartilhada" no alto.
 - **Ficha recusada:** o sistema volta a mostrar a janela. O agente espera 3 s,
   avisa o celular ("o computador está pedindo permissão…") e desiste em 2 min,
   em vez de ficar preso.
@@ -47,6 +46,40 @@ agente regrava a nova em `~/.config/deskside/wayland-ficha` (só o dono lê).
   Ctrl+Shift+U, foi tentado e descartado: onde o atalho não é tratado, os
   programas recebem Ctrl e Shift como atalhos e o mouse sai clicando.)
 - **Uma tela só**, a escolhida na janela de permissão.
+
+## Instalação e interface (`setup.rs`, `interface_linux.rs`)
+
+`./deskside-agent install`, sem administrador, tudo na conta do usuário:
+
+| O quê | Onde |
+|---|---|
+| executável e ícone | `~/.local/share/deskside/` |
+| início no login | `~/.config/autostart/deskside.desktop` |
+| entrada no menu | `~/.local/share/applications/deskside.desktop` |
+| configuração e identidade | `~/.config/deskside/` (como antes) |
+
+Depois de copiar, sobe a cópia instalada solta do terminal e explica o login
+automático — sem ligá-lo: é decisão de quem usa o computador. Instalar é
+sempre pedido explícito; dois cliques no executável não instalam.
+
+**Uma instância só**, como no Mac (arquivo trancado em `~/.config/deskside`):
+abrir pelo menu com o agente rodando mostra a notificação "já está rodando".
+
+**No lugar da barra "está controlando"**, uma notificação crítica (não some
+sozinha) com o botão **Desconectar**, que faz o mesmo que o da barra: fecha a
+tela e encerra o login daquele celular. O GNOME com Wayland não deixa fixar
+uma janela por cima de tudo.
+
+**O código de pareamento** chega numa notificação e some quando é usado.
+
+**O ícone ao lado do relógio** (StatusNotifierItem, que o Ubuntu e o KDE
+mostram): estado, código, Desconectar, Desinstalar (pergunta antes, numa
+notificação) e Sair. O GNOME puro (Fedora) não mostra ícones; por isso nada
+essencial depende dele.
+
+`uninstall` pela linha de comando tira o início no login, o menu e o
+executável, mas mantém a identidade (reinstalar não pede pareamento). O
+Desinstalar do ícone apaga também a identidade e a configuração.
 
 ## Limites conhecidos
 
@@ -65,12 +98,14 @@ O GitHub monta o executável a cada push no agente
     uname -m   # x86_64 (Intel e AMD) ou aarch64 (ARM)
     wget https://github.com/Cchaves20/RemoteOne/releases/download/agente-linux/Deskside-linux-$(uname -m).tar.gz
     tar xzf Deskside-linux-$(uname -m).tar.gz
-    cd deskside && ./deskside-agent
+    cd deskside && ./deskside-agent install
+
+Para só testar, sem instalar: `./deskside-agent run`.
 
 Os pacotes são compilados no Debian 12 (glibc 2.36): rodam em sistemas de
 2023 para cá. Num mais antigo, a mensagem é sobre `GLIBC_2.xx`.
 
-O código de pareamento aparece no terminal.
+O código de pareamento aparece numa notificação (e no terminal, com `run`).
 
 Para compilar à mão (Debian 12, Ubuntu 22.04 ou mais novos):
 
@@ -81,7 +116,5 @@ Para compilar à mão (Debian 12, Ubuntu 22.04 ou mais novos):
 
 ## Próximas fases
 
-- **Fase 2:** ícone, janela e barra "está controlando", instalador e início
-  automático, e o login automático explicado na instalação.
 - **Fase 3:** área de transferência, som, energia, programas abertos e
   atualização automática.
