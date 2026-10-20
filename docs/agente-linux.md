@@ -38,11 +38,8 @@ agente regrava a nova em `~/.config/deskside/wayland-ficha` (só o dono lê).
 - **Ficha recusada:** o sistema volta a mostrar a janela. O agente espera 3 s,
   avisa o celular ("o computador está pedindo permissão…") e desiste em 2 min,
   em vez de ficar preso.
-- **Teclado pelo símbolo** (keysym), e não pela posição da tecla. O símbolo
-  só sai se o teclado do computador tiver a tecla: num Ubuntu com teclado
-  inglês (EUA) o "ç" e os acentos sumiam. No GNOME, o que não é ASCII é
-  digitado pelo código Unicode (Ctrl+Shift+U, código, espaço), que funciona em
-  qualquer layout.
+- **Teclado pelo símbolo** (keysym), e não pela posição da tecla: "ç" sai "ç"
+  em qualquer layout.
 - **Uma tela só**, a escolhida na janela de permissão.
 
 ## Limites conhecidos

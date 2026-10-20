@@ -380,34 +380,6 @@ pub(crate) mod keysym {
         }
     }
 
-    /// As teclas que digitam um caractere pelo código Unicode, como o GNOME
-    /// aceita em qualquer layout: Ctrl+Shift+U, o código em hexadecimal e
-    /// espaço para confirmar. `(símbolo, apertada)`, na ordem.
-    ///
-    /// Existe porque mandar o símbolo do "ç" só funciona se o teclado
-    /// configurado no computador tiver um "ç": num Ubuntu com teclado inglês
-    /// (EUA), o compositor não acha tecla nenhuma e descarta o caractere em
-    /// silêncio — e com ele todo acento. Os dígitos hexadecimais e o "u"
-    /// existem em qualquer layout latino.
-    pub fn por_codigo(c: char) -> Vec<(i32, bool)> {
-        let (ctrl, shift, u) = (0xFFE3, 0xFFE1, 'u' as i32);
-        let mut teclas = vec![
-            (ctrl, true),
-            (shift, true),
-            (u, true),
-            (u, false),
-            (shift, false),
-            (ctrl, false),
-        ];
-        for digito in format!("{:x}", c as u32).chars() {
-            teclas.push((digito as i32, true));
-            teclas.push((digito as i32, false));
-        }
-        teclas.push((0x20, true));
-        teclas.push((0x20, false));
-        teclas
-    }
-
     /// O código do botão no evdev do Linux.
     pub fn botao(b: &MouseButton) -> i32 {
         match b {
@@ -426,15 +398,6 @@ mod wayland {
     use crate::input::{InputAction, MediaAction, MouseButton};
     use crate::wayland::Sessao;
     use std::sync::Arc;
-
-    /// A área de trabalho é o GNOME?
-    fn gnome() -> bool {
-        static GNOME: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *GNOME.get_or_init(|| {
-            std::env::var("XDG_CURRENT_DESKTOP")
-                .is_ok_and(|d| d.to_ascii_lowercase().contains("gnome"))
-        })
-    }
 
     #[derive(Default)]
     pub struct Injetor {
@@ -470,21 +433,8 @@ mod wayland {
             s.botao(keysym::botao(b), false);
         }
 
-        /// Digita um texto. O ASCII vai pelo símbolo da tecla; o resto ("ç",
-        /// acentos), no GNOME, pelo código Unicode — ver `keysym::por_codigo`.
-        ///
-        /// Só no GNOME, que é onde o Ctrl+Shift+U existe sempre (vem com o
-        /// IBus). Em outro ambiente o caminho continua sendo o símbolo, que
-        /// funciona quando o teclado do computador tem o caractere.
         fn digitar(s: &Sessao, texto: &str) {
-            let por_codigo = gnome();
             for c in texto.chars() {
-                if por_codigo && !c.is_ascii() {
-                    for (simbolo, apertada) in keysym::por_codigo(c) {
-                        s.tecla(simbolo, apertada);
-                    }
-                    continue;
-                }
                 let simbolo = keysym::do_caractere(c);
                 s.tecla(simbolo, true);
                 s.tecla(simbolo, false);
@@ -590,21 +540,6 @@ mod tests {
     fn quebra_de_linha_vira_enter() {
         assert_eq!(keysym::do_caractere('\n'), 0xFF0D);
         assert_eq!(keysym::especial(&SpecialKey::Enter), 0xFF0D);
-    }
-
-    #[test]
-    fn caractere_pelo_codigo_unicode() {
-        let teclas = keysym::por_codigo('ç');
-        let apertadas: Vec<i32> = teclas.iter().filter(|t| t.1).map(|t| t.0).collect();
-        // Ctrl, Shift, u, depois "e7" e espaço.
-        assert_eq!(apertadas, [0xFFE3, 0xFFE1, 0x75, 0x65, 0x37, 0x20]);
-        // Tudo o que é apertado é solto.
-        assert_eq!(teclas.iter().filter(|t| !t.1).count(), apertadas.len());
-        // Os modificadores são soltos antes do código: com Ctrl ainda
-        // apertado, o "e" viraria Ctrl+E.
-        let solta_ctrl = teclas.iter().position(|t| *t == (0xFFE3, false)).unwrap();
-        let primeiro_digito = teclas.iter().position(|t| *t == (0x65, true)).unwrap();
-        assert!(solta_ctrl < primeiro_digito);
     }
 
     #[test]
