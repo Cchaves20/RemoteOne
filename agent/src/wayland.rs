@@ -106,7 +106,7 @@ fn gravar_ficha(ficha: &str) {
 
 static AVISO: Mutex<Option<String>> = Mutex::new(None);
 
-fn avisar(texto: &str) {
+pub(crate) fn avisar(texto: &str) {
     if let Ok(mut a) = AVISO.lock() {
         *a = Some(texto.to_string());
     }

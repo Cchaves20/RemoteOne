@@ -405,6 +405,22 @@ mod wayland {
         /// conexão cair no meio de um arrasto não pode deixar o botão preso.
         segurados: std::collections::HashSet<MouseButton>,
         avisou: bool,
+        /// Já disse ao celular que o teclado do computador não tem acentos.
+        avisou_teclado: bool,
+    }
+
+    /// O recado ao celular quando o layout do computador não faz um caractere.
+    fn aviso_de_teclado(layout: &str) -> String {
+        let nome = match layout {
+            "us" => "Inglês (EUA)",
+            "gb" => "Inglês (Reino Unido)",
+            outro => outro,
+        };
+        format!(
+            "O teclado deste computador está como \"{nome}\", que não tem acentos nem \
+             \"ç\": eles não chegam. No computador, em Configurações › Teclado, \
+             adicione \"Português (Brasil)\" e deixe-o em primeiro."
+        )
     }
 
     impl Injetor {
@@ -433,11 +449,38 @@ mod wayland {
             s.botao(keysym::botao(b), false);
         }
 
-        fn digitar(s: &Sessao, texto: &str) {
+        /// Digita um texto com as teclas que o layout do computador tem: a
+        /// tecla própria, ou acento + letra (ver `teclado_linux`).
+        ///
+        /// O que o layout não alcança fica de fora — o compositor descartaria
+        /// de qualquer jeito —, e o celular é avisado uma vez por conexão,
+        /// dizendo o que fazer.
+        fn digitar(&mut self, s: &Sessao, texto: &str) {
+            use crate::teclado_linux::Plano;
+            let teclado = crate::teclado_linux::atual();
             for c in texto.chars() {
-                let simbolo = keysym::do_caractere(c);
-                s.tecla(simbolo, true);
-                s.tecla(simbolo, false);
+                match teclado.plano(c) {
+                    Plano::Direto(simbolo) => {
+                        s.tecla(simbolo as i32, true);
+                        s.tecla(simbolo as i32, false);
+                    }
+                    Plano::Morto { acento, base } => {
+                        s.tecla(acento as i32, true);
+                        s.tecla(acento as i32, false);
+                        s.tecla(base as i32, true);
+                        s.tecla(base as i32, false);
+                    }
+                    Plano::Impossivel => {
+                        if !self.avisou_teclado {
+                            self.avisou_teclado = true;
+                            crate::diario(&format!(
+                                "Wayland: \"{c}\" não existe no teclado {}",
+                                teclado.nome
+                            ));
+                            crate::wayland::avisar(&aviso_de_teclado(&teclado.nome));
+                        }
+                    }
+                }
             }
         }
     }
@@ -465,7 +508,7 @@ mod wayland {
                 }
                 // O mesmo sentido do `enigo`: o app manda positivo para cima.
                 InputAction::MouseScroll { dy } => s.rolar(-*dy),
-                InputAction::KeyText { text } => Self::digitar(&s, text),
+                InputAction::KeyText { text } => self.digitar(&s, text),
                 InputAction::KeyPress { key } => {
                     let simbolo = keysym::especial(key);
                     s.tecla(simbolo, true);
@@ -488,7 +531,7 @@ mod wayland {
                         s.tecla(0xFF08, true);
                         s.tecla(0xFF08, false);
                     }
-                    Self::digitar(&s, text);
+                    self.digitar(&s, text);
                 }
             }
             Ok(())

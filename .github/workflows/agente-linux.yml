@@ -42,7 +42,8 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             build-essential curl ca-certificates git pkg-config clang libclang-dev \
             libpipewire-0.3-dev libwayland-dev libgbm-dev libegl-dev libxcb1-dev \
-            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libssl-dev
+            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libssl-dev \
+            libxkbcommon-dev xkb-data
 
       - uses: actions/checkout@v4
 

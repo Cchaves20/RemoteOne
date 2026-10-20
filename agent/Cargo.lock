@@ -1318,11 +1318,13 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tray-icon",
+ "unicode-normalization",
  "unsafe-libopus",
  "uuid",
  "webrtc",
  "winresource",
  "xcap",
+ "xkbcommon 0.8.0",
  "zbus",
 ]
 
@@ -1677,7 +1679,7 @@ dependencies = [
  "objc2 0.5.2",
  "windows 0.56.0",
  "x11rb",
- "xkbcommon",
+ "xkbcommon 0.7.0",
  "xkeysym",
 ]
 
@@ -6051,6 +6053,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
+name = "unicode-normalization"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
+dependencies = [
+ "tinyvec",
+]
+
+[[package]]
 name = "unicode-segmentation"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7264,6 +7275,16 @@ checksum = "13867d259930edc7091a6c41b4ce6eee464328c6ff9659b7e4c668ca20d4c91e"
 dependencies = [
  "libc",
  "memmap2 0.8.0",
+ "xkeysym",
+]
+
+[[package]]
+name = "xkbcommon"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d66ca9352cbd4eecbbc40871d8a11b4ac8107cfc528a6e14d7c19c69d0e1ac9"
+dependencies = [
+ "libc",
  "xkeysym",
 ]
 

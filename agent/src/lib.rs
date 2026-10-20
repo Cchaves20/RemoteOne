@@ -46,6 +46,8 @@ pub mod sem_janela;
 pub mod setup;
 pub mod system_info;
 #[cfg(target_os = "linux")]
+pub mod teclado_linux;
+#[cfg(target_os = "linux")]
 pub mod wayland;
 pub mod webrtc;
 

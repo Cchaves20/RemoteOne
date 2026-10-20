@@ -174,3 +174,7 @@ xcap = "0.9"
 enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 zbus = { version = "5.17", default-features = false, features = ["blocking-api", "async-io"] }
 pipewire = "0.10"
+# O layout do teclado do computador (ver `teclado_linux.rs`): para saber com
+# que teclas sai cada caractere — tecla própria, ou acento + letra.
+xkbcommon = { version = "0.8", default-features = false }
+unicode-normalization = "0.1"
