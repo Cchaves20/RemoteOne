@@ -532,6 +532,13 @@ pub async fn run(
                     .lock()
                     .map(|mut e| std::mem::take(&mut e.encerrar_controle))
                     .unwrap_or(false);
+                // O Wayland avisando que o sistema pede permissão na tela do
+                // computador: sem isto, o celular veria só a tela preta.
+                #[cfg(target_os = "linux")]
+                if let Some(mensagem) = crate::wayland::tomar_aviso() {
+                    let msg = serde_json::to_string(&ClientMessage::AvisoDaTela { mensagem })?;
+                    ws.send(Message::Text(msg)).await?;
+                }
                 if pedido {
                     crate::diario("controle encerrado pelo Desconectar da barra");
                     let msg = serde_json::to_string(&ClientMessage::EncerrarControle)?;

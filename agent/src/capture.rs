@@ -4,9 +4,11 @@
 //! interface nos dois, e o código abaixo serve aos dois sem mudança. No Mac ela
 //! só entrega a tela depois de a pessoa liberar "Gravação de Tela" (ver
 //! `permissoes_mac.rs`); antes disso, os quadros vêm só com o papel de parede.
-//! No Linux um stub gera um frame sintético, o que permite validar todo o
-//! pipeline (agente → backend → app) sem uma sessão gráfica. A codificação
-//! JPEG é compartilhada e testável em qualquer plataforma.
+//! No Linux são três caminhos, escolhidos ao rodar: o Wayland pelo portal do
+//! sistema (ver `wayland.rs`), o X11 pelo mesmo `xcap`, e, sem sessão gráfica
+//! nenhuma (servidor, CI), um frame sintético — que permite validar todo o
+//! pipeline (agente → backend → app). A codificação JPEG é compartilhada e
+//! testável em qualquer plataforma.
 //!
 //! ## A ordem das duas operações
 //!
@@ -181,6 +183,40 @@ pub struct MonitorInfo {
 /// escolhido quando ninguém escolheu.
 #[cfg(any(windows, target_os = "macos"))]
 pub fn monitors() -> Vec<MonitorInfo> {
+    monitores_xcap()
+}
+
+/// No Linux, conforme a sessão gráfica.
+///
+/// No Wayland a lista é uma tela só: a que foi liberada na janela de
+/// permissão. O sistema não diz quais outras existem, e escolher outra exigiria
+/// pedir permissão de novo.
+#[cfg(target_os = "linux")]
+pub fn monitors() -> Vec<MonitorInfo> {
+    if crate::wayland::ativo() {
+        let (width, height) = crate::wayland::ultimo_tamanho().unwrap_or((0, 0));
+        return vec![MonitorInfo {
+            id: 0,
+            name: "Tela liberada no computador".to_string(),
+            width,
+            height,
+            primary: true,
+        }];
+    }
+    if x11() {
+        return monitores_xcap();
+    }
+    monitores_sinteticos()
+}
+
+/// Sessão X11 (e não Wayland) disponível?
+#[cfg(target_os = "linux")]
+fn x11() -> bool {
+    !crate::wayland::ativo() && std::env::var_os("DISPLAY").is_some()
+}
+
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+fn monitores_xcap() -> Vec<MonitorInfo> {
     let todos = match xcap::Monitor::all() {
         Ok(lista) => lista,
         Err(e) => {
@@ -212,7 +248,7 @@ pub fn monitors() -> Vec<MonitorInfo> {
 
 /// Stub: uma tela sintética só, do mesmo tamanho que o gerador produz.
 #[cfg(not(any(windows, target_os = "macos")))]
-pub fn monitors() -> Vec<MonitorInfo> {
+fn monitores_sinteticos() -> Vec<MonitorInfo> {
     vec![MonitorInfo {
         id: 0,
         name: "Tela sintética".to_string(),
@@ -227,7 +263,7 @@ pub fn monitors() -> Vec<MonitorInfo> {
 /// Sumir é normal: um monitor pode ser desligado com a sessão aberta. Cair no
 /// principal é melhor do que devolver erro — a tela continua chegando, e a
 /// pessoa vê que mudou.
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 fn pick_monitor(id: Option<u32>) -> Result<xcap::Monitor, String> {
     let todos = xcap::Monitor::all().map_err(|e| e.to_string())?;
     if let Some(alvo) = id {
@@ -325,19 +361,69 @@ struct ContinuousCapture {
     /// Vive aqui para reaproveitar os buffers internos entre os quadros.
     scaler: Scaler,
     #[cfg(not(any(windows, target_os = "macos")))]
-    screen: Screen,
+    fonte: FonteLinux,
+}
+
+/// De onde vêm os quadros no Linux.
+#[cfg(not(any(windows, target_os = "macos")))]
+enum FonteLinux {
+    Wayland(crate::wayland::Captura),
+    X11 {
+        recorder: xcap::VideoRecorder,
+        frames: std::sync::mpsc::Receiver<xcap::Frame>,
+    },
+    /// Sem sessão gráfica: o gradiente de teste.
+    Sintetica(Screen),
+}
+
+/// Abre a captura contínua do `xcap` no monitor pedido (Windows, Mac e X11).
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+fn abrir_gravador(
+    monitor: Option<u32>,
+) -> Result<(xcap::VideoRecorder, std::sync::mpsc::Receiver<xcap::Frame>), String> {
+    let monitor = pick_monitor(monitor)?;
+    let (recorder, frames) = monitor
+        .video_recorder()
+        .map_err(|e| format!("não consegui abrir a captura contínua: {e}"))?;
+    recorder
+        .start()
+        .map_err(|e| format!("não consegui iniciar a captura: {e}"))?;
+    Ok((recorder, frames))
+}
+
+/// O quadro mais recente do gravador, ou `None` se nada chegou no prazo.
+///
+/// O canal do gravador é ilimitado e o WGC entrega no ritmo do monitor, mais
+/// rápido do que se consegue reduzir e codificar. Sem esvaziar a fila, cada
+/// volta processa o quadro **mais antigo** e o atraso cresce sem limite —
+/// reduzir todos seria gastar CPU para exibir imagem velha. O que vale é
+/// sempre o último.
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+fn ultimo_do_gravador(
+    frames: &std::sync::mpsc::Receiver<xcap::Frame>,
+    timeout: std::time::Duration,
+) -> Result<Option<xcap::Frame>, String> {
+    use std::sync::mpsc::RecvTimeoutError;
+    let mut frame = match frames.recv_timeout(timeout) {
+        Ok(frame) => frame,
+        Err(RecvTimeoutError::Timeout) => return Ok(None),
+        Err(RecvTimeoutError::Disconnected) => {
+            return Err("a captura contínua foi encerrada".to_string())
+        }
+    };
+    // Fila vazia, ou o gravador acabou: em ambos os casos o quadro em mãos é o
+    // mais recente que existe. Se foi encerrado, a próxima chamada devolve o
+    // erro.
+    while let Ok(newer) = frames.try_recv() {
+        frame = newer;
+    }
+    Ok(Some(frame))
 }
 
 impl ContinuousCapture {
     #[cfg(any(windows, target_os = "macos"))]
     fn start(monitor: Option<u32>, interval: std::time::Duration) -> Result<Self, String> {
-        let monitor = pick_monitor(monitor)?;
-        let (recorder, frames) = monitor
-            .video_recorder()
-            .map_err(|e| format!("não consegui abrir a captura contínua: {e}"))?;
-        recorder
-            .start()
-            .map_err(|e| format!("não consegui iniciar a captura: {e}"))?;
+        let (recorder, frames) = abrir_gravador(monitor)?;
         Ok(Self {
             recorder,
             frames,
@@ -350,36 +436,35 @@ impl ContinuousCapture {
 
     #[cfg(not(any(windows, target_os = "macos")))]
     fn start(monitor: Option<u32>, interval: std::time::Duration) -> Result<Self, String> {
+        // O mesmo prazo generoso do Windows e do Mac: tela parada não entrega
+        // quadro, e isso é normal.
+        let generoso = (interval * 20).max(std::time::Duration::from_millis(500));
+        let (fonte, timeout) = if crate::wayland::ativo() {
+            // Não bloqueia: na primeira vez a abertura espera alguém aprovar a
+            // janela, e quem chama é o laço que mantém o computador conectado.
+            (
+                FonteLinux::Wayland(crate::wayland::Captura::iniciar()),
+                generoso,
+            )
+        } else if x11() {
+            let (recorder, frames) = abrir_gravador(monitor)?;
+            (FonteLinux::X11 { recorder, frames }, generoso)
+        } else {
+            (FonteLinux::Sintetica(Screen::new(monitor)?), interval)
+        };
         Ok(Self {
-            timeout: interval,
+            timeout,
             scaler: Scaler::new(),
-            screen: Screen::new(monitor)?,
+            fonte,
         })
     }
 
     /// Próximo quadro já reduzido, ou `None` se nada chegou no prazo.
     #[cfg(any(windows, target_os = "macos"))]
     fn next_frame(&mut self, max_width: u32) -> Result<Option<CapturedFrame>, String> {
-        use std::sync::mpsc::RecvTimeoutError;
-        let mut frame = match self.frames.recv_timeout(self.timeout) {
-            Ok(frame) => frame,
-            Err(RecvTimeoutError::Timeout) => return Ok(None),
-            Err(RecvTimeoutError::Disconnected) => {
-                return Err("a captura contínua foi encerrada".to_string())
-            }
+        let Some(frame) = ultimo_do_gravador(&self.frames, self.timeout)? else {
+            return Ok(None);
         };
-        // O canal do gravador é ilimitado e o WGC entrega no ritmo do monitor,
-        // mais rápido do que se consegue reduzir e codificar. Sem esvaziar a
-        // fila, cada volta processa o quadro **mais antigo** e o atraso cresce
-        // sem limite — reduzir todos seria gastar CPU para exibir imagem velha.
-        // O que vale é sempre o último.
-        //
-        // Fila vazia, ou o gravador acabou: em ambos os casos o quadro em mãos
-        // é o mais recente que existe. Se foi encerrado, a próxima chamada
-        // devolve o erro.
-        while let Ok(newer) = self.frames.try_recv() {
-            frame = newer;
-        }
         // `raw` já vem em RGBA: o xcap converte de BGRA antes de entregar.
         Ok(Some(self.scaler.scale(
             frame.raw,
@@ -391,10 +476,45 @@ impl ContinuousCapture {
 
     #[cfg(not(any(windows, target_os = "macos")))]
     fn next_frame(&mut self, max_width: u32) -> Result<Option<CapturedFrame>, String> {
-        // O stub é síncrono: gera na hora e respeita o ritmo pedido.
-        let frame = self.screen.frame(&mut self.scaler, max_width)?;
-        std::thread::sleep(self.timeout);
-        Ok(Some(frame))
+        match &mut self.fonte {
+            FonteLinux::Wayland(captura) => {
+                let Some(q) = captura.proximo(self.timeout)? else {
+                    return Ok(None);
+                };
+                Ok(Some(
+                    self.scaler.scale(q.rgba, q.largura, q.altura, max_width)?,
+                ))
+            }
+            FonteLinux::X11 { frames, .. } => {
+                let Some(frame) = ultimo_do_gravador(frames, self.timeout)? else {
+                    return Ok(None);
+                };
+                Ok(Some(self.scaler.scale(
+                    frame.raw,
+                    frame.width,
+                    frame.height,
+                    max_width,
+                )?))
+            }
+            FonteLinux::Sintetica(screen) => {
+                // O sintético é síncrono: gera na hora e respeita o ritmo
+                // pedido.
+                let frame = screen.frame(&mut self.scaler, max_width)?;
+                std::thread::sleep(self.timeout);
+                Ok(Some(frame))
+            }
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+impl Drop for ContinuousCapture {
+    fn drop(&mut self) {
+        if let FonteLinux::X11 { recorder, .. } = &self.fonte {
+            if let Err(e) = recorder.stop() {
+                eprintln!("Falha ao encerrar a captura: {e}");
+            }
+        }
     }
 }
 

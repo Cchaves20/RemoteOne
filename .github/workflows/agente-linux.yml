@@ -1,0 +1,95 @@
+# O agente no Linux: testes e o executável para testar (fase 1).
+#
+# Roda a cada push que mexe no agente, em qualquer ramo. Publica no
+# pré-lançamento "agente-linux" do GitHub (sempre o mesmo, substituído a cada
+# build) um .tar.gz com o executável. Ainda não há instalador nem início
+# automático: roda-se no terminal. Ver docs/agente-linux.md.
+#
+# Ubuntu 24.04 e não o mais novo: o executável roda em sistemas iguais ou mais
+# novos que o da máquina que compilou (por causa da glibc), e o 24.04 é o mais
+# antigo com o PipeWire que a biblioteca pede.
+name: Agente no Linux
+
+on:
+  push:
+    paths:
+      - "agent/**"
+      - ".github/workflows/agente-linux.yml"
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    permissions:
+      # Para criar o pré-lançamento com o arquivo.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bibliotecas de compilação
+        run: |
+          sudo apt-get update -qq
+          # PipeWire (a tela no Wayland), clang (o PipeWire em Rust gera a
+          # ligação com o C na compilação), e o que o xcap pede para o X11.
+          sudo apt-get install -y -qq libpipewire-0.3-dev libclang-dev clang \
+            pkg-config libwayland-dev libgbm-dev libegl-dev libxcb1-dev \
+            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+
+      - name: Testes
+        working-directory: agent
+        run: cargo test
+
+      - name: Montar o pacote
+        working-directory: agent
+        run: |
+          set -eu
+          cargo build --release --bin deskside-agent
+          PASTA=target/linux/deskside
+          rm -rf target/linux && mkdir -p "$PASTA"
+          cp target/release/deskside-agent "$PASTA/"
+          cat > "$PASTA/LEIA-ME.txt" <<'TEXTO'
+          Deskside para Linux (teste, fase 1)
+
+          Para rodar, num terminal, nesta pasta:
+
+              ./deskside-agent
+
+          O código de pareamento aparece no terminal: digite-o no app.
+
+          Com Wayland (Ubuntu, Fedora), na primeira vez o sistema pede
+          permissão para compartilhar a tela e o controle. Aprove: depois ele
+          lembra, e o celular entra sem perguntar de novo.
+
+          Para parar, Ctrl+C no terminal.
+          TEXTO
+          sed -i 's/^          //' "$PASTA/LEIA-ME.txt"
+          tar -C target/linux -czf target/linux/Deskside-linux-x86_64.tar.gz deskside
+          ( cd target/linux && sha256sum Deskside-linux-x86_64.tar.gz > Deskside-linux-x86_64.tar.gz.sha256 )
+          ls -la target/linux
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Deskside-linux
+          path: |
+            agent/target/linux/Deskside-linux-x86_64.tar.gz
+            agent/target/linux/Deskside-linux-x86_64.tar.gz.sha256
+          retention-days: 30
+
+      - name: Publicar no pré-lançamento "agente-linux"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd agent/target/linux
+          NOTAS=$(printf 'Agente do Deskside para Linux, do commit %s (ramo %s).\n\nFase 1: tela, mouse e teclado (Wayland e X11). Baixe o .tar.gz, descompacte e rode ./deskside-agent no terminal. Ver docs/agente-linux.md no repositório.' "$GITHUB_SHA" "$GITHUB_REF_NAME")
+          gh release delete agente-linux --yes --cleanup-tag 2>/dev/null || true
+          gh release create agente-linux \
+            Deskside-linux-x86_64.tar.gz Deskside-linux-x86_64.tar.gz.sha256 \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "Deskside para Linux (teste)" --notes "$NOTAS"

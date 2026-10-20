@@ -57,6 +57,12 @@ pub enum ClientMessage {
     /// O servidor fecha a tela de quem está vendo e encerra o login daquele
     /// aparelho — ver `barra.rs`.
     EncerrarControle,
+    /// Um recado para quem está com a tela aberta — hoje, o Linux com Wayland
+    /// dizendo que o sistema está pedindo permissão na tela do computador.
+    /// O servidor repassa ao app, que mostra o texto como está.
+    AvisoDaTela {
+        mensagem: String,
+    },
     /// Resposta a um `list_apps`: a lista pedida, com o mesmo `request_id`
     /// para o backend casar com quem está esperando.
     AppList {

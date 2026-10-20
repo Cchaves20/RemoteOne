@@ -27,6 +27,7 @@ from app.protocol import (
     Ack,
     AppList,
     AutomationResult,
+    AvisoDaTela,
     BrightnessState,
     Clipboard,
     ClipboardChanged,
@@ -511,6 +512,10 @@ async def agent_ws(websocket: WebSocket) -> None:
                     )
                     continue
                 await controle.encerrar(device_id)
+            elif isinstance(message, AvisoDaTela):
+                viewers.notify(
+                    device_id, {"type": "aviso_da_tela", "mensagem": message.mensagem}
+                )
             elif isinstance(message, AppList):
                 # Resposta a um pedido de lista de aplicativos: entrega a quem
                 # está esperando (o endpoint HTTP que fez a pergunta).

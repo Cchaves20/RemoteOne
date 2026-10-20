@@ -159,3 +159,18 @@ unsafe-libopus = "0.2"
 # publicar o suporte.
 [patch.crates-io]
 webrtc-ice = { path = "vendor/webrtc-ice" }
+
+# O Linux (ver `docs/agente-linux.md`). Dois caminhos, escolhidos ao rodar:
+#
+# - **Wayland** (Ubuntu e Fedora novos): tela e controle pelo portal do sistema
+#   (`zbus`), que pede permissão uma vez e devolve uma ficha para as próximas, e
+#   os quadros pelo PipeWire. São as mesmas versões que o `xcap` já traz.
+# - **X11**: as mesmas bibliotecas do Windows e do Mac. O `enigo` vai pelo
+#   `x11rb`, Rust puro, em vez do `libxdo` de C.
+#
+# Sem nenhum dos dois (servidor, CI) continua o quadro sintético.
+[target.'cfg(target_os = "linux")'.dependencies]
+xcap = "0.9"
+enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
+zbus = { version = "5.17", default-features = false, features = ["blocking-api", "async-io"] }
+pipewire = "0.10"

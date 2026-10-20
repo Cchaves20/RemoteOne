@@ -309,6 +309,16 @@ class _RemoteScreenState extends State<RemoteScreen>
     } catch (_) {
       return;
     }
+    // Recado do computador (hoje, o Linux pedindo permissão na tela dele).
+    if (message['type'] == 'aviso_da_tela') {
+      final aviso = (message['mensagem'] as String?) ?? '';
+      if (aviso.isEmpty || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 8),
+        content: Text(aviso),
+      ));
+      return;
+    }
     if (message['type'] != 'clipboard') return;
     final texto = (message['text'] as String?) ?? '';
     if (texto.isEmpty) return;

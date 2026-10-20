@@ -515,6 +515,11 @@ fn main() {
         })
         .expect("não consegui criar a thread do agente");
 
+    // Linux com Wayland: na primeira vez, a permissão de tela e controle é
+    // pedida já, enquanto há alguém diante do computador (quem abriu o agente).
+    #[cfg(target_os = "linux")]
+    deskside_agent::wayland::preparar();
+
     // Daqui não se volta: a interface fica com a thread principal até alguém
     // escolher Sair no ícone ao lado do relógio.
     deskside_agent::gui::rodar(estado);

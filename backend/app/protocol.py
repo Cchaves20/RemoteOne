@@ -388,11 +388,24 @@ class EncerrarControle(BaseModel):
     type: Literal["encerrar_controle"] = "encerrar_controle"
 
 
+class AvisoDaTela(BaseModel):
+    """Um recado do agente para quem está com a tela aberta.
+
+    Hoje é o Linux com Wayland dizendo que o sistema está pedindo permissão na
+    tela do computador — sem ele, o app veria só a tela preta e ninguém saberia
+    por quê. Vai ao app como está.
+    """
+
+    type: Literal["aviso_da_tela"] = "aviso_da_tela"
+    mensagem: str = Field(max_length=500)
+
+
 ClientMessage = Annotated[
     Hello
     | Heartbeat
     | Unpair
     | EncerrarControle
+    | AvisoDaTela
     | AppList
     | MonitorList
     | SystemStats

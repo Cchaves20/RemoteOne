@@ -45,6 +45,8 @@ pub mod salvar;
 pub mod sem_janela;
 pub mod setup;
 pub mod system_info;
+#[cfg(target_os = "linux")]
+pub mod wayland;
 pub mod webrtc;
 
 use std::path::PathBuf;

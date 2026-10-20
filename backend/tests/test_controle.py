@@ -216,3 +216,21 @@ def test_agente_sem_segredo_nao_derruba_ninguem(monkeypatch):
         agente.send_json({"type": "encerrar_controle"})
         assert "segredo" in _ate(agente, "error")["message"]
     assert chamados == []
+
+
+def test_aviso_da_tela_chega_a_quem_esta_vendo():
+    """O Linux avisando que pede permissão na tela: sem isto, o app veria só a
+    tela preta."""
+    segredo = _parear("ctl8@example.com", "dev-ctl-8")
+    token = _entrar("ctl8@example.com", "iPhone")
+    tela = _tela_falsa("dev-ctl-8", token)
+    try:
+        with client.websocket_connect("/ws/agent") as agente:
+            agente.send_json(_hello("dev-ctl-8", segredo))
+            _ate(agente, "paired")
+            agente.send_json({"type": "aviso_da_tela", "mensagem": "Aprove na tela."})
+            agente.send_json({"type": "heartbeat"})
+            _ate(agente, "ack")
+    finally:
+        viewers.remove("dev-ctl-8", tela)
+    assert {"type": "aviso_da_tela", "mensagem": "Aprove na tela."} in list(tela._signals)
