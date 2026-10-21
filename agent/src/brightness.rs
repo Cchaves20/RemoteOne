@@ -225,13 +225,14 @@ mod imp {
 
 #[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
+    const NAO_HA: &str = "o ajuste de brilho não está disponível no Linux";
+
     pub fn ler() -> Result<u8, String> {
-        Err("ajuste de brilho só no Windows".to_string())
+        Err(NAO_HA.to_string())
     }
 
-    pub fn definir(nivel: u8) -> Result<(), String> {
-        println!("[brightness-stub] poria o brilho em {nivel}%");
-        Err("ajuste de brilho só no Windows".to_string())
+    pub fn definir(_nivel: u8) -> Result<(), String> {
+        Err(NAO_HA.to_string())
     }
 }
 
@@ -278,6 +279,6 @@ mod tests {
     fn fora_do_windows_falha_com_explicacao() {
         // Falhar é o certo aqui; o que não pode é falhar em silêncio.
         let erro = ajustar(Some(50), None).unwrap_err();
-        assert!(erro.contains("Windows"), "{erro}");
+        assert!(erro.contains("não está disponível"), "{erro}");
     }
 }

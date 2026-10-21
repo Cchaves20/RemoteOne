@@ -81,6 +81,25 @@ essencial depende dele.
 executável, mas mantém a identidade (reinstalar não pede pareamento). O
 Desinstalar do ícone apaga também a identidade e a configuração.
 
+## Energia (`power.rs`, `awake.rs`)
+
+- **Desligar, reiniciar e suspender** pelo `logind`, o mesmo pedido do menu
+  do GNOME. Sem senha para quem está na sessão; com outra pessoa conectada ao
+  computador, o sistema pede a senha de administrador na tela dele.
+- **Manter pronto**: uma trava `sleep` no `logind` e um pedido à sessão do
+  GNOME (que decide sozinho suspender depois de um tempo parado). Fora do
+  GNOME, só a trava do `logind`.
+- Tomada ou bateria por `/sys/class/power_supply`, ignorando pilhas de mouse e
+  fone. Máquina virtual não expõe nada e conta como tomada.
+
+## O que ainda não existe no Linux
+
+Responde ao celular que não dá, em vez de fingir que fez: área de
+transferência, abrir e fechar programas, brilho e modo apresentação. Recusas
+(um "desligar" que pediu senha, por exemplo) chegam ao celular numa faixa no
+rodapé da tela remota (`aviso.rs`) — só com a tela aberta; sem ela, ficam no
+diário.
+
 ## Limites conhecidos
 
 - **Antes do login não funciona**: é regra do Wayland. Para o computador ficar
@@ -116,5 +135,5 @@ Para compilar à mão (Debian 12, Ubuntu 22.04 ou mais novos):
 
 ## Próximas fases
 
-- **Fase 3:** área de transferência, som, energia, programas abertos e
-  atualização automática.
+- **Fase 3:** área de transferência, som, programas e atualização
+  automática (energia já entrou).

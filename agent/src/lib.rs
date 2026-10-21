@@ -11,6 +11,7 @@ pub mod apresentacao;
 pub mod agenda;
 pub mod audio;
 pub mod automacao;
+pub mod aviso;
 pub mod awake;
 pub mod barra;
 pub mod brightness;

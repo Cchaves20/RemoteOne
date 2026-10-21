@@ -47,7 +47,7 @@ pub fn should_hold(enabled: bool, source: PowerSource) -> bool {
     enabled && source != PowerSource::Battery
 }
 
-/// De onde vem a energia agora (stub fora do Windows).
+/// De onde vem a energia agora.
 pub fn power_source() -> PowerSource {
     imp::power_source()
 }
@@ -328,13 +328,136 @@ fn bateria_do_pmset(saida: &str) -> Option<u8> {
     numero.parse::<u8>().ok().filter(|p| *p <= 100)
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+/// No Linux, dois pedidos, porque há dois donos do "dormir":
+///
+/// - o `logind` (systemd), que executa a suspensão: uma trava `sleep` faz ele
+///   recusar o pedido de suspender. É um descritor de arquivo; fechá-lo solta.
+/// - a sessão do GNOME, que decide suspender depois de um tempo parado e não
+///   olha só para o `logind`. O pedido vale enquanto a conexão que o fez
+///   estiver aberta, por isso ela fica guardada junto. Fora do GNOME (KDE e
+///   outros) ele falha calado, e a trava do `logind` basta.
+///
+/// Com `tela`, as duas travas pedem também que a tela não apague.
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::PowerSource;
+    use std::cell::RefCell;
+    use zbus::blocking::Connection;
+    use zbus::zvariant::OwnedFd;
+
+    struct Pedido {
+        _logind: Option<OwnedFd>,
+        gnome: Option<(Connection, u32)>,
+    }
+
+    impl Drop for Pedido {
+        fn drop(&mut self) {
+            if let Some((conexao, cookie)) = self.gnome.take() {
+                let _ = conexao.call_method(
+                    Some("org.gnome.SessionManager"),
+                    "/org/gnome/SessionManager",
+                    Some("org.gnome.SessionManager"),
+                    "Uninhibit",
+                    &(cookie,),
+                );
+            }
+        }
+    }
+
+    thread_local! {
+        static PEDIDO: RefCell<Option<Pedido>> = const { RefCell::new(None) };
+    }
+
+    const MOTIVO: &str = "Mantendo o computador pronto para o acesso pelo celular";
+
+    fn trava_do_logind(tela: bool) -> Result<OwnedFd, String> {
+        let conexao = Connection::system().map_err(|e| e.to_string())?;
+        let o_que = if tela { "sleep:idle" } else { "sleep" };
+        let resposta = conexao
+            .call_method(
+                Some("org.freedesktop.login1"),
+                "/org/freedesktop/login1",
+                Some("org.freedesktop.login1.Manager"),
+                "Inhibit",
+                &(o_que, "Deskside", MOTIVO, "block"),
+            )
+            .map_err(|e| e.to_string())?;
+        resposta.body().deserialize::<OwnedFd>().map_err(|e| e.to_string())
+    }
+
+    fn pedido_ao_gnome(tela: bool) -> Result<(Connection, u32), String> {
+        // Os bits do GNOME: 4 = suspender, 8 = ficar ocioso (apagar a tela).
+        let bits: u32 = if tela { 4 | 8 } else { 4 };
+        let conexao = Connection::session().map_err(|e| e.to_string())?;
+        let resposta = conexao
+            .call_method(
+                Some("org.gnome.SessionManager"),
+                "/org/gnome/SessionManager",
+                Some("org.gnome.SessionManager"),
+                "Inhibit",
+                &("deskside", 0u32, MOTIVO, bits),
+            )
+            .map_err(|e| e.to_string())?;
+        let cookie: u32 = resposta.body().deserialize().map_err(|e| e.to_string())?;
+        Ok((conexao, cookie))
+    }
+
+    pub fn set(hold: bool, tela: bool) {
+        PEDIDO.with(|pedido| {
+            let mut pedido = pedido.borrow_mut();
+            if hold && pedido.is_none() {
+                let logind = trava_do_logind(tela)
+                    .map_err(|e| crate::diario(&format!("logind não segurou o computador: {e}")))
+                    .ok();
+                let gnome = pedido_ao_gnome(tela).ok();
+                *pedido = Some(Pedido {
+                    _logind: logind,
+                    gnome,
+                });
+            } else if !hold {
+                // Soltar é largar o pedido: fecha o descritor e avisa o GNOME.
+                *pedido = None;
+            }
+        });
+    }
+
+    fn fontes() -> Vec<super::Fonte> {
+        let Ok(pastas) = std::fs::read_dir("/sys/class/power_supply") else {
+            return Vec::new();
+        };
+        pastas
+            .flatten()
+            .map(|p| {
+                let ler = |nome: &str| {
+                    std::fs::read_to_string(p.path().join(nome))
+                        .map(|s| s.trim().to_string())
+                        .unwrap_or_default()
+                };
+                super::Fonte {
+                    tipo: ler("type"),
+                    online: ler("online"),
+                    escopo: ler("scope"),
+                    status: ler("status"),
+                    carga: ler("capacity"),
+                }
+            })
+            .collect()
+    }
+
+    pub fn power_source() -> PowerSource {
+        super::fonte_do_sysfs(&fontes())
+    }
+
+    pub fn battery_percent() -> Option<u8> {
+        super::bateria_do_sysfs(&fontes())
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod imp {
     use super::PowerSource;
 
-    pub fn set(hold: bool, tela: bool) {
-        println!("[awake-stub] manter acordado = {hold} (tela: {tela})");
-    }
+    pub fn set(_hold: bool, _tela: bool) {}
 
     pub fn power_source() -> PowerSource {
         PowerSource::Unknown
@@ -345,9 +468,85 @@ mod imp {
     }
 }
 
+/// Uma fonte de energia como o Linux a mostra em `/sys/class/power_supply`:
+/// cada arquivo da pasta vira um campo, vazio quando não existe.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+struct Fonte {
+    /// `Mains` (tomada), `Battery`, `USB`...
+    tipo: String,
+    /// `1` com a tomada ligada.
+    online: String,
+    /// `Device` nas baterias de mouse e fone, que não alimentam o computador.
+    escopo: String,
+    /// `Charging`, `Discharging`, `Full`...
+    status: String,
+    carga: String,
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn baterias_do_computador(fontes: &[Fonte]) -> impl Iterator<Item = &Fonte> {
+    fontes
+        .iter()
+        .filter(|f| f.tipo == "Battery" && f.escopo != "Device")
+}
+
+/// Na tomada se alguma fonte de tomada está ligada; na bateria se há bateria
+/// do computador descarregando; senão não dá para saber (máquina virtual,
+/// computador de mesa sem nada exposto).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn fonte_do_sysfs(fontes: &[Fonte]) -> PowerSource {
+    if fontes
+        .iter()
+        .any(|f| matches!(f.tipo.as_str(), "Mains" | "USB") && f.online == "1")
+    {
+        PowerSource::Ac
+    } else if baterias_do_computador(fontes).any(|f| f.status == "Discharging") {
+        PowerSource::Battery
+    } else {
+        PowerSource::Unknown
+    }
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn bateria_do_sysfs(fontes: &[Fonte]) -> Option<u8> {
+    baterias_do_computador(fontes)
+        .find_map(|f| f.carga.parse::<u8>().ok())
+        .filter(|p| *p <= 100)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fonte(tipo: &str, online: &str, escopo: &str, status: &str, carga: &str) -> Fonte {
+        Fonte {
+            tipo: tipo.into(),
+            online: online.into(),
+            escopo: escopo.into(),
+            status: status.into(),
+            carga: carga.into(),
+        }
+    }
+
+    #[test]
+    fn o_linux_diz_de_onde_vem_a_energia() {
+        let tomada = fonte("Mains", "1", "", "", "");
+        let tomada_solta = fonte("Mains", "0", "", "", "");
+        let bateria = fonte("Battery", "", "", "Discharging", "41");
+        let carregando = fonte("Battery", "", "", "Charging", "80");
+        let mouse = fonte("Battery", "", "Device", "Discharging", "15");
+
+        assert_eq!(fonte_do_sysfs(&[tomada, fonte("Battery", "", "", "Charging", "80")]), PowerSource::Ac);
+        assert_eq!(fonte_do_sysfs(&[tomada_solta, fonte("Battery", "", "", "Discharging", "41")]), PowerSource::Battery);
+        assert_eq!(bateria_do_sysfs(&[bateria]), Some(41));
+        assert_eq!(bateria_do_sysfs(&[carregando]), Some(80));
+        // A pilha do mouse não é a bateria do computador: um computador de
+        // mesa com mouse sem fio não pode parecer "na bateria".
+        assert_eq!(fonte_do_sysfs(std::slice::from_ref(&mouse)), PowerSource::Unknown);
+        assert_eq!(bateria_do_sysfs(&[mouse]), None);
+        // Máquina virtual: nada exposto.
+        assert_eq!(fonte_do_sysfs(&[]), PowerSource::Unknown);
+    }
 
     #[test]
     fn o_pmset_diz_de_onde_vem_a_energia() {

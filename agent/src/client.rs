@@ -532,10 +532,9 @@ pub async fn run(
                     .lock()
                     .map(|mut e| std::mem::take(&mut e.encerrar_controle))
                     .unwrap_or(false);
-                // O Wayland avisando que o sistema pede permissão na tela do
-                // computador: sem isto, o celular veria só a tela preta.
-                #[cfg(target_os = "linux")]
-                if let Some(mensagem) = crate::wayland::tomar_aviso() {
+                // Um aviso para a tela do celular (ver `aviso.rs`): o sistema
+                // pedindo permissão, um "desligar" recusado.
+                if let Some(mensagem) = crate::aviso::tomar() {
                     let msg = serde_json::to_string(&ClientMessage::AvisoDaTela { mensagem })?;
                     ws.send(Message::Text(msg)).await?;
                 }
@@ -926,6 +925,7 @@ pub async fn run(
                             Some(Action::ClipboardSet { text }) => {
                                 if let Err(e) = clipboard.write(&text) {
                                     eprintln!("{e}");
+                                    crate::aviso::avisar(&e);
                                 }
                             }
                             // Decodificar e converter custa uns cem
@@ -2049,6 +2049,7 @@ fn handle_server_text(
             println!("Comando de energia recebido: {action:?}");
             if let Err(e) = crate::power::apply(action) {
                 eprintln!("Falha ao executar comando de energia: {e}");
+                crate::aviso::avisar(&format!("O computador não {}: {e}", crate::power::verbo(action)));
             }
         }
         Ok(ServerMessage::ListApps { request_id, kind }) => {
@@ -2148,6 +2149,7 @@ fn handle_server_text(
             println!("Abrindo aplicativo: {id}");
             if let Err(e) = crate::apps::launch(&id) {
                 eprintln!("Falha ao abrir aplicativo: {e}");
+                crate::aviso::avisar(&format!("Não consegui abrir o programa: {e}"));
             }
         }
         Ok(ServerMessage::LaunchMany {

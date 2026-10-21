@@ -102,21 +102,6 @@ fn gravar_ficha(ficha: &str) {
     }
 }
 
-// --- o aviso ao celular -------------------------------------------------------
-
-static AVISO: Mutex<Option<String>> = Mutex::new(None);
-
-pub(crate) fn avisar(texto: &str) {
-    if let Ok(mut a) = AVISO.lock() {
-        *a = Some(texto.to_string());
-    }
-}
-
-/// O aviso pendente para o celular, se houver. Quem lê é o laço de rede.
-pub fn tomar_aviso() -> Option<String> {
-    AVISO.lock().ok()?.take()
-}
-
 // --- o portal -----------------------------------------------------------------
 
 #[derive(DeserializeDict, Type, Debug)]
@@ -360,7 +345,7 @@ impl Sessao {
             if !avisado && inicio.elapsed() >= AVISAR_DEPOIS {
                 avisado = true;
                 crate::diario("Wayland: esperando alguém aprovar o acesso na tela");
-                avisar(PEDINDO_PERMISSAO);
+                crate::aviso::avisar(PEDINDO_PERMISSAO);
             }
             if inicio.elapsed() >= DESISTIR_DEPOIS {
                 return Err("ninguém aprovou o acesso na tela do computador".to_string());
@@ -785,7 +770,7 @@ impl Captura {
                 }
                 Ok(Err(e)) => {
                     self.estado = Estado::Desistiu;
-                    avisar(&format!("Não deu para abrir a tela do computador: {e}."));
+                    crate::aviso::avisar(&format!("Não deu para abrir a tela do computador: {e}."));
                     return Err(e);
                 }
                 Ok(Ok((sessao, fd))) => {

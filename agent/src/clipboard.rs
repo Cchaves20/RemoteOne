@@ -599,7 +599,10 @@ mod imp {
 mod imp {
     use super::{CopiedFiles, Tracker};
 
-    /// Stub: sem área de transferência fora do Windows.
+    const AINDA_NAO: &str = "a área de transferência ainda não funciona no Linux";
+
+    /// Sem área de transferência fora do Windows e do Mac: ler não traz nada,
+    /// e escrever diz que não deu, em vez de fingir.
     #[derive(Default)]
     pub struct Clipboard {
         #[allow(dead_code)]
@@ -615,21 +618,16 @@ mod imp {
             None
         }
 
-        pub fn write(&mut self, text: &str) -> Result<(), String> {
-            println!("[clipboard-stub] escreveria {} bytes", text.len());
-            Ok(())
+        pub fn write(&mut self, _text: &str) -> Result<(), String> {
+            Err(AINDA_NAO.into())
         }
 
         pub fn changed(&mut self) -> Option<String> {
             None
         }
 
-        pub fn write_image(&mut self, bmp: &[u8]) -> Result<(), String> {
-            println!(
-                "[clipboard-stub] escreveria uma imagem de {} bytes",
-                bmp.len()
-            );
-            Ok(())
+        pub fn write_image(&mut self, _bmp: &[u8]) -> Result<(), String> {
+            Err(AINDA_NAO.into())
         }
 
         pub fn files(&mut self) -> CopiedFiles {
@@ -863,7 +861,8 @@ mod tests {
         {
             assert!(c.read().is_none());
             assert!(c.changed().is_none());
-            assert!(c.write("x").is_ok());
+            // Escrever diz que não deu, em vez de fingir que copiou.
+            assert!(c.write("x").is_err());
             assert!(c.files().entries.is_empty());
             assert_eq!(c.files().ignored, 0);
         }

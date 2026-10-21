@@ -477,7 +477,7 @@ mod wayland {
                                 "Wayland: \"{c}\" não existe no teclado {}",
                                 teclado.nome
                             ));
-                            crate::wayland::avisar(&aviso_de_teclado(&teclado.nome));
+                            crate::aviso::avisar(&aviso_de_teclado(&teclado.nome));
                         }
                     }
                 }

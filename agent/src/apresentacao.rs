@@ -218,7 +218,7 @@ mod imp {
 #[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     pub fn silenciar(_ligar: bool) -> Result<(), String> {
-        Err("modo apresentação só no Windows".into())
+        Err("o modo apresentação não está disponível no Linux".into())
     }
 
     pub fn detectar() -> Option<String> {

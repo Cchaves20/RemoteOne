@@ -1055,43 +1055,41 @@ mod imp {
     }
 }
 
+/// Fora do Windows e do Mac: listas vazias, e o que age responde que não dá —
+/// dizer "abri" sem ter aberto faria a pessoa esperar por um programa que não
+/// vem.
 #[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use super::AppInfo;
 
+    const AINDA_NAO: &str = "abrir e fechar programas ainda não funciona no Linux";
+
     pub fn list_desktop() -> Vec<AppInfo> {
-        println!("[apps-stub] listar área de trabalho (vazio fora do Windows)");
         Vec::new()
     }
 
     pub fn list_installed() -> Vec<AppInfo> {
-        println!("[apps-stub] listar instalados (vazio fora do Windows)");
         Vec::new()
     }
 
     pub fn list_running() -> Vec<AppInfo> {
-        println!("[apps-stub] listar em execução (vazio fora do Windows)");
         Vec::new()
     }
 
-    pub fn launch(id: &str) -> Result<(), String> {
-        println!("[apps-stub] abrir: {id}");
-        Ok(())
+    pub fn launch(_id: &str) -> Result<(), String> {
+        Err(AINDA_NAO.into())
     }
 
-    pub fn close(id: &str) -> Result<(), String> {
-        println!("[apps-stub] encerrar: {id}");
-        Ok(())
+    pub fn close(_id: &str) -> Result<(), String> {
+        Err(AINDA_NAO.into())
     }
 
-    pub fn close_by_name(name: &str) -> Result<(), String> {
-        println!("[apps-stub] encerrar por nome: {name}");
-        Ok(())
+    pub fn close_by_name(_name: &str) -> Result<(), String> {
+        Err(AINDA_NAO.into())
     }
 
     pub fn close_all() -> Result<usize, String> {
-        println!("[apps-stub] fechar tudo (nada a fazer fora do Windows)");
-        Ok(0)
+        Err(AINDA_NAO.into())
     }
 }
 

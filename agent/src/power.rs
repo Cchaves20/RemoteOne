@@ -41,6 +41,15 @@ pub fn apply(action: PowerAction) -> Result<(), String> {
     imp::apply(action)
 }
 
+/// A ação no passado, para o aviso ao celular: "O computador não desligou".
+pub fn verbo(action: PowerAction) -> &'static str {
+    match action {
+        PowerAction::Shutdown => "desligou",
+        PowerAction::Restart => "reiniciou",
+        PowerAction::Suspend => "suspendeu",
+    }
+}
+
 /// O que este computador sabe fazer quando pedem para suspender.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -380,19 +389,82 @@ fn motivo_no_mac(erro: &str) -> String {
     }
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+/// No Linux, pelo `logind` (o serviço de sessão do systemd), pelo D-Bus: o
+/// mesmo pedido que o menu do GNOME faz. Sem senha para quem está na sessão
+/// ativa; com outra pessoa conectada ao computador, o sistema pede a senha de
+/// administrador na tela dele (`interactive` = sim), e o celular é avisado.
+///
+/// Desliga sem perguntar aos programas, como o `/f` do Windows: quem pede de
+/// longe não tem como clicar em "salvar".
+#[cfg(target_os = "linux")]
 mod imp {
     use crate::protocol::PowerAction;
 
     pub fn apply(action: PowerAction) -> Result<(), String> {
-        println!("[power-stub] ação de energia solicitada: {action:?} (ignorada fora do Windows)");
-        Ok(())
+        let metodo = match action {
+            PowerAction::Shutdown => "PowerOff",
+            PowerAction::Restart => "Reboot",
+            PowerAction::Suspend => "Suspend",
+        };
+        let conexao = zbus::blocking::Connection::system()
+            .map_err(|e| format!("sem acesso ao serviço de sessão do Linux ({e})"))?;
+        let r = conexao.call_method(
+            Some("org.freedesktop.login1"),
+            "/org/freedesktop/login1",
+            Some("org.freedesktop.login1.Manager"),
+            metodo,
+            &(true,),
+        );
+        match r {
+            Ok(_) => {
+                crate::diario(&format!("energia: {action:?} pedido ao logind"));
+                Ok(())
+            }
+            Err(e) => Err(super::motivo_no_linux(&e.to_string())),
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+mod imp {
+    use crate::protocol::PowerAction;
+
+    pub fn apply(_action: PowerAction) -> Result<(), String> {
+        Err("desligar e reiniciar não estão disponíveis neste sistema".into())
+    }
+}
+
+/// O que dizer quando o Linux recusa.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn motivo_no_linux(erro: &str) -> String {
+    if erro.contains("InteractiveAuthorizationRequired")
+        || erro.contains("AccessDenied")
+        || erro.contains("NotAuthorized")
+    {
+        "o Linux pediu a senha de administrador (há outra pessoa conectada ao \
+         computador?)"
+            .to_string()
+    } else if erro.contains("inhibit") || erro.contains("Inhibit") {
+        "um programa no computador está impedindo agora".to_string()
+    } else if erro.contains("ServiceUnknown") {
+        "este Linux não tem o serviço de sessão (logind)".to_string()
+    } else {
+        format!("o Linux recusou: {}", erro.trim())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{capacidades, como_suspender, motivo_no_mac, ComoSuspender};
+    use super::{capacidades, como_suspender, motivo_no_linux, motivo_no_mac, ComoSuspender};
+
+    #[test]
+    fn no_linux_a_recusa_diz_o_motivo() {
+        let senha = "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired: \
+                     Interactive authentication required.";
+        assert!(motivo_no_linux(senha).contains("senha de administrador"));
+        assert!(motivo_no_linux("Operation inhibited by \"gnome\"").contains("impedindo"));
+        assert!(motivo_no_linux("outra coisa").contains("outra coisa"));
+    }
 
     #[test]
     fn no_mac_a_recusa_diz_o_que_fazer() {
