@@ -29,6 +29,14 @@
 //! ninguém vai clicar. O agente espera um pouco, avisa o celular ("libere o
 //! acesso na tela do computador") e desiste em dois minutos, em vez de ficar
 //! preso.
+//!
+//! ## A área de transferência vai junto
+//!
+//! No Wayland só a janela em foco lê e escreve a área de transferência, e o
+//! agente não tem janela. O portal resolve dentro da mesma sessão: ela é pedida
+//! antes de começar (`RequestClipboard`) e vale enquanto a sessão existir — que
+//! é quando o celular está com a tela aberta, o único lugar do app que copia e
+//! cola. Testado com `scripts/spike-clipboard.py`, nos dois sentidos.
 
 use std::collections::HashMap;
 use std::os::fd::OwnedFd;
@@ -45,6 +53,7 @@ const PORTAL: &str = "org.freedesktop.portal.Desktop";
 const CAMINHO: &str = "/org/freedesktop/portal/desktop";
 const REMOTO: &str = "org.freedesktop.portal.RemoteDesktop";
 const TELA: &str = "org.freedesktop.portal.ScreenCast";
+const AREA: &str = "org.freedesktop.portal.Clipboard";
 
 const TECLADO: u32 = 1;
 const PONTEIRO: u32 = 2;
@@ -122,6 +131,7 @@ struct RespostaDoInicio {
     streams: Option<Vec<(u32, PropriedadesDaTela)>>,
     restore_token: Option<String>,
     devices: Option<u32>,
+    clipboard_enabled: Option<bool>,
 }
 
 #[derive(DeserializeDict, Type, Debug)]
@@ -200,6 +210,8 @@ pub struct Sessao {
     conn: Connection,
     remoto: Proxy<'static>,
     caminho: OwnedObjectPath,
+    /// A área de transferência, quando o sistema a liberou nesta sessão.
+    area: Option<Proxy<'static>>,
     /// O nó do PipeWire com a imagem.
     pub no: u32,
     /// Tamanho lógico da tela: é nesta régua que vão as posições do mouse.
@@ -272,17 +284,25 @@ impl Sessao {
             s.take();
         }
         match resultado {
-            Ok((no, largura, altura, fd)) => Ok((
-                Sessao {
-                    conn,
-                    remoto,
-                    caminho,
-                    no,
-                    largura,
-                    altura,
-                },
-                fd,
-            )),
+            Ok((no, largura, altura, fd, area_liberada)) => {
+                let area = if area_liberada {
+                    escutar_area(&conn, &caminho)
+                } else {
+                    None
+                };
+                Ok((
+                    Sessao {
+                        conn,
+                        remoto,
+                        caminho,
+                        area,
+                        no,
+                        largura,
+                        altura,
+                    },
+                    fd,
+                ))
+            }
             Err(e) => {
                 fechar_sessao(&conn, &caminho);
                 Err(e)
@@ -296,7 +316,7 @@ impl Sessao {
         tela: &Proxy<'static>,
         caminho: &OwnedObjectPath,
         cancelamento: &Cancelamento,
-    ) -> Result<(u32, u32, u32, OwnedFd), String> {
+    ) -> Result<(u32, u32, u32, OwnedFd, bool), String> {
         // 2. Mouse e teclado, pedindo para lembrar — e apresentando a ficha.
         let token = novo_token();
         let pedido = Pedido::<RespostaVazia>::preparar(conn, &token)?;
@@ -321,6 +341,19 @@ impl Sessao {
         tela.call_method("SelectSources", &(caminho, o))
             .map_err(texto_do_erro)?;
         pedido.esperar(Duration::from_secs(10))?;
+
+        // A área de transferência: tem de ser pedida antes de começar. Num
+        // sistema sem esse pedaço do portal, a tela e o controle seguem sem
+        // ela.
+        let pediu_area = Proxy::new(conn, PORTAL, CAMINHO, AREA)
+            .and_then(|area| {
+                area.call_method(
+                    "RequestClipboard",
+                    &(caminho, HashMap::<&str, Value>::new()),
+                )
+            })
+            .map_err(|e| crate::diario(&format!("Wayland: sem área de transferência ({e})")))
+            .is_ok();
 
         // 4. Começar. Com a ficha valendo, a resposta vem na hora; sem ela, o
         //    sistema mostra a janela e a resposta espera alguém.
@@ -374,7 +407,17 @@ impl Sessao {
                 &(caminho, HashMap::<&str, Value>::new()),
             )
             .map_err(texto_do_erro)?;
-        Ok((no, largura.max(1) as u32, altura.max(1) as u32, fd.into()))
+        let area_liberada = pediu_area && resposta.clipboard_enabled.unwrap_or(false);
+        if pediu_area && !area_liberada {
+            crate::diario("Wayland: o sistema não liberou a área de transferência");
+        }
+        Ok((
+            no,
+            largura.max(1) as u32,
+            altura.max(1) as u32,
+            fd.into(),
+            area_liberada,
+        ))
     }
 
     fn notificar<B>(&self, metodo: &str, corpo: &B)
@@ -436,6 +479,12 @@ impl Sessao {
 impl Drop for Sessao {
     fn drop(&mut self) {
         fechar_sessao(&self.conn, &self.caminho);
+        if self.area.is_some() {
+            esquecer_area();
+        }
+        // Fecha a conexão, que é só desta sessão: é o que termina a thread que
+        // escuta a área de transferência.
+        let _ = self.conn.clone().close();
     }
 }
 
@@ -458,6 +507,356 @@ static ULTIMO_TAMANHO: Mutex<Option<(u32, u32)>> = Mutex::new(None);
 
 pub fn ultimo_tamanho() -> Option<(u32, u32)> {
     *ULTIMO_TAMANHO.lock().ok()?
+}
+
+// --- a área de transferência ---------------------------------------------------
+
+/// Os tipos de texto, do preferido ao último recurso (os três últimos são os
+/// nomes antigos do X11, que programas rodando pelo XWayland ainda usam).
+pub const TIPOS_DE_TEXTO: [&str; 5] = [
+    "text/plain;charset=utf-8",
+    "text/plain",
+    "UTF8_STRING",
+    "STRING",
+    "TEXT",
+];
+
+/// Quanto esperar o programa dono da cópia entregar os dados.
+const PRAZO_DA_COPIA: Duration = Duration::from_millis(1500);
+
+/// O que o agente pôs na área de transferência do computador, a pedido do
+/// celular. Fica guardado porque no Wayland quem copia **serve** os dados a
+/// cada vez que alguém cola.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Conteudo {
+    Texto(String),
+    Png(Vec<u8>),
+}
+
+impl Conteudo {
+    pub fn tipos(&self) -> Vec<&'static str> {
+        match self {
+            Conteudo::Texto(_) => TIPOS_DE_TEXTO.to_vec(),
+            Conteudo::Png(_) => vec!["image/png"],
+        }
+    }
+
+    pub fn dados(&self, tipo: &str) -> Option<&[u8]> {
+        match self {
+            Conteudo::Texto(t) if TIPOS_DE_TEXTO.contains(&tipo) => Some(t.as_bytes()),
+            Conteudo::Png(p) if tipo == "image/png" => Some(p),
+            _ => None,
+        }
+    }
+}
+
+struct Area {
+    /// Liberada numa sessão aberta agora.
+    liberada: bool,
+    /// Os tipos que o programa dono da cópia oferece (quando não é o agente).
+    tipos: Vec<String>,
+    /// O texto copiado no computador, lido assim que a cópia acontece.
+    texto: Option<String>,
+    /// Quantas cópias o computador fez — as do agente não contam. Só cresce,
+    /// de sessão em sessão: é por ele que se percebe a novidade.
+    copias: u64,
+    nosso: Option<Conteudo>,
+}
+
+static ESTADO_DA_AREA: Mutex<Area> = Mutex::new(Area {
+    liberada: false,
+    tipos: Vec::new(),
+    texto: None,
+    copias: 0,
+    nosso: None,
+});
+
+fn esquecer_area() {
+    if let Ok(mut a) = ESTADO_DA_AREA.lock() {
+        a.liberada = false;
+        a.tipos.clear();
+        a.texto = None;
+        a.nosso = None;
+    }
+}
+
+/// O primeiro tipo de texto que a cópia oferece, na ordem de preferência.
+pub fn tipo_de_texto(tipos: &[String]) -> Option<&'static str> {
+    TIPOS_DE_TEXTO
+        .iter()
+        .find(|t| tipos.iter().any(|o| o == *t))
+        .copied()
+}
+
+/// Lê tudo de um descritor que o portal entrega **sem bloqueio**: um `read`
+/// antes de o programa dono escrever dá "tente de novo", e não "acabou". (Foi
+/// o que derrubou a primeira versão do teste.)
+fn ler_descritor(fd: OwnedFd, limite: usize) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let mut arquivo = std::fs::File::from(fd);
+    let prazo = std::time::Instant::now() + PRAZO_DA_COPIA;
+    let mut dados = Vec::new();
+    let mut bloco = vec![0u8; 64 * 1024];
+    loop {
+        match arquivo.read(&mut bloco) {
+            Ok(0) => return Ok(dados),
+            Ok(n) => {
+                dados.extend_from_slice(&bloco[..n]);
+                if dados.len() >= limite {
+                    dados.truncate(limite);
+                    return Ok(dados);
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if std::time::Instant::now() >= prazo {
+                    return Err("o programa que copiou não entregou o conteúdo".to_string());
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+}
+
+/// O mesmo cuidado na escrita: uma imagem não cabe de uma vez num descritor
+/// sem bloqueio.
+fn escrever_descritor(fd: OwnedFd, dados: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let mut arquivo = std::fs::File::from(fd);
+    let prazo = std::time::Instant::now() + PRAZO_DA_COPIA;
+    let mut resto = dados;
+    while !resto.is_empty() {
+        match arquivo.write(resto) {
+            Ok(0) => return Err("o computador parou de receber".to_string()),
+            Ok(n) => resto = &resto[n..],
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if std::time::Instant::now() >= prazo {
+                    return Err("o programa que colou não leu a tempo".to_string());
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Ok(())
+}
+
+fn ler_do_portal(
+    area: &Proxy<'_>,
+    sessao: &OwnedObjectPath,
+    tipo: &str,
+    limite: usize,
+) -> Result<Vec<u8>, String> {
+    let fd: zbus::zvariant::OwnedFd = area
+        .call("SelectionRead", &(sessao, tipo))
+        .map_err(texto_do_erro)?;
+    ler_descritor(fd.into(), limite)
+}
+
+/// Texto lido até este teto; o que vai ao celular ainda passa pelo corte de
+/// `clipboard::limited`, bem menor.
+const TETO_DO_TEXTO: usize = 256 * 1024;
+
+/// Começa a acompanhar a área de transferência de uma sessão recém-aberta.
+///
+/// Uma thread escuta os dois avisos do portal: alguém copiou no computador
+/// (lê o texto na hora, para o aviso automático ao celular) e alguém colou o
+/// que o agente pôs ali (entrega os dados). Ela termina quando a conexão da
+/// sessão fecha (ver o `Drop` de `Sessao`).
+fn escutar_area(conn: &Connection, sessao: &OwnedObjectPath) -> Option<Proxy<'static>> {
+    let area = Proxy::new(conn, PORTAL, CAMINHO, AREA).ok()?;
+    let regra = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .interface(AREA)
+        .ok()?
+        .build();
+    let sinais = match zbus::blocking::MessageIterator::for_match_rule(regra, conn, None) {
+        Ok(s) => s,
+        Err(e) => {
+            crate::diario(&format!("Wayland: não deu para ouvir a área de transferência: {e}"));
+            return None;
+        }
+    };
+    if let Ok(mut a) = ESTADO_DA_AREA.lock() {
+        a.liberada = true;
+        a.tipos.clear();
+        a.texto = None;
+        a.nosso = None;
+    }
+    let (proxy, minha) = (area.clone(), sessao.clone());
+    let _ = std::thread::Builder::new()
+        .name("deskside-area".into())
+        .spawn(move || {
+            for msg in sinais {
+                let Ok(msg) = msg else { break };
+                let membro = msg.header().member().map(|m| m.to_string());
+                match membro.as_deref() {
+                    Some("SelectionOwnerChanged") => {
+                        type Corpo = (OwnedObjectPath, HashMap<String, zbus::zvariant::OwnedValue>);
+                        if let Ok((de, opcoes)) = msg.body().deserialize::<Corpo>() {
+                            if de == minha {
+                                copiaram(&proxy, &minha, &opcoes);
+                            }
+                        }
+                    }
+                    Some("SelectionTransfer") => {
+                        if let Ok((de, tipo, serie)) =
+                            msg.body().deserialize::<(OwnedObjectPath, String, u32)>()
+                        {
+                            if de == minha {
+                                colaram(&proxy, &minha, &tipo, serie);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        });
+    Some(area)
+}
+
+fn copiaram(
+    area: &Proxy<'_>,
+    sessao: &OwnedObjectPath,
+    opcoes: &HashMap<String, zbus::zvariant::OwnedValue>,
+) {
+    let do_agente = opcoes
+        .get("session_is_owner")
+        .and_then(|v| bool::try_from(v).ok())
+        .unwrap_or(false);
+    if do_agente {
+        return;
+    }
+    let tipos: Vec<String> = opcoes
+        .get("mime_types")
+        .and_then(|v| v.try_clone().ok())
+        .and_then(|v| Vec::<String>::try_from(v).ok())
+        .unwrap_or_default();
+    // Lê antes de contar a cópia: contada antes, quem perguntasse no meio
+    // veria "cópia nova" sem texto, e não perguntaria de novo.
+    let texto = tipo_de_texto(&tipos).and_then(|tipo| {
+        ler_do_portal(area, sessao, tipo, TETO_DO_TEXTO)
+            .map_err(|e| crate::diario(&format!("Wayland: cópia não lida: {e}")))
+            .ok()
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+    });
+    if let Ok(mut a) = ESTADO_DA_AREA.lock() {
+        a.tipos = tipos;
+        a.texto = texto;
+        a.nosso = None;
+        a.copias += 1;
+    }
+}
+
+fn colaram(area: &Proxy<'_>, sessao: &OwnedObjectPath, tipo: &str, serie: u32) {
+    let dados = ESTADO_DA_AREA
+        .lock()
+        .ok()
+        .and_then(|a| a.nosso.as_ref().and_then(|c| c.dados(tipo)).map(<[u8]>::to_vec));
+    let entregue = match dados {
+        None => false,
+        Some(dados) => area
+            .call::<_, _, zbus::zvariant::OwnedFd>("SelectionWrite", &(sessao, serie))
+            .map_err(texto_do_erro)
+            .and_then(|fd| escrever_descritor(fd.into(), &dados))
+            .map_err(|e| crate::diario(&format!("Wayland: colar falhou: {e}")))
+            .is_ok(),
+    };
+    let _ = area.call_method("SelectionWriteDone", &(sessao, serie, entregue));
+}
+
+/// Por que a área de transferência não está disponível agora, ou `None` se
+/// está.
+pub fn area_indisponivel() -> Option<&'static str> {
+    if ESTADO_DA_AREA.lock().is_ok_and(|a| a.liberada) {
+        return None;
+    }
+    Some(if atual().is_some() {
+        "este Linux não liberou a área de transferência para o Deskside"
+    } else {
+        "no Linux, a área de transferência só funciona com a tela do computador aberta no app"
+    })
+}
+
+fn area_atual() -> Option<(Proxy<'static>, OwnedObjectPath)> {
+    let sessao = atual()?;
+    Some((sessao.area.clone()?, sessao.caminho.clone()))
+}
+
+/// Quantas cópias o computador já fez (ver `Area::copias`).
+pub fn area_copias() -> u64 {
+    ESTADO_DA_AREA.lock().map(|a| a.copias).unwrap_or(0)
+}
+
+/// O texto na área de transferência agora.
+pub fn area_texto() -> Option<String> {
+    let (nosso, texto, viu_copia) = {
+        let a = ESTADO_DA_AREA.lock().ok()?;
+        if !a.liberada {
+            return None;
+        }
+        (a.nosso.clone(), a.texto.clone(), a.copias > 0)
+    };
+    match nosso {
+        Some(Conteudo::Texto(t)) => return Some(t),
+        Some(Conteudo::Png(_)) => return None,
+        None => {}
+    }
+    if texto.is_some() || viu_copia {
+        return texto;
+    }
+    // Nenhuma cópia desde que a sessão abriu: o que estava copiado antes não
+    // gerou aviso, então pergunta direto.
+    let (area, sessao) = area_atual()?;
+    TIPOS_DE_TEXTO[..2].iter().find_map(|tipo| {
+        ler_do_portal(&area, &sessao, tipo, TETO_DO_TEXTO)
+            .ok()
+            .filter(|b| !b.is_empty())
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+    })
+}
+
+/// Os tipos do que está copiado agora.
+pub fn area_tipos() -> Vec<String> {
+    ESTADO_DA_AREA
+        .lock()
+        .map(|a| match &a.nosso {
+            Some(c) => c.tipos().into_iter().map(str::to_string).collect(),
+            None => a.tipos.clone(),
+        })
+        .unwrap_or_default()
+}
+
+/// Lê um tipo do que está copiado (imagem, lista de arquivos).
+pub fn area_ler(tipo: &str, limite: usize) -> Result<Vec<u8>, String> {
+    if let Some(dados) = ESTADO_DA_AREA.lock().ok().and_then(|a| {
+        a.nosso.as_ref().and_then(|c| c.dados(tipo)).map(<[u8]>::to_vec)
+    }) {
+        return Ok(dados);
+    }
+    let (area, sessao) =
+        area_atual().ok_or_else(|| area_indisponivel().unwrap_or("sem sessão").to_string())?;
+    ler_do_portal(&area, &sessao, tipo, limite)
+}
+
+/// Põe algo na área de transferência do computador. Os dados ficam com o
+/// agente e saem a cada Ctrl+V (ver `colaram`).
+pub fn area_por(conteudo: Conteudo) -> Result<(), String> {
+    if let Some(motivo) = area_indisponivel() {
+        return Err(motivo.to_string());
+    }
+    let (area, sessao) = area_atual().ok_or("a sessão da tela acabou de fechar")?;
+    let tipos = conteudo.tipos();
+    if let Ok(mut a) = ESTADO_DA_AREA.lock() {
+        a.nosso = Some(conteudo);
+    }
+    let mut opcoes = HashMap::new();
+    opcoes.insert("mime_types", Value::from(tipos));
+    area.call_method("SetSelection", &(&sessao, opcoes))
+        .map(|_| ())
+        .map_err(texto_do_erro)
 }
 
 // --- os quadros ---------------------------------------------------------------
@@ -848,6 +1247,51 @@ pub fn preparar() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn o_texto_que_o_agente_poe_sai_em_todos_os_tipos_de_texto() {
+        let c = Conteudo::Texto("ção".into());
+        for tipo in TIPOS_DE_TEXTO {
+            assert_eq!(c.dados(tipo), Some("ção".as_bytes()));
+        }
+        assert_eq!(c.dados("image/png"), None);
+        let p = Conteudo::Png(vec![1, 2]);
+        assert_eq!(p.tipos(), vec!["image/png"]);
+        assert_eq!(p.dados("text/plain"), None);
+    }
+
+    #[test]
+    fn escolhe_o_melhor_tipo_de_texto_oferecido() {
+        let tipos = |l: &[&str]| l.iter().map(|t| t.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            tipo_de_texto(&tipos(&["STRING", "text/plain;charset=utf-8", "image/png"])),
+            Some("text/plain;charset=utf-8")
+        );
+        assert_eq!(tipo_de_texto(&tipos(&["UTF8_STRING"])), Some("UTF8_STRING"));
+        assert_eq!(tipo_de_texto(&tipos(&["image/png"])), None);
+    }
+
+    #[test]
+    fn le_o_descritor_mesmo_quando_os_dados_atrasam() {
+        // O portal entrega o descritor sem bloqueio; o programa dono escreve
+        // um pouco depois. Ler antes não pode ser confundido com "vazio".
+        use std::io::Write;
+        use std::os::fd::FromRawFd;
+        let mut fds = [0i32; 2];
+        extern "C" {
+            fn pipe2(fds: *mut i32, flags: i32) -> i32;
+        }
+        const O_NONBLOCK: i32 = 0o4000;
+        assert_eq!(unsafe { pipe2(fds.as_mut_ptr(), O_NONBLOCK) }, 0);
+        let leitura = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+        let mut escrita = unsafe { std::fs::File::from_raw_fd(fds[1]) };
+        let dono = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            escrita.write_all("ção".as_bytes()).unwrap();
+        });
+        assert_eq!(ler_descritor(leitura, 1024).unwrap(), "ção".as_bytes());
+        dono.join().unwrap();
+    }
 
     #[test]
     fn converte_bgrx_respeitando_o_stride() {

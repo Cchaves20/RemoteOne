@@ -10,7 +10,8 @@
 //!   que faz isso sozinho a cada segundo vira um incômodo (e um problema de
 //!   privacidade).
 //!
-//! Real no Windows; nas demais plataformas, stub.
+//! Real no Windows, no Mac e no Linux (no Wayland, só com a tela aberta no
+//! app: ver `wayland.rs`).
 
 /// Teto do que atravessa a rede. Copiar um arquivo de log inteiro é comum, e
 /// isso não pode virar uma mensagem de megabytes no WebSocket — o que passar
@@ -229,7 +230,7 @@ pub struct CopiedFiles {
 /// Só volta o que está dentro da pasta do usuário: é o mesmo limite do
 /// download, e mostrar o que não dá para buscar seria oferecer um botão que
 /// falha. Igual no Windows e no Mac; só a leitura dos caminhos muda.
-#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "macos", target_os = "linux")), allow(dead_code))]
 fn montar_lista(caminhos: Vec<String>) -> CopiedFiles {
     let mut fora = 0usize;
     let mut entradas = Vec::new();
@@ -266,7 +267,7 @@ fn montar_lista(caminhos: Vec<String>) -> CopiedFiles {
 ///
 /// `None` para o que não for arquivo local (um link `https://` copiado cai no
 /// mesmo tipo de dado) ou não decodificar como texto.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
 pub(crate) fn caminho_do_url_de_arquivo(url: &str) -> Option<String> {
     let resto = url.strip_prefix("file://")?;
     // `file://localhost/...` é a forma longa do mesmo endereço.
@@ -595,14 +596,235 @@ mod imp {
     }
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+/// Os caminhos dos arquivos copiados no gerenciador de arquivos do Linux.
+///
+/// Vem em `text/uri-list` (um `file://` por linha, `#` para comentário) ou no
+/// formato do GNOME, `x-special/gnome-copied-files`, que é o mesmo com uma
+/// primeira linha `copy` ou `cut`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn caminhos_da_lista_de_uris(texto: &str) -> Vec<String> {
+    texto
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(caminho_do_url_de_arquivo)
+        .collect()
+}
+
+/// Imagem crua (RGBA, como a biblioteca do X11 entrega) para PNG, que é o que
+/// `preparar_imagem` lê.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn png_de_rgba(largura: u32, altura: u32, rgba: Vec<u8>) -> Result<Vec<u8>, String> {
+    let img = image::RgbaImage::from_raw(largura, altura, rgba)
+        .ok_or("a imagem copiada veio com o tamanho errado")?;
+    codificar(&image::DynamicImage::ImageRgba8(img), image::ImageFormat::Png)
+}
+
+/// O BMP que o caminho comum prepara (ver `imagem_para_bmp`) de volta em PNG,
+/// que é o que os programas do Linux colam.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn png_de_bmp(bmp: &[u8]) -> Result<image::DynamicImage, String> {
+    image::load_from_memory_with_format(bmp, image::ImageFormat::Bmp)
+        .map_err(|e| format!("não consegui ler a imagem: {e}"))
+}
+
+/// No Linux, por dois caminhos, conforme a sessão gráfica:
+///
+/// - **Wayland**: pelo portal, dentro da sessão que abre quando o celular abre
+///   a tela (ver `wayland.rs`). Fora dela não há como, e o celular é avisado.
+/// - **X11**: direto, pela `arboard`, a qualquer hora.
+///
+/// Sem sessão gráfica nenhuma (servidor), não há área de transferência.
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::{limited, CopiedFiles, Tracker};
+    use crate::wayland;
+
+    /// Teto do que se lê de uma imagem ou lista de arquivos copiada, antes de
+    /// reduzir.
+    const TETO_DA_IMAGEM: usize = 64 * 1024 * 1024;
+    const TETO_DA_LISTA: usize = 1024 * 1024;
+
+    const SEM_SESSAO_GRAFICA: &str = "este computador está sem sessão gráfica, e sem ela não há \
+                                      área de transferência";
+
+    enum Via {
+        Wayland,
+        X11,
+        Nenhuma,
+    }
+
+    fn via() -> Via {
+        if wayland::ativo() {
+            Via::Wayland
+        } else if std::env::var_os("DISPLAY").is_some() {
+            Via::X11
+        } else {
+            Via::Nenhuma
+        }
+    }
+
+    #[derive(Default)]
+    pub struct Clipboard {
+        tracker: Tracker,
+        /// Wayland: até que cópia do computador já se olhou.
+        copias_vistas: u64,
+        /// X11: aberta na primeira vez que precisa.
+        x11: Option<arboard::Clipboard>,
+    }
+
+    impl Clipboard {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        fn x11(&mut self) -> Result<&mut arboard::Clipboard, String> {
+            if self.x11.is_none() {
+                self.x11 = Some(
+                    arboard::Clipboard::new()
+                        .map_err(|e| format!("área de transferência do X11: {e}"))?,
+                );
+            }
+            Ok(self.x11.as_mut().expect("acabou de ser aberta"))
+        }
+
+        fn texto_atual(&mut self) -> Option<String> {
+            match via() {
+                Via::Wayland => wayland::area_texto(),
+                Via::X11 => self.x11().ok()?.get_text().ok(),
+                Via::Nenhuma => None,
+            }
+        }
+
+        /// O texto que está na área de transferência agora.
+        pub fn read(&mut self) -> Option<String> {
+            let texto = limited(&self.texto_atual()?);
+            self.tracker.remember(&texto);
+            Some(texto)
+        }
+
+        /// Escreve na área de transferência do computador.
+        pub fn write(&mut self, text: &str) -> Result<(), String> {
+            let texto = limited(text);
+            match via() {
+                Via::Wayland => wayland::area_por(wayland::Conteudo::Texto(texto.clone()))?,
+                Via::X11 => self
+                    .x11()?
+                    .set_text(texto.clone())
+                    .map_err(|e| format!("o X11 recusou o texto: {e}"))?,
+                Via::Nenhuma => return Err(SEM_SESSAO_GRAFICA.into()),
+            }
+            // A mudança é nossa: não volta ao telefone como novidade.
+            self.tracker.remember(&texto);
+            Ok(())
+        }
+
+        /// Novidade desde a última chamada, se houver.
+        ///
+        /// No Wayland, o portal avisa cada cópia e o texto já vem lido; no X11
+        /// não há aviso nem contador, e o texto é comparado a cada batida.
+        pub fn changed(&mut self) -> Option<String> {
+            if matches!(via(), Via::Wayland) {
+                let copias = wayland::area_copias();
+                if copias == self.copias_vistas {
+                    return None;
+                }
+                self.copias_vistas = copias;
+            }
+            let texto = self.texto_atual()?;
+            self.tracker.accept(limited(&texto))
+        }
+
+        pub fn write_image(&mut self, bmp: &[u8]) -> Result<(), String> {
+            let img = super::png_de_bmp(bmp)?;
+            match via() {
+                Via::Wayland => {
+                    let png = super::codificar(&img, image::ImageFormat::Png)?;
+                    wayland::area_por(wayland::Conteudo::Png(png))
+                }
+                Via::X11 => {
+                    let rgba = img.to_rgba8();
+                    let (largura, altura) = rgba.dimensions();
+                    self.x11()?
+                        .set_image(arboard::ImageData {
+                            width: largura as usize,
+                            height: altura as usize,
+                            bytes: rgba.into_raw().into(),
+                        })
+                        .map_err(|e| format!("o X11 recusou a imagem: {e}"))
+                }
+                Via::Nenhuma => Err(SEM_SESSAO_GRAFICA.into()),
+            }
+        }
+
+        /// Os arquivos copiados no gerenciador de arquivos.
+        pub fn files(&mut self) -> CopiedFiles {
+            let caminhos: Vec<String> = match via() {
+                Via::Wayland => {
+                    let tipos = wayland::area_tipos();
+                    let tipo = ["text/uri-list", "x-special/gnome-copied-files"]
+                        .into_iter()
+                        .find(|t| tipos.iter().any(|o| o == t));
+                    tipo.and_then(|t| wayland::area_ler(t, TETO_DA_LISTA).ok())
+                        .map(|b| super::caminhos_da_lista_de_uris(&String::from_utf8_lossy(&b)))
+                        .unwrap_or_default()
+                }
+                Via::X11 => match self.x11() {
+                    Ok(x) => x
+                        .get()
+                        .file_list()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .collect(),
+                    Err(_) => Vec::new(),
+                },
+                Via::Nenhuma => Vec::new(),
+            };
+            if caminhos.is_empty() {
+                return CopiedFiles::default();
+            }
+            super::montar_lista(caminhos)
+        }
+
+        /// A imagem copiada, se houver.
+        pub fn image(&mut self) -> Option<super::Imagem> {
+            let bruta = match via() {
+                Via::Wayland => {
+                    let tipos = wayland::area_tipos();
+                    let tipo = ["image/png", "image/jpeg", "image/bmp"]
+                        .into_iter()
+                        .find(|t| tipos.iter().any(|o| o == t))?;
+                    wayland::area_ler(tipo, TETO_DA_IMAGEM)
+                        .map_err(|e| crate::diario(&format!("Área de transferência: {e}")))
+                        .ok()?
+                }
+                Via::X11 => {
+                    let img = self.x11().ok()?.get_image().ok()?;
+                    super::png_de_rgba(img.width as u32, img.height as u32, img.bytes.into_owned())
+                        .ok()?
+                }
+                Via::Nenhuma => return None,
+            };
+            match super::preparar_imagem(&bruta) {
+                Ok(img) => Some(img),
+                Err(motivo) => {
+                    crate::diario(&format!("Área de transferência: {motivo}"));
+                    None
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod imp {
     use super::{CopiedFiles, Tracker};
 
-    const AINDA_NAO: &str = "a área de transferência ainda não funciona no Linux";
+    const AINDA_NAO: &str = "a área de transferência não está disponível neste sistema";
 
-    /// Sem área de transferência fora do Windows e do Mac: ler não traz nada,
-    /// e escrever diz que não deu, em vez de fingir.
+    /// Sem área de transferência fora do Windows, do Mac e do Linux: ler não
+    /// traz nada, e escrever diz que não deu, em vez de fingir.
     #[derive(Default)]
     pub struct Clipboard {
         #[allow(dead_code)]
@@ -857,7 +1079,9 @@ mod tests {
     #[test]
     fn fora_do_windows_nao_ha_o_que_ler() {
         let mut c = Clipboard::new();
-        #[cfg(not(any(windows, target_os = "macos")))]
+        // No Linux não: com uma área de trabalho aberta, o teste escreveria na
+        // área de transferência de quem o roda.
+        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
         {
             assert!(c.read().is_none());
             assert!(c.changed().is_none());
@@ -866,7 +1090,39 @@ mod tests {
             assert!(c.files().entries.is_empty());
             assert_eq!(c.files().ignored, 0);
         }
-        #[cfg(any(windows, target_os = "macos"))]
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
         let _ = c.changed();
+    }
+
+    #[test]
+    fn arquivos_copiados_no_linux_viram_caminhos() {
+        // O formato do GNOME: a primeira linha diz se é copiar ou recortar.
+        let gnome = "copy\nfile:///home/ana/Fotos/praia%20azul.jpg\nfile:///home/ana/Notas/";
+        assert_eq!(
+            caminhos_da_lista_de_uris(gnome),
+            vec!["/home/ana/Fotos/praia azul.jpg", "/home/ana/Notas"]
+        );
+        // `text/uri-list`: fim de linha do padrão (\r\n) e comentário.
+        let lista = "# do Nautilus\r\nfile:///home/ana/a.pdf\r\nhttps://exemplo.com\r\n";
+        assert_eq!(caminhos_da_lista_de_uris(lista), vec!["/home/ana/a.pdf"]);
+    }
+
+    #[test]
+    fn imagem_do_x11_vira_png_e_volta() {
+        let rgba = vec![255u8, 0, 0, 255, 0, 255, 0, 255];
+        let png = png_de_rgba(2, 1, rgba).unwrap();
+        let lida = image::load_from_memory(&png).unwrap();
+        assert_eq!((lida.width(), lida.height()), (2, 1));
+        // Tamanho que não fecha com os bytes é erro, não pânico.
+        assert!(png_de_rgba(3, 3, vec![0; 4]).is_err());
+    }
+
+    #[test]
+    fn imagem_do_telefone_chega_ao_linux_como_imagem() {
+        let rgba = vec![10u8, 20, 30, 255];
+        let png = png_de_rgba(1, 1, rgba).unwrap();
+        let bmp = imagem_para_bmp(&png).unwrap();
+        let img = png_de_bmp(&bmp).unwrap();
+        assert_eq!((img.width(), img.height()), (1, 1));
     }
 }

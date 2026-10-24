@@ -178,7 +178,11 @@ pipewire = "0.10"
 # que teclas sai cada caractere — tecla própria, ou acento + letra.
 xkbcommon = { version = "0.8", default-features = false }
 unicode-normalization = "0.1"
-# O ícone ao lado do relógio (ver `bandeja_linux.rs`), pelo protocolo que o
+# O ícone ao lado do relógio (ver `interface_linux.rs`), pelo protocolo que o
 # Ubuntu e o KDE mostram (StatusNotifierItem), falando direto pelo D-Bus — sem
 # GTK, que traria um bloco grande de bibliotecas gráficas só para um ícone.
 ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
+# A área de transferência no X11 (texto, imagem e arquivos). No Wayland ela vai
+# pelo portal (ver `wayland.rs`), e por isso sem o `wayland-data-control`, que
+# o GNOME não oferece.
+arboard = { version = "3.6", default-features = false, features = ["image-data"] }

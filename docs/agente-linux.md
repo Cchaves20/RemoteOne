@@ -92,10 +92,32 @@ Desinstalar do ícone apaga também a identidade e a configuração.
 - Tomada ou bateria por `/sys/class/power_supply`, ignorando pilhas de mouse e
   fone. Máquina virtual não expõe nada e conta como tomada.
 
+## Área de transferência (`clipboard.rs`, `wayland.rs`)
+
+Texto e imagem nos dois sentidos, o aviso automático de cópia nova e os
+arquivos copiados no gerenciador de arquivos.
+
+- **Wayland**: só a janela em foco lê a área de transferência, e o agente não
+  tem janela. Vai pelo portal, dentro da sessão que abre quando o celular abre
+  a tela — o único lugar do app que copia e cola. Fora dela, o celular é
+  avisado. O teste `scripts/spike-clipboard.py` (Ubuntu 26.04, GNOME 50)
+  confirmou os dois sentidos, com acentos, e que a ficha guardada continua
+  dispensando a janela de permissão.
+  - Copiar no computador: o portal avisa, e o agente lê o texto na hora.
+  - Colar o que veio do celular: no Wayland quem copiou **serve** os dados a
+    cada Ctrl+V, então o agente guarda o conteúdo enquanto a sessão existir.
+  - O descritor que o portal entrega não bloqueia: ler antes de o programa
+    dono escrever dá "tente de novo", e não "acabou".
+- **X11**: direto, pela `arboard`, a qualquer hora.
+
+A primeira sessão depois de atualizar pode mostrar a janela de permissão uma
+vez: a ficha guardada foi dada antes de o agente pedir a área de
+transferência.
+
 ## O que ainda não existe no Linux
 
-Responde ao celular que não dá, em vez de fingir que fez: área de
-transferência, abrir e fechar programas, brilho e modo apresentação. Recusas
+Responde ao celular que não dá, em vez de fingir que fez: abrir e fechar
+programas, brilho e modo apresentação. Recusas
 (um "desligar" que pediu senha, por exemplo) chegam ao celular numa faixa no
 rodapé da tela remota (`aviso.rs`) — só com a tela aberta; sem ela, ficam no
 diário.
@@ -135,5 +157,5 @@ Para compilar à mão (Debian 12, Ubuntu 22.04 ou mais novos):
 
 ## Próximas fases
 
-- **Fase 3:** área de transferência, som, programas e atualização
-  automática (energia já entrou).
+- **Fase 3:** som, programas e atualização automática (energia e área de
+  transferência já entraram).
