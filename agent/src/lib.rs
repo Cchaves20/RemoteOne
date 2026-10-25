@@ -129,6 +129,31 @@ pub fn migrar_configuracao_antiga() {
     }
 }
 
+/// Tira o agente do servidor antigo do DuckDNS (ver `migracao::trocar_servidor`).
+///
+/// Recebe a URL em uso e devolve a que vale. Se o arquivo de configuração
+/// aponta para o antigo, ele é regravado, para o `status` e as próximas
+/// partidas já lerem o novo. Se quem aponta é uma variável de ambiente, que o
+/// agente não tem como mudar, a troca vale só para esta execução — e vale de
+/// novo a cada partida.
+pub fn migrar_servidor_antigo(url: String) -> String {
+    let Some(nova) = migracao::trocar_servidor(&url) else {
+        return url;
+    };
+    let mut cfg = load_config();
+    if let Some(no_arquivo) = cfg
+        .get("DESKSIDE_BACKEND_URL")
+        .and_then(migracao::trocar_servidor)
+    {
+        cfg.set("DESKSIDE_BACKEND_URL", &no_arquivo);
+        if let Err(e) = save_config(&cfg) {
+            diario(&format!("servidor antigo: não consegui gravar a troca: {e}"));
+        }
+    }
+    diario(&format!("servidor antigo trocado: {url} → {nova}"));
+    nova
+}
+
 /// Diretório de configuração do sistema, sem dependência externa.
 fn platform_config_dir() -> Option<PathBuf> {
     if cfg!(target_os = "windows") {

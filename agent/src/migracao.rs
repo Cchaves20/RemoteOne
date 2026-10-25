@@ -90,9 +90,48 @@ pub fn migrar(antiga: &Path, nova: &Path) -> bool {
     migrou
 }
 
+/// O servidor do DuckDNS, de antes do domínio próprio, e o que o substitui.
+///
+/// O mesmo servidor atende os dois nomes, mas o antigo depende do DuckDNS
+/// traduzir o nome — e ele já falhou, deixando fora do ar todo computador que
+/// apontava para lá sem que o servidor tivesse nada.
+const SERVIDOR_ANTIGO: &str = "caio-remoteone.duckdns.org";
+const SERVIDOR_NOVO: &str = "deskside.com.br";
+
+/// A URL com o servidor antigo trocado pelo novo, ou `None` se ela não aponta
+/// para o antigo. Troca só o nome: esquema, porta e caminho ficam.
+pub fn trocar_servidor(url: &str) -> Option<String> {
+    let (esquema, resto) = url.split_once("://")?;
+    let fim = resto.find(['/', ':', '?']).unwrap_or(resto.len());
+    let (nome, depois) = resto.split_at(fim);
+    nome.eq_ignore_ascii_case(SERVIDOR_ANTIGO)
+        .then(|| format!("{esquema}://{SERVIDOR_NOVO}{depois}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn o_servidor_do_duckdns_vira_o_dominio_proprio() {
+        assert_eq!(
+            trocar_servidor("wss://caio-remoteone.duckdns.org/ws/agent").as_deref(),
+            Some("wss://deskside.com.br/ws/agent")
+        );
+        assert_eq!(
+            trocar_servidor("wss://Caio-RemoteOne.DuckDNS.org:443/ws/agent").as_deref(),
+            Some("wss://deskside.com.br:443/ws/agent")
+        );
+    }
+
+    #[test]
+    fn outros_servidores_ficam_como_estao() {
+        assert_eq!(trocar_servidor("wss://deskside.com.br/ws/agent"), None);
+        assert_eq!(trocar_servidor("ws://127.0.0.1:8000/ws/agent"), None);
+        // Só o nome inteiro conta, não um pedaço dele.
+        assert_eq!(trocar_servidor("wss://caio-remoteone.duckdns.org.exemplo.com/ws"), None);
+        assert_eq!(trocar_servidor("lixo"), None);
+    }
 
     #[test]
     fn troca_o_prefixo_das_chaves() {

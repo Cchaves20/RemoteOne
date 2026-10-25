@@ -387,8 +387,9 @@ fn main() {
 
     let plat = platform::current();
     let cfg = load_config();
-    let url = resolve(&cfg, "DESKSIDE_BACKEND_URL")
-        .unwrap_or_else(|| DEFAULT_BACKEND_URL.to_string());
+    let url = deskside_agent::migrar_servidor_antigo(
+        resolve(&cfg, "DESKSIDE_BACKEND_URL").unwrap_or_else(|| DEFAULT_BACKEND_URL.to_string()),
+    );
 
     let device_id = load_or_create_device_id(&device_id_path())
         .expect("não foi possível ler/criar o device_id");
