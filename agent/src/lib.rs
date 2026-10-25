@@ -72,7 +72,9 @@ use std::path::PathBuf;
 /// **Trocar este valor não mexe em quem já instalou.** A ordem é: variável de
 /// ambiente, depois `agent.conf`, e só então esta constante — e o `install` grava
 /// a URL no arquivo. O endereço antigo (`caio-remoteone.duckdns.org`) continua
-/// atendido pelo servidor, então nenhuma instalação existente precisa ser tocada.
+/// atendido pelo servidor, mas depende do DuckDNS resolver o nome — e ele já
+/// falhou, deixando fora do ar quem apontava para lá. Uma instalação assim se
+/// conserta com `install wss://deskside.com.br/ws/agent`.
 ///
 /// `option_env!` para quem desenvolve não precisar editar este arquivo:
 ///

@@ -76,14 +76,15 @@ param(
     [switch]$Ocultar,
 
     [string]$Branch = "claude/testing-strategy-multiplatform-0nztwm",
-    # O domínio que a conferência do /health consulta no fim do deploy.
+    # O domínio do servidor: a conferência do /health no fim do deploy, o
+    # endereço publicado do instalador e o servidor para onde o agente deste
+    # computador aponta ao ser reinstalado.
     #
-    # Continua no nome antigo **de propósito**, e vira `deskside.com.br` quando o
-    # DNS novo estiver propagado. Trocar antes disso faria a conferência falhar
-    # num deploy que deu certo - e uma conferência que grita sem motivo é uma
-    # conferência que se aprende a ignorar. O Caddy atende os dois nomes, então
-    # não há pressa: `-Dominio deskside.com.br` testa o novo quando você quiser.
-    [string]$Dominio = "caio-remoteone.duckdns.org",
+    # Era o nome antigo do DuckDNS até o DNS do `deskside.com.br` propagar. Saiu
+    # dele quando o DuckDNS parou de resolver o nome e o agente do Dell, que o
+    # script reinstalava apontando para lá, ficou fora do ar sem que o
+    # servidor tivesse nada. O Caddy ainda atende os dois nomes.
+    [string]$Dominio = "deskside.com.br",
 
     # Servidor e chave do SSH. O padrão pega a chave mais recente em Downloads;
     # passe -ChaveSsh se a sua estiver noutro lugar.
