@@ -118,6 +118,21 @@ A primeira sessão depois de atualizar pode mostrar a janela de permissão uma
 vez: a ficha guardada foi dada antes de o agente pedir a área de
 transferência.
 
+## Som (`audio.rs`)
+
+O que vai para o alto-falante, pelo PipeWire: um fluxo de gravação com
+`stream.capture.sink`, que o liga ao monitor da saída padrão (e acompanha a
+troca de saída). Sem portal nem janela de permissão, no Wayland e no X11.
+Codificado com o mesmo Opus em Rust puro do Mac, na mesma faixa de áudio.
+
+O monitor entrega o som **antes** do volume e do mudo do computador (medido
+com um tom: mesmo nível em 100%, 10% e mudo). Por isso o ganho do app é
+ignorado no Linux — o truque do Windows (computador baixinho, ganho alto no
+celular) não é preciso, e ganho alto só cortaria o som. O computador pode
+ficar mudo, e o celular ouve normal.
+
+Sem PipeWire (Linux de antes de 2022, só com PulseAudio), o celular é avisado.
+
 ## O que ainda não existe no Linux
 
 Responde ao celular que não dá, em vez de fingir que fez: abrir e fechar
@@ -161,5 +176,5 @@ Para compilar à mão (Debian 12, Ubuntu 22.04 ou mais novos):
 
 ## Próximas fases
 
-- **Fase 3:** som, programas e atualização automática (energia e área de
-  transferência já entraram).
+- **Fase 3:** programas e atualização automática (energia, área de
+  transferência e som já entraram).

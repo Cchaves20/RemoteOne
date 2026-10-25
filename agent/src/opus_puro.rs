@@ -1,4 +1,4 @@
-//! O codificador Opus do Mac, sem C nenhum.
+//! O codificador Opus do Mac e do Linux, sem C nenhum.
 //!
 //! No Windows o Opus vem pronto do `audiopus`. No Mac aquele pacote compila o
 //! libopus com autotools, e não para as duas arquiteturas do pacote universal

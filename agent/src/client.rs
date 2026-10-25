@@ -1146,7 +1146,12 @@ pub async fn run(
                                             audio = Some(captura);
                                             println!("Áudio: ligado");
                                         }
-                                        Err(e) => eprintln!("Áudio indisponível: {e}"),
+                                        Err(e) => {
+                                            eprintln!("Áudio indisponível: {e}");
+                                            crate::aviso::avisar(&format!(
+                                                "Sem o som do computador: {e}."
+                                            ));
+                                        }
                                     }
                                 }
                             }

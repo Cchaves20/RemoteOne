@@ -36,7 +36,7 @@ pub mod lote;
 #[cfg(target_os = "macos")]
 pub mod mac;
 pub mod notify;
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 pub mod opus_puro;
 pub mod pairing;
 #[cfg(target_os = "macos")]

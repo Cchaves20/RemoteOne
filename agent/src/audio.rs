@@ -8,7 +8,8 @@
 //! O que o Windows entrega (o "loopback" da placa de som) quase nunca é o que o
 //! Opus aceita: vem na taxa da placa, com o número de canais dela, em blocos de
 //! tamanho arbitrário. O [`Shaper`] resolve isso e é **puro** — roda e é testado
-//! em qualquer sistema. A captura em si e o codificador são só do Windows.
+//! em qualquer sistema. A captura muda por sistema: o loopback no Windows, o
+//! ScreenCaptureKit no Mac e o PipeWire no Linux.
 
 use std::time::Duration;
 
@@ -236,7 +237,7 @@ pub fn intercalar(canais: &[&[f32]], saida: &mut Vec<f32>) {
 ///
 /// É o mesmo que a chamada de retorno do Windows faz por dentro, separado aqui
 /// para o Mac usar e para ser testado em qualquer sistema.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 pub struct Processador {
     shaper: Shaper,
     codificador: crate::opus_puro::Codificador,
@@ -247,7 +248,7 @@ pub struct Processador {
     avisou_corte: bool,
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 impl Processador {
     pub fn novo(
         taxa: u32,
@@ -794,16 +795,223 @@ mod imp {
     }
 }
 
+/// No Linux: o que vai para o alto-falante, pelo PipeWire.
+///
+/// Um fluxo de gravação com `stream.capture.sink`: em vez de um microfone, o
+/// PipeWire o liga ao "monitor" da saída de som padrão — e o religa sozinho
+/// se a pessoa trocar de saída. Sem portal e sem janela de permissão, no
+/// Wayland e no X11. O formato é pedido pronto (48 kHz, estéreo, `f32`), e o
+/// PipeWire converte o que a placa tiver.
+///
+/// **Sem o ganho do app.** O monitor do PipeWire entrega o som **antes** do
+/// volume do computador — e antes do mudo: medido com um tom, o nível gravado
+/// foi o mesmo em 100%, em 10% e no mudo. O truque do Windows (computador
+/// baixinho, ganho alto no telefone) não é preciso aqui, e o ganho alto só
+/// cortaria o som. O computador pode ficar mudo, e o telefone ouve normal.
+#[cfg(target_os = "linux")]
+mod imp {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{mpsc, Arc};
+    use std::time::Duration;
+
+    use super::{Packet, Processador, CHANNELS, SAMPLE_RATE};
+
+    /// Captura em curso. Cair fora de escopo para a captura.
+    pub struct Capture {
+        stop: Arc<AtomicBool>,
+        thread: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Relaxed);
+            if let Some(t) = self.thread.take() {
+                let _ = t.join();
+            }
+        }
+    }
+
+    struct Dados {
+        formato: pipewire::spa::param::audio::AudioInfoRaw,
+        processador: Option<Processador>,
+        tx: tokio::sync::mpsc::Sender<Packet>,
+        ganho: Arc<super::Gain>,
+        amostras: Vec<f32>,
+    }
+
+    fn gravar(
+        tx: tokio::sync::mpsc::Sender<Packet>,
+        ganho: Arc<super::Gain>,
+        pronto: mpsc::Sender<Result<(), String>>,
+        parar: Arc<AtomicBool>,
+    ) -> Result<(), String> {
+        use pipewire as pw;
+        use pw::spa;
+        use pw::spa::param::format::{MediaSubtype, MediaType};
+        use pw::spa::pod::Pod;
+
+        pw::init();
+        let laco = pw::main_loop::MainLoopRc::new(None).map_err(|e| e.to_string())?;
+        let contexto = pw::context::ContextRc::new(&laco, None).map_err(|e| e.to_string())?;
+        let nucleo = contexto.connect_rc(None).map_err(|_| {
+            "este Linux não usa o PipeWire, e é por ele que o som sai".to_string()
+        })?;
+        let fluxo = pw::stream::StreamRc::new(
+            nucleo,
+            "Deskside",
+            pw::properties::properties! {
+                *pw::keys::MEDIA_TYPE => "Audio",
+                *pw::keys::MEDIA_CATEGORY => "Capture",
+                *pw::keys::MEDIA_ROLE => "Music",
+                *pw::keys::STREAM_CAPTURE_SINK => "true",
+                *pw::keys::NODE_NAME => "deskside-som",
+                *pw::keys::APP_NAME => "Deskside",
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+        let dados = Dados {
+            formato: Default::default(),
+            processador: None,
+            tx,
+            ganho,
+            amostras: Vec::new(),
+        };
+        let _ouvinte = fluxo
+            .add_local_listener_with_user_data(dados)
+            .param_changed(|_, d, id, param| {
+                let Some(param) = param else { return };
+                if id != pw::spa::param::ParamType::Format.as_raw() {
+                    return;
+                }
+                if !matches!(
+                    pw::spa::param::format_utils::parse_format(param),
+                    Ok((MediaType::Audio, MediaSubtype::Raw))
+                ) {
+                    return;
+                }
+                if d.formato.parse(param).is_err() {
+                    return;
+                }
+                // O formato combinado: quase sempre o pedido, mas quem decide
+                // é o PipeWire, e o `Shaper` acerta o que vier.
+                let (taxa, canais) = (d.formato.rate(), d.formato.channels().max(1) as usize);
+                match Processador::novo(taxa, canais, d.tx.clone(), Arc::clone(&d.ganho)) {
+                    Ok(p) => d.processador = Some(p),
+                    Err(e) => crate::diario(&format!("Áudio: codificador: {e}")),
+                }
+            })
+            .process(|fluxo, d| {
+                let Some(mut buffer) = fluxo.dequeue_buffer() else {
+                    return;
+                };
+                let Some(dado) = buffer.datas_mut().first_mut() else {
+                    return;
+                };
+                let (inicio, ocupado) = {
+                    let pedaco = dado.chunk();
+                    (pedaco.offset() as usize, pedaco.size() as usize)
+                };
+                let Some(bytes) = dado.data() else { return };
+                if ocupado == 0 || inicio + ocupado > bytes.len() {
+                    return;
+                }
+                d.amostras.clear();
+                d.amostras.extend(
+                    bytes[inicio..inicio + ocupado]
+                        .chunks_exact(4)
+                        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+                );
+                if let Some(p) = d.processador.as_mut() {
+                    p.empurrar(&d.amostras);
+                }
+            })
+            .register()
+            .map_err(|e| e.to_string())?;
+
+        let mut formato = spa::param::audio::AudioInfoRaw::new();
+        formato.set_format(spa::param::audio::AudioFormat::F32LE);
+        formato.set_rate(SAMPLE_RATE);
+        formato.set_channels(CHANNELS as u32);
+        let mut posicoes = [0u32; spa::sys::SPA_AUDIO_MAX_CHANNELS as usize];
+        posicoes[0] = spa::sys::SPA_AUDIO_CHANNEL_FL;
+        posicoes[1] = spa::sys::SPA_AUDIO_CHANNEL_FR;
+        formato.set_position(posicoes);
+        let objeto = spa::pod::Object {
+            type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
+            id: spa::param::ParamType::EnumFormat.as_raw(),
+            properties: formato.into(),
+        };
+        let bytes = spa::pod::serialize::PodSerializer::serialize(
+            std::io::Cursor::new(Vec::new()),
+            &spa::pod::Value::Object(objeto),
+        )
+        .map_err(|e| format!("{e:?}"))?
+        .0
+        .into_inner();
+        let mut parametros = [Pod::from_bytes(&bytes).ok_or("formato inválido")?];
+        fluxo
+            .connect(
+                spa::utils::Direction::Input,
+                None,
+                pw::stream::StreamFlags::AUTOCONNECT
+                    | pw::stream::StreamFlags::MAP_BUFFERS
+                    | pw::stream::StreamFlags::RT_PROCESS,
+                &mut parametros,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let _ = pronto.send(Ok(()));
+        // Em voltas curtas, como a tela (ver `wayland::receber`).
+        while !parar.load(Ordering::Relaxed) {
+            laco.loop_()
+                .iterate(pw::loop_::Timeout::Finite(Duration::from_millis(100)));
+        }
+        Ok(())
+    }
+
+    /// Liga a captura do som do computador, numa thread própria: os objetos
+    /// do PipeWire vivem e morrem no laço que os criou.
+    pub fn start(
+        tx: tokio::sync::mpsc::Sender<Packet>,
+        _gain: Arc<super::Gain>,
+    ) -> Result<Capture, String> {
+        // Ganho fixo em 1 (ver acima).
+        let gain = Arc::new(super::Gain::new(1.0));
+        let stop = Arc::new(AtomicBool::new(false));
+        let sinal = Arc::clone(&stop);
+        let (pronto_tx, pronto_rx) = mpsc::channel::<Result<(), String>>();
+        let thread = std::thread::Builder::new()
+            .name("deskside-som".into())
+            .spawn(move || {
+                if let Err(e) = gravar(tx, gain, pronto_tx.clone(), sinal) {
+                    crate::diario(&format!("Áudio: {e}"));
+                    let _ = pronto_tx.send(Err(e));
+                }
+            })
+            .map_err(|e| e.to_string())?;
+        match pronto_rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(Ok(())) => Ok(Capture {
+                stop,
+                thread: Some(thread),
+            }),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err("o PipeWire não respondeu".to_string()),
+        }
+    }
+}
+
 #[cfg(not(any(
     all(windows, any(target_arch = "x86", target_arch = "x86_64")),
-    target_os = "macos"
+    target_os = "macos",
+    target_os = "linux"
 )))]
 mod imp {
     use super::Packet;
 
-    /// Sem captura aqui: fora do Windows não há agente real, e no Windows em
-    /// ARM falta o Opus pronto (ver `Cargo.toml`). O resto do agente funciona
-    /// igual — tela, teclado, mouse, arquivos —, só não vai som.
+    /// Sem captura aqui: no Windows em ARM falta o Opus pronto (ver
+    /// `Cargo.toml`). O resto do agente funciona igual — tela, teclado,
+    /// mouse, arquivos —, só não vai som.
     pub struct Capture;
 
     pub fn start(
