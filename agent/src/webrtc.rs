@@ -262,7 +262,14 @@ impl Video {
                     ..Default::default()
                 },
                 "som".to_owned(),
-                "deskside".to_owned(),
+                // **Fluxo próprio, e não o `deskside` da tela.** Faixas no
+                // mesmo fluxo o celular sincroniza: segura cada quadro até o
+                // som daquele instante tocar, e o som toca com uma folga para
+                // não picotar. Com som ligado, a imagem e o controle passavam
+                // a chegar com essa folga de atraso, e engasgavam a cada
+                // variação dela. Num controle remoto a imagem vale mais que
+                // lábio sincronizado: separados, cada um chega no seu tempo.
+                "deskside-som".to_owned(),
             ));
             // Sem `?`: **o som não pode derrubar a tela**. Ver o computador é
             // a função do app; ouvi-lo é um extra. Um erro aqui abortava a
@@ -669,6 +676,10 @@ mod tests {
         assert!(minusculo.contains("h264"), "a resposta perdeu o H.264");
         assert!(minusculo.contains("m=audio"), "a resposta perdeu o som");
         assert!(minusculo.contains("opus"), "a resposta não anuncia Opus");
+        // Som e tela em fluxos diferentes: no mesmo, o celular atrasaria a
+        // imagem para esperar o som.
+        assert!(sdp.contains("a=msid:deskside tela"), "a tela saiu do fluxo dela");
+        assert!(sdp.contains("a=msid:deskside-som som"), "o som ficou no fluxo da tela");
 
         // O app aplica a resposta. É aqui que uma resposta inconsistente
         // (faixa a mais, faixa fora de ordem, codec que não casa) aparece.
