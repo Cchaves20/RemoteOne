@@ -530,6 +530,41 @@ pub fn desktop_do_linux(exe: &Path, icone: &Path, no_login: bool) -> String {
     texto
 }
 
+/// Os outros agentes do Deskside rodando nesta conta, pela pasta `/proc`.
+///
+/// Pelo nome do processo e pelo dono: um agente de outra conta da mesma
+/// máquina não é deste usuário para fechar. Fora o próprio processo, que é o
+/// `install` em curso.
+///
+/// Recebe a pasta para ser testada com uma `/proc` de mentira.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn outros_agentes(proc: &Path, eu: u32, uid: u32) -> Vec<u32> {
+    #[cfg(unix)]
+    use std::os::unix::fs::MetadataExt;
+    let Ok(pastas) = std::fs::read_dir(proc) else {
+        return Vec::new();
+    };
+    let mut pids: Vec<u32> = pastas
+        .flatten()
+        .filter_map(|p| {
+            let pid: u32 = p.file_name().to_str()?.parse().ok()?;
+            if pid == eu {
+                return None;
+            }
+            #[cfg(unix)]
+            if p.metadata().ok()?.uid() != uid {
+                return None;
+            }
+            #[cfg(not(unix))]
+            let _ = uid;
+            let nome = std::fs::read_to_string(p.path().join("comm")).ok()?;
+            (nome.trim() == "deskside-agent").then_some(pid)
+        })
+        .collect();
+    pids.sort_unstable();
+    pids
+}
+
 /// O que o `install` explica no fim, no Linux.
 ///
 /// O login automático vai **explicado**, e não ligado: é decisão de quem usa o
@@ -1157,6 +1192,40 @@ mod imp {
             .map_err(|e| format!("não consegui pôr o executável no lugar: {e}"))
     }
 
+    extern "C" {
+        fn kill(pid: i32, sinal: i32) -> i32;
+    }
+    const SIGTERM: i32 = 15;
+    const SIGKILL: i32 = 9;
+
+    /// Fecha os outros agentes desta conta e espera saírem. Devolve quantos.
+    ///
+    /// Primeiro o pedido educado (SIGTERM), que solta a tela compartilhada e o
+    /// arquivo trancado como uma saída normal; quem não sair em 5 s é
+    /// encerrado à força.
+    fn encerrar_outros_agentes() -> usize {
+        let Ok(eu) = std::fs::metadata("/proc/self") else {
+            return 0;
+        };
+        use std::os::unix::fs::MetadataExt;
+        let outros = super::outros_agentes(Path::new("/proc"), std::process::id(), eu.uid());
+        for pid in &outros {
+            unsafe { kill(*pid as i32, SIGTERM) };
+        }
+        let vivo = |pid: &u32| Path::new(&format!("/proc/{pid}")).exists();
+        let prazo = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while outros.iter().any(vivo) && std::time::Instant::now() < prazo {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        for pid in outros.iter().filter(|p| vivo(p)) {
+            unsafe { kill(*pid as i32, SIGKILL) };
+        }
+        if !outros.is_empty() {
+            crate::diario(&format!("instalar: {} agente(s) antigo(s) fechado(s)", outros.len()));
+        }
+        outros.len()
+    }
+
     /// Sobe a cópia instalada, solta deste terminal: fechá-lo não a derruba.
     fn subir(exe: &Path) {
         use std::os::unix::process::CommandExt;
@@ -1192,8 +1261,13 @@ mod imp {
         gravar(&l.inicio, desktop_do_linux(&l.exe, &l.icone, true).as_bytes())?;
         gravar(&l.menu, desktop_do_linux(&l.exe, &l.icone, false).as_bytes())?;
         crate::diario(&format!("instalado em {}", l.pasta.display()));
-        // Se um Deskside já estiver rodando, este novo sai sozinho (uma
-        // instância só); o instalado assume no próximo login.
+        // Com um Deskside já rodando, o novo veria "já está rodando" e sairia
+        // (uma instância só), e a versão antiga seguiria no ar sem ninguém
+        // perceber. Por isso o antigo sai primeiro.
+        let fechados = encerrar_outros_agentes();
+        if fechados > 0 {
+            println!("O Deskside que estava rodando foi fechado; o novo assume agora.");
+        }
         subir(&l.exe);
         for linha in explicacao_do_linux(&l) {
             println!("{linha}");
@@ -1660,6 +1734,24 @@ mod testes_do_linux {
             argumento_do_exec(Path::new("/home/Ana Bia/$x\"%y")),
             "\"/home/Ana Bia/\\\\$x\\\\\"%%y\""
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn acha_os_outros_agentes_pelo_nome_e_fora_o_proprio() {
+        use std::os::unix::fs::MetadataExt;
+        let proc = std::env::temp_dir().join(format!("deskside-proc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&proc);
+        for (pid, nome) in [("10", "deskside-agent"), ("11", "bash"), ("12", "deskside-agent"), ("self", "x")] {
+            std::fs::create_dir_all(proc.join(pid)).unwrap();
+            std::fs::write(proc.join(pid).join("comm"), format!("{nome}\n")).unwrap();
+        }
+        let uid = std::fs::metadata(&proc).unwrap().uid();
+        // O 12 é o próprio `install`: fica.
+        assert_eq!(outros_agentes(&proc, 12, uid), vec![10]);
+        // Outro dono: nenhum é deste usuário para fechar.
+        assert!(outros_agentes(&proc, 12, uid + 1).is_empty());
+        std::fs::remove_dir_all(&proc).unwrap();
     }
 
     #[test]

@@ -62,6 +62,10 @@ Depois de copiar, sobe a cópia instalada solta do terminal e explica o login
 automático — sem ligá-lo: é decisão de quem usa o computador. Instalar é
 sempre pedido explícito; dois cliques no executável não instalam.
 
+**Reinstalar com o Deskside aberto** fecha o que está rodando (pelo nome do
+processo, só os da mesma conta) e sobe o novo. Antes, o novo via "já está
+rodando" e saía, e a versão antiga seguia no ar sem ninguém perceber.
+
 **Uma instância só**, como no Mac (arquivo trancado em `~/.config/deskside`):
 abrir pelo menu com o agente rodando mostra a notificação "já está rodando".
 
