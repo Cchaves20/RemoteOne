@@ -107,13 +107,15 @@ mslnk = "0.1"
 eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts"] }
 tray-icon = "0.19"
 # O codificador H.264 da placa de vídeo, pelo Media Foundation (ver
-# `h264_placa.rs`). A mesma versão que o `wgpu` e o `xcap` já trazem.
+# `h264_placa.rs`), e a digitação de emoji (ver `injector.rs`). A mesma versão
+# que o `wgpu` e o `xcap` já trazem.
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Media_MediaFoundation",
     "Win32_System_Com",
     "Win32_System_Ole",
     "Win32_System_Variant",
+    "Win32_UI_Input_KeyboardAndMouse",
 ] }
 
 # O Mac. As mesmas bibliotecas do Windows onde elas cobrem os dois sistemas

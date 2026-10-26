@@ -164,6 +164,30 @@ mod imp {
     }
 
     impl EnigoInjector {
+        /// Digita um texto. No Windows, em pedaços (ver `super::pedacos`): a
+        /// digitação de texto do `enigo` ali larga tudo depois da primeira
+        /// quebra de linha e deixa metade de cada emoji "apertada".
+        fn digitar(&mut self, texto: &str) -> Result<(), String> {
+            #[cfg(windows)]
+            {
+                for pedaco in super::pedacos(texto) {
+                    match pedaco {
+                        super::Pedaco::Texto(t) => self.enigo.text(t),
+                        super::Pedaco::Enter => self.enigo.key(Key::Return, Direction::Click),
+                        super::Pedaco::Tab => self.enigo.key(Key::Tab, Direction::Click),
+                        super::Pedaco::ForaDoBasico(c) => {
+                            super::emoji_no_windows(c)?;
+                            Ok(())
+                        }
+                    }
+                    .map_err(|e| e.to_string())?;
+                }
+                Ok(())
+            }
+            #[cfg(not(windows))]
+            self.enigo.text(texto).map_err(|e| e.to_string())
+        }
+
         fn key_combo(&mut self, modifiers: &[Modifier], key: &str) -> Result<(), String> {
             let resolved = combo_key(key)?;
             for m in modifiers {
@@ -239,7 +263,7 @@ mod imp {
                     .enigo
                     .scroll(-*dy, Axis::Vertical)
                     .map_err(|e| e.to_string()),
-                InputAction::KeyText { text } => self.enigo.text(text).map_err(|e| e.to_string()),
+                InputAction::KeyText { text } => self.digitar(text),
                 InputAction::KeyPress { key } => self
                     .enigo
                     .key(special_key(key), Direction::Click)
@@ -253,7 +277,7 @@ mod imp {
                             .key(Key::Backspace, Direction::Click)
                             .map_err(|e| e.to_string())?;
                     }
-                    self.enigo.text(text).map_err(|e| e.to_string())
+                    self.digitar(text)
                 }
             }
         }
@@ -263,6 +287,88 @@ mod imp {
                 .key(media_key(action), Direction::Click)
                 .map_err(|e| e.to_string())
         }
+    }
+}
+
+/// Um pedaço de texto para digitar no Windows.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Debug, PartialEq)]
+enum Pedaco<'a> {
+    /// Caracteres comuns, digitados de uma vez.
+    Texto(&'a str),
+    Enter,
+    Tab,
+    /// Um caractere fora do plano básico do Unicode (quase sempre um emoji),
+    /// que no Windows vai em duas metades (ver `emoji_no_windows`).
+    ForaDoBasico(char),
+}
+
+/// Quebra o texto nos pedaços que o Windows digita bem.
+///
+/// A digitação de texto do `enigo` no Windows tem dois defeitos: na primeira
+/// quebra de linha ela aperta Enter e **abandona o resto do texto** (nem o
+/// que vinha antes sai), e de um emoji ela solta só a primeira das duas
+/// metades — a outra fica apertada. Um parágrafo ditado com uma linha em
+/// branco chegava pela metade. Aqui as quebras de linha e as tabulações viram
+/// teclas, `\r` é descartado (o Enter já é a quebra), e cada emoji vai à
+/// parte.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn pedacos(texto: &str) -> Vec<Pedaco<'_>> {
+    let mut saida = Vec::new();
+    let mut inicio = 0;
+    for (i, c) in texto.char_indices() {
+        let especial = match c {
+            '\n' => Some(Pedaco::Enter),
+            '\t' => Some(Pedaco::Tab),
+            '\r' => None,
+            c if (c as u32) > 0xFFFF => Some(Pedaco::ForaDoBasico(c)),
+            _ => continue,
+        };
+        if inicio < i {
+            saida.push(Pedaco::Texto(&texto[inicio..i]));
+        }
+        if let Some(p) = especial {
+            saida.push(p);
+        }
+        inicio = i + c.len_utf8();
+    }
+    if inicio < texto.len() {
+        saida.push(Pedaco::Texto(&texto[inicio..]));
+    }
+    saida
+}
+
+/// Digita um caractere fora do plano básico (um emoji) no Windows: as duas
+/// metades (surrogates) do UTF-16, cada uma apertada **e solta**.
+#[cfg(windows)]
+fn emoji_no_windows(c: char) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
+        VIRTUAL_KEY,
+    };
+    let mut metades = [0u16; 2];
+    let mut eventos = Vec::new();
+    for &metade in c.encode_utf16(&mut metades).iter() {
+        for flags in [KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP] {
+            eventos.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0),
+                        wScan: metade,
+                        dwFlags: flags,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            });
+        }
+    }
+    let enviados = unsafe { SendInput(&eventos, std::mem::size_of::<INPUT>() as i32) };
+    if enviados as usize == eventos.len() {
+        Ok(())
+    } else {
+        Err("o Windows recusou o emoji".to_string())
     }
 }
 
@@ -455,20 +561,39 @@ mod wayland {
         /// O que o layout não alcança fica de fora — o compositor descartaria
         /// de qualquer jeito —, e o celular é avisado uma vez por conexão,
         /// dizendo o que fazer.
+        ///
+        /// ## A última tecla presa
+        ///
+        /// Um texto inteiro de uma vez (a caixa de ditado do app) deixava a
+        /// **última letra repetindo sem parar**, até chegar outra tecla: a
+        /// soltura dela se perdia entre o agente, o portal e o GNOME, e no
+        /// Wayland quem repete tecla segurada é o próprio sistema. Duas
+        /// proteções:
+        ///
+        /// - **Um respiro de 1 ms por caractere** em texto com mais de um: a
+        ///   rajada de centenas de eventos de uma vez é o que o caminho não
+        ///   aguentava. 200 caracteres custam 0,2 s.
+        /// - **A última tecla é solta de novo no fim.** Soltar o que já está
+        ///   solto não faz nada (o GNOME só registra e ignora); soltar o que
+        ///   ficou preso para a repetição.
         fn digitar(&mut self, s: &Sessao, texto: &str) {
             use crate::teclado_linux::Plano;
             let teclado = crate::teclado_linux::atual();
+            let respiro = texto.chars().nth(1).is_some();
+            let mut ultima: Option<i32> = None;
             for c in texto.chars() {
                 match teclado.plano(c) {
                     Plano::Direto(simbolo) => {
                         s.tecla(simbolo as i32, true);
                         s.tecla(simbolo as i32, false);
+                        ultima = Some(simbolo as i32);
                     }
                     Plano::Morto { acento, base } => {
                         s.tecla(acento as i32, true);
                         s.tecla(acento as i32, false);
                         s.tecla(base as i32, true);
                         s.tecla(base as i32, false);
+                        ultima = Some(base as i32);
                     }
                     Plano::Impossivel => {
                         if !self.avisou_teclado {
@@ -481,6 +606,12 @@ mod wayland {
                         }
                     }
                 }
+                if respiro {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+            if let Some(tecla) = ultima {
+                s.tecla(tecla, false);
             }
         }
     }
@@ -561,6 +692,31 @@ pub use imp::controller;
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn texto_com_linhas_e_emoji_vira_pedacos() {
+        assert_eq!(pedacos("oi"), vec![Pedaco::Texto("oi")]);
+        assert_eq!(
+            pedacos("Olá\r\nmundo\tfim 😀!"),
+            vec![
+                Pedaco::Texto("Olá"),
+                Pedaco::Enter,
+                Pedaco::Texto("mundo"),
+                Pedaco::Tab,
+                Pedaco::Texto("fim "),
+                Pedaco::ForaDoBasico('😀'),
+                Pedaco::Texto("!"),
+            ]
+        );
+        // Linha em branco: dois Enters, nada perdido.
+        assert_eq!(
+            pedacos("a\n\nb"),
+            vec![Pedaco::Texto("a"), Pedaco::Enter, Pedaco::Enter, Pedaco::Texto("b")]
+        );
+        assert!(pedacos("").is_empty());
+    }
+
     use super::keysym;
     use crate::input::{Modifier, SpecialKey};
 
