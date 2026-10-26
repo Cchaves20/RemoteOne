@@ -599,6 +599,13 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   void _connect() {
     _sub?.cancel();
+    // Fecha o socket anterior, e não só para de ouvi-lo. Cancelar o ouvinte
+    // deixava o socket aberto: o servidor seguia contando aquela tela, o
+    // computador mantinha a conexão de vídeo dela até sair da tela, e a cada
+    // reconexão (ligar o som é uma) sobrava mais uma — imagem mandada em
+    // dobro e perdas falsas que faziam o computador baixar a qualidade.
+    // Depois do `cancel`, para o fechamento não disparar a reconexão.
+    _channel?.sink.close();
     final q = widget.state.streamQuality;
     final channel = widget.state.api.connectScreen(
       widget.device.deviceId,

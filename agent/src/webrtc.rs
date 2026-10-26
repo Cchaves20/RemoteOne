@@ -62,10 +62,74 @@ pub const INPUT_CHANNEL: &str = "input";
 struct Peer {
     connection: Arc<RTCPeerConnection>,
     track: Arc<TrackLocalStaticSample>,
-    /// Faixa de som. Só existe quando o app pediu áudio na oferta - um app de
-    /// versão antiga não tem linha `m=audio` no SDP, e uma faixa sem lugar na
-    /// oferta não teria como entrar na resposta.
-    audio: Option<Arc<TrackLocalStaticSample>>,
+}
+
+/// As faixas de som das sessões abertas, para quem manda o som.
+///
+/// O som sai por uma tarefa própria, e não pelo laço principal: lá ele
+/// esperava cada quadro de imagem ser codificado (dezenas de milissegundos no
+/// processador), a fila enchia e quadros de som eram jogados fora — o som
+/// picotado. Esta lista é o que a tarefa precisa saber das sessões, sem tocar
+/// no resto delas.
+#[derive(Clone, Default)]
+pub struct SaidaDeSom(Arc<std::sync::Mutex<Vec<FaixaDeSom>>>);
+
+struct FaixaDeSom {
+    sessao: String,
+    conexao: Arc<RTCPeerConnection>,
+    faixa: Arc<TrackLocalStaticSample>,
+}
+
+impl SaidaDeSom {
+    fn por(&self, sessao: &str, conexao: Arc<RTCPeerConnection>, faixa: Arc<TrackLocalStaticSample>) {
+        if let Ok(mut l) = self.0.lock() {
+            l.retain(|f| f.sessao != sessao);
+            l.push(FaixaDeSom {
+                sessao: sessao.to_string(),
+                conexao,
+                faixa,
+            });
+        }
+    }
+
+    fn tirar(&self, sessao: &str) {
+        if let Ok(mut l) = self.0.lock() {
+            l.retain(|f| f.sessao != sessao);
+        }
+    }
+
+    /// As faixas de sessões conectadas agora.
+    fn conectadas(&self) -> Vec<(String, Arc<TrackLocalStaticSample>)> {
+        self.0
+            .lock()
+            .map(|l| {
+                l.iter()
+                    .filter(|f| f.conexao.connection_state() == RTCPeerConnectionState::Connected)
+                    .map(|f| (f.sessao.clone(), Arc::clone(&f.faixa)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Se alguma sessão conectada tem faixa de som - isto é, se vale capturar.
+    pub fn alguem_ouvindo(&self) -> bool {
+        !self.conectadas().is_empty()
+    }
+
+    /// Escreve um quadro de som em todas as faixas conectadas.
+    pub async fn escrever(&self, data: &[u8], duration: Duration) {
+        let sample = webrtc::media::Sample {
+            data: data.to_vec().into(),
+            duration,
+            ..Default::default()
+        };
+        // A lista é copiada antes: o cadeado não atravessa o `await`.
+        for (sessao, faixa) in self.conectadas() {
+            if let Err(e) = faixa.write_sample(&sample).await {
+                eprintln!("falha ao enviar som ({sessao}): {e}");
+            }
+        }
+    }
 }
 
 /// As sessões de WebRTC deste agente.
@@ -85,6 +149,7 @@ pub struct Video {
     /// a qualidade adaptativa; sai pelo mesmo caminho porque quem decide a
     /// resolução também é o laço principal.
     loss: UnboundedSender<f32>,
+    som: SaidaDeSom,
 }
 
 impl Video {
@@ -118,6 +183,7 @@ impl Video {
             input,
             keyframe,
             loss,
+            som: SaidaDeSom::default(),
         })
     }
 
@@ -409,13 +475,13 @@ impl Video {
             .await
             .map_err(|e| format!("não consegui aplicar a resposta: {e}"))?;
 
+        if let Some(faixa) = &audio {
+            self.som
+                .por(session_id, Arc::clone(&connection), Arc::clone(faixa));
+        }
         self.peers.insert(
             session_id.to_string(),
-            Peer {
-                connection,
-                track,
-                audio,
-            },
+            Peer { connection, track },
         );
         Ok(())
     }
@@ -452,6 +518,7 @@ impl Video {
 
     /// Encerra uma sessão. Devolve `true` se havia o que encerrar.
     pub async fn close(&mut self, session_id: &str) -> bool {
+        self.som.tirar(session_id);
         match self.peers.remove(session_id) {
             None => false,
             Some(peer) => {
@@ -504,28 +571,12 @@ impl Video {
 
     /// Se alguma sessão conectada tem faixa de som - isto é, se vale capturar.
     pub fn wants_audio(&self) -> bool {
-        self.peers.values().any(|p| {
-            p.audio.is_some()
-                && p.connection.connection_state() == RTCPeerConnectionState::Connected
-        })
+        self.som.alguem_ouvindo()
     }
 
-    /// Escreve um quadro de som em todas as faixas conectadas que o aceitem.
-    pub async fn write_audio(&self, data: &[u8], duration: Duration) {
-        let sample = webrtc::media::Sample {
-            data: data.to_vec().into(),
-            duration,
-            ..Default::default()
-        };
-        for (session_id, peer) in &self.peers {
-            if peer.connection.connection_state() != RTCPeerConnectionState::Connected {
-                continue;
-            }
-            let Some(faixa) = &peer.audio else { continue };
-            if let Err(e) = faixa.write_sample(&sample).await {
-                eprintln!("falha ao enviar som ({session_id}): {e}");
-            }
-        }
+    /// Por onde o som sai, para a tarefa dele (ver [`SaidaDeSom`]).
+    pub fn saida_de_som(&self) -> SaidaDeSom {
+        self.som.clone()
     }
 
     /// Fecha todas as sessões (usado quando a conexão com o backend cai).
@@ -871,32 +922,14 @@ mod tests {
         agent.close_all().await;
     }
 
-    /// O teste que fecha a Fase 2: quadros H.264 de verdade, saídos do
-    /// codificador, atravessando uma conexão WebRTC de verdade até o outro lado.
-    ///
-    /// Cobre o caminho inteiro — codificador → faixa → RTP/DTLS → receptor —
-    /// que é justamente o que não dá para verificar por partes. Roda no Linux,
-    /// sem tela e sem Windows, porque o quadro é sintético.
-    #[tokio::test]
-    async fn video_h264_atravessa_a_conexao() {
-        let (mut agent, mut signals) = video();
-        let app = app_peer().await;
-
-        // Conta os bytes de RTP que chegarem do outro lado.
-        let (rtp_tx, mut rtp_rx) = mpsc::unbounded_channel::<usize>();
-        app.on_track(Box::new(move |track, _, _| {
-            let rtp_tx = rtp_tx.clone();
-            Box::pin(async move {
-                tokio::spawn(async move {
-                    while let Ok((packet, _)) = track.read_rtp().await {
-                        if rtp_tx.send(packet.payload.len()).is_err() {
-                            break;
-                        }
-                    }
-                });
-            })
-        }));
-
+    /// Negocia uma sessão entre o "app" e o agente e troca candidatos até a
+    /// conexão fechar. Tudo numa tarefa só, então o `&mut agent` não conflita
+    /// com nada.
+    async fn conectar(
+        agent: &mut Video,
+        signals: &mut mpsc::UnboundedReceiver<Signal>,
+        app: &Arc<RTCPeerConnection>,
+    ) {
         // Os candidatos do app vão para uma fila que o laço abaixo consome.
         let (app_ice_tx, mut app_ice_rx) = mpsc::unbounded_channel();
         app.on_ice_candidate(Box::new(move |candidate| {
@@ -919,8 +952,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Troca de candidatos nas duas direções até a conexão fechar. Tudo numa
-        // tarefa só, então o `&mut agent` não conflita com nada.
+        // Troca de candidatos nas duas direções até a conexão fechar.
         let deadline = tokio::time::Instant::now() + Duration::from_secs(25);
         while !agent.wants_video() && tokio::time::Instant::now() < deadline {
             tokio::select! {
@@ -954,6 +986,36 @@ mod tests {
             agent.wants_video(),
             "a conexão não fechou em 25s — sem isso não há o que medir"
         );
+
+    }
+
+    /// O teste que fecha a Fase 2: quadros H.264 de verdade, saídos do
+    /// codificador, atravessando uma conexão WebRTC de verdade até o outro lado.
+    ///
+    /// Cobre o caminho inteiro — codificador → faixa → RTP/DTLS → receptor —
+    /// que é justamente o que não dá para verificar por partes. Roda no Linux,
+    /// sem tela e sem Windows, porque o quadro é sintético.
+    #[tokio::test]
+    async fn video_h264_atravessa_a_conexao() {
+        let (mut agent, mut signals) = video();
+        let app = app_peer().await;
+
+        // Conta os bytes de RTP que chegarem do outro lado.
+        let (rtp_tx, mut rtp_rx) = mpsc::unbounded_channel::<usize>();
+        app.on_track(Box::new(move |track, _, _| {
+            let rtp_tx = rtp_tx.clone();
+            Box::pin(async move {
+                tokio::spawn(async move {
+                    while let Ok((packet, _)) = track.read_rtp().await {
+                        if rtp_tx.send(packet.payload.len()).is_err() {
+                            break;
+                        }
+                    }
+                });
+            })
+        }));
+
+        conectar(&mut agent, &mut signals, &app).await;
 
         // Agora o que importa: codificar quadros de verdade e mandá-los.
         let (w, h) = (320u32, 240u32);
@@ -995,6 +1057,57 @@ mod tests {
         );
 
         agent.close_all().await;
+    }
+
+    /// O som sai por uma tarefa separada do agente (ver `SaidaDeSom`) e chega
+    /// do outro lado de uma conexão de verdade. É a garantia de que a tarefa
+    /// do som não precisa do laço principal para nada.
+    #[tokio::test]
+    async fn som_sai_por_tarefa_propria_e_atravessa_a_conexao() {
+        let (mut agent, mut signals) = video();
+        let app = app_peer_com_som().await;
+
+        let (rtp_tx, mut rtp_rx) = mpsc::unbounded_channel::<usize>();
+        app.on_track(Box::new(move |track, _, _| {
+            let rtp_tx = rtp_tx.clone();
+            Box::pin(async move {
+                if track.kind() != RTPCodecType::Audio {
+                    return;
+                }
+                tokio::spawn(async move {
+                    while let Ok((packet, _)) = track.read_rtp().await {
+                        if rtp_tx.send(packet.payload.len()).is_err() {
+                            break;
+                        }
+                    }
+                });
+            })
+        }));
+        conectar(&mut agent, &mut signals, &app).await;
+        assert!(agent.wants_audio(), "a sessão conectada tem faixa de som");
+
+        // Outra tarefa, só com a saída de som: o agente fica parado aqui.
+        let saida = agent.saida_de_som();
+        let tarefa = tokio::spawn(async move {
+            for _ in 0..50 {
+                saida.escrever(&[0xF8, 0xFF, 0xFE], Duration::from_millis(20)).await;
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        });
+        let mut pacotes = 0;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while pacotes < 25 {
+            match tokio::time::timeout_at(deadline, rtp_rx.recv()).await {
+                Ok(Some(_)) => pacotes += 1,
+                Ok(None) | Err(_) => break,
+            }
+        }
+        tarefa.await.unwrap();
+        assert!(pacotes >= 25, "só {pacotes} pacotes de som atravessaram");
+
+        // Fechada a sessão, a faixa sai da lista do som.
+        agent.close_all().await;
+        assert!(!agent.saida_de_som().alguem_ouvindo());
     }
 
     #[tokio::test]

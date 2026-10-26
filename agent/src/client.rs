@@ -364,7 +364,6 @@ pub async fn run(
     // novo, não acumular meio minuto de atraso.
     let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<crate::audio::Packet>(32);
     let mut audio: Option<crate::audio::Capture> = None;
-    let mut audio_stats = AudioStats::default();
     // Ganho do som, compartilhado com a thread da placa. Fica fora da captura
     // de propósito: mexer no controle do telefone tem efeito na hora, sem
     // reabrir a placa de som.
@@ -433,6 +432,24 @@ pub async fn run(
         stream.ice_servers.clone(),
     )
     .map_err(|e| format!("não consegui iniciar o vídeo por WebRTC: {e}"))?;
+
+    // O som sai por uma tarefa só dele, e não por este laço. Aqui ele esperava
+    // cada quadro de imagem ser codificado — dezenas de milissegundos no
+    // processador —, a fila enchia e quadros de som eram descartados (medido:
+    // 7% deles, o som picotado). Morre junto com esta conexão.
+    let saida_de_som = video.saida_de_som();
+    let _tarefa_do_som = AbortarAoSair(tokio::spawn(async move {
+        let mut contagem = AudioStats::default();
+        while let Some(pacote) = audio_rx.recv().await {
+            contagem.count(pacote.data.len());
+            saida_de_som.escrever(&pacote.data, pacote.duration).await;
+            // Um número no console é a diferença entre "não ouvi nada" e
+            // saber de qual lado o som parou.
+            if let Some(linha) = contagem.report_if_due(saida_de_som.alguem_ouvindo()) {
+                println!("{linha}");
+            }
+        }
+    }));
     // Descarta comandos de movimento que chegaram fora de ordem (o canal é
     // deliberadamente não ordenado; ver `datachannel.rs`).
     let mut input_order = crate::datachannel::InputOrder::new();
@@ -479,33 +496,13 @@ pub async fn run(
     loop {
         tokio::select! {
             // `biased`: as ramificações são tentadas nesta ordem, e não em
-            // ordem aleatória. O som vem primeiro porque é o único trabalho
-            // aqui com prazo humano - 20 ms por quadro, sem margem. Sorteando,
-            // ele dividia as iterações com a codificação do vídeo (dezenas de
-            // ms por quadro nesta máquina), perdia a corrida e o canal enchia:
-            // era o som picotado.
+            // ordem aleatória — o que é curto e urgente vem antes da
+            // codificação do vídeo. (O som, que vinha primeiro aqui, tem
+            // tarefa própria: ver `_tarefa_do_som`.)
             biased;
 
-            // Quadros de som prontos, vindos da thread da placa.
-            Some(pacote) = audio_rx.recv() => {
-                // Esvazia tudo o que estiver esperando, não só um. Uma volta
-                // do laço por quadro de 20 ms seria lenta demais quando o
-                // vídeo está codificando; em lote, um despertar dá conta do
-                // que se acumulou.
-                let mut pacote = Some(pacote);
-                while let Some(p) = pacote {
-                    audio_stats.count(p.data.len());
-                    video.write_audio(&p.data, p.duration).await;
-                    pacote = audio_rx.try_recv().ok();
-                }
-                // Um número no console é a diferença entre "não ouvi nada" e
-                // saber de qual lado o som parou.
-                if let Some(linha) = audio_stats.report_if_due(video.wants_audio()) {
-                    println!("{linha}");
-                }
-            }
             // O app não consegue decodificar e está pedindo um quadro-chave.
-            // Vem logo depois do som porque é curto e urgente: cada volta de
+            // Vem primeiro porque é curto e urgente: cada volta de
             // atraso aqui é mais um pedaço de tela preta no telefone.
             Some(()) = keyframe_rx.recv() => {
                 if let Some(enc) = encoder
@@ -1547,6 +1544,16 @@ fn send_file(
         detail: None,
         size: Some(size),
     });
+}
+
+/// Encerra a tarefa quando sai de escopo: a do som não pode sobreviver à
+/// conexão que a criou.
+struct AbortarAoSair(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortarAoSair {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 /// Contagem do som que sai, para o console dizer se ele está saindo.
