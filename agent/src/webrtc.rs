@@ -278,6 +278,15 @@ impl Video {
         let loss = self.loss.clone();
         let sessao = session_id.to_string();
         tokio::spawn(async move {
+            // De quem é cada relatório: o celular manda um bloco por faixa, e
+            // só o da imagem conta (ver `perda_da_imagem`).
+            let da_imagem: Vec<u32> = sender
+                .get_parameters()
+                .await
+                .encodings
+                .iter()
+                .map(|e| e.ssrc)
+                .collect();
             let mut buf = vec![0u8; 1500];
             while let Ok((pacotes, _)) = sender.read(&mut buf).await {
                 let mut pediu = false;
@@ -290,12 +299,7 @@ impl Video {
                         pediu = true;
                     }
                     if let Some(rr) = algum.downcast_ref::<ReceiverReport>() {
-                        // `fraction_lost` é a perda desde o relatório anterior,
-                        // em 1/256 avos. Um relatório pode trazer mais de um
-                        // bloco; o pior manda, porque é ele que estraga a
-                        // imagem de alguém.
-                        for bloco in &rr.reports {
-                            let f = bloco.fraction_lost as f32 / 256.0;
+                        if let Some(f) = perda_da_imagem(&rr.reports, &da_imagem) {
                             pior = Some(pior.map_or(f, |atual: f32| atual.max(f)));
                         }
                     }
@@ -586,6 +590,26 @@ impl Video {
             self.close(&session_id).await;
         }
     }
+}
+
+/// A perda da imagem num relatório de recepção do celular.
+///
+/// `fraction_lost` é a perda desde o relatório anterior, em 1/256 avos. O
+/// relatório traz um bloco por faixa — a da imagem e, com o som ligado, a do
+/// som —, e o pior **da imagem** manda. Contar o do som era o defeito: o som
+/// perde pacotes que o Opus disfarça sem ninguém notar, e cada perda dele
+/// fazia a qualidade da imagem cair à toa — só com o som ligado.
+///
+/// Sem saber qual é a faixa da imagem (lista vazia), conta todos, como antes.
+fn perda_da_imagem(
+    blocos: &[webrtc::rtcp::reception_report::ReceptionReport],
+    da_imagem: &[u32],
+) -> Option<f32> {
+    blocos
+        .iter()
+        .filter(|b| da_imagem.is_empty() || da_imagem.contains(&b.ssrc))
+        .map(|b| b.fraction_lost as f32 / 256.0)
+        .reduce(f32::max)
 }
 
 /// O tipo de um candidato ICE (`host`, `srflx`, `relay`), lido do texto dele.
@@ -1108,6 +1132,26 @@ mod tests {
         // Fechada a sessão, a faixa sai da lista do som.
         agent.close_all().await;
         assert!(!agent.saida_de_som().alguem_ouvindo());
+    }
+
+    #[test]
+    fn a_perda_do_som_nao_derruba_a_imagem() {
+        use webrtc::rtcp::reception_report::ReceptionReport;
+        let bloco = |ssrc, fraction_lost| ReceptionReport {
+            ssrc,
+            fraction_lost,
+            ..Default::default()
+        };
+        // Imagem (111) sem perda; som (222) perdendo um terço.
+        let blocos = [bloco(111, 0), bloco(222, 85)];
+        assert_eq!(perda_da_imagem(&blocos, &[111]), Some(0.0));
+        // A da imagem conta.
+        let blocos = [bloco(111, 64), bloco(222, 0)];
+        assert_eq!(perda_da_imagem(&blocos, &[111]), Some(0.25));
+        // Relatório só do som: nada a dizer sobre a imagem.
+        assert_eq!(perda_da_imagem(&[bloco(222, 200)], &[111]), None);
+        // Sem saber qual é a da imagem, o pior de todos, como antes.
+        assert_eq!(perda_da_imagem(&[bloco(222, 128)], &[]), Some(0.5));
     }
 
     #[tokio::test]
