@@ -828,5 +828,7 @@ if (($Ocultar -or $Rodar) -and -not (Test-Path $exeAgente)) {
     & $exeAgente install "wss://$Dominio/ws/agent"
 } elseif ($Rodar) {
     Titulo "Agente (Ctrl+C para sair)"
-    & $exeAgente
+    # `run`, e nao sem argumento: sem argumento o agente nao se liga ao
+    # terminal (e o que acontece num duplo clique), e roda escondido.
+    & $exeAgente run
 }
