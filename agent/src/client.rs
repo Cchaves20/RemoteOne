@@ -766,9 +766,14 @@ pub async fn run(
                             let duration = last_video_frame
                                 .map(|previous| now.duration_since(previous))
                                 .unwrap_or_else(|| active.video_interval());
-                            last_video_frame = Some(now);
                             stats.record(encode_started.elapsed(), frame.data.len(), size);
-                            video.write(&frame, duration).await;
+                            // Vazio é a placa de vídeo atrasando um quadro (ele
+                            // sai junto com o próximo). Nada vai ao celular, e
+                            // o tempo dele entra na duração do seguinte.
+                            if !frame.data.is_empty() {
+                                last_video_frame = Some(now);
+                                video.write(&frame, duration).await;
+                            }
                             let capture_ms =
                                 pump.as_ref().and_then(|p| p.cost().take_average_ms());
                             stats.report_if_due("Vídeo", capture_ms);

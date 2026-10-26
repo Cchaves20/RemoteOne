@@ -24,6 +24,8 @@ pub mod files;
 pub mod foreground;
 pub mod gui;
 pub mod h264;
+#[cfg(windows)]
+pub mod h264_placa;
 pub mod identity;
 pub mod instance;
 #[cfg(target_os = "linux")]

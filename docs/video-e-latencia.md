@@ -17,6 +17,25 @@ Vai **direto** do computador ao celular, sem passar pelo servidor, que só
 intermedia a negociação. Mouse e teclado seguem pelo mesmo caminho, num canal de
 dados.
 
+### Codificação na placa de vídeo (Windows)
+
+Medido no Dell de testes: o openh264, no processador, gastava 36–47 ms por
+quadro em 1280 px — imagem presa em ~20 fps e cada quadro atrasado nisso.
+Baixar para 960 px deixou mais fluido (o custo é linear nos pixels), mas não
+resolveu. Por isso, no Windows, o agente tenta antes o codificador H.264 da
+placa de vídeo, pelo Media Foundation (`agent/src/h264_placa.rs`):
+
+- Qualquer fabricante (NVIDIA, Intel, AMD), sem biblioteca deles.
+- O RGB da captura vira NV12 no processador (poucos ms) e a placa codifica.
+- Baixa latência ligada, sem quadros B, perfil básico (o que o celular
+  negocia), quadro-chave quando o celular pede.
+- **Nunca pior que antes**: se a placa não abrir ou falhar no meio, o
+  openh264 assume na hora e ela não é tentada de novo até o agente reiniciar.
+  `DESKSIDE_VIDEO_ENCODER=cpu` força o openh264.
+- O diário diz qual está em uso: "Vídeo: codificando na placa de vídeo (…)".
+
+Mac (VideoToolbox) e Linux (VA-API) seguem no openh264 por enquanto.
+
 ## Caminho de segurança: JPEG por WebSocket
 
 ```

@@ -1333,6 +1333,7 @@ dependencies = [
  "unsafe-libopus",
  "uuid",
  "webrtc",
+ "windows 0.62.2",
  "winresource",
  "xcap",
  "xkbcommon 0.8.0",

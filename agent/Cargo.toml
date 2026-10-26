@@ -106,6 +106,15 @@ mslnk = "0.1"
 # codigo, e o renderizador por software do Windows nunca e considerado.
 eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts"] }
 tray-icon = "0.19"
+# O codificador H.264 da placa de vídeo, pelo Media Foundation (ver
+# `h264_placa.rs`). A mesma versão que o `wgpu` e o `xcap` já trazem.
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Variant",
+] }
 
 # O Mac. As mesmas bibliotecas do Windows onde elas cobrem os dois sistemas
 # (tela, mouse e teclado), e as APIs da Apple direto onde não cobrem (área de
