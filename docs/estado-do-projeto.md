@@ -9,7 +9,7 @@ depois. Sem este registro, daqui a seis meses o PDF ainda vai dizer que webcam e
 microfone fazem parte do produto, e ninguém vai lembrar que a saída deles foi uma
 escolha — vai parecer dívida.
 
-Última revisão: agosto de 2026.
+Última revisão: outubro de 2026.
 
 ## As etapas do documento
 
@@ -17,7 +17,7 @@ escolha — vai parecer dívida.
 |---|---|---|
 | 1 | Estrutura inicial | ✅ |
 | 2 | Usuários e autenticação | ⚠️ cadastro completo com verificação; falta login Google/Apple/Microsoft |
-| 3 | Agente desktop | ⚠️ só Windows (Linux e macOS são stub) |
+| 3 | Agente desktop | ✅ Windows, macOS ([`agente-mac.md`](agente-mac.md)) e Linux com GNOME ([`agente-linux.md`](agente-linux.md)), com atualização automática nos três |
 | 4 | Comunicação | ⚠️ externa ✅ (WebSocket + WebRTC + STUN/TURN); local (mDNS/UDP) ❌ |
 | 5 | Pareamento | ✅ |
 | 6 | Controle remoto básico | ✅ |
