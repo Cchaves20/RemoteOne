@@ -144,6 +144,28 @@ janela não existia agora há pouco" — o que funciona igual nos três casos ac
 Três filtros descartam o que não é janela de programa: invisível (toda aplicação
 tem janelas internas), sem título, e "tool window" (paletas, dicas, bandeja).
 
+### A tela de carregamento
+
+A "fotografia" sozinha caía no primeiro caso da lista: no PyCharm, a primeira
+janela nova é a de carregamento — ela ia para a zona, sumia, e a de verdade
+abria onde o Windows quisesse. Agora:
+
+- **Tela de carregamento não conta.** É a janela sem barra de título **e** sem
+  borda de redimensionar; as duas juntas, porque programas "sem moldura"
+  (vários em Electron) desenham a própria barra mas continuam redimensionáveis,
+  e esses são a janela de verdade.
+- Se nos cinco segundos normais só apareceu tela de carregamento, a lista
+  **segue** para o próximo programa, e uma thread espera a janela de verdade
+  por até um minuto. Ela é reconhecida por ser **do mesmo processo** da tela
+  de carregamento, não por ser nova — enquanto isso os outros programas estão
+  abrindo as deles, e essas não contam.
+- Acabando o minuto com a tela de carregamento ainda ali, é ela a janela do
+  programa (um lançador de jogo, por exemplo), e vai para a zona. Se ela fechou
+  e nada veio, o celular recebe o aviso.
+
+Esperar na fila não serviria: o servidor desiste da resposta de "abrir o
+perfil" em 60 s, e um perfil com o PyCharm e mais três programas passaria disso.
+
 ### Abriu mas não posicionou não é falha
 
 É o **terceiro** desfecho, e por isso o agente tem três e não dois. O programa

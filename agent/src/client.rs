@@ -417,6 +417,12 @@ pub async fn run(
     // candidatos ICE) sai por este canal, porque o webrtc-rs chama de volta de
     // dentro das tarefas dele e quem tem o WebSocket é este laço.
     let (signal_tx, mut signal_rx) = tokio::sync::mpsc::unbounded_channel();
+    // Respostas de trabalhos demorados (abrir os programas de um perfil, rodar
+    // uma automação), já prontas para o socket. Eles correm à parte e avisam
+    // por aqui quando terminam: esperar por eles **dentro** deste laço
+    // pararia a imagem, o controle e o pulso com o servidor pelo tempo todo —
+    // e uma tela de carregamento pode levar um minuto.
+    let (resposta_tx, mut resposta_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     // Entrada pelo canal de dados (Fase 6): chega P2P, sem passar pelo servidor.
     let (input_tx, mut input_rx) = tokio::sync::mpsc::unbounded_channel();
     // Pedidos de quadro-chave do app (RTCP). Chegam de dentro das tarefas do
@@ -586,6 +592,9 @@ pub async fn run(
             }
             // Sinalização vinda do webrtc-rs (resposta SDP, candidatos locais):
             // este laço é quem tem o WebSocket, então é quem despacha.
+            Some(resposta) = resposta_rx.recv() => {
+                ws.send(Message::Text(resposta)).await?;
+            }
             Some(signal) = signal_rx.recv() => {
                 let message = match signal {
                     crate::webrtc::Signal::Answer { session_id, sdp } => {
@@ -1052,24 +1061,28 @@ pub async fn run(
                                 // por esse tempo pararia a captura de tela
                                 // junto - justamente enquanto a pessoa está
                                 // olhando o ambiente ser montado.
+                                //
+                                // E fora de verdade: a resposta volta pela
+                                // fila `resposta_tx` quando ficar pronta.
                                 let quantos = itens.len();
                                 println!("Abrindo {quantos} programa(s) do perfil");
-                                let results = tokio::task::spawn_blocking(move || {
-                                    crate::lote::abrir_todos(
-                                        &itens,
-                                        crate::lote::ESPERA_PADRAO,
-                                        abrir_e_posicionar,
-                                    )
-                                })
-                                .await
-                                .unwrap_or_default();
-                                let reply = serde_json::to_string(
-                                    &ClientMessage::LaunchManyResult {
-                                        request_id,
-                                        results,
-                                    },
-                                )?;
-                                ws.send(Message::Text(reply)).await?;
+                                let resposta = resposta_tx.clone();
+                                tokio::spawn(async move {
+                                    let results = tokio::task::spawn_blocking(move || {
+                                        crate::lote::abrir_todos(
+                                            &itens,
+                                            crate::lote::ESPERA_PADRAO,
+                                            abrir_e_posicionar,
+                                        )
+                                    })
+                                    .await
+                                    .unwrap_or_default();
+                                    if let Ok(texto) = serde_json::to_string(
+                                        &ClientMessage::LaunchManyResult { request_id, results },
+                                    ) {
+                                        let _ = resposta.send(texto);
+                                    }
+                                });
                             }
                             Some(Action::RunAutomation { request_id, steps }) => {
                                 // Fora do laço, e aqui isso importa mais que
@@ -1078,22 +1091,23 @@ pub async fn run(
                                 // pararia a captura de tela junto.
                                 let quantos = steps.len();
                                 println!("Rodando automação de {quantos} passo(s)");
-                                let results = tokio::task::spawn_blocking(move || {
-                                    crate::automacao::executar(
-                                        &steps,
-                                        std::thread::sleep,
-                                        executar_passo,
-                                    )
-                                })
-                                .await
-                                .unwrap_or_default();
-                                let reply = serde_json::to_string(
-                                    &ClientMessage::AutomationResult {
-                                        request_id,
-                                        results,
-                                    },
-                                )?;
-                                ws.send(Message::Text(reply)).await?;
+                                let resposta = resposta_tx.clone();
+                                tokio::spawn(async move {
+                                    let results = tokio::task::spawn_blocking(move || {
+                                        crate::automacao::executar(
+                                            &steps,
+                                            std::thread::sleep,
+                                            executar_passo,
+                                        )
+                                    })
+                                    .await
+                                    .unwrap_or_default();
+                                    if let Ok(texto) = serde_json::to_string(
+                                        &ClientMessage::AutomationResult { request_id, results },
+                                    ) {
+                                        let _ = resposta.send(texto);
+                                    }
+                                });
                             }
                             Some(Action::Brightness {
                                 request_id,

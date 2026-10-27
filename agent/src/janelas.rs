@@ -134,11 +134,74 @@ pub fn retangulo(zona: &Zona, area: Retangulo) -> Option<Retangulo> {
 /// Cinco segundos porque o pior caso comum é um Office ou um Electron em disco
 /// mecânico. Passar disso não ajudaria: se a janela não veio até aqui, ou o
 /// programa não abriu, ou ele não tem janela — e continuar esperando só
-/// atrasaria os programas seguintes da lista.
+/// atrasaria os programas seguintes da lista. A exceção é o programa que
+/// mostrou uma tela de carregamento: ele é esperado mais, em segundo plano
+/// (ver `ESPERA_COM_CARREGAMENTO`).
 pub const ESPERA_JANELA: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// De quanto em quanto tempo perguntar se a janela já apareceu.
 pub const INTERVALO_BUSCA: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// Quanto esperar a janela de verdade quando o programa abriu antes uma tela
+/// de carregamento. O PyCharm, o Android Studio e o Photoshop levam de 10 a 40
+/// segundos atrás dela. Essa espera corre **em segundo plano** (ver
+/// `Decisao::Adiar`): os programas seguintes da lista abrem enquanto isso.
+pub const ESPERA_COM_CARREGAMENTO: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Que tipo de janela nova apareceu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tipo {
+    /// Uma janela de programa: tem barra de título, ou pode mudar de tamanho.
+    Janela,
+    /// Uma tela de carregamento: sem barra de título **e** sem borda de
+    /// redimensionar. As duas juntas, e não só a falta de título: programas
+    /// de janela "sem moldura" (vários feitos em Electron) desenham a própria
+    /// barra, mas continuam redimensionáveis — e são a janela de verdade.
+    Carregamento,
+}
+
+/// O que fazer, a cada olhada, com as janelas novas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decisao<H> {
+    Posicionar(H),
+    Esperar,
+    /// Só apareceu tela de carregamento no tempo normal: a janela de verdade
+    /// vai ser esperada em segundo plano, e a lista segue.
+    Adiar,
+    Desistir,
+}
+
+/// Decide qual janela nova posicionar, ou se ainda vale esperar.
+///
+/// A regra que resolve a tela de carregamento: **ela não conta como a janela
+/// do programa**. Antes, a primeira janela nova era posicionada — e no
+/// PyCharm a primeira é a de carregamento, que some em seguida, enquanto a de
+/// verdade abria depois onde o Windows quisesse.
+///
+/// - Uma janela de programa nova: é ela.
+/// - Esgotado o tempo normal (`ESPERA_JANELA`) tendo visto só tela de
+///   carregamento: adia para o segundo plano. Esperar aqui seguraria a lista
+///   inteira, e o servidor desiste de esperar a resposta em 60 s.
+/// - Nada novo no tempo normal: desiste, como sempre.
+///
+/// Pura para ser testada em qualquer sistema.
+pub fn decidir<H: Copy>(
+    novas: &[(H, Tipo)],
+    viu_carregamento: bool,
+    passou: std::time::Duration,
+) -> Decisao<H> {
+    if let Some((h, _)) = novas.iter().find(|(_, t)| *t == Tipo::Janela) {
+        return Decisao::Posicionar(*h);
+    }
+    if passou < ESPERA_JANELA {
+        return Decisao::Esperar;
+    }
+    if viu_carregamento || !novas.is_empty() {
+        Decisao::Adiar
+    } else {
+        Decisao::Desistir
+    }
+}
 
 #[cfg(windows)]
 pub use imp::{
@@ -147,7 +210,7 @@ pub use imp::{
 
 #[cfg(windows)]
 mod imp {
-    use super::{Retangulo, Zona, ESPERA_JANELA, INTERVALO_BUSCA};
+    use super::{Decisao, Retangulo, Tipo, Zona, INTERVALO_BUSCA};
     use std::collections::HashSet;
 
     type Hwnd = isize;
@@ -162,7 +225,10 @@ mod imp {
     }
 
     const SPI_GETWORKAREA: u32 = 0x0030;
+    const GWL_STYLE: i32 = -16;
     const GWL_EXSTYLE: i32 = -20;
+    const WS_CAPTION: u32 = 0x00C0_0000;
+    const WS_THICKFRAME: u32 = 0x0004_0000;
     const WS_EX_TOOLWINDOW: u32 = 0x0000_0080;
     const SW_RESTORE: i32 = 9;
     // Não mexer na ordem de empilhamento nem roubar o foco: quem decide quem
@@ -309,6 +375,18 @@ mod imp {
         }
     }
 
+    /// Tela de carregamento ou janela de programa (ver `Tipo`).
+    fn tipo(hwnd: Hwnd) -> Tipo {
+        let estilo = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+        let titulo = estilo & WS_CAPTION == WS_CAPTION;
+        let redimensiona = estilo & WS_THICKFRAME != 0;
+        if titulo || redimensiona {
+            Tipo::Janela
+        } else {
+            Tipo::Carregamento
+        }
+    }
+
     /// As janelas de nível superior que existem agora.
     pub fn janelas_visiveis() -> HashSet<Hwnd> {
         ENCONTRADAS.with(|v| v.borrow_mut().clear());
@@ -386,17 +464,93 @@ mod imp {
         let area = area_de_trabalho().ok_or("não descobri a área de trabalho da tela")?;
         let alvo = super::retangulo(zona, area).ok_or("zona fora da grade")?;
 
-        let limite = std::time::Instant::now() + ESPERA_JANELA;
+        let inicio = std::time::Instant::now();
+        // De que processos eram as telas de carregamento vistas: é por eles
+        // que a janela de verdade vai ser reconhecida em segundo plano.
+        let mut carregando: HashSet<u32> = HashSet::new();
         let hwnd = loop {
-            if let Some(nova) = janelas_visiveis().difference(antes).copied().next() {
-                break nova;
+            let novas = novas_de_quem_nao_espera(antes);
+            for (h, t) in &novas {
+                if *t == Tipo::Carregamento {
+                    carregando.insert(dono(*h));
+                }
             }
-            if std::time::Instant::now() >= limite {
-                return Err("o programa abriu, mas a janela dele não apareceu a tempo".into());
+            match super::decidir(&novas, !carregando.is_empty(), inicio.elapsed()) {
+                Decisao::Posicionar(h) => break h,
+                Decisao::Esperar => std::thread::sleep(INTERVALO_BUSCA),
+                Decisao::Adiar => {
+                    esperar_em_segundo_plano(antes.clone(), carregando, alvo, inicio);
+                    return Ok(());
+                }
+                Decisao::Desistir => {
+                    return Err("o programa abriu, mas a janela dele não apareceu a tempo".into())
+                }
             }
-            std::thread::sleep(INTERVALO_BUSCA);
         };
+        mover(hwnd, alvo)
+    }
 
+    /// Processos cuja janela de verdade está sendo esperada em segundo plano.
+    /// As janelas deles não são "a janela nova" do programa seguinte da lista.
+    static ESPERANDO: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
+
+    fn novas_de_quem_nao_espera(antes: &HashSet<Hwnd>) -> Vec<(Hwnd, Tipo)> {
+        let esperando = ESPERANDO.lock().map(|e| e.clone()).unwrap_or_default();
+        janelas_visiveis()
+            .difference(antes)
+            .filter(|h| !esperando.contains(&dono(**h)))
+            .map(|h| (*h, tipo(*h)))
+            .collect()
+    }
+
+    /// Espera, numa thread, a janela de verdade de um programa que abriu com
+    /// tela de carregamento, e a põe na zona quando ela aparece.
+    ///
+    /// Reconhecida por ser **do mesmo processo** da tela de carregamento, e não
+    /// por ser nova: enquanto isso, os programas seguintes da lista estão
+    /// abrindo as janelas deles. Se o prazo acabar com a tela de carregamento
+    /// ainda ali, é ela a janela do programa (um lançador), e vai para a zona.
+    fn esperar_em_segundo_plano(
+        antes: HashSet<Hwnd>,
+        processos: HashSet<u32>,
+        alvo: Retangulo,
+        inicio: std::time::Instant,
+    ) {
+        if let Ok(mut e) = ESPERANDO.lock() {
+            e.extend(processos.iter().copied());
+        }
+        let _ = std::thread::Builder::new()
+            .name("deskside-carregamento".into())
+            .spawn(move || {
+                let resultado = loop {
+                    let dele: Vec<(Hwnd, Tipo)> = janelas_visiveis()
+                        .difference(&antes)
+                        .filter(|h| processos.contains(&dono(**h)))
+                        .map(|h| (*h, tipo(*h)))
+                        .collect();
+                    if let Some((h, _)) = dele.iter().find(|(_, t)| *t == Tipo::Janela) {
+                        break mover(*h, alvo);
+                    }
+                    if inicio.elapsed() >= super::ESPERA_COM_CARREGAMENTO {
+                        break match dele.first() {
+                            Some((h, _)) => mover(*h, alvo),
+                            None => Err("a tela de carregamento fechou, mas a janela do \
+                                         programa não apareceu a tempo"
+                                .to_string()),
+                        };
+                    }
+                    std::thread::sleep(INTERVALO_BUSCA);
+                };
+                if let Ok(mut e) = ESPERANDO.lock() {
+                    e.retain(|p| !processos.contains(p));
+                }
+                if let Err(motivo) = resultado {
+                    crate::aviso::avisar(&format!("Não consegui pôr o programa no lugar: {motivo}."));
+                }
+            });
+    }
+
+    fn mover(hwnd: Hwnd, alvo: Retangulo) -> Result<(), String> {
         unsafe {
             // Janela maximizada ignora o tamanho pedido: ela volta a ocupar a
             // tela inteira no próximo desenho. Restaurar antes é o que faz o
@@ -541,6 +695,37 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn s(seg: u64) -> std::time::Duration {
+        std::time::Duration::from_secs(seg)
+    }
+
+    #[test]
+    fn programa_sem_carregamento_e_posicionado_na_hora() {
+        assert_eq!(decidir(&[(7, Tipo::Janela)], false, s(1)), Decisao::Posicionar(7));
+        assert_eq!(decidir::<i32>(&[], false, s(1)), Decisao::Esperar);
+        assert_eq!(decidir::<i32>(&[], false, s(6)), Decisao::Desistir);
+    }
+
+    #[test]
+    fn a_tela_de_carregamento_nao_e_a_janela_do_programa() {
+        // PyCharm: a de carregamento aparece primeiro e não é posicionada.
+        assert_eq!(decidir(&[(1, Tipo::Carregamento)], true, s(2)), Decisao::Esperar);
+        // Se a de verdade chega no tempo normal, é ela.
+        assert_eq!(
+            decidir(&[(1, Tipo::Carregamento), (2, Tipo::Janela)], true, s(3)),
+            Decisao::Posicionar(2)
+        );
+    }
+
+    #[test]
+    fn so_carregamento_no_tempo_normal_vai_para_o_segundo_plano() {
+        // Ainda carregando aos 5 s: a lista segue, e a janela de verdade é
+        // esperada à parte — em vez de desistir, como antes.
+        assert_eq!(decidir(&[(1, Tipo::Carregamento)], true, s(5)), Decisao::Adiar);
+        // A de carregamento já fechou e a de verdade não veio: idem.
+        assert_eq!(decidir::<i32>(&[], true, s(6)), Decisao::Adiar);
+    }
 
     #[test]
     fn tela_cheia_e_cobrir_o_monitor_inteiro() {
