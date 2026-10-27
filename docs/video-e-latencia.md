@@ -36,6 +36,21 @@ placa de vídeo, pelo Media Foundation (`agent/src/h264_placa.rs`):
 
 Mac (VideoToolbox) e Linux (VA-API) seguem no openh264 por enquanto.
 
+### Largura pelo processador (todos os sistemas)
+
+Sem placa de vídeo, o custo de codificar pode passar do que o processador
+aguenta: numa máquina virtual Linux foram 50–100 ms por quadro em 1280 px, e
+imagem e som travavam juntos. Ao lado da escada da rede (`adaptive.rs`), uma
+segunda regra olha o **tempo médio de codificar** a cada 2 s:
+
+- passou de 35 ms → um degrau abaixo (1280 → 1120 → 960 → 800 → 640);
+- a largura de cima, pela conta dos pixels, caberia em menos de 25 ms por
+  10 s seguidos → um degrau acima.
+
+Vale a menor largura entre as duas regras. Trocar a largura não reabre a
+captura (`FramePump::ajustar_largura`): no Wayland isso reabriria a sessão do
+portal. Com a placa de vídeo (14 ms no Dell), a regra nunca age.
+
 ## Caminho de segurança: JPEG por WebSocket
 
 ```

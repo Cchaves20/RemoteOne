@@ -569,6 +569,9 @@ pub struct FramePump {
     /// Sem isto, não há como distinguir "a captura é lenta" de "o codificador é
     /// lento" — e a resposta certa é diferente em cada caso.
     cost: std::sync::Arc<CaptureCost>,
+    /// A largura máxima em vigor. Trocável com a captura de pé (ver
+    /// `ajustar_largura`).
+    largura: std::sync::Arc<std::sync::atomic::AtomicU32>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -616,6 +619,8 @@ impl FramePump {
         let interval = std::time::Duration::from_micros(1_000_000 / fps.clamp(1, 60) as u64);
 
         let cost = std::sync::Arc::new(CaptureCost::default());
+        let largura = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(max_width));
+        let largura_da_thread = std::sync::Arc::clone(&largura);
         let slot = std::sync::Arc::clone(&latest);
         let halt = std::sync::Arc::clone(&stop);
         let meter = std::sync::Arc::clone(&cost);
@@ -653,7 +658,7 @@ impl FramePump {
                     }
                 }
                 let started = std::time::Instant::now();
-                match source.next_frame(max_width) {
+                match source.next_frame(largura_da_thread.load(Relaxed)) {
                     Ok(Some(frame)) => {
                         meter
                             .micros
@@ -685,8 +690,20 @@ impl FramePump {
             latest,
             stop,
             cost,
+            largura,
             worker: Some(worker),
         })
+    }
+
+    /// Troca a largura máxima sem reabrir a captura.
+    ///
+    /// A largura só entra na redução de cada quadro já capturado; a captura em
+    /// si não depende dela. Reabrir para mudá-la custava, no Wayland, fechar e
+    /// abrir a sessão do portal — o ícone de compartilhamento piscando, o
+    /// controle e a área de transferência soluçando — a cada degrau.
+    pub fn ajustar_largura(&self, max_width: u32) {
+        self.largura
+            .store(max_width, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Retira o quadro mais recente, se houver um ainda não consumido.
@@ -883,6 +900,28 @@ mod tests {
             pump.take().is_none(),
             "o mesmo quadro não deve ser entregue duas vezes"
         );
+    }
+
+    #[test]
+    fn pump_troca_a_largura_sem_reabrir_a_captura() {
+        fn proximo(pump: &FramePump) -> CapturedFrame {
+            for _ in 0..200 {
+                if let Some(frame) = pump.take() {
+                    return frame;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            panic!("a captura não produziu quadro em 2s");
+        }
+        let pump = FramePump::start(None, 640, 30).unwrap();
+        let antes = proximo(&pump);
+        assert!(antes.width <= 640);
+        pump.ajustar_largura(320);
+        // O quadro que já estava sendo reduzido pode sair na largura antiga.
+        let _ = proximo(&pump);
+        let depois = proximo(&pump);
+        assert!(depois.width <= 320, "largura nova não pegou: {}", depois.width);
+        assert!(depois.width < antes.width);
     }
 
     #[test]

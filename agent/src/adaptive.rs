@@ -196,8 +196,168 @@ impl Ladder {
     }
 }
 
+/// Tetos de largura pelo custo de codificar, do maior para o menor. O
+/// primeiro não é teto: é a largura configurada.
+pub const LARGURAS_DO_PROCESSADOR: [u32; 5] = [u32::MAX, 1120, 960, 800, 640];
+
+/// Acima disto, por quadro, codificar não deixa chegar a ~30 fps e atrasa
+/// cada quadro nessa medida.
+const CODIFICACAO_DEMAIS_MS: f64 = 35.0;
+/// Para subir, o custo **previsto** na largura de cima tem de ficar abaixo
+/// disto — com folga, para não subir e cair no ciclo seguinte.
+const CODIFICACAO_PARA_SUBIR_MS: f64 = 25.0;
+/// Depois de mudar (e no começo), os primeiros quadros incluem criar o
+/// codificador e reabrir a captura: medir aí seria medir a mudança.
+const ESPERA_DEPOIS_DE_MUDAR: Duration = Duration::from_secs(4);
+/// Folga sustentada antes de subir.
+const CALMA_PARA_SUBIR: Duration = Duration::from_secs(10);
+
+/// A largura pelo que o **processador** aguenta, ao lado da escada da rede.
+///
+/// A escada acima reage à perda de pacotes; esta, ao tempo de codificar. São
+/// dois limites diferentes: o Dell com placa de vídeo codifica em 14 ms e
+/// nunca desce daqui; uma máquina virtual sem placa gastava 50–100 ms por
+/// quadro em 1280 px e travava imagem e som juntos. O custo de codificar é
+/// praticamente proporcional aos pixels (medido, ver `docs/webrtc-plano.md`),
+/// e é isso que permite prever o custo da largura de cima antes de subir.
+#[derive(Debug, Clone)]
+pub struct LarguraPeloProcessador {
+    nivel: usize,
+    espera: Duration,
+    calma: Duration,
+}
+
+impl Default for LarguraPeloProcessador {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LarguraPeloProcessador {
+    pub fn new() -> Self {
+        Self {
+            nivel: 0,
+            espera: ESPERA_DEPOIS_DE_MUDAR,
+            calma: Duration::ZERO,
+        }
+    }
+
+    /// O teto de largura em vigor.
+    pub fn teto(&self) -> u32 {
+        LARGURAS_DO_PROCESSADOR[self.nivel]
+    }
+
+    /// Recomeça a espera (não o degrau): uma sessão nova cria o codificador
+    /// de novo, e os primeiros quadros dela não dizem nada. O degrau fica — o
+    /// processador é o mesmo de antes.
+    pub fn sessao_nova(&mut self) {
+        self.espera = ESPERA_DEPOIS_DE_MUDAR;
+        self.calma = Duration::ZERO;
+    }
+
+    /// Registra uma janela de medição e devolve o teto novo, se mudou.
+    ///
+    /// `media_ms`: custo médio de codificar um quadro na janela (`None` sem
+    /// quadros). `largura`: a largura em que esses quadros foram codificados.
+    /// `configurada`: a largura que valeria sem teto nenhum.
+    pub fn observar(
+        &mut self,
+        media_ms: Option<f64>,
+        largura: u32,
+        configurada: u32,
+        dt: Duration,
+    ) -> Option<u32> {
+        if !self.espera.is_zero() {
+            self.espera = self.espera.saturating_sub(dt);
+            return None;
+        }
+        let ms = media_ms?;
+        if ms > CODIFICACAO_DEMAIS_MS && self.nivel + 1 < LARGURAS_DO_PROCESSADOR.len() {
+            self.nivel += 1;
+            self.espera = ESPERA_DEPOIS_DE_MUDAR;
+            self.calma = Duration::ZERO;
+            return Some(self.teto());
+        }
+        if self.nivel == 0 || largura == 0 {
+            return None;
+        }
+        let acima = LARGURAS_DO_PROCESSADOR[self.nivel - 1].min(configurada);
+        let proporcao = acima as f64 / largura as f64;
+        let previsto = ms * proporcao * proporcao;
+        if previsto < CODIFICACAO_PARA_SUBIR_MS {
+            self.calma += dt;
+            if self.calma >= CALMA_PARA_SUBIR {
+                self.nivel -= 1;
+                self.espera = ESPERA_DEPOIS_DE_MUDAR;
+                self.calma = Duration::ZERO;
+                return Some(self.teto());
+            }
+        } else {
+            self.calma = Duration::ZERO;
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    fn ms2() -> Duration {
+        Duration::from_secs(2)
+    }
+
+    #[test]
+    fn processador_lento_desce_a_largura_e_rapido_fica() {
+        let mut p = LarguraPeloProcessador::new();
+        // Os primeiros 4 s não contam (criar o codificador).
+        assert_eq!(p.observar(Some(90.0), 1280, 1280, ms2()), None);
+        assert_eq!(p.observar(Some(90.0), 1280, 1280, ms2()), None);
+        // VM: 55 ms em 1280 px desce para 1120.
+        assert_eq!(p.observar(Some(55.0), 1280, 1280, ms2()), Some(1120));
+        // E de novo, passada a espera, se continuar caro.
+        p.observar(Some(45.0), 1120, 1280, ms2());
+        p.observar(Some(45.0), 1120, 1280, ms2());
+        assert_eq!(p.observar(Some(45.0), 1120, 1280, ms2()), Some(960));
+
+        // Placa de vídeo: 14 ms nunca desce.
+        let mut gpu = LarguraPeloProcessador::new();
+        for _ in 0..20 {
+            assert_eq!(gpu.observar(Some(14.0), 1280, 1280, ms2()), None);
+        }
+        assert_eq!(gpu.teto(), u32::MAX);
+    }
+
+    #[test]
+    fn sobe_so_se_a_largura_de_cima_couber_e_com_folga_sustentada() {
+        let mut p = LarguraPeloProcessador::new();
+        p.observar(None, 0, 1280, ms2());
+        p.observar(None, 0, 1280, ms2());
+        assert_eq!(p.observar(Some(50.0), 1280, 1280, ms2()), Some(1120));
+        p.observar(None, 0, 1280, ms2());
+        p.observar(None, 0, 1280, ms2());
+        // 20 ms em 1120: em 1280 seriam ~26 — não sobe.
+        for _ in 0..10 {
+            assert_eq!(p.observar(Some(20.0), 1120, 1280, ms2()), None);
+        }
+        // 12 ms em 1120: em 1280 seriam ~16 — sobe depois de 10 s de folga.
+        let mut subiu = None;
+        for _ in 0..5 {
+            subiu = subiu.or(p.observar(Some(12.0), 1120, 1280, ms2()));
+        }
+        assert_eq!(subiu, Some(u32::MAX));
+    }
+
+    #[test]
+    fn nao_desce_abaixo_do_piso() {
+        let mut p = LarguraPeloProcessador::new();
+        let mut tetos = Vec::new();
+        for _ in 0..40 {
+            if let Some(t) = p.observar(Some(200.0), 640, 1280, ms2()) {
+                tetos.push(t);
+            }
+        }
+        assert_eq!(tetos, vec![1120, 960, 800, 640]);
+    }
+
     use super::*;
 
     fn s(n: u64) -> Duration {

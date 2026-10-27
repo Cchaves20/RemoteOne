@@ -487,6 +487,13 @@ pub async fn run(
     // Qualidade adaptativa (Fase 4b). A escada decide o degrau; este laço só
     // lhe conta o que a rede andou fazendo e obedece ao que ela responder.
     let mut ladder = crate::adaptive::Ladder::new();
+    // E a largura pelo que o processador aguenta codificar (ver
+    // `adaptive::LarguraPeloProcessador`), medida entre uma reavaliação e a
+    // seguinte.
+    let mut processador = crate::adaptive::LarguraPeloProcessador::new();
+    let mut codificacao_soma = Duration::ZERO;
+    let mut codificacoes = 0u32;
+    let mut largura_codificada = 0u32;
     // Pior perda vista desde a última avaliação, e quantos relatórios a
     // sustentam. A contagem importa: sem relatório nenhum, "zero perdido" não
     // é notícia boa, é ausência de notícia - e tratar as duas coisas como
@@ -657,11 +664,37 @@ pub async fn run(
                 }
                 worst_loss = 0.0;
                 loss_reports = 0;
+                if video.wants_video() {
+                    let media = (codificacoes > 0).then(|| {
+                        codificacao_soma.as_secs_f64() * 1000.0 / codificacoes as f64
+                    });
+                    if let Some(teto) = processador.observar(
+                        media,
+                        largura_codificada,
+                        active.video_width(),
+                        ADAPT_INTERVAL,
+                    ) {
+                        let largura = active.video_width().min(teto);
+                        println!(
+                            "Qualidade: largura {largura}px pelo processador — codificar \
+                             custava {:.0} ms por quadro em {largura_codificada}px",
+                            media.unwrap_or(0.0),
+                        );
+                    }
+                }
+                codificacao_soma = Duration::ZERO;
+                codificacoes = 0;
             }
             _ = frame_ticker.tick() => {
                 let quer_video = video.wants_video();
                 let desejada =
-                    desired_capture(streaming, quer_video, &active, ladder.current(), tela);
+                    desired_capture(
+                        streaming,
+                        quer_video,
+                        &active,
+                        com_teto(ladder.current(), processador.teto()),
+                        tela,
+                    );
 
                 // O vídeo roda mais rápido que o JPEG e a ociosidade mais lenta
                 // que os dois. Sem acertar o ritmo, o vídeo herdaria os 10 fps
@@ -694,6 +727,7 @@ pub async fn run(
                         // nada sobre a de agora, e começar punido entregaria
                         // menos do que esta rede aguenta.
                         ladder.reset();
+                        processador.sessao_nova();
                         worst_loss = 0.0;
                         loss_reports = 0;
                         let largura = active.video_width();
@@ -711,6 +745,14 @@ pub async fn run(
                 // A captura é função do estado: abre quando alguém quer a tela,
                 // reabre quando a largura ou a taxa mudam, encerra quando ninguém
                 // quer mais.
+                // Só a largura mudou: a captura de pé a adota no próximo
+                // quadro, sem reabrir (ver `FramePump::ajustar_largura`).
+                if let (Some(nova), Some(atual), Some(p)) = (desejada, pump_config, pump.as_ref()) {
+                    if nova.monitor == atual.monitor && nova.fps == atual.fps && nova.width != atual.width {
+                        p.ajustar_largura(nova.width);
+                        pump_config = desejada;
+                    }
+                }
                 if desejada != pump_config {
                     pump = None; // Drop encerra a thread antiga antes de abrir outra
                     pump_config = desejada;
@@ -737,7 +779,8 @@ pub async fn run(
                 if quer_video {
                     let started = video_clock.get_or_insert_with(std::time::Instant::now);
                     let elapsed = started.elapsed();
-                    let params = active.video_params(ladder.current());
+                    let params =
+                        active.video_params(com_teto(ladder.current(), processador.teto()));
                     // Nem fps nem taxa se ajustam num codificador já em pé, e
                     // o `fits` só olha a resolução: descer de 30 para 20 fps
                     // sem mudar a largura passaria despercebido e o degrau não
@@ -775,7 +818,11 @@ pub async fn run(
                             let duration = last_video_frame
                                 .map(|previous| now.duration_since(previous))
                                 .unwrap_or_else(|| active.video_interval());
-                            stats.record(encode_started.elapsed(), frame.data.len(), size);
+                            let custo = encode_started.elapsed();
+                            stats.record(custo, frame.data.len(), size);
+                            codificacao_soma += custo;
+                            codificacoes += 1;
+                            largura_codificada = size.0;
                             // Vazio é a placa de vídeo atrasando um quadro (ele
                             // sai junto com o próximo). Nada vai ao celular, e
                             // o tempo dele entra na duração do seguinte.
@@ -866,7 +913,7 @@ pub async fn run(
                             Some(Action::RestartFrameTicker) => {
                                 let ritmo = rhythm(desired_capture(
                                     streaming, video.wants_video(), &active,
-                                    ladder.current(), tela,
+                                    com_teto(ladder.current(), processador.teto()), tela,
                                 ));
                                 if ritmo != ticker_interval {
                                     ticker_interval = ritmo;
@@ -1153,22 +1200,8 @@ pub async fn run(
                                     if audio.take().is_some() {
                                         println!("Áudio: desligado");
                                     }
-                                } else if audio.is_none() {
-                                    match crate::audio::start(
-                                        audio_tx.clone(),
-                                        Arc::clone(&audio_gain),
-                                    ) {
-                                        Ok(captura) => {
-                                            audio = Some(captura);
-                                            println!("Áudio: ligado");
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Áudio indisponível: {e}");
-                                            crate::aviso::avisar(&format!(
-                                                "Sem o som do computador: {e}."
-                                            ));
-                                        }
-                                    }
+                                } else {
+                                    ligar_som(&mut audio, &audio_tx, &audio_gain);
                                 }
                             }
                             // Primeiro plano: pode custar um PowerShell na
@@ -1352,6 +1385,16 @@ pub async fn run(
                                     // O contador de sequência do app recomeça em
                                     // cada sessão, então o nosso também.
                                     input_order.reset();
+                                    // A oferta com faixa de som **é** o pedido
+                                    // de som: o app só a monta com o som
+                                    // ligado. O pedido avulso (`SetAudio`) só
+                                    // sai quando se toca no botão — e depois
+                                    // de a conexão cair e voltar, ou de o
+                                    // agente reiniciar, o app seguia mostrando
+                                    // o som ligado e o computador mudo.
+                                    if sdp.contains("m=audio") {
+                                        ligar_som(&mut audio, &audio_tx, &audio_gain);
+                                    }
                                     println!(
                                         "Vídeo por WebRTC negociado (sessão {session_id}) \
                                          — próximo quadro será chave"
@@ -1563,6 +1606,35 @@ fn send_file(
         detail: None,
         size: Some(size),
     });
+}
+
+/// O degrau da rede com o teto do processador por cima: vale a menor largura.
+fn com_teto(nivel: crate::adaptive::Level, teto: u32) -> crate::adaptive::Level {
+    crate::adaptive::Level {
+        width: nivel.width.min(teto),
+        ..nivel
+    }
+}
+
+/// Liga a captura do som, se ainda não estiver ligada.
+fn ligar_som(
+    audio: &mut Option<crate::audio::Capture>,
+    tx: &tokio::sync::mpsc::Sender<crate::audio::Packet>,
+    ganho: &Arc<crate::audio::Gain>,
+) {
+    if audio.is_some() {
+        return;
+    }
+    match crate::audio::start(tx.clone(), Arc::clone(ganho)) {
+        Ok(captura) => {
+            *audio = Some(captura);
+            println!("Áudio: ligado");
+        }
+        Err(e) => {
+            eprintln!("Áudio indisponível: {e}");
+            crate::aviso::avisar(&format!("Sem o som do computador: {e}."));
+        }
+    }
 }
 
 /// Encerra a tarefa quando sai de escopo: a do som não pode sobreviver à
