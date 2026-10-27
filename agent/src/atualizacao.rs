@@ -647,7 +647,7 @@ pub fn aplicar_e_sair(estado: &crate::gui::Compartilhado) -> Result<(), String> 
     match aplicar(&backend) {
         Ok(()) => {
             crate::diario("saindo para o ajudante trocar o executável");
-            std::process::exit(0);
+            crate::sair(0);
         }
         Err(e) => {
             crate::diario(&format!("atualização não aplicada: {e}"));

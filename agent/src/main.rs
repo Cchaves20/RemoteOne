@@ -484,6 +484,9 @@ fn main() {
         encerrar_controle: false,
     });
 
+    #[cfg(target_os = "linux")]
+    deskside_agent::sair_limpo_nos_sinais();
+
     if atualizado {
         deskside_agent::atualizacao::provar_quando_conectar(estado.clone());
     } else {

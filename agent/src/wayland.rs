@@ -142,52 +142,6 @@ fn texto_do_erro(e: impl std::fmt::Display) -> String {
     format!("portal: {e}")
 }
 
-/// Se o erro é do portal que perdeu a ligação com a parte do GNOME que mostra
-/// a tela. Acontece quando ele sobe numa hora ruim, ou depois de um programa
-/// que compartilhava a tela ser encerrado à força: passa a dizer que nenhum
-/// modo de cursor existe, ou responde à sessão sem a sessão. Reiniciá-lo
-/// resolve; nada no pedido do agente mudaria a resposta.
-fn portal_quebrado(erro: &str) -> bool {
-    erro.contains("Unavailable cursor mode") || erro.contains("missing field `session_handle`")
-}
-
-/// No máximo um reinício a cada 5 minutos: reiniciar o portal derruba o
-/// compartilhamento de tela de qualquer outro programa, e um portal que não
-/// se conserta não pode virar um reinício a cada toque no celular.
-fn pode_reiniciar() -> bool {
-    static ULTIMO: Mutex<Option<std::time::Instant>> = Mutex::new(None);
-    let Ok(mut ultimo) = ULTIMO.lock() else {
-        return false;
-    };
-    if ultimo.is_some_and(|t| t.elapsed() < Duration::from_secs(5 * 60)) {
-        return false;
-    }
-    *ultimo = Some(std::time::Instant::now());
-    true
-}
-
-/// A parte do GNOME primeiro, para o portal, ao voltar, já a encontrar de pé.
-/// Separados: num sistema sem a parte do GNOME, o pedido conjunto falharia
-/// inteiro.
-fn reiniciar_portal() {
-    for servico in [
-        "xdg-desktop-portal-gnome.service",
-        "xdg-desktop-portal.service",
-    ] {
-        let ok = std::process::Command::new("systemctl")
-            .args(["--user", "restart", servico])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success());
-        if !ok {
-            crate::diario(&format!("Wayland: não reiniciei {servico}"));
-        }
-    }
-    std::thread::sleep(Duration::from_secs(2));
-}
-
 /// Um pedido ao portal: a chamada volta na hora com o caminho de um "pedido",
 /// e o resultado chega depois num sinal `Response` nesse caminho — às vezes só
 /// depois de alguém clicar numa janela.
@@ -304,24 +258,7 @@ impl Sessao {
     ///
     /// Bloqueia até o sistema responder — na primeira vez, até alguém aprovar
     /// a janela. Por isso roda numa thread própria, nunca no laço de rede.
-    ///
-    /// Com o portal desencontrado da parte do GNOME (ver `portal_quebrado`),
-    /// reinicia o serviço e tenta mais uma vez: quem está longe não tem como
-    /// fazer isso à mão sem ver a tela.
     pub fn abrir(cancelamento: &Cancelamento) -> Result<(Sessao, OwnedFd), String> {
-        match Self::abrir_uma_vez(cancelamento) {
-            Err(e) if portal_quebrado(&e) && !cancelamento.cancelado() && pode_reiniciar() => {
-                crate::diario(&format!(
-                    "Wayland: portal com defeito ({e}); reiniciando o serviço e tentando de novo"
-                ));
-                reiniciar_portal();
-                Self::abrir_uma_vez(cancelamento)
-            }
-            r => r,
-        }
-    }
-
-    fn abrir_uma_vez(cancelamento: &Cancelamento) -> Result<(Sessao, OwnedFd), String> {
         let conn = Connection::session().map_err(texto_do_erro)?;
         let remoto = Proxy::new(&conn, PORTAL, CAMINHO, REMOTO).map_err(texto_do_erro)?;
         let tela = Proxy::new(&conn, PORTAL, CAMINHO, TELA).map_err(texto_do_erro)?;
@@ -563,6 +500,18 @@ static ATUAL: Mutex<Option<Arc<Sessao>>> = Mutex::new(None);
 /// A sessão em uso, se houver.
 pub fn atual() -> Option<Arc<Sessao>> {
     ATUAL.lock().ok()?.clone()
+}
+
+/// Fecha a sessão em uso. Chamado antes de o agente sair (ver `crate::sair`).
+///
+/// Um agente que sai com a sessão aberta a deixa pendurada dentro do GNOME,
+/// e o portal passa a recusar as próximas — "Unavailable cursor mode 2", ou a
+/// resposta sem a sessão — até a pessoa sair da conta. Visto numa VM com
+/// Ubuntu 26.04, duas vezes, depois de um `pkill`.
+pub fn encerrar() {
+    if let Some(s) = ATUAL.lock().ok().and_then(|mut a| a.take()) {
+        fechar_sessao(&s.conn, &s.caminho);
+    }
 }
 
 /// O tamanho da última tela liberada, para a lista de monitores do app.
@@ -1310,26 +1259,6 @@ pub fn preparar() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn reconhece_o_portal_desencontrado_do_gnome() {
-        // As duas mensagens que o celular mostrou numa VM com Ubuntu 26.04.
-        assert!(portal_quebrado(
-            "portal: org.freedesktop.portal.Error.InvalidArgument: Unavailable cursor mode 2"
-        ));
-        assert!(portal_quebrado("portal: missing field `session_handle`"));
-        // Recusa de quem está no computador não se resolve reiniciando nada.
-        assert!(!portal_quebrado("o pedido terminou (código 1)"));
-        assert!(!portal_quebrado(
-            "ninguém aprovou o acesso na tela do computador"
-        ));
-    }
-
-    #[test]
-    fn reinicia_o_portal_no_maximo_uma_vez_a_cada_cinco_minutos() {
-        assert!(pode_reiniciar());
-        assert!(!pode_reiniciar());
-    }
 
     #[test]
     fn o_texto_que_o_agente_poe_sai_em_todos_os_tipos_de_texto() {

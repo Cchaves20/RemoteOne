@@ -219,6 +219,50 @@ pub fn load_config() -> config::Config {
 ///
 /// Falha ao gravar é ignorada de propósito - um diário que derruba o programa
 /// que ele deveria explicar seria o pior dos dois mundos.
+/// Sai do agente arrumando o que não pode ficar para trás: no Linux, a
+/// sessão de tela aberta (ver `wayland::encerrar`). Todo `exit` do agente que
+/// roda com a tela aberta passa por aqui.
+pub fn sair(codigo: i32) -> ! {
+    #[cfg(target_os = "linux")]
+    wayland::encerrar();
+    std::process::exit(codigo)
+}
+
+/// No Linux: o encerramento pelo sistema (o `SIGTERM` do instalador, de um
+/// `pkill`, do fim da sessão) também passa por `sair`. Sem isto, o processo
+/// morria sem fechar a sessão de tela.
+#[cfg(target_os = "linux")]
+pub fn sair_limpo_nos_sinais() {
+    std::thread::Builder::new()
+        .name("deskside-sinais".into())
+        .spawn(|| {
+            use tokio::signal::unix::{signal, SignalKind};
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            else {
+                return;
+            };
+            rt.block_on(async {
+                let (Ok(mut term), Ok(mut int), Ok(mut hup)) = (
+                    signal(SignalKind::terminate()),
+                    signal(SignalKind::interrupt()),
+                    signal(SignalKind::hangup()),
+                ) else {
+                    return;
+                };
+                tokio::select! {
+                    _ = term.recv() => {}
+                    _ = int.recv() => {}
+                    _ = hup.recv() => {}
+                }
+                diario("encerrado pelo sistema; fechando a sessão de tela");
+                sair(0);
+            });
+        })
+        .ok();
+}
+
 pub fn diario(linha: &str) {
     use std::io::Write;
     let linha = format!("[{}] {linha}", relogio::marca());

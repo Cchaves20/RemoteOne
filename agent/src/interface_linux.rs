@@ -243,7 +243,7 @@ fn desinstalar_em_segundo_plano(estado: Compartilhado) {
         if let Err(e) = crate::setup::uninstall_completo() {
             crate::diario(&format!("desinstalar: {e}"));
         }
-        std::process::exit(0);
+        crate::sair(0);
     });
 }
 
@@ -377,7 +377,7 @@ impl ksni::Tray for Bandeja {
         itens.push(
             StandardItem {
                 label: "Sair".into(),
-                activate: Box::new(|_: &mut Self| std::process::exit(0)),
+                activate: Box::new(|_: &mut Self| crate::sair(0)),
                 ..Default::default()
             }
             .into(),
