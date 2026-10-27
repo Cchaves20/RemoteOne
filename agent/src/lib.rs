@@ -6,6 +6,8 @@
 
 pub mod adaptive;
 pub mod apps;
+#[cfg(any(target_os = "linux", test))]
+pub mod apps_linux;
 pub mod atualizacao;
 pub mod apresentacao;
 pub mod agenda;

@@ -133,10 +133,29 @@ ficar mudo, e o celular ouve normal.
 
 Sem PipeWire (Linux de antes de 2022, só com PulseAudio), o celular é avisado.
 
+## Programas (`apps_linux.rs`)
+
+- **Instalados**: os atalhos `.desktop` do menu (pastas do XDG, mais os do
+  Flatpak e do Snap), com o nome em português e sem os escondidos.
+- **Área de trabalho**: os favoritos da barra do GNOME e os atalhos da pasta
+  Área de Trabalho.
+- **Ícones**: o PNG do tema em uso, do `hicolor` ou de `pixmaps`. Programa que
+  só tem SVG aparece com o ícone genérico.
+- **Abrir**: pelo `gio launch`, como o menu faz; sem ele, roda o `Exec=` do
+  atalho. Um perfil feito em outro computador acha o programa pelo nome.
+- **Abertos**: os processos desta conta que são de um programa instalado, pelo
+  `/proc` — vale no Wayland e no X11. Os que o próprio programa abriu (abas
+  de navegador) não contam à parte.
+- **Fechar**: pede para o programa encerrar (SIGTERM), todas as vezes que ele
+  está aberto. Ao contrário do Windows, **não há garantia** de que ele
+  pergunte "salvar alterações?": cada programa decide.
+- Fora do alcance no Linux: posicionar janelas nas zonas e trazer para frente
+  (o Wayland não deixa um programa mexer na janela de outro).
+
 ## O que ainda não existe no Linux
 
-Responde ao celular que não dá, em vez de fingir que fez: abrir e fechar
-programas, brilho e modo apresentação. Recusas
+Responde ao celular que não dá, em vez de fingir que fez: brilho e modo
+apresentação. Recusas
 (um "desligar" que pediu senha, por exemplo) chegam ao celular numa faixa no
 rodapé da tela remota (`aviso.rs`) — só com a tela aberta; sem ela, ficam no
 diário.
@@ -176,5 +195,5 @@ Para compilar à mão (Debian 12, Ubuntu 22.04 ou mais novos):
 
 ## Próximas fases
 
-- **Fase 3:** programas e atualização automática (energia, área de
-  transferência e som já entraram).
+- **Fase 3:** atualização automática (energia, área de transferência, som e
+  programas já entraram).

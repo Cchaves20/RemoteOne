@@ -1055,14 +1055,22 @@ mod imp {
     }
 }
 
-/// Fora do Windows e do Mac: listas vazias, e o que age responde que não dá —
+/// No Linux: os atalhos de menu e os processos (ver `apps_linux.rs`).
+#[cfg(target_os = "linux")]
+mod imp {
+    pub use crate::apps_linux::{
+        close, close_all, close_by_name, launch, list_desktop, list_installed, list_running,
+    };
+}
+
+/// Nos demais sistemas: listas vazias, e o que age responde que não dá —
 /// dizer "abri" sem ter aberto faria a pessoa esperar por um programa que não
 /// vem.
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod imp {
     use super::AppInfo;
 
-    const AINDA_NAO: &str = "abrir e fechar programas ainda não funciona no Linux";
+    const AINDA_NAO: &str = "abrir e fechar programas não está disponível neste sistema";
 
     pub fn list_desktop() -> Vec<AppInfo> {
         Vec::new()
