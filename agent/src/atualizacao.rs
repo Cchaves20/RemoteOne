@@ -739,7 +739,12 @@ pub fn vigiar(estado: crate::gui::Compartilhado) {
                         publicado = p;
                         Some(Atualizacao::Disponivel)
                     }
-                    Ok((Situacao::EmDia, _)) => Some(Atualizacao::Nenhuma),
+                    Ok((Situacao::EmDia, _)) => {
+                        // Uma linha a cada 6 horas: é o que separa "em dia"
+                        // de "nem verificou" quando alguém olha o diário.
+                        crate::diario("atualização: este computador está em dia");
+                        Some(Atualizacao::Nenhuma)
+                    }
                     Ok((Situacao::NaoSeAplica(motivo), _)) => {
                         crate::diario(&format!("atualização automática desligada: {motivo}"));
                         return;

@@ -258,11 +258,33 @@ struct Bandeja {
     atualizar: bool,
 }
 
-/// "Atualizar agora", no menu: para quem está no computador e não quer
-/// esperar ninguém parar de controlar.
-fn atualizar_agora(estado: Compartilhado) {
+/// "Procurar atualização" (ou "Atualizar agora", quando já se sabe que há
+/// versão nova), no menu: pergunta ao site na hora, e havendo versão nova,
+/// instala. Sem ele, uma versão publicada logo depois da verificação só
+/// entraria 6 horas depois.
+fn procurar_atualizacao(estado: Compartilhado) {
+    use crate::atualizacao::Situacao;
     std::thread::spawn(move || {
-        if let Err(e) = crate::atualizacao::aplicar_e_sair(&estado) {
+        let backend = estado.lock().map(|e| e.backend.clone()).unwrap_or_default();
+        let falha = match crate::atualizacao::verificar(&backend) {
+            Ok(Situacao::Disponivel) => crate::atualizacao::aplicar_e_sair(&estado).err(),
+            Ok(Situacao::EmDia) => {
+                if let Ok(mut e) = estado.lock() {
+                    e.atualizacao = crate::gui::Atualizacao::Nenhuma;
+                }
+                notificar(
+                    0,
+                    "O Deskside está em dia",
+                    "Este computador já tem a versão mais recente.",
+                    &[],
+                    NORMAL,
+                );
+                None
+            }
+            Ok(Situacao::NaoSeAplica(motivo)) => Some(motivo.to_string()),
+            Err(e) => Some(e),
+        };
+        if let Some(e) = falha {
             notificar(0, "Não deu para atualizar o Deskside", &e, &[], NORMAL);
         }
     });
@@ -332,16 +354,18 @@ impl ksni::Tray for Bandeja {
             );
         }
         itens.push(MenuItem::Separator);
-        if self.atualizar {
-            itens.push(
-                StandardItem {
-                    label: "Atualizar agora".into(),
-                    activate: Box::new(|b: &mut Self| atualizar_agora(b.estado.clone())),
-                    ..Default::default()
-                }
-                .into(),
-            );
-        }
+        itens.push(
+            StandardItem {
+                label: if self.atualizar {
+                    "Atualizar agora".into()
+                } else {
+                    "Procurar atualização".into()
+                },
+                activate: Box::new(|b: &mut Self| procurar_atualizacao(b.estado.clone())),
+                ..Default::default()
+            }
+            .into(),
+        );
         itens.push(
             StandardItem {
                 label: "Desinstalar o Deskside…".into(),

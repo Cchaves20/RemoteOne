@@ -162,8 +162,10 @@ arquivo em `~/.local/share/deskside/` e sobe o novo. Sem conectar ao
 servidor em 90 s, o velho volta, e aquela versão não é tentada de novo
 sozinha. Com alguém controlando, olha de novo a cada 10 minutos.
 
-Para quem está no computador: **Atualizar agora**, no menu do ícone ao lado
-do relógio, aparece quando há versão nova.
+Para quem está no computador: **Procurar atualização**, no menu do ícone ao
+lado do relógio, pergunta ao site na hora e, havendo versão nova, instala
+(o item vira **Atualizar agora** quando a verificação já a encontrou). Cada
+verificação fica no diário, inclusive quando está tudo em dia.
 
 Os agentes só recebem o que é publicado no site. O GitHub põe no
 pré-lançamento `agente-linux` a cada push, e no servidor:
