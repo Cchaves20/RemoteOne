@@ -203,6 +203,12 @@ ficam no diário.
   alcançável depois de ligar, ele precisa de login automático.
 - **Tela bloqueada**: ainda não testado se o GNOME manda imagem com a tela
   travada.
+- **Portal desencontrado**: o serviço de compartilhamento de tela às vezes
+  perde a ligação com a parte do GNOME (sobe numa hora ruim, ou um programa
+  que compartilhava a tela foi encerrado à força) e responde "Unavailable
+  cursor mode" ou sem a sessão. O agente reinicia o serviço
+  (`systemctl --user restart xdg-desktop-portal-gnome xdg-desktop-portal`)
+  e tenta de novo, no máximo uma vez a cada 5 minutos.
 - Testado só no Ubuntu com GNOME. KDE e Fedora: a confirmar.
 
 ## Testar
