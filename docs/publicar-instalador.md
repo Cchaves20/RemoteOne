@@ -176,9 +176,13 @@ publicar o ARM64 com o nome do x64.
 
 Junto com cada `.exe` o `-Publicar` manda um `.sha256` (`Deskside.exe.sha256`,
 `Deskside-ARM64.exe.sha256`). É por ele que o agente instalado descobre que há
-versão nova: compara com o resumo do próprio arquivo e, se for diferente, a
-janela mostra **Atualizar** e o menu da bandeja responde em "Procurar
-atualização". Ver `agent/src/atualizacao.rs`.
+versão nova: compara com o resumo do próprio arquivo e, se for diferente,
+**instala sozinho** assim que ninguém estiver controlando o computador pelo
+celular (a conexão cai por alguns segundos e volta). Quem está no computador
+pode antecipar: a janela mostra **Atualizar** e o menu da bandeja responde em
+"Procurar atualização". Uma versão que não conectou e foi desfeita não é
+tentada de novo sozinha; a próxima publicada é. Ver
+`agent/src/atualizacao.rs`.
 
 Por isso **publicar à mão pelo `scp` de cima não avisa ninguém**: sem o
 `.sha256` novo, os agentes continuam comparando com o velho. Use o

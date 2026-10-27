@@ -52,6 +52,20 @@
 //!   de Tela e Acessibilidade ao programa certo. Sem a prova em 90 segundos,
 //!   devolve o velho.
 //!
+//! ## No Linux
+//!
+//! Igual ao Windows, em `~/.local/share/deskside`. O que se publica é o
+//! executável solto (`/baixar/Deskside-linux-x86_64-agente`), e não o
+//! `.tar.gz` da instalação: assim não há pacote para abrir. O baixado ganha
+//! a permissão de executar antes da troca.
+//!
+//! ## Sozinha, mas não com alguém usando
+//!
+//! A versão nova entra sem ninguém clicar, quando ninguém está controlando o
+//! computador (ver `vigiar` e `entrar_sozinha`): quem cuida de um computador
+//! de longe não está lá para clicar. Uma versão desfeita pelo ajudante não é
+//! tentada de novo sozinha.
+//!
 //! ## Por que não uma biblioteca de HTTP
 //!
 //! O agente já fala TLS — é o `native-tls` do WebSocket, que no Windows usa o
@@ -81,14 +95,29 @@ use sha2::{Digest, Sha256};
 
 /// Nome da cópia instalada. Precisa bater com o de `setup.rs`.
 pub const EXE: &str = "deskside-agent.exe";
+/// O mesmo, no Linux (`setup::lugares_linux`).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const EXE_LINUX: &str = "deskside-agent";
 /// O executável novo, já baixado e conferido, esperando a troca.
+#[cfg(not(target_os = "linux"))]
 pub const NOVO: &str = "deskside-agent.new.exe";
+#[cfg(target_os = "linux")]
+pub const NOVO: &str = "deskside-agent.new";
 /// O executável velho, guardado até o novo provar que funciona.
+#[cfg(not(target_os = "linux"))]
 pub const VELHO: &str = "deskside-agent.old.exe";
+#[cfg(target_os = "linux")]
+pub const VELHO: &str = "deskside-agent.old";
 /// O novo que não passou na prova, afastado para o velho voltar ao lugar.
+#[cfg(not(target_os = "linux"))]
 pub const FALHOU: &str = "deskside-agent.falhou.exe";
+#[cfg(target_os = "linux")]
+pub const FALHOU: &str = "deskside-agent.falhou";
 /// A cópia do agente velho que faz a troca.
+#[cfg(not(target_os = "linux"))]
 pub const AJUDANTE: &str = "deskside-atualizador.exe";
+#[cfg(target_os = "linux")]
+pub const AJUDANTE: &str = "deskside-atualizador";
 /// A prova de que o novo conectou.
 pub const PROVA: &str = "atualizacao.ok";
 
@@ -102,6 +131,9 @@ pub const DESTINO: &str = "destino";
 /// estes também: o `rmdir` do fim dela só remove pasta vazia.
 pub const SOBRAS: [&str; 5] = [NOVO, VELHO, FALHOU, AJUDANTE, PROVA];
 
+/// Na pasta de configuração: o resumo da última versão tentada. Fica de fora
+/// das `SOBRAS`, porque precisa sobreviver à troca desfeita.
+pub const TENTATIVA: &str = "atualizacao-tentada";
 /// Argumento com que o agente chama o ajudante.
 pub const ARG_APLICAR: &str = "--aplicar-atualizacao";
 /// Argumento com que o ajudante sobe o agente novo.
@@ -125,6 +157,16 @@ pub fn nome_publicado() -> Option<&'static str> {
     if cfg!(target_os = "macos") {
         // Um pacote só, universal: Apple Silicon e Intel no mesmo `.app`.
         Some("Deskside-mac.zip")
+    } else if cfg!(target_os = "linux") {
+        // O executável solto, e não o `.tar.gz` da instalação: é só ele que
+        // a atualização troca, e assim o agente não precisa abrir pacote.
+        if cfg!(target_arch = "x86_64") {
+            Some("Deskside-linux-x86_64-agente")
+        } else if cfg!(target_arch = "aarch64") {
+            Some("Deskside-linux-aarch64-agente")
+        } else {
+            None
+        }
     } else if cfg!(target_arch = "x86_64") {
         Some("Deskside.exe")
     } else if cfg!(target_arch = "aarch64") {
@@ -464,25 +506,37 @@ pub fn comparar(local: &str, publicado: &str) -> Situacao {
 
 /// Pergunta ao site se há versão nova.
 pub fn verificar(backend: &str) -> Result<Situacao, String> {
+    consultar(backend).map(|(situacao, _)| situacao)
+}
+
+/// Como `verificar`, e também o resumo publicado do executável (vazio quando
+/// não se aplica).
+fn consultar(backend: &str) -> Result<(Situacao, String), String> {
     let Some(nome) = nome_publicado() else {
-        return Ok(Situacao::NaoSeAplica(
-            "não há versão publicada para este processador",
+        return Ok((
+            Situacao::NaoSeAplica("não há versão publicada para este processador"),
+            String::new(),
         ));
     };
     let Some(origem) = Origem::do_backend(backend) else {
-        return Ok(Situacao::NaoSeAplica(
-            "o servidor configurado não usa HTTPS",
+        return Ok((
+            Situacao::NaoSeAplica("o servidor configurado não usa HTTPS"),
+            String::new(),
         ));
     };
     let Some(exe) = imp::exe_instalado_em_uso() else {
         // Rodando de fora da pasta de instalação: é quem desenvolve, ou o
         // arquivo recém-baixado antes de se instalar. Trocar o executável de
         // outra pasta não atualizaria o que sobe com o Windows.
-        return Ok(Situacao::NaoSeAplica("este não é o Deskside instalado"));
+        return Ok((
+            Situacao::NaoSeAplica("este não é o Deskside instalado"),
+            String::new(),
+        ));
     };
     let local = resumo_de_arquivo(&exe)?;
     let do_executavel = nome_do_resumo_do_executavel().unwrap_or(nome);
-    Ok(comparar(&local, &resumo_publicado(&origem, do_executavel)?))
+    let publicado = resumo_publicado(&origem, do_executavel)?;
+    Ok((comparar(&local, &publicado), publicado))
 }
 
 /// Baixa, confere e passa a vez ao ajudante.
@@ -549,7 +603,60 @@ pub fn aplicar(backend: &str) -> Result<(), String> {
     crate::diario(&format!(
         "atualização baixada e conferida ({esperado}); passando ao ajudante"
     ));
+    // Anotada antes da troca: se ela for desfeita, o agente velho que volta
+    // não tenta de novo sozinho a mesma versão (ver `entrar_sozinha`).
+    let _ = std::fs::create_dir_all(crate::config_dir());
+    let _ = std::fs::write(arquivo_da_tentativa(), &do_executavel);
     imp::chamar_ajudante(&exe, &pasta)
+}
+
+/// Onde fica o resumo da última versão que o agente tentou instalar.
+fn arquivo_da_tentativa() -> PathBuf {
+    crate::config_dir().join(TENTATIVA)
+}
+
+/// Se a versão publicada entra sozinha agora.
+///
+/// Não com alguém controlando: o agente reinicia, e o celular ficaria sem
+/// tela no meio do uso. E não uma versão que já foi tentada: tentada e ainda
+/// não instalada quer dizer que ela não conectou e o ajudante devolveu a
+/// velha — tentar de novo seria derrubar o computador a cada verificação.
+/// Essa fica para o botão, e a próxima versão publicada volta a entrar
+/// sozinha.
+pub fn entrar_sozinha(controlando: bool, publicado: &str, tentada: Option<&str>) -> bool {
+    !controlando && !tentada.is_some_and(|t| t.trim().eq_ignore_ascii_case(publicado))
+}
+
+/// Baixa, confere e sai para o ajudante trocar; só volta se der errado.
+///
+/// Bloqueia quem chama: o download leva segundos, então quem chama é sempre
+/// uma thread feita para isto, nunca a da janela nem a da bandeja.
+pub fn aplicar_e_sair(estado: &crate::gui::Compartilhado) -> Result<(), String> {
+    use crate::gui::Atualizacao;
+    let backend = match estado.lock() {
+        Ok(mut e) => {
+            // O botão e a verificação automática não podem atualizar juntos.
+            if e.atualizacao == Atualizacao::Aplicando {
+                return Err("a atualização já está em andamento".into());
+            }
+            e.atualizacao = Atualizacao::Aplicando;
+            e.backend.clone()
+        }
+        Err(_) => return Err("estado interno indisponível".into()),
+    };
+    match aplicar(&backend) {
+        Ok(()) => {
+            crate::diario("saindo para o ajudante trocar o executável");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            crate::diario(&format!("atualização não aplicada: {e}"));
+            if let Ok(mut s) = estado.lock() {
+                s.atualizacao = Atualizacao::Falhou(e.clone());
+            }
+            Err(e)
+        }
+    }
 }
 
 /// Quanto tempo a conexão precisa durar, sem cair, para valer como prova.
@@ -611,11 +718,13 @@ const PRIMEIRA_VERIFICACAO_SECS: u64 = 2 * 60;
 /// E de quanto em quanto tempo depois. Um computador que fica ligado a
 /// semana toda também precisa descobrir a versão nova.
 const ENTRE_VERIFICACOES_SECS: u64 = 6 * 60 * 60;
+/// Com versão nova esperando alguém parar de controlar, a próxima olhada.
+const COM_ALGUEM_CONTROLANDO_SECS: u64 = 10 * 60;
 
-/// Pergunta ao site de tempos em tempos e deixa a resposta no estado da
-/// janela. **Só avisa**: quem decide atualizar é a pessoa, pelo botão —
-/// reiniciar o agente sozinho derrubaria o controle remoto de quem estivesse
-/// usando o computador naquela hora.
+/// Pergunta ao site de tempos em tempos, deixa a resposta no estado da janela
+/// e **instala sozinha** a versão nova quando ninguém está controlando (ver
+/// `entrar_sozinha`). Quem cuida de um computador de longe não está lá para
+/// clicar num botão; o botão continua, para quem está.
 pub fn vigiar(estado: crate::gui::Compartilhado) {
     use crate::gui::Atualizacao;
     std::thread::Builder::new()
@@ -624,10 +733,14 @@ pub fn vigiar(estado: crate::gui::Compartilhado) {
             std::thread::sleep(std::time::Duration::from_secs(PRIMEIRA_VERIFICACAO_SECS));
             loop {
                 let backend = estado.lock().map(|e| e.backend.clone()).unwrap_or_default();
-                let nova = match verificar(&backend) {
-                    Ok(Situacao::Disponivel) => Some(Atualizacao::Disponivel),
-                    Ok(Situacao::EmDia) => Some(Atualizacao::Nenhuma),
-                    Ok(Situacao::NaoSeAplica(motivo)) => {
+                let mut publicado = String::new();
+                let nova = match consultar(&backend) {
+                    Ok((Situacao::Disponivel, p)) => {
+                        publicado = p;
+                        Some(Atualizacao::Disponivel)
+                    }
+                    Ok((Situacao::EmDia, _)) => Some(Atualizacao::Nenhuma),
+                    Ok((Situacao::NaoSeAplica(motivo), _)) => {
                         crate::diario(&format!("atualização automática desligada: {motivo}"));
                         return;
                     }
@@ -651,7 +764,26 @@ pub fn vigiar(estado: crate::gui::Compartilhado) {
                         e.atualizacao = nova;
                     }
                 }
-                std::thread::sleep(std::time::Duration::from_secs(ENTRE_VERIFICACOES_SECS));
+                let mut espera = ENTRE_VERIFICACOES_SECS;
+                if !publicado.is_empty() {
+                    let controlando = estado
+                        .lock()
+                        .map(|e| !e.controladores.is_empty())
+                        .unwrap_or(true);
+                    let tentada = std::fs::read_to_string(arquivo_da_tentativa()).ok();
+                    if entrar_sozinha(controlando, &publicado, tentada.as_deref()) {
+                        crate::diario("instalando a versão nova: ninguém está controlando");
+                        // Dando certo, o processo sai aqui mesmo.
+                        let _ = aplicar_e_sair(&estado);
+                    } else if controlando {
+                        espera = COM_ALGUEM_CONTROLANDO_SECS;
+                    } else {
+                        crate::diario(
+                            "a versão publicada já foi tentada e desfeita; fica para o botão",
+                        );
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_secs(espera));
             }
         })
         .ok();
@@ -1034,7 +1166,153 @@ mod imp {
     }
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+/// No Linux: a mesma troca do Windows, na pasta da instalação
+/// (`~/.local/share/deskside`). Um executável em uso pode ser renomeado, e o
+/// arquivo baixado precisa só da permissão de executar.
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::*;
+    use std::os::unix::process::CommandExt;
+    use std::process::{Child, Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    extern "C" {
+        fn kill(pid: i32, sinal: i32) -> i32;
+    }
+
+    fn lugares() -> Option<crate::setup::LugaresLinux> {
+        let casa = std::env::var_os("HOME")?;
+        let dados = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+        let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+        Some(crate::setup::lugares_linux(
+            Path::new(&casa),
+            dados.as_deref(),
+            config.as_deref(),
+        ))
+    }
+
+    pub fn pasta_instalada() -> Option<PathBuf> {
+        lugares().map(|l| l.pasta)
+    }
+
+    /// O executável em uso, se ele for o instalado (e não o da pasta onde o
+    /// `.tar.gz` foi aberto).
+    pub fn exe_instalado_em_uso() -> Option<PathBuf> {
+        let atual = std::fs::canonicalize(std::env::current_exe().ok()?).ok()?;
+        let instalado = lugares()?.exe;
+        (std::fs::canonicalize(&instalado).ok()? == atual).then_some(instalado)
+    }
+
+    /// Sobe um processo que sobrevive a quem o chamou: num grupo próprio, sem
+    /// herdar o terminal.
+    fn lancar(exe: &Path, args: &[&str]) -> std::io::Result<Child> {
+        Command::new(exe)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+    }
+
+    pub fn chamar_ajudante(exe: &Path, pasta: &Path) -> Result<(), String> {
+        use std::os::unix::fs::PermissionsExt;
+        let permissao = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(pasta.join(NOVO), permissao)
+            .map_err(|e| format!("não marquei o novo como executável: {e}"))?;
+        let ajudante = pasta.join(AJUDANTE);
+        let _ = std::fs::remove_file(&ajudante);
+        std::fs::copy(exe, &ajudante).map_err(|e| format!("não preparei o ajudante: {e}"))?;
+        let pid = std::process::id().to_string();
+        lancar(&ajudante, &[ARG_APLICAR, &pid])
+            .map_err(|e| format!("não consegui chamar o ajudante: {e}"))?;
+        Ok(())
+    }
+
+    fn esperar_sair(pid: u32, prazo: Duration) {
+        let limite = Instant::now() + prazo;
+        while unsafe { kill(pid as i32, 0) } == 0 && Instant::now() < limite {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+
+    pub fn executar_ajudante(pid_do_velho: u32) {
+        let Some(pasta) = pasta_instalada() else {
+            return;
+        };
+        let (exe, novo, velho) = (pasta.join(EXE_LINUX), pasta.join(NOVO), pasta.join(VELHO));
+        let (falhou, prova) = (pasta.join(FALHOU), pasta.join(PROVA));
+        let diario = |t: &str| crate::diario(&format!("atualizador: {t}"));
+
+        esperar_sair(pid_do_velho, Duration::from_secs(30));
+
+        let _ = std::fs::remove_file(&velho);
+        let _ = std::fs::remove_file(&prova);
+        if let Err(e) = std::fs::rename(&exe, &velho) {
+            diario(&format!(
+                "não tirei o executável velho do lugar ({e}); nada mudou"
+            ));
+            let _ = lancar(&exe, &[]);
+            return;
+        }
+        if let Err(e) = std::fs::rename(&novo, &exe) {
+            diario(&format!("não pus o novo no lugar ({e}); voltando o velho"));
+            let _ = std::fs::rename(&velho, &exe);
+            let _ = lancar(&exe, &[]);
+            return;
+        }
+
+        let mut filho = match lancar(&exe, &[ARG_ATUALIZADO]) {
+            Ok(f) => f,
+            Err(e) => {
+                diario(&format!("o novo não abriu ({e}); voltando o velho"));
+                desfazer(&exe, &velho, &falhou, None);
+                return;
+            }
+        };
+
+        let limite = Instant::now() + Duration::from_secs(PRAZO_DA_PROVA_SECS);
+        while Instant::now() < limite {
+            if prova.exists() {
+                let _ = std::fs::remove_file(&prova);
+                let _ = std::fs::remove_file(&velho);
+                diario("versão nova no ar");
+                return;
+            }
+            if let Ok(Some(saida)) = filho.try_wait() {
+                diario(&format!(
+                    "o novo encerrou sozinho ({saida}); voltando o velho"
+                ));
+                desfazer(&exe, &velho, &falhou, None);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        diario(&format!(
+            "o novo não conectou em {PRAZO_DA_PROVA_SECS}s; voltando o velho"
+        ));
+        desfazer(&exe, &velho, &falhou, Some(filho));
+    }
+
+    fn desfazer(exe: &Path, velho: &Path, falhou: &Path, filho: Option<Child>) {
+        if let Some(mut f) = filho {
+            let _ = f.kill();
+            let _ = f.wait();
+        }
+        let _ = std::fs::remove_file(falhou);
+        let _ = std::fs::rename(exe, falhou);
+        match std::fs::rename(velho, exe) {
+            Ok(()) => {
+                let _ = lancar(exe, &[]);
+            }
+            Err(e) => crate::diario(&format!(
+                "atualizador: não devolvi o velho ({e}); reinstale pelo site"
+            )),
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod imp {
     use super::*;
 
@@ -1047,7 +1325,7 @@ mod imp {
     }
 
     pub fn chamar_ajudante(_exe: &Path, _pasta: &Path) -> Result<(), String> {
-        Err("atualização automática só existe no Windows".into())
+        Err("atualização automática não existe neste sistema".into())
     }
 
     pub fn executar_ajudante(_pid: u32) {}
@@ -1066,12 +1344,39 @@ mod tests {
             // Universal: o mesmo pacote para Apple Silicon e Intel.
             assert_eq!(nome, Some("Deskside-mac.zip"));
             assert_eq!(nome_do_resumo_do_executavel(), Some("Deskside-mac-agente"));
+        } else if cfg!(target_os = "linux") {
+            // Os nomes de `scripts/publicar-linux.sh`.
+            let esperado = if cfg!(target_arch = "x86_64") {
+                "Deskside-linux-x86_64-agente"
+            } else {
+                "Deskside-linux-aarch64-agente"
+            };
+            assert_eq!(nome, Some(esperado));
+            assert_eq!(nome_do_resumo_do_executavel(), nome);
         } else if cfg!(target_arch = "x86_64") {
             assert_eq!(nome, Some("Deskside.exe"));
             assert_eq!(nome_do_resumo_do_executavel(), nome);
         } else if cfg!(target_arch = "aarch64") {
             assert_eq!(nome, Some("Deskside-ARM64.exe"));
         }
+    }
+
+    #[test]
+    fn versao_nova_entra_sozinha_so_sem_ninguem_controlando_e_uma_vez() {
+        let nova = "ab".repeat(32);
+        assert!(entrar_sozinha(false, &nova, None));
+        // Alguém usando o computador pelo celular: espera.
+        assert!(!entrar_sozinha(true, &nova, None));
+        // Já tentada e desfeita: não derruba o computador de novo.
+        assert!(!entrar_sozinha(false, &nova, Some(&nova)));
+        // Como o arquivo é gravado e lido: com quebra de linha, maiúsculas.
+        assert!(!entrar_sozinha(
+            false,
+            &nova,
+            Some(&format!("{}\n", nova.to_uppercase()))
+        ));
+        // Uma versão publicada depois da que falhou volta a entrar sozinha.
+        assert!(entrar_sozinha(false, &nova, Some(&"cd".repeat(32))));
     }
 
     #[test]

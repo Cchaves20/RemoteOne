@@ -152,6 +152,27 @@ Sem PipeWire (Linux de antes de 2022, só com PulseAudio), o celular é avisado.
 - Fora do alcance no Linux: posicionar janelas nas zonas e trazer para frente
   (o Wayland não deixa um programa mexer na janela de outro).
 
+## Atualização automática (`atualizacao.rs`)
+
+A mesma do Windows: o agente compara o resumo do próprio executável com o
+publicado no site (`/baixar/Deskside-linux-<arq>-agente.sha256`) 2 minutos
+depois de subir e depois a cada 6 horas. Havendo versão nova e **ninguém
+controlando**, ele baixa o executável solto, confere, e um ajudante troca o
+arquivo em `~/.local/share/deskside/` e sobe o novo. Sem conectar ao
+servidor em 90 s, o velho volta, e aquela versão não é tentada de novo
+sozinha. Com alguém controlando, olha de novo a cada 10 minutos.
+
+Para quem está no computador: **Atualizar agora**, no menu do ícone ao lado
+do relógio, aparece quando há versão nova.
+
+Os agentes só recebem o que é publicado no site. O GitHub põe no
+pré-lançamento `agente-linux` a cada push, e no servidor:
+
+    cd ~/RemoteOne && git pull && sh scripts/publicar-linux.sh
+
+Só a instalação feita com `install` se atualiza; `run` direto da pasta do
+`.tar.gz` não.
+
 ## O que ainda não existe no Linux
 
 Responde ao celular que não dá, em vez de fingir que fez: brilho e modo
@@ -195,5 +216,5 @@ Para compilar à mão (Debian 12, Ubuntu 22.04 ou mais novos):
 
 ## Próximas fases
 
-- **Fase 3:** atualização automática (energia, área de transferência, som e
-  programas já entraram).
+- **Fase 3:** concluída (energia, área de transferência, som, programas e
+  atualização automática).

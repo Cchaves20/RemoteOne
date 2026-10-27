@@ -42,7 +42,7 @@ comum (servidor, pareamento, vídeo, automações); o que muda está atrás de
 | Som do computador | ScreenCaptureKit (macOS 13+), a mesma permissão da Gravação de Tela, sem driver. O som do próprio Deskside fica de fora. Opus em Rust puro, testado no Linux com som de verdade | `audio.rs`, `opus_puro.rs` |
 | Instalador | `Deskside.dmg`, com o atalho para Aplicativos ao lado | `scripts/montar-app-mac.sh` |
 | Assinatura e notarização | Com o Developer ID e a chave da API da Apple nos segredos do GitHub (ver abaixo); sem eles, sai a versão de teste | `scripts/montar-app-mac.sh`, workflow |
-| Atualização automática | Baixa o `.app` novo num `.zip`, confere, troca, abre e espera a prova de que conectou; sem a prova em 90 s, volta o velho | `atualizacao.rs` |
+| Atualização automática | Sozinha quando ninguém está controlando (ou pelo botão Atualizar): baixa o `.app` novo num `.zip`, confere, troca, abre e espera a prova de que conectou; sem a prova em 90 s, volta o velho | `atualizacao.rs` |
 | Publicação | O GitHub publica no pré-lançamento `agente-mac`; o servidor copia para o site com `scripts/publicar-mac.sh` | workflow, `scripts/publicar-mac.sh` |
 
 ## Como se monta e onde baixar
@@ -147,8 +147,10 @@ O que conferir, nesta ordem, e o que mandar se falhar:
 - [ ] O brilho, se for um MacBook ou iMac.
 - [ ] O som do computador chega ao celular (macOS 13 ou mais novo).
 - [ ] Atualização: publicar uma versão nova no site
-      (`scripts/publicar-mac.sh`) e, no Deskside do Mac, clicar em Atualizar.
-      Ele fecha, volta sozinho em alguns segundos, e o celular reconecta.
+      (`scripts/publicar-mac.sh`) e esperar: sem ninguém controlando, ele se
+      atualiza sozinho até 2 minutos depois de abrir (ou a cada 6 horas);
+      para não esperar, clicar em Atualizar no Deskside do Mac. Ele fecha,
+      volta sozinho em alguns segundos, e o celular reconecta.
 
 Se algo falhar, o diário fica em `~/.config/deskside/agent.log` (no Finder:
 Ir › Ir para a Pasta…, e colar o caminho).

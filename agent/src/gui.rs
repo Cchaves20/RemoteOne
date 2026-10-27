@@ -421,26 +421,7 @@ mod imp {
     /// Dando certo, o processo **sai** — o ajudante espera por isso para
     /// trocar o executável e subir a versão nova.
     fn aplicar_atualizacao(estado: &Compartilhado) -> Result<(), String> {
-        let backend = match estado.lock() {
-            Ok(mut e) => {
-                e.atualizacao = Atualizacao::Aplicando;
-                e.backend.clone()
-            }
-            Err(_) => return Err("estado interno indisponível".into()),
-        };
-        match crate::atualizacao::aplicar(&backend) {
-            Ok(()) => {
-                crate::diario("saindo para o ajudante trocar o executável");
-                std::process::exit(0);
-            }
-            Err(e) => {
-                crate::diario(&format!("atualização não aplicada: {e}"));
-                if let Ok(mut s) = estado.lock() {
-                    s.atualizacao = Atualizacao::Falhou(e.clone());
-                }
-                Err(e)
-            }
-        }
+        crate::atualizacao::aplicar_e_sair(estado)
     }
 
     /// "Procurar atualização", no menu da bandeja.

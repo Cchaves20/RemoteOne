@@ -254,6 +254,18 @@ struct Bandeja {
     conectado: bool,
     codigo: Option<String>,
     controlando: bool,
+    /// Há versão nova que ainda não entrou (ver `atualizacao::vigiar`).
+    atualizar: bool,
+}
+
+/// "Atualizar agora", no menu: para quem está no computador e não quer
+/// esperar ninguém parar de controlar.
+fn atualizar_agora(estado: Compartilhado) {
+    std::thread::spawn(move || {
+        if let Err(e) = crate::atualizacao::aplicar_e_sair(&estado) {
+            notificar(0, "Não deu para atualizar o Deskside", &e, &[], NORMAL);
+        }
+    });
 }
 
 fn icone() -> Vec<ksni::Icon> {
@@ -320,6 +332,16 @@ impl ksni::Tray for Bandeja {
             );
         }
         itens.push(MenuItem::Separator);
+        if self.atualizar {
+            itens.push(
+                StandardItem {
+                    label: "Atualizar agora".into(),
+                    activate: Box::new(|b: &mut Self| atualizar_agora(b.estado.clone())),
+                    ..Default::default()
+                }
+                .into(),
+            );
+        }
         itens.push(
             StandardItem {
                 label: "Desinstalar o Deskside…".into(),
@@ -370,6 +392,7 @@ pub fn rodar(estado: Compartilhado) {
         conectado: false,
         codigo: None,
         controlando: false,
+        atualizar: false,
     };
     // `assume_sni_available`: no GNOME puro não há quem mostre o ícone, e
     // isso não é erro — o resto da interface (as notificações) continua.
@@ -381,12 +404,21 @@ pub fn rodar(estado: Compartilhado) {
         }
     };
 
-    let mut ultimo = (false, None::<String>, false);
+    let mut ultimo = (false, None::<String>, false, false);
     loop {
-        let (conectado, controlando) = estado
+        let (conectado, controlando, atualizar) = estado
             .lock()
-            .map(|e| (e.conectado, !e.controladores.is_empty()))
-            .unwrap_or((false, false));
+            .map(|e| {
+                (
+                    e.conectado,
+                    !e.controladores.is_empty(),
+                    matches!(
+                        e.atualizacao,
+                        crate::gui::Atualizacao::Disponivel | crate::gui::Atualizacao::Falhou(_)
+                    ),
+                )
+            })
+            .unwrap_or((false, false, false));
         let codigo = crate::notify::codigo_pendente().map(|(c, _)| c);
         // Código usado (ou vencido): a notificação dele sai junto.
         if codigo.is_none() {
@@ -398,14 +430,15 @@ pub fn rodar(estado: Compartilhado) {
                 }
             }
         }
-        let agora = (conectado, codigo, controlando);
+        let agora = (conectado, codigo, controlando, atualizar);
         if agora != ultimo {
             if let Some(alca) = &alca {
-                let (c, cod, ctl) = agora.clone();
+                let (c, cod, ctl, atu) = agora.clone();
                 alca.update(move |b: &mut Bandeja| {
                     b.conectado = c;
                     b.codigo = cod;
                     b.controlando = ctl;
+                    b.atualizar = atu;
                 });
             }
             ultimo = agora;
