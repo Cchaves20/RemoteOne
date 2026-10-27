@@ -173,13 +173,29 @@ pré-lançamento `agente-linux` a cada push, e no servidor:
 Só a instalação feita com `install` se atualiza; `run` direto da pasta do
 `.tar.gz` não.
 
-## O que ainda não existe no Linux
+## Brilho (`brightness.rs`)
 
-Responde ao celular que não dá, em vez de fingir que fez: brilho e modo
-apresentação. Recusas
-(um "desligar" que pediu senha, por exemplo) chegam ao celular numa faixa no
-rodapé da tela remota (`aviso.rs`) — só com a tela aberta; sem ela, ficam no
-diário.
+Só a tela embutida de notebook, como no Windows e no Mac. O nível vem de
+`/sys/class/backlight` (com mais de um controle, o do firmware primeiro), e
+o ajuste é pedido ao `logind` (`Session.SetBrightness`), que deixa a pessoa
+da sessão mudar o brilho sem senha de administrador. Computador de mesa e
+máquina virtual respondem que não há tela com brilho ajustável.
+
+## Modo apresentação (`apresentacao.rs`)
+
+- A tela fica acesa (o mesmo pedido de `awake.rs`).
+- As notificações silenciam pelo "Não perturbe" do GNOME
+  (`org.gnome.desktop.notifications show-banners`). Só o silêncio que o
+  agente ligou é desfeito: quem já estava em "Não perturbe" continua. Se o
+  agente cair com o modo ligado, ele devolve os avisos ao subir de novo.
+- Fora do GNOME a tela fica acesa, e o celular é avisado de que as
+  notificações não silenciam.
+- Ligar sozinho com programa em tela cheia não existe no Linux: o Wayland
+  não deixa um programa ver as janelas dos outros. O botão funciona.
+
+Recusas (um "desligar" que pediu senha, por exemplo) chegam ao celular numa
+faixa no rodapé da tela remota (`aviso.rs`) — só com a tela aberta; sem ela,
+ficam no diário.
 
 ## Limites conhecidos
 

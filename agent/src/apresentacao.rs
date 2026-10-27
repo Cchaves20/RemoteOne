@@ -215,10 +215,101 @@ mod imp {
     }
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+/// O que fazer com o "Não perturbe" do GNOME.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Silencio {
+    /// Desligar os avisos e anotar que fomos nós.
+    Silenciar,
+    /// Religar os avisos e apagar a anotação.
+    Devolver,
+    Nada,
+}
+
+/// Mexe só no que é nosso. Se a pessoa já estava em "Não perturbe", ligar o
+/// modo não muda nada — e desligá-lo não pode tirá-la de lá. A anotação
+/// (`marcado`) é o que diz que fomos nós que silenciamos.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn silencio(ligar: bool, mostra_avisos: bool, marcado: bool) -> Silencio {
+    match (ligar, mostra_avisos, marcado) {
+        (true, true, _) => Silencio::Silenciar,
+        (false, _, true) => Silencio::Devolver,
+        _ => Silencio::Nada,
+    }
+}
+
+/// Desfaz um "Não perturbe" que ficou ligado porque o agente caiu com o modo
+/// apresentação ligado. Chamado uma vez, ao começar a vigiar.
+pub fn desfazer_sobra() {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = imp::silenciar(false);
+    }
+}
+
+/// No Linux a tela fica acesa (o mesmo pedido ao GNOME e ao `logind` de
+/// `awake.rs`) e as notificações silenciam pelo "Não perturbe" do GNOME
+/// (`org.gnome.desktop.notifications show-banners`). A tela cheia não é
+/// reconhecida: o Wayland não deixa um programa ver as janelas dos outros.
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::{silencio, Silencio};
+    use std::process::{Command, Stdio};
+
+    const ESQUEMA: &str = "org.gnome.desktop.notifications";
+    const CHAVE: &str = "show-banners";
+    /// Na pasta de configuração: existe enquanto o silêncio ligado é nosso.
+    const ANOTACAO: &str = "apresentacao-silenciou";
+
+    fn gsettings(args: &[&str]) -> Result<String, String> {
+        let saida = Command::new("gsettings")
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|_| "sem o gsettings".to_string())?;
+        if !saida.status.success() {
+            return Err(String::from_utf8_lossy(&saida.stderr).trim().to_string());
+        }
+        Ok(String::from_utf8_lossy(&saida.stdout).trim().to_string())
+    }
+
+    pub fn silenciar(ligar: bool) -> Result<(), String> {
+        let anotacao = crate::config_dir().join(ANOTACAO);
+        let mostra = gsettings(&["get", ESQUEMA, CHAVE]).map(|v| v != "false");
+        let mostra = match (mostra, ligar) {
+            (Ok(m), _) => m,
+            // Fora do GNOME desligar não tem o que desfazer.
+            (Err(_), false) => return Ok(()),
+            (Err(_), true) => {
+                return Err("a tela fica acesa, mas as notificações só silenciam \
+                            no GNOME"
+                    .into())
+            }
+        };
+        match silencio(ligar, mostra, anotacao.exists()) {
+            Silencio::Silenciar => {
+                let _ = std::fs::create_dir_all(crate::config_dir());
+                std::fs::write(&anotacao, b"")
+                    .map_err(|e| format!("não anotei o silêncio: {e}"))?;
+                gsettings(&["set", ESQUEMA, CHAVE, "false"]).map(|_| ())
+            }
+            Silencio::Devolver => {
+                gsettings(&["set", ESQUEMA, CHAVE, "true"])?;
+                let _ = std::fs::remove_file(&anotacao);
+                Ok(())
+            }
+            Silencio::Nada => Ok(()),
+        }
+    }
+
+    pub fn detectar() -> Option<String> {
+        None
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod imp {
     pub fn silenciar(_ligar: bool) -> Result<(), String> {
-        Err("o modo apresentação não está disponível no Linux".into())
+        Err("o modo apresentação não está disponível neste sistema".into())
     }
 
     pub fn detectar() -> Option<String> {
@@ -229,6 +320,19 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn o_silencio_so_mexe_no_que_e_nosso() {
+        // Avisos aparecendo: o modo silencia.
+        assert_eq!(silencio(true, true, false), Silencio::Silenciar);
+        // A pessoa já estava em "Não perturbe": nada a fazer, e nada anotado.
+        assert_eq!(silencio(true, false, false), Silencio::Nada);
+        // Desligar o modo devolve só o silêncio que foi nosso.
+        assert_eq!(silencio(false, false, true), Silencio::Devolver);
+        assert_eq!(silencio(false, false, false), Silencio::Nada);
+        // Ligar de novo com a anotação de antes (o agente caiu): continua.
+        assert_eq!(silencio(true, false, true), Silencio::Nada);
+    }
 
     #[test]
     fn desligado_por_padrao_e_sem_automatico() {

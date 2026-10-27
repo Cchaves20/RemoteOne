@@ -1786,6 +1786,7 @@ pub async fn vigiar_agenda(agenda: crate::agenda::Compartilhada, estado: crate::
 /// pode parar de ser detectada porque o Wi-Fi trocou de rede.
 pub async fn vigiar_apresentacao(modo: crate::apresentacao::Compartilhado) {
     let mut relogio = interval(crate::apresentacao::RITMO);
+    crate::apresentacao::desfazer_sobra();
     // O pedido de manter a tela acesa vive aqui, e não no `Modo`: é um recurso
     // do sistema operacional, não um valor.
     let mut tela = crate::awake::Keeper::da_tela();
