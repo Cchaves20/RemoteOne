@@ -253,9 +253,6 @@ fn tidy(mut apps: Vec<AppInfo>) -> Vec<AppInfo> {
     apps
 }
 
-/// Interpreta o JSON do PowerShell com os processos (objeto único quando há só
-/// um processo, array quando há vários). Função pura — testada em qualquer SO.
-#[cfg_attr(not(windows), allow(dead_code))]
 /// Processos que têm janela mas **não são programas** para quem olha.
 ///
 /// O Windows mantém uma coleção de hospedeiros de interface com título de
@@ -308,6 +305,8 @@ fn e_ruido(nome: &str, caminho: &str) -> bool {
     caminho.to_lowercase().contains(r"\windows\systemapps\")
 }
 
+/// Interpreta o JSON do PowerShell com os processos (objeto único quando há só
+/// um processo, array quando há vários). Função pura — testada em qualquer SO.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn parse_running(text: &str) -> Vec<AppInfo> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(text.trim()) else {

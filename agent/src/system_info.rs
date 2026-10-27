@@ -182,7 +182,7 @@ fn taxa_de_rede(networks: &sysinfo::Networks, intervalo: std::time::Duration) ->
     }
     let mut rx = 0u64;
     let mut tx = 0u64;
-    for (_, dados) in networks.iter() {
+    for dados in networks.values() {
         rx = rx.saturating_add(dados.received());
         tx = tx.saturating_add(dados.transmitted());
     }
