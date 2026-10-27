@@ -138,28 +138,58 @@ fn tecla_morta(marca: char) -> Option<u32> {
 /// Lê, do que o GNOME grava, a fonte de entrada em uso.
 ///
 /// O formato é o do `gsettings get`: `[('xkb', 'br'), ('xkb', 'us')]`. A
-/// primeira fonte do tipo `xkb` é a que vale — no `mru-sources`, a usada por
-/// último, que é a atual. As de outro tipo (`ibus`, para japonês e afins) não
-/// são layouts de teclado.
+/// primeira fonte do tipo `xkb` é a que vale. As de outro tipo (`ibus`, para
+/// japonês e afins) não são layouts de teclado.
 pub fn layout_do_gsettings(texto: &str) -> Option<(String, String)> {
+    fontes_xkb(texto).into_iter().next()
+}
+
+/// Todas as fontes do tipo `xkb`, na ordem, como (layout, variante).
+pub fn fontes_xkb(texto: &str) -> Vec<(String, String)> {
+    let mut fontes = Vec::new();
     let mut resto = texto;
     while let Some(i) = resto.find("('") {
         resto = &resto[i + 2..];
-        let fim = resto.find('\'')?;
+        let Some(fim) = resto.find('\'') else {
+            break;
+        };
         let tipo = &resto[..fim];
         resto = &resto[fim + 1..];
-        let inicio = resto.find('\'')? + 1;
-        let fim = resto[inicio..].find('\'')? + inicio;
+        let Some(inicio) = resto.find('\'').map(|i| i + 1) else {
+            break;
+        };
+        let Some(fim) = resto[inicio..].find('\'').map(|f| f + inicio) else {
+            break;
+        };
         let valor = &resto[inicio..fim];
         resto = &resto[fim + 1..];
         if tipo == "xkb" && !valor.is_empty() {
-            return Some(match valor.split_once('+') {
+            fontes.push(match valor.split_once('+') {
                 Some((layout, variante)) => (layout.to_string(), variante.to_string()),
                 None => (valor.to_string(), String::new()),
             });
         }
     }
-    None
+    fontes
+}
+
+/// O layout em uso, pelas duas listas do GNOME: `sources` (os teclados
+/// configurados) e `mru-sources` (os usados por último, o atual primeiro).
+///
+/// O `mru-sources` só vale para o que ainda está em `sources`: quem tira o
+/// inglês e deixa só o português fica com o inglês parado no topo do
+/// `mru-sources` — visto numa VM com Ubuntu 26.04 —, e o agente achava que o
+/// teclado não tinha acentos.
+pub fn layout_do_gnome(fontes: &str, recentes: &str) -> Option<(String, String)> {
+    let fontes = fontes_xkb(fontes);
+    let recentes = fontes_xkb(recentes);
+    if fontes.is_empty() {
+        return recentes.into_iter().next();
+    }
+    recentes
+        .into_iter()
+        .find(|r| fontes.contains(r))
+        .or_else(|| fontes.into_iter().next())
 }
 
 /// Lê o layout de um arquivo no formato do `/etc/default/keyboard`.
@@ -195,15 +225,16 @@ fn gsettings(chave: &str) -> Option<String> {
 
 /// O layout em uso agora: o do GNOME, ou o do sistema, ou o inglês (EUA).
 fn ler_layout() -> (String, String) {
-    gsettings("mru-sources")
-        .and_then(|t| layout_do_gsettings(&t))
-        .or_else(|| gsettings("sources").and_then(|t| layout_do_gsettings(&t)))
-        .or_else(|| {
-            std::fs::read_to_string("/etc/default/keyboard")
-                .ok()
-                .and_then(|t| layout_do_sistema(&t))
-        })
-        .unwrap_or_else(|| ("us".to_string(), String::new()))
+    layout_do_gnome(
+        &gsettings("sources").unwrap_or_default(),
+        &gsettings("mru-sources").unwrap_or_default(),
+    )
+    .or_else(|| {
+        std::fs::read_to_string("/etc/default/keyboard")
+            .ok()
+            .and_then(|t| layout_do_sistema(&t))
+    })
+    .unwrap_or_else(|| ("us".to_string(), String::new()))
 }
 
 /// O teclado atual, relido de tempos em tempos: a pessoa pode trocar a fonte
@@ -248,6 +279,27 @@ mod tests {
             Some(("us".into(), "intl".into()))
         );
         assert_eq!(layout_do_gsettings("@a(ss) []"), None);
+    }
+
+    #[test]
+    fn o_ultimo_usado_so_vale_se_ainda_estiver_configurado() {
+        let br = Some(("br".to_string(), String::new()));
+        // A VM do teste: o inglês removido continuou no topo dos recentes.
+        assert_eq!(layout_do_gnome("[('xkb', 'br')]", "[('xkb', 'us')]"), br);
+        // Dois configurados: vale o usado por último.
+        assert_eq!(
+            layout_do_gnome(
+                "[('xkb', 'us'), ('xkb', 'br')]",
+                "[('xkb', 'br'), ('xkb', 'us')]"
+            ),
+            br
+        );
+        // Recentes vazio: o primeiro configurado.
+        assert_eq!(layout_do_gnome("[('xkb', 'br')]", "@a(ss) []"), br);
+        // Configurados vazio (o GNOME usa o do sistema): os recentes, se
+        // houver; senão, quem chama vai ao do sistema.
+        assert_eq!(layout_do_gnome("@a(ss) []", "[('xkb', 'br')]"), br);
+        assert_eq!(layout_do_gnome("", ""), None);
     }
 
     #[test]
