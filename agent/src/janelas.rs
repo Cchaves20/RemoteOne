@@ -215,6 +215,21 @@ pub const VIGIA: std::time::Duration = std::time::Duration::from_secs(20);
 /// mais que isso não vai desistir, e brigar com ele seria a janela piscando.
 pub const DEVOLUCOES: u32 = 5;
 
+/// Quanto tempo uma janela posicionada fica reservada ao programa dela.
+///
+/// Sem a reserva, o programa seguinte do perfil tomava a janela que tinha
+/// acabado de ser posicionada como "a janela nova" dele: no MateBook, a do
+/// PyCharm chegou da espera em segundo plano enquanto o programa seguinte
+/// procurava a sua, e as duas zonas disputaram a mesma janela. Cobre a vigia
+/// e os programas que abrem logo depois.
+pub const RESERVA: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// As janelas ainda reservadas, já tirando da lista as vencidas.
+pub fn reservadas<H: Copy>(lista: &mut Vec<(H, std::time::Instant)>) -> Vec<H> {
+    lista.retain(|(_, quando)| quando.elapsed() < RESERVA);
+    lista.iter().map(|(h, _)| *h).collect()
+}
+
 /// Se a janela saiu da zona. Uma folga de 2 px: há programa que arredonda o
 /// tamanho pedido, e isso não é sair do lugar.
 pub fn saiu_da_zona(maximizada: bool, atual: Retangulo, alvo: Retangulo) -> bool {
@@ -533,6 +548,11 @@ mod imp {
 
     /// Move para a zona, registra e vigia (ver `VIGIA`).
     fn posicionar(hwnd: Hwnd, alvo: Retangulo, inicio: std::time::Instant) -> Result<(), String> {
+        // Reservada antes de mover: a partir daqui ela não é "a janela nova"
+        // de mais ninguém.
+        if let Ok(mut p) = POSICIONADAS.lock() {
+            p.push((hwnd, std::time::Instant::now()));
+        }
         let resultado = mover(hwnd, alvo);
         crate::diario(&format!(
             "janelas: {} em {:.1}s -> {},{} {}x{}: {}",
@@ -612,11 +632,19 @@ mod imp {
     /// As janelas deles não são "a janela nova" do programa seguinte da lista.
     static ESPERANDO: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
 
+    /// Janelas já posicionadas, com quando (ver `RESERVA`).
+    static POSICIONADAS: std::sync::Mutex<Vec<(Hwnd, std::time::Instant)>> =
+        std::sync::Mutex::new(Vec::new());
+
     fn novas_de_quem_nao_espera(antes: &HashSet<Hwnd>) -> Vec<(Hwnd, Tipo)> {
         let esperando = ESPERANDO.lock().map(|e| e.clone()).unwrap_or_default();
+        let posicionadas = POSICIONADAS
+            .lock()
+            .map(|mut p| super::reservadas(&mut p))
+            .unwrap_or_default();
         janelas_visiveis()
             .difference(antes)
-            .filter(|h| !esperando.contains(&dono(**h)))
+            .filter(|h| !esperando.contains(&dono(**h)) && !posicionadas.contains(h))
             .map(|h| (*h, tipo(*h)))
             .collect()
     }
@@ -817,6 +845,18 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn janela_posicionada_fica_reservada_ate_vencer() {
+        let agora = std::time::Instant::now();
+        let mut lista = vec![(1, agora)];
+        if let Some(antiga) = agora.checked_sub(RESERVA + std::time::Duration::from_secs(1)) {
+            lista.push((2, antiga));
+        }
+        assert_eq!(reservadas(&mut lista), vec![1]);
+        // A vencida saiu da lista, não só da resposta.
+        assert_eq!(lista.len(), 1);
+    }
 
     #[test]
     fn janela_maximizada_ou_movida_saiu_da_zona() {

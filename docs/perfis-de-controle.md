@@ -175,6 +175,12 @@ posicioná-la: se ela for maximizada ou mudar de lugar, volta para a zona, no
 máximo 5 vezes. Minimizada fica como está. O efeito colateral é assumido:
 maximizar a janela à mão nesses 20 segundos também a devolve.
 
+A janela posicionada fica **reservada por um minuto**: não pode ser tomada
+como "a janela nova" do programa seguinte do perfil. Sem isso, no MateBook, a
+janela do PyCharm chegou da espera em segundo plano enquanto o programa
+seguinte procurava a sua, e as duas zonas disputaram a mesma janela — com a
+vigia, ela ia e voltava entre a metade esquerda e o canto direito.
+
 Cada passo vai para o diário do agente (linhas que começam com `janelas:`): a
 tela de carregamento vista, a janela encontrada, para onde foi, e cada
 devolução — com o título e o processo de cada janela.
