@@ -203,6 +203,29 @@ pub fn decidir<H: Copy>(
     }
 }
 
+/// Quanto tempo vigiar a janela depois de posicioná-la.
+///
+/// Programas da JetBrains (o PyCharm) mostram a janela e, um instante depois,
+/// reaplicam o estado que guardaram — "maximizada" —, desfazendo o
+/// posicionamento. Visto no Windows: a tela de carregamento, e em seguida a
+/// janela maximizada, sem erro nenhum.
+pub const VIGIA: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Quantas vezes devolver a janela à zona, no máximo. Um programa que insiste
+/// mais que isso não vai desistir, e brigar com ele seria a janela piscando.
+pub const DEVOLUCOES: u32 = 5;
+
+/// Se a janela saiu da zona. Uma folga de 2 px: há programa que arredonda o
+/// tamanho pedido, e isso não é sair do lugar.
+pub fn saiu_da_zona(maximizada: bool, atual: Retangulo, alvo: Retangulo) -> bool {
+    let perto = |a: i32, b: i32| (a - b).abs() <= 2;
+    maximizada
+        || !perto(atual.x, alvo.x)
+        || !perto(atual.y, alvo.y)
+        || !perto(atual.largura, alvo.largura)
+        || !perto(atual.altura, alvo.altura)
+}
+
 #[cfg(windows)]
 pub use imp::{
     area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela,
@@ -260,6 +283,7 @@ mod imp {
         fn SetForegroundWindow(hwnd: Hwnd) -> i32;
         fn GetForegroundWindow() -> Hwnd;
         fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+        fn IsWindow(hwnd: Hwnd) -> i32;
         fn GetWindowTextW(hwnd: Hwnd, texto: *mut u16, tamanho: i32) -> i32;
         fn GetClassNameW(hwnd: Hwnd, texto: *mut u16, tamanho: i32) -> i32;
         fn MonitorFromWindow(hwnd: Hwnd, flags: u32) -> isize;
@@ -479,15 +503,109 @@ mod imp {
                 Decisao::Posicionar(h) => break h,
                 Decisao::Esperar => std::thread::sleep(INTERVALO_BUSCA),
                 Decisao::Adiar => {
+                    crate::diario(&format!(
+                        "janelas: só tela de carregamento em {:.1}s (processos {carregando:?}); \
+                         esperando a janela em segundo plano",
+                        inicio.elapsed().as_secs_f32()
+                    ));
                     esperar_em_segundo_plano(antes.clone(), carregando, alvo, inicio);
                     return Ok(());
                 }
                 Decisao::Desistir => {
-                    return Err("o programa abriu, mas a janela dele não apareceu a tempo".into())
+                    crate::diario("janelas: nenhuma janela nova em 5 s; desisti");
+                    return Err("o programa abriu, mas a janela dele não apareceu a tempo".into());
                 }
             }
         };
-        mover(hwnd, alvo)
+        posicionar(hwnd, alvo, inicio)
+    }
+
+    /// Como a janela aparece no diário: título, processo e se é de programa
+    /// ou de carregamento.
+    fn descrever(hwnd: Hwnd) -> String {
+        format!(
+            "\"{}\" (processo {}, {:?})",
+            texto(hwnd, GetWindowTextW),
+            dono(hwnd),
+            tipo(hwnd)
+        )
+    }
+
+    /// Move para a zona, registra e vigia (ver `VIGIA`).
+    fn posicionar(hwnd: Hwnd, alvo: Retangulo, inicio: std::time::Instant) -> Result<(), String> {
+        let resultado = mover(hwnd, alvo);
+        crate::diario(&format!(
+            "janelas: {} em {:.1}s -> {},{} {}x{}: {}",
+            descrever(hwnd),
+            inicio.elapsed().as_secs_f32(),
+            alvo.x,
+            alvo.y,
+            alvo.largura,
+            alvo.altura,
+            match &resultado {
+                Ok(()) => "posicionada".to_string(),
+                Err(e) => e.clone(),
+            }
+        ));
+        if resultado.is_ok() {
+            vigiar(hwnd, alvo);
+        }
+        resultado
+    }
+
+    /// Onde a janela está agora, e se está maximizada. `None` se ela fechou.
+    fn onde_esta(hwnd: Hwnd) -> Option<(bool, Retangulo)> {
+        let mut r = Rect::default();
+        unsafe {
+            if IsWindow(hwnd) == 0 || GetWindowRect(hwnd, &mut r) == 0 {
+                return None;
+            }
+            Some((
+                IsZoomed(hwnd) != 0,
+                Retangulo {
+                    x: r.left,
+                    y: r.top,
+                    largura: r.right - r.left,
+                    altura: r.bottom - r.top,
+                },
+            ))
+        }
+    }
+
+    /// Por `VIGIA`, devolve à zona a janela que o próprio programa maximizou
+    /// ou moveu logo depois de posicionada (ver `saiu_da_zona`). Minimizada
+    /// fica como está: isso é a pessoa, não o programa.
+    fn vigiar(hwnd: Hwnd, alvo: Retangulo) {
+        let _ = std::thread::Builder::new()
+            .name("deskside-vigia-janela".into())
+            .spawn(move || {
+                let inicio = std::time::Instant::now();
+                let mut devolvidas = 0;
+                while inicio.elapsed() < super::VIGIA && devolvidas < super::DEVOLUCOES {
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    let Some((maximizada, atual)) = onde_esta(hwnd) else {
+                        return;
+                    };
+                    if unsafe { IsIconic(hwnd) } != 0
+                        || !super::saiu_da_zona(maximizada, atual, alvo)
+                    {
+                        continue;
+                    }
+                    devolvidas += 1;
+                    let r = mover(hwnd, alvo);
+                    crate::diario(&format!(
+                        "janelas: {} saiu da zona em {:.1}s ({}em {},{} {}x{}); devolvida: {:?}",
+                        descrever(hwnd),
+                        inicio.elapsed().as_secs_f32(),
+                        if maximizada { "maximizada, " } else { "" },
+                        atual.x,
+                        atual.y,
+                        atual.largura,
+                        atual.altura,
+                        r
+                    ));
+                }
+            });
     }
 
     /// Processos cuja janela de verdade está sendo esperada em segundo plano.
@@ -529,11 +647,15 @@ mod imp {
                         .map(|h| (*h, tipo(*h)))
                         .collect();
                     if let Some((h, _)) = dele.iter().find(|(_, t)| *t == Tipo::Janela) {
-                        break mover(*h, alvo);
+                        break posicionar(*h, alvo, inicio);
                     }
                     if inicio.elapsed() >= super::ESPERA_COM_CARREGAMENTO {
+                        crate::diario(&format!(
+                            "janelas: a janela de verdade não veio em {} s",
+                            super::ESPERA_COM_CARREGAMENTO.as_secs()
+                        ));
                         break match dele.first() {
-                            Some((h, _)) => mover(*h, alvo),
+                            Some((h, _)) => posicionar(*h, alvo, inicio),
                             None => Err("a tela de carregamento fechou, mas a janela do \
                                          programa não apareceu a tempo"
                                 .to_string()),
@@ -695,6 +817,33 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn janela_maximizada_ou_movida_saiu_da_zona() {
+        let alvo = Retangulo {
+            x: 0,
+            y: 0,
+            largura: 960,
+            altura: 1040,
+        };
+        assert!(!saiu_da_zona(false, alvo, alvo));
+        // O PyCharm maximizando sozinho depois de posicionado.
+        assert!(saiu_da_zona(true, alvo, alvo));
+        // Reaplicando o tamanho guardado.
+        let guardado = Retangulo {
+            x: 200,
+            y: 100,
+            largura: 1400,
+            altura: 900,
+        };
+        assert!(saiu_da_zona(false, guardado, alvo));
+        // Arredondamento de 1 px não é sair do lugar.
+        let quase = Retangulo {
+            largura: 961,
+            ..alvo
+        };
+        assert!(!saiu_da_zona(false, quase, alvo));
+    }
 
     fn s(seg: u64) -> std::time::Duration {
         std::time::Duration::from_secs(seg)

@@ -166,6 +166,19 @@ abria onde o Windows quisesse. Agora:
 Esperar na fila não serviria: o servidor desiste da resposta de "abrir o
 perfil" em 60 s, e um perfil com o PyCharm e mais três programas passaria disso.
 
+### O programa que se reposiciona sozinho
+
+O PyCharm também fazia outra coisa: a janela de verdade ia para a zona e, um
+instante depois, o próprio programa reaplicava o estado que tinha guardado —
+maximizada. Por isso o agente **vigia a janela por 20 segundos** depois de
+posicioná-la: se ela for maximizada ou mudar de lugar, volta para a zona, no
+máximo 5 vezes. Minimizada fica como está. O efeito colateral é assumido:
+maximizar a janela à mão nesses 20 segundos também a devolve.
+
+Cada passo vai para o diário do agente (linhas que começam com `janelas:`): a
+tela de carregamento vista, a janela encontrada, para onde foi, e cada
+devolução — com o título e o processo de cada janela.
+
 ### Abriu mas não posicionou não é falha
 
 É o **terceiro** desfecho, e por isso o agente tem três e não dois. O programa
