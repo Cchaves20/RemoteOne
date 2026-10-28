@@ -461,8 +461,12 @@ mod tests {
     fn leitura_imediata_ainda_respeita_o_intervalo() {
         // Pedir logo depois de criar o monitor não pode devolver 0% falso: aqui
         // a espera é obrigatória, e é o único caso em que ela acontece.
-        let mut monitor = Monitor::new();
+        //
+        // Medido desde **antes** de criar o monitor: a espera conta a partir
+        // da criação, e medir depois dela falhava por 1 ms quando criar o
+        // monitor era lento (visto na CI do Linux).
         let started = std::time::Instant::now();
+        let mut monitor = Monitor::new();
         monitor.snapshot();
         assert!(
             started.elapsed() >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL,
