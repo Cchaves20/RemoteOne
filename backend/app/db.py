@@ -9,6 +9,7 @@ from collections.abc import Iterator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
@@ -18,7 +19,25 @@ _connect_args = (
     {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 )
 
-engine = create_engine(settings.database_url, connect_args=_connect_args, future=True)
+#: O estoque de conexões precisa ser **maior que o número de pedidos que o
+#: servidor atende ao mesmo tempo** (até 40 nas threads, mais o laço
+#: principal). Com o padrão (5 + 10), 15 pedidos lentos — logins, que conferem
+#: a senha devagar de propósito — esgotavam o estoque, e a próxima consulta
+#: feita no laço principal (a batida de um agente) **parava o servidor
+#: inteiro** esperando uma conexão. O teste de carga travou assim com 40
+#: celulares (ver `docs/teste-de-carga.md`).
+#:
+#: No SQLite, sem estoque: abrir o arquivo é barato e não há limite de
+#: conexões a respeitar. No PostgreSQL, 10 + 40, abaixo do limite padrão dele
+#: (100).
+_estoque = (
+    {"poolclass": NullPool}
+    if settings.database_url.startswith("sqlite")
+    else {"pool_size": 10, "max_overflow": 40}
+)
+engine = create_engine(
+    settings.database_url, connect_args=_connect_args, future=True, **_estoque
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
@@ -33,6 +52,26 @@ def get_db() -> Iterator[Session]:
         yield db
     finally:
         db.close()
+
+
+def liberar(db: Session) -> None:
+    """Devolve a conexão do banco **antes** de esperar o computador responder.
+
+    Um pedido que pergunta algo ao computador — primeiro plano, programas
+    abertos, métricas, arquivos — passa quase todo o tempo esperando por ele,
+    não pelo banco, e uma transferência de arquivo espera minutos. Segurando a
+    conexão nessa espera, o estoque (que tem limite no PostgreSQL, ver
+    `_estoque`) acabava com poucas perguntas ao mesmo tempo, e a próxima
+    consulta feita no laço principal **parava o servidor inteiro**, inclusive a
+    parte que recebe as respostas dos computadores: um impasse. Visto no teste
+    de carga (ver `docs/teste-de-carga.md`).
+
+    `close`, e não `commit`: os objetos já lidos continuam legíveis (o nome do
+    computador, no fim de um envio de arquivo) sem voltar ao banco, e a sessão
+    pode ser usada de novo se for preciso. Só se chama depois das conferências
+    de dono e de plano, que são as únicas leituras desses pedidos.
+    """
+    db.close()
 
 
 def init_db() -> None:

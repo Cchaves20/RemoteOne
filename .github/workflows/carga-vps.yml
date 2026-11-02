@@ -1,0 +1,52 @@
+# Teste de carga contra o servidor de verdade (deskside.com.br).
+#
+# Roda **só** quando `scripts/carga/vps.json` muda: mudar esse arquivo é o
+# pedido, e ele diz até onde ir. Nada mais dispara este workflow — um teste
+# de carga que roda a cada push derrubaria o servidor de quem está usando.
+#
+# Os computadores entram sem parear (não há contas de teste no servidor), e a
+# subida para sozinha quando o p95 passa do teto ou os erros passam de 1%.
+# Ver docs/teste-de-carga.md.
+
+name: Carga no VPS
+
+on:
+  push:
+    paths: ["scripts/carga/vps.json"]
+
+concurrency:
+  group: carga-vps
+  cancel-in-progress: false
+
+jobs:
+  carga:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependências
+        run: pip install websockets==17.0.1 httpx==0.28.1
+
+      - name: Carga
+        working-directory: scripts/carga
+        run: |
+          set -eu
+          ulimit -n 20000 || true
+          URL=$(python -c "import json;print(json.load(open('vps.json'))['url'])")
+          DEGRAUS=$(python -c "import json;print(json.load(open('vps.json'))['degraus'])")
+          SEGUNDOS=$(python -c "import json;print(json.load(open('vps.json'))['segundos'])")
+          TETO=$(python -c "import json;print(json.load(open('vps.json'))['teto_ms'])")
+          python carga.py --url "$URL" --degraus "$DEGRAUS" --segundos "$SEGUNDOS" \
+            --teto-ms "$TETO" --prefixo carga-vps --saida resultado-vps.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: carga-vps
+          path: scripts/carga/resultado-vps.json
+          retention-days: 30

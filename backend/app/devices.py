@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app import alertas, cobranca, pairing, plano, teste
 from app.auth import get_current_user
 from app.connections import manager
-from app.db import get_db
+from app.db import get_db, liberar
 from app.ice import ice_servers
 from app.input import InputAction
 from app.models import Device, User
@@ -204,6 +204,7 @@ async def send_input(
     canal WebSocket do app.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     envelope = {"type": "input", "action": action.model_dump()}
     if not await manager.send_to_agent(device_id, envelope):
@@ -222,6 +223,7 @@ async def power_device(
 ) -> None:
     """Desliga, reinicia ou suspende o computador pareado."""
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
     message = {"type": "power", "action": body.action}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -241,6 +243,7 @@ async def system_stats(
     espera o agente medir.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "system_info", "request_id": request_id}
@@ -279,6 +282,7 @@ async def set_brightness(
     única explicação que existe - um 500 genérico a jogaria fora.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     request_id, future = pending.create()
     message = {
@@ -316,6 +320,7 @@ async def clipboard_get(
 ) -> ClipboardOut:
     """O que está na área de transferência do computador."""
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "clipboard_get", "request_id": request_id}
@@ -346,6 +351,7 @@ async def clipboard_set(
 ) -> None:
     """Coloca um texto na área de transferência do computador."""
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
     message = {"type": "clipboard_set", "text": body.text}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -370,6 +376,7 @@ async def clipboard_set_image(
     motivo.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     limite_mb = MAX_CLIPBOARD_IMAGE_BYTES // 1024 // 1024
     declarado = request.headers.get("content-length")
@@ -433,6 +440,7 @@ async def clipboard_sync(
     pela área de transferência de alguém costuma incluir senha.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
     message = {"type": "clipboard_sync", "enabled": body.enabled}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -468,6 +476,7 @@ async def audio_stream(
     """
     _owned_device_or_404(db, device_id, current_user)
     cobranca.exigir_recurso(current_user, plano.Recurso.AUDIO)
+    liberar(db)
     message = {"type": "audio", "enabled": body.enabled, "gain": body.gain}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -488,6 +497,7 @@ async def foreground_app(
     com qual programa é o app - aqui só se repassa o que o agente respondeu.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "foreground_info", "request_id": request_id}
@@ -521,6 +531,7 @@ async def keep_awake_state(
     exata em que a resposta importa.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "keep_awake_info", "request_id": request_id}
@@ -549,6 +560,7 @@ async def set_keep_awake(
 ) -> None:
     """Liga ou desliga o "manter pronto". O agente grava a escolha em disco."""
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
     message = {"type": "keep_awake", "enabled": body.enabled}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -570,6 +582,7 @@ async def presentation_state(
     estaria errado justamente quando alguém abre a tela para conferir.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "presentation_info", "request_id": request_id}
@@ -607,6 +620,7 @@ async def set_presentation(
     """
     _owned_device_or_404(db, device_id, current_user)
     cobranca.exigir_recurso(current_user, plano.Recurso.APRESENTACAO)
+    liberar(db)
     message: dict = {"type": "presentation"}
     if body.on is not None:
         message["on"] = body.on
@@ -627,6 +641,7 @@ async def media_key(
 ) -> None:
     """Aciona uma tecla de mídia (play/pause, faixa, volume) no computador."""
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
     message = {"type": "media", "action": body.action}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -648,6 +663,7 @@ async def list_files(
     """
     _owned_device_or_404(db, device_id, current_user)
     cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
+    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "list_files", "request_id": request_id, "path": path}
@@ -685,6 +701,7 @@ async def download_file(
     """
     _owned_device_or_404(db, device_id, current_user)
     cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
+    liberar(db)
 
     transfer_id, download = transfers.start_download()
     message = {"type": "read_file", "transfer_id": transfer_id, "path": path}
@@ -744,6 +761,7 @@ async def upload_file(
     """
     device = _owned_device_or_404(db, device_id, current_user)
     cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
+    liberar(db)
 
     declared = request.headers.get("content-length")
     size = int(declared) if declared and declared.isdigit() else 0
@@ -854,6 +872,7 @@ async def list_apps(
     agente (pergunta e resposta com `request_id`), com tempo limite.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "list_apps", "request_id": request_id, "kind": kind}
@@ -881,6 +900,7 @@ async def list_monitors(
 ) -> MonitorsOut:
     """As telas do computador, e qual delas está sendo capturada."""
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "list_monitors", "request_id": request_id}
@@ -914,6 +934,7 @@ async def set_monitor(
     """
     _owned_device_or_404(db, device_id, current_user)
     cobranca.exigir_recurso(current_user, plano.Recurso.MONITORES)
+    liberar(db)
 
     message = {"type": "set_monitor", "monitor": body.monitor}
     if not await manager.send_to_agent(device_id, message):
@@ -931,6 +952,7 @@ async def launch_app(
 ) -> None:
     """Abre um aplicativo no computador (id = caminho do atalho)."""
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
     message = {"type": "launch_app", "id": body.id}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -955,6 +977,7 @@ async def launch_many(
     e não dizer que um falhou é o mesmo que falhar em silêncio.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
 
     request_id, future = pending.create()
     message = {
@@ -993,6 +1016,7 @@ async def close_app(
 ) -> None:
     """Encerra um aplicativo em execução (id = PID)."""
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
     message = {"type": "close_app", "id": body.id}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -1014,6 +1038,7 @@ async def focus_app(
     depois de a pessoa já estar olhando o resultado.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
     message = {"type": "focus_app", "id": body.id}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -1036,6 +1061,7 @@ async def start_screen(
     `max_width`; valores fora da faixa são limitados aos extremos aceitos.
     """
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
     message: dict = {"type": "start_stream", "max_fps": _clamp(fps, _FPS_RANGE)}
     if quality is not None:
         message["quality"] = _clamp(quality, _QUALITY_RANGE)
@@ -1055,6 +1081,7 @@ async def stop_screen(
 ) -> None:
     """Pede ao agente que pare de transmitir a tela."""
     _owned_device_or_404(db, device_id, current_user)
+    liberar(db)
     frame_store.clear(device_id)
     await manager.send_to_agent(device_id, {"type": "stop_stream"})
 

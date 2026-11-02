@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app import cobranca, pairing, plano
 from app.auth import get_current_user
 from app.connections import manager
-from app.db import get_db
+from app.db import get_db, liberar
 from app.models import Automation, User
 from app.rpc import pending
 from app.schemas import (
@@ -356,6 +356,7 @@ async def run_automation(
             status_code=status.HTTP_409_CONFLICT,
             detail="esta automação está sem passos",
         )
+    liberar(db)
 
     request_id, future = pending.create()
     message = {
