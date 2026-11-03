@@ -124,9 +124,14 @@ mod tests {
     #[test]
     fn le_as_perguntas_do_app() {
         let p: Pergunta = serde_json::from_str(r#"{"id":7,"tipo":"primeiro_plano"}"#).unwrap();
-        assert_eq!(p, Pergunta { id: 7, tipo: Tipo::PrimeiroPlano });
-        let p: Pergunta =
-            serde_json::from_str(r#"{"id":8,"tipo":"programas_abertos"}"#).unwrap();
+        assert_eq!(
+            p,
+            Pergunta {
+                id: 7,
+                tipo: Tipo::PrimeiroPlano
+            }
+        );
+        let p: Pergunta = serde_json::from_str(r#"{"id":8,"tipo":"programas_abertos"}"#).unwrap();
         assert_eq!(p.tipo, Tipo::ProgramasAbertos);
         let p: Pergunta = serde_json::from_str(r#"{"id":9,"tipo":"metricas"}"#).unwrap();
         assert_eq!(p.tipo, Tipo::Metricas);
@@ -138,7 +143,10 @@ mod tests {
     fn responde_no_formato_que_o_app_le() {
         let r: serde_json::Value =
             serde_json::from_str(&resposta(7, serde_json::json!({ "app": null }))).unwrap();
-        assert_eq!(r, serde_json::json!({ "id": 7, "resposta": { "app": null } }));
+        assert_eq!(
+            r,
+            serde_json::json!({ "id": 7, "resposta": { "app": null } })
+        );
         let e: serde_json::Value = serde_json::from_str(&erro(Some(3), "x")).unwrap();
         assert_eq!(e, serde_json::json!({ "id": 3, "erro": "x" }));
         let p: serde_json::Value = serde_json::from_str(&pronto()).unwrap();

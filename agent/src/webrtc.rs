@@ -26,6 +26,8 @@ use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndicat
 use webrtc::rtcp::receiver_report::ReceiverReport;
 use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264, MIME_TYPE_OPUS};
 use webrtc::api::{APIBuilder, API};
+use webrtc::data_channel::data_channel_state::RTCDataChannelState;
+use webrtc::data_channel::RTCDataChannel;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::configuration::RTCConfiguration;
@@ -37,8 +39,6 @@ use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSampl
 use webrtc::track::track_local::TrackLocal;
 
 use crate::datachannel::{InputEnvelope, Pergunta, PERGUNTAS_CHANNEL};
-use webrtc::data_channel::data_channel_state::RTCDataChannelState;
-use webrtc::data_channel::RTCDataChannel;
 use crate::h264::EncodedFrame;
 
 /// O que precisa voltar ao backend. O laço do cliente converte em
@@ -1077,6 +1077,91 @@ mod tests {
             "a conexão não fechou em 25s — sem isso não há o que medir"
         );
 
+    }
+
+    /// As perguntas da tela atravessam o canal direto de verdade: o agente
+    /// avisa que entende o canal, a pergunta chega ao laço principal com o
+    /// canal da resposta, a resposta volta ao app — e um tipo que este agente
+    /// não conhece volta como erro, para o app perguntar pelo servidor.
+    #[tokio::test]
+    async fn perguntas_atravessam_o_canal_direto() {
+        use crate::datachannel::{resposta, Tipo};
+
+        let (tx, mut signals) = mpsc::unbounded_channel();
+        let (input_tx, _input_rx) = mpsc::unbounded_channel();
+        std::mem::forget(_input_rx);
+        let (perguntas_tx, mut perguntas_rx) = mpsc::unbounded_channel();
+        let (keyframe_tx, _keyframe_rx) = mpsc::unbounded_channel();
+        std::mem::forget(_keyframe_rx);
+        let (loss_tx, _loss_rx) = mpsc::unbounded_channel();
+        std::mem::forget(_loss_rx);
+        let mut agent =
+            Video::new(tx, input_tx, perguntas_tx, keyframe_tx, loss_tx, vec![]).unwrap();
+
+        let app = app_peer().await;
+        // Como o app: o canal nasce antes da oferta.
+        let canal = app.create_data_channel(PERGUNTAS_CHANNEL, None).await.unwrap();
+        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<serde_json::Value>();
+        canal.on_message(Box::new(move |m| {
+            let msg_tx = msg_tx.clone();
+            Box::pin(async move {
+                if let Ok(v) = serde_json::from_slice(&m.data) {
+                    let _ = msg_tx.send(v);
+                }
+            })
+        }));
+        conectar(&mut agent, &mut signals, &app).await;
+
+        // Próxima mensagem que não seja o aviso (ele pode vir duas vezes).
+        async fn proxima(
+            rx: &mut mpsc::UnboundedReceiver<serde_json::Value>,
+            pular_pronto: bool,
+        ) -> serde_json::Value {
+            loop {
+                let v = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+                    .await
+                    .expect("nada chegou pelo canal")
+                    .unwrap();
+                if !(pular_pronto && v == serde_json::json!({ "tipo": "pronto" })) {
+                    return v;
+                }
+            }
+        }
+
+        assert_eq!(
+            proxima(&mut msg_rx, false).await,
+            serde_json::json!({ "tipo": "pronto" })
+        );
+
+        canal
+            .send_text(r#"{"id":5,"tipo":"metricas"}"#.to_string())
+            .await
+            .unwrap();
+        let recebida = tokio::time::timeout(Duration::from_secs(10), perguntas_rx.recv())
+            .await
+            .expect("a pergunta não chegou ao laço")
+            .unwrap();
+        assert_eq!(recebida.pergunta.id, 5);
+        assert_eq!(recebida.pergunta.tipo, Tipo::Metricas);
+        recebida
+            .canal
+            .send_text(resposta(5, serde_json::json!({ "cpu_percent": 12.5 })))
+            .await
+            .unwrap();
+        assert_eq!(
+            proxima(&mut msg_rx, true).await,
+            serde_json::json!({ "id": 5, "resposta": { "cpu_percent": 12.5 } })
+        );
+
+        canal
+            .send_text(r#"{"id":6,"tipo":"pergunta_do_futuro"}"#.to_string())
+            .await
+            .unwrap();
+        let erro = proxima(&mut msg_rx, true).await;
+        assert_eq!(erro["id"], 6);
+        assert!(erro["erro"].is_string(), "{erro}");
+
+        agent.close_all().await;
     }
 
     /// O teste que fecha a Fase 2: quadros H.264 de verdade, saídos do
