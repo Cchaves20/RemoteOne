@@ -191,7 +191,32 @@ para redes móveis e corporativas mais fechadas.
 
 ## Resultados no VPS
 
-(pendente: rodar com `scripts/carga/vps.json`)
+Primeira rodada em 3 de novembro de 2026, com a E2.1.Micro. Foram só
+computadores sem parear: no VPS não há contas de teste, então não houve
+celulares. O simulador rodou num servidor do GitHub nos EUA, a ~145 ms do VPS,
+e esses 145 ms aparecem em toda medida.
+
+| Computadores | Entrada p50 / p95 | Batida p50 / p95 | `/health` p95 | Erros |
+|---:|---:|---:|---:|---:|
+| 50 | 2,2 / 2,5 s | 146 / 148 ms | 151 ms | 0 |
+| 100 | 2,5 / 2,5 s | 144 / 147 ms | 150 ms | 0 |
+| 250 | 3,9 / 6,0 s | 145 / 147 ms | 150 ms | 0 |
+| 500 | 7,7 / 10,9 s | 144 / 149 ms | 151 ms | 0 |
+| 1.000 | 11,9 / 20,8 s | 143 / 151 ms | 157 ms | 0 |
+| 1.500 (só ~1.060 entraram) | 10,4 / 14,9 s | 210 / 403 ms | 604 ms | 3 (502 e quedas) |
+
+- **Ligados e parados, 1.000 computadores cabem**: a batida fica no tempo da
+  rede.
+- **O que aperta é a entrada.** Cada conexão nova custa um aperto de mão TLS
+  e um registro, e a máquina tem 1/8 de núcleo garantido. Pela tabela, a
+  entrada anda a ~25 computadores por segundo. Depois de um reinício do
+  servidor, 1.000 agentes levam perto de um minuto para voltar todos.
+- **No degrau de 1.500 o servidor começou a ceder**: só 63 dos 500 novos
+  entraram, o `/health` deu um 502 e duas conexões caíram.
+
+Celulares não foram medidos no VPS. Para eles continua valendo a estimativa
+pela proporção com o teste local: 200 a 300 de tela aberta hoje, e 1.500 a
+2.000 com a parte B.
 
 ## O que mudaria a capacidade, se um dia precisar
 
