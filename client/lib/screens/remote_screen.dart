@@ -246,6 +246,16 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// endpoint): insistir a cada 3 s daria erro sem fim e gastaria bateria.
   bool _foregroundFailed = false;
 
+  /// O programa da frente, quando ele se esconde do vídeo (app de banco).
+  /// Enquanto houver um, um aviso fica sobre a imagem: sem ele, a pessoa vê a
+  /// área de trabalho e acha que o programa nem abriu - e um toque ali cai
+  /// dentro dele, sem ela ver onde.
+  ForegroundApp? _escondido;
+
+  /// Executável cujo aviso a pessoa fechou. Volta a avisar quando outro
+  /// programa escondido aparecer, ou quando este sair da frente e voltar.
+  String? _avisoFechado;
+
   @override
   void initState() {
     super.initState();
@@ -1149,16 +1159,20 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Future<void> _refreshForeground() async {
-    // Barra escondida ou lupa aberta: ninguém está olhando os ícones.
+    // Pergunta mesmo com a barra de perfis escondida ou a lupa aberta: o aviso
+    // de janela escondida vale em qualquer modo.
     if (_foregroundInFlight || _foregroundFailed) return;
-    if (!_profilesOpen || _zoomMode) return;
     _foregroundInFlight = true;
     try {
       final viaCanal = await _video?.perguntar('primeiro_plano');
       final app = viaCanal is Map<String, dynamic>
           ? ForegroundApp.fromJson(viaCanal)
           : await widget.state.foregroundApp(widget.device);
-      if (!mounted || app == null) return;
+      if (!mounted) return;
+      _atualizarEscondido(app);
+      if (app == null) return;
+      // Barra escondida ou lupa aberta: ninguém está olhando os ícones.
+      if (!_profilesOpen || _zoomMode) return;
       final icone = app.iconBytes;
       if (icone == null) return;
       final perfil = ControlProfile.forExecutable(app.exe);
@@ -1174,6 +1188,64 @@ class _RemoteScreenState extends State<RemoteScreen>
     } finally {
       _foregroundInFlight = false;
     }
+  }
+
+  void _atualizarEscondido(ForegroundApp? app) {
+    final escondido = app != null && app.hidden ? app : null;
+    // Saiu da frente: o próximo aparecimento avisa de novo.
+    if (escondido == null) _avisoFechado = null;
+    if (escondido?.exe == _escondido?.exe) return;
+    setState(() => _escondido = escondido);
+  }
+
+  /// O aviso sobre a imagem quando o programa da frente se esconde do vídeo.
+  ///
+  /// Fica por cima da imagem de propósito: além de explicar, ele tira uma
+  /// faixa da área onde um toque cairia no programa invisível.
+  Widget _avisoDeJanelaEscondida(bool isPortrait) {
+    final app = _escondido!;
+    final t = widget.state.t;
+    final nome = app.name.trim().isEmpty ? t.hiddenWindowSomeApp : app.name;
+    return Positioned(
+      left: isPortrait ? 12 : _dockThickness + 28,
+      right: isPortrait ? 12 : _dockThickness + 28,
+      // Em pé, a dock mora embaixo; o aviso fica logo acima dela.
+      bottom: isPortrait ? _dockThickness + 20 : 12,
+      child: Material(
+        color: const Color(0xF0201A10),
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 2),
+                child: Icon(Icons.visibility_off_outlined,
+                    color: Colors.amberAccent, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  t.hiddenWindowWarning(nome),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                onPressed: () => setState(() => _avisoFechado = app.exe),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// Nome de placa de vídeo encurtado para caber no rótulo da medida.
@@ -2630,6 +2702,8 @@ class _RemoteScreenState extends State<RemoteScreen>
                   _send(a.input, avisarFalha: true);
                 },
               ),
+            if (_escondido != null && _escondido!.exe != _avisoFechado)
+              _avisoDeJanelaEscondida(isPortrait),
           ],
         );
       },

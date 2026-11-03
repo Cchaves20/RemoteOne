@@ -92,6 +92,23 @@ def test_parse_foreground_sem_icone():
     assert message.app.exe == "jogo.exe"
 
 
+def test_parse_foreground_com_janela_escondida():
+    """O app de banco que se esconde da captura chega marcado; agente antigo,
+    sem o campo, vale como não escondido."""
+    message = parse_client_message(
+        {
+            "type": "foreground_app",
+            "request_id": "r1",
+            "app": {**APP, "hidden": True},
+        }
+    )
+    assert message.app.hidden is True
+    antigo = parse_client_message(
+        {"type": "foreground_app", "request_id": "r1", "app": APP}
+    )
+    assert antigo.app.hidden is False
+
+
 # --- endpoint ----------------------------------------------------------------
 
 
@@ -105,7 +122,7 @@ def test_foreground_devolve_o_programa_da_frente():
     finally:
         manager.unregister("dev-fg-1")
     assert resp.status_code == 200
-    assert resp.json() == {"app": APP}
+    assert resp.json() == {"app": {**APP, "hidden": False}}
     assert agent.of_type("foreground_info")[0]["request_id"]
 
 
@@ -271,3 +288,16 @@ def test_audio_sem_token_401():
 
 def test_health_anuncia_o_audio():
     assert "audio-stream" in client.get("/health").json()["features"]
+
+
+def test_foreground_repassa_a_janela_escondida():
+    """O aviso do app depende de o campo atravessar o servidor inteiro."""
+    headers, uid = _auth_headers("fg-esc@example.com")
+    _add_device(uid, "dev-fg-esc")
+    manager.register("dev-fg-esc", InstantAgent({**APP, "hidden": True}))
+    try:
+        resp = client.get("/api/v1/devices/dev-fg-esc/foreground", headers=headers)
+    finally:
+        manager.unregister("dev-fg-esc")
+    assert resp.status_code == 200
+    assert resp.json()["app"]["hidden"] is True

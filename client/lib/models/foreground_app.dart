@@ -7,11 +7,21 @@ import 'dart:typed_data';
 /// `exe` é a chave de comparação com os perfis ("powerpnt.exe"): o nome
 /// legível muda com o idioma do Windows, o executável não.
 class ForegroundApp {
-  const ForegroundApp({required this.exe, this.name = '', this.iconBytes});
+  const ForegroundApp({
+    required this.exe,
+    this.name = '',
+    this.iconBytes,
+    this.hidden = false,
+  });
 
   final String exe;
   final String name;
   final Uint8List? iconBytes;
+
+  /// O programa esconde a própria janela de quem captura a tela (os apps de
+  /// banco fazem isso contra golpe de acesso remoto). Ela não aparece no
+  /// vídeo, mas continua lá e recebe os toques. Agente antigo: sempre falso.
+  final bool hidden;
 
   /// `null` quando não há janela em foco — resposta legítima do computador, e
   /// o sinal para o app voltar aos ícones genéricos.
@@ -33,6 +43,7 @@ class ForegroundApp {
       exe: exe,
       name: (app['name'] as String?) ?? '',
       iconBytes: bytes,
+      hidden: app['hidden'] == true,
     );
   }
 }

@@ -666,6 +666,15 @@ class Strings {
       '直连视频已关闭', 'vidéo directe désactivée', 'vídeo directo desactivado');
   String get videoConnecting => _t('conectando vídeo…', 'connecting video…',
       '正在连接视频…', 'connexion vidéo…', 'conectando vídeo…');
+  /// Aviso sobre o vídeo quando o programa da frente se esconde da captura.
+  String hiddenWindowWarning(String app) => _t(
+      '$app está aberto, mas se esconde de transmissões por segurança contra golpes. Ele não aparece aqui, e toques nesta área podem cair nele. Para usá-lo, use o computador diretamente.',
+      '$app is open, but hides itself from screen sharing to protect against scams. It does not show here, and taps in this area may land on it. To use it, use the computer directly.',
+      '$app 已打开，但为防范诈骗会对屏幕共享隐藏自己。它不会显示在这里，在此区域的点击可能会落在它上面。如需使用，请直接操作电脑。',
+      "$app est ouvert, mais se cache du partage d'écran pour se protéger des arnaques. Il n'apparaît pas ici, et les touches dans cette zone peuvent l'atteindre. Pour l'utiliser, utilisez directement l'ordinateur.",
+      '$app está abierto, pero se oculta de las transmisiones por seguridad contra estafas. No aparece aquí, y los toques en esta zona pueden caer en él. Para usarlo, usa el ordenador directamente.');
+  String get hiddenWindowSomeApp => _t('Um programa', 'A program', '某个程序',
+      'Un programme', 'Un programa');
   String get videoFailedShort => _t('vídeo direto falhou', 'direct video failed',
       '直连视频失败', 'échec de la vidéo directe', 'falló el vídeo directo');
   String get audioNeedsVideoEnabled => _t(

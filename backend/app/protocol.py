@@ -134,6 +134,10 @@ class ForegroundApp(BaseModel):
     exe: str
     #: PNG em base64. Ausente quando não deu para extrair.
     icon: str | None = None
+    #: O programa esconde a própria janela de quem captura a tela (apps de
+    #: banco, contra golpe de acesso remoto): ela some do vídeo, mas continua
+    #: recebendo os toques. O app avisa a pessoa.
+    hidden: bool = False
 
 
 class Foreground(BaseModel):

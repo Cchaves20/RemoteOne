@@ -23,6 +23,14 @@ pub struct ForegroundApp {
     /// extrair (aí o app fica com o ícone genérico do perfil).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// O programa esconde a própria janela de quem captura a tela - é o que
+    /// os apps de banco fazem contra o golpe do acesso remoto. Ela some do
+    /// vídeo (aparece o que está atrás), mas continua lá: um toque naquela
+    /// área cai nela. O app avisa em vez de deixar a pessoa clicar no escuro.
+    ///
+    /// Só se omite quando é falso, para o formato de sempre não mudar.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 /// Acompanha o primeiro plano guardando o que já custou caro descobrir.
@@ -85,14 +93,28 @@ fn parse_process(text: &str) -> Option<ForegroundApp> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    Some(ForegroundApp { name, exe, icon })
+    Some(ForegroundApp {
+        name,
+        exe,
+        icon,
+        hidden: false,
+    })
 }
 
 #[cfg(windows)]
 impl Watcher {
     /// O programa da frente agora, ou `None` se não deu para descobrir.
     pub fn current(&mut self) -> Option<ForegroundApp> {
-        let (pid, app_name) = focused()?;
+        let (pid, app_name, hidden) = focused()?;
+        let mut app = self.descrever(pid, app_name)?;
+        // Fora da memória de propósito: um programa pode esconder a janela
+        // depois de aberto (o banco, na tela de login), e a resposta tem que
+        // valer para agora.
+        app.hidden = hidden;
+        Some(app)
+    }
+
+    fn descrever(&mut self, pid: u32, app_name: String) -> Option<ForegroundApp> {
         // Ninguém trocou de janela: a resposta é a mesma de antes.
         if self.last_pid == Some(pid) {
             return self.last.clone();
@@ -110,19 +132,47 @@ impl Watcher {
     }
 }
 
-/// A janela em foco: PID e nome do programa, direto do sistema (sem processo
-/// externo). Vem do `xcap`, que já é usado para capturar a tela.
+/// A janela em foco: PID, nome do programa e se ele se esconde da captura,
+/// direto do sistema (sem processo externo). Vem do `xcap`, que já é usado
+/// para capturar a tela.
 #[cfg(windows)]
-fn focused() -> Option<(u32, String)> {
+fn focused() -> Option<(u32, String, bool)> {
     let janelas = xcap::Window::all().ok()?;
-    for janela in janelas {
-        if janela.is_focused().unwrap_or(false) {
-            let pid = janela.pid().ok()?;
-            let nome = janela.app_name().unwrap_or_default();
-            return Some((pid, nome));
-        }
+    let foco = janelas.iter().find(|j| j.is_focused().unwrap_or(false))?;
+    let pid = foco.pid().ok()?;
+    let nome = foco.app_name().unwrap_or_default();
+    // Qualquer janela visível do programa da frente, e não só a em foco: o
+    // banco pode esconder a janela principal e deixar o foco numa caixa de
+    // diálogo dela. A barra do próprio agente também se esconde - é outro
+    // processo, e nunca entra aqui.
+    let escondida = pid != std::process::id()
+        && janelas
+            .iter()
+            .filter(|j| j.pid().ok() == Some(pid))
+            .filter(|j| !j.is_minimized().unwrap_or(false))
+            .filter_map(|j| j.id().ok())
+            .any(escondida_da_captura);
+    Some((pid, nome, escondida))
+}
+
+/// Pergunta ao Windows se a janela se esconde de quem captura a tela.
+///
+/// Só **pergunta**: a proteção continua valendo, e o Deskside não tenta
+/// contorná-la. `GetWindowDisplayAffinity` responde sobre janelas de qualquer
+/// processo, sem privilégio nenhum.
+#[cfg(windows)]
+fn escondida_da_captura(id: u32) -> bool {
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetWindowDisplayAffinity(janela: isize, afinidade: *mut u32) -> i32;
     }
-    None
+    let mut afinidade = 0u32;
+    // O `xcap` guarda o HWND em 32 bits. Pode: o Windows garante que um handle
+    // de janela cabe em 32 bits, estendido com sinal no processo de 64.
+    let ok = unsafe { GetWindowDisplayAffinity(id as i32 as isize, &mut afinidade) };
+    // WDA_MONITOR (janela preta) e WDA_EXCLUDEFROMCAPTURE (janela some):
+    // para quem está no celular, as duas escondem o programa.
+    ok != 0 && afinidade != 0
 }
 
 /// Pergunta ao Windows o executável, o nome e o ícone de um processo.
@@ -175,6 +225,7 @@ impl Watcher {
                     icon: crate::mac::icone_do_programa(&p.app),
                     name: p.nome,
                     exe: p.executavel.clone(),
+                    hidden: false,
                 };
                 self.known.insert(p.executavel, novo.clone());
                 novo
@@ -221,6 +272,20 @@ mod tests {
     fn nao_duplica_a_extensao() {
         let app = parse_process(r#"{"exe":"vlc.exe","name":"VLC","icon":""}"#).unwrap();
         assert_eq!(app.exe, "vlc.exe");
+    }
+
+    #[test]
+    fn janela_escondida_so_aparece_no_json_quando_e_verdade() {
+        // App antigo continua recebendo exatamente o formato de antes.
+        let mut app = parse_process(r#"{"exe":"banco","name":"Banco","icon":""}"#).unwrap();
+        let json = serde_json::to_value(&app).unwrap();
+        assert!(json.get("hidden").is_none());
+        app.hidden = true;
+        let json = serde_json::to_value(&app).unwrap();
+        assert_eq!(json["hidden"], true);
+        // E o caminho de volta: sem o campo, falso.
+        let lido: ForegroundApp = serde_json::from_str(r#"{"name":"X","exe":"x.exe"}"#).unwrap();
+        assert!(!lido.hidden);
     }
 
     #[test]

@@ -522,6 +522,8 @@ class ForegroundAppOut(BaseModel):
     name: str = ""
     exe: str
     icon: str | None = None
+    #: A janela do programa some do vídeo (ver `protocol.ForegroundApp`).
+    hidden: bool = False
 
 
 class ForegroundOut(BaseModel):
