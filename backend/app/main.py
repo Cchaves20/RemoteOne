@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import hmac
 import json
 import logging
@@ -73,7 +74,30 @@ logger = logging.getLogger("deskside")
 async def lifespan(_app: FastAPI):
     # Cria as tabelas ausentes na subida (MVP; futuramente via Alembic).
     init_db()
+    _acalmar_o_coletor()
     yield
+
+
+def _acalmar_o_coletor() -> None:
+    """Varreduras de memória mais raras, e sem passar pelo que nunca morre.
+
+    Com 1.000 celulares de tela aberta, o servidor parava por volta de um
+    segundo de tempos em tempos — até o `/health` oscilava entre 2 ms e 1,5 s
+    — com o processador folgado: era o coletor de lixo do Python varrendo os
+    objetos das 2.000 conexões, e a cada varredura completa tudo esperava.
+
+    - `freeze`: o que existe ao subir (o app, as rotas, os módulos) vive até
+      o fim e sai das varreduras.
+    - Limiar da geração mais nova de 700 (o padrão) para 50.000: varre bem
+      menos vezes. O custo é guardar um pouco mais de lixo entre uma e outra,
+      alguns MB.
+
+    Medido no teste de carga (ver `docs/teste-de-carga.md`), 1.000 celulares
+    em um núcleo: p50 de 1,1 s para 81 ms, p95 de 1,6 s para 590 ms.
+    """
+    gc.collect()
+    gc.freeze()
+    gc.set_threshold(50_000, 50, 100)
 
 
 app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)

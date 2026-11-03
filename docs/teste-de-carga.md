@@ -69,24 +69,47 @@ VPS tem 512 MB: a memória acaba perto de **5.000 computadores**, antes da CPU.
 **Antes da correção:** com **40 celulares o servidor travou inteiro** — nenhum
 pedido respondia, nem o login, com a CPU em 0%. Ver "O defeito" abaixo.
 
-**Depois da correção:**
+**Depois da correção do estoque** (simulador ainda em um processo):
 
 | Celulares | CPU média | Memória | Primeiro plano p95 | Batida p95 | Erros |
 |---:|---:|---:|---:|---:|---:|
 | 40 | 8% | 103 MB | 13 ms | 4 ms | 0 |
 | 80 | 16% | 115 MB | 15 ms | 4 ms | 0 |
 | 160 | 27% | 138 MB | 906 ms | 64 ms | 0 |
-| 320 | 34% | 171 MB | 6,7 s | 738 ms | 0,3% |
 
-Até **80 celulares com a tela aberta ao mesmo tempo** tudo responde em
-milissegundos; em 160 já se sente; em 320 o app fica lento. A CPU média não
-chega ao teto: o gargalo é o laço único do servidor, que faz consultas ao
-banco no meio das conexões (cada batida de computador e cada conferência de
-dono consulta o banco ali mesmo).
+**Depois da memória de vínculos e do coletor de lixo** (ver "Parte A",
+abaixo), com os celulares já logados e o simulador em três processos com
+aiohttp, para ele não ser o limite:
+
+| Celulares | Primeiro plano p50 | p95 | p99 | Pior | Erros |
+|---:|---:|---:|---:|---:|---:|
+| 250 | 4 ms | 17 ms | 26 ms | 112 ms | 0 |
+| 500 | 9 ms | 235 ms | 320 ms | 343 ms | 0 |
+| **1.000** | **91 ms** | **376 ms** | **473 ms** | **721 ms** | **0** |
+
+Com 1.000 celulares e 1.000 computadores, o servidor atende os ~400 pedidos
+por segundo que eles fazem, num núcleo só e sem nenhum erro. O que sobra de
+tempo é quase todo da própria pilha web (uvicorn, Starlette, FastAPI) — o
+código do Deskside quase não aparece no perfil. Daqui para mais, o caminho é
+tirar essas perguntas do servidor (ver o fim).
 
 **Login:** cerca de **4 por segundo por núcleo** (o bcrypt). Uma multidão
-entrando ao mesmo tempo espera na fila — 160 pessoas no mesmo minuto levam
-10 s ou mais para entrar. É o preço de a senha ser difícil de adivinhar.
+digitando a senha ao mesmo tempo espera na fila: 1.000 pessoas entrando no
+mesmo minuto não entram todas, e enquanto isso o resto fica lento. No uso
+normal isso não acontece — o app guarda o acesso e o renova sem a senha —,
+mas é o primeiro limite num "todo mundo de manhã reinstalou o app".
+
+### Armadilhas do próprio teste
+
+O simulador foi o limite três vezes, e cada vez parecia o servidor:
+
+- Um processo Python só fingindo 640 aparelhos fica em 100% de um núcleo,
+  com o servidor em 10%. Por isso `--processos`.
+- O `httpx` gasta muito processador por pedido: com 1.000 celulares, três
+  processos em 100% e o servidor em 34%. Trocado pelo `aiohttp` (6% cada).
+- Celulares fazendo login com senha a cada degrau medem o bcrypt, não o uso.
+  `preparar_local.py` agora abre um acesso por conta; `--entrar` volta ao
+  login com senha.
 
 ## O defeito (corrigido)
 
@@ -112,6 +135,27 @@ A correção (`backend/app/db.py`):
 O teste `tests/test_conexoes_do_banco.py` confere que, no meio da espera pelo
 computador, nenhuma conexão está emprestada.
 
+## Parte A: cada pergunta mais barata
+
+Com o estoque corrigido, 160 celulares respondiam em 1,5 s com o servidor em
+um terço do processador. O perfil mostrou o tempo indo em filas, não em
+trabalho:
+
+1. **Três consultas ao banco por pergunta** — usuário, sessão e dono do
+   computador —, cada uma com troca de thread. Agora `app/vinculos.py` guarda
+   as respostas na memória por ~60 s, e elas são apagadas sozinhas quando o
+   banco muda um usuário, uma sessão ou um computador: trocar a senha, sair e
+   desparear valem no pedido seguinte (`tests/test_vinculos.py`). As 21 rotas
+   que só precisam disso usam `devices.dono_do_computador`, sem banco e sem
+   thread; a batida dos computadores e a reconferência da tela também.
+2. **Tudo vencendo junto.** O que entrava na memória no mesmo minuto vencia
+   no mesmo instante, e centenas de idas ao banco travavam o servidor alguns
+   segundos. O vencimento é sorteado entre 45 e 75 s.
+3. **O coletor de lixo do Python.** Com 2.000 conexões, cada varredura
+   completa parava tudo perto de um segundo. Na subida, `gc.freeze()` e
+   varreduras mais raras (`main._acalmar_o_coletor`): p50 de 1,1 s para
+   ~90 ms com 1.000 celulares.
+
 ## A retransmissão de vídeo (TURN), por conta
 
 O coturn do VPS usa as portas **49160 a 49200**: 41 portas, e cada lado que
@@ -132,8 +176,11 @@ para redes móveis e corporativas mais fechadas.
 
 ## O que mudaria a capacidade, se um dia precisar
 
-- **Tirar as consultas ao banco do laço principal** (a batida e a conferência
-  de dono): é o que começa a doer depois de 80 celulares.
+- **Parte B: tirar as perguntas do servidor.** Primeiro plano, programas
+  abertos e métricas podem ir pelo canal direto que o celular já abre com o
+  computador (o do mouse e do teclado). O servidor ficaria só com as
+  conexões abertas — e 3.000 delas custam 35% de um núcleo. Exige uma versão
+  nova do app.
 - **Mais de um processo** exige antes mudar o registro de quem está
   conectado, que hoje vive na memória do processo — dois processos não se
   enxergariam.
