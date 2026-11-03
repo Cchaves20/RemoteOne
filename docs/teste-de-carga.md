@@ -81,17 +81,33 @@ pedido respondia, nem o login, com a CPU em 0%. Ver "O defeito" abaixo.
 abaixo), com os celulares já logados e o simulador em três processos com
 aiohttp, para ele não ser o limite:
 
-| Celulares | Primeiro plano p50 | p95 | p99 | Pior | Erros |
+| Celulares | CPU | Memória | Primeiro plano p50 | p95 | Erros |
 |---:|---:|---:|---:|---:|---:|
-| 250 | 4 ms | 17 ms | 26 ms | 112 ms | 0 |
-| 500 | 9 ms | 235 ms | 320 ms | 343 ms | 0 |
-| **1.000** | **91 ms** | **376 ms** | **473 ms** | **721 ms** | **0** |
+| 1.000 | 41% | 280 MB | 34 ms | 184 ms | 0 |
+| 1.500 | 49% (picos de 100%) | 412 MB | 1,1 s | 1,6 s | 0 |
 
-Com 1.000 celulares e 1.000 computadores, o servidor atende os ~400 pedidos
-por segundo que eles fazem, num núcleo só e sem nenhum erro. O que sobra de
-tempo é quase todo da própria pilha web (uvicorn, Starlette, FastAPI) — o
-código do Deskside quase não aparece no perfil. Daqui para mais, o caminho é
-tirar essas perguntas do servidor (ver o fim).
+O limite com o app de hoje fica entre **1.000 e 1.200 celulares de tela
+aberta** por núcleo. O que sobra de tempo é quase todo da própria pilha web
+(uvicorn, Starlette, FastAPI) atendendo os ~400 pedidos por segundo: o código
+do Deskside quase não aparece no perfil.
+
+### Com a parte B (perguntas pelo canal direto)
+
+Os celulares abrem a tela e negociam o vídeo, mas o primeiro plano, os
+programas abertos e as métricas vão direto ao computador (`--canal-direto`):
+
+| Celulares + computadores | CPU | Memória | Batida p95 | `/health` p95 | Erros |
+|---:|---:|---:|---:|---:|---:|
+| 1.000 | 9% | 268 MB | 1,2 ms | 2 ms | 0 |
+| 2.000 | 17% | 445 MB | 2,0 ms | 5 ms | 0 |
+| 3.000 | 23% | 622 MB | 2,4 ms | 3 ms | 0 |
+| 4.000 | 29% | 799 MB | 2,7 ms | 3 ms | 0 |
+| 5.000 | 33% | 977 MB | 3,4 ms | 5 ms | 0 |
+
+O processador deixa de ser o limite — pela inclinação, um núcleo chegaria
+perto de 15.000 pares. O limite passa a ser a **memória: ~180 KB por par**
+celular + computador. Com os 512 MB do contêiner do VPS, **cerca de 2.300
+pares**; com 2 GB, perto de 10.000.
 
 **Login:** cerca de **4 por segundo por núcleo** (o bcrypt). Uma multidão
 digitando a senha ao mesmo tempo espera na fila: 1.000 pessoas entrando no
@@ -107,6 +123,9 @@ O simulador foi o limite três vezes, e cada vez parecia o servidor:
   com o servidor em 10%. Por isso `--processos`.
 - O `httpx` gasta muito processador por pedido: com 1.000 celulares, três
   processos em 100% e o servidor em 34%. Trocado pelo `aiohttp` (6% cada).
+- Um servidor de um experimento anterior ficou rodando na porta, e três
+  rodadas falaram com ele sem ninguém notar — o novo não conseguia subir. O
+  reinício agora confere quem escuta na porta.
 - Celulares fazendo login com senha a cada degrau medem o bcrypt, não o uso.
   `preparar_local.py` agora abre um acesso por conta; `--entrar` volta ao
   login com senha.
@@ -176,11 +195,13 @@ para redes móveis e corporativas mais fechadas.
 
 ## O que mudaria a capacidade, se um dia precisar
 
-- **Parte B: tirar as perguntas do servidor.** Primeiro plano, programas
-  abertos e métricas podem ir pelo canal direto que o celular já abre com o
-  computador (o do mouse e do teclado). O servidor ficaria só com as
-  conexões abertas — e 3.000 delas custam 35% de um núcleo. Exige uma versão
-  nova do app.
+- **Parte B (feita, falta publicar):** primeiro plano, programas abertos e
+  métricas pelo canal direto (`agent/src/datachannel.rs`,
+  `client/lib/services/video_session.dart`). Só vale para quem tiver o app
+  e o agente novos; os outros continuam pelo servidor.
+- **Menos memória por conexão**, quando a memória for o limite (com a parte
+  B, é o primeiro): ~90 KB por WebSocket, boa parte buffers e objetos do
+  Python por conexão.
 - **Mais de um processo** exige antes mudar o registro de quem está
   conectado, que hoje vive na memória do processo — dois processos não se
   enxergariam.
