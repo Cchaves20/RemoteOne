@@ -1,0 +1,7 @@
+{
+  "url": "https://deskside.com.br",
+  "degraus": "50,100,250,500,1000,1500",
+  "segundos": 60,
+  "teto_ms": 1000,
+  "pedido": "Teste combinado com o Caio em 2026-11-03: só computadores sem parear (prefixo carga-vps), parada automática no p95 de 1 s ou 1% de erros."
+}
