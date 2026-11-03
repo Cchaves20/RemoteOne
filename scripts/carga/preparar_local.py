@@ -18,6 +18,7 @@ import json
 import secrets
 import sys
 
+from app.auth import _entrar
 from app.db import SessionLocal, init_db
 from app.models import Device, User
 from app.pairing import resumo_de_segredo
@@ -48,8 +49,13 @@ def main() -> None:
                 agent_secret=resumo_de_segredo(segredo),
             ))
             contas.append({"email": email, "senha": SENHA,
-                           "device_id": device_id, "segredo": segredo})
+                           "device_id": device_id, "segredo": segredo, "user": user})
         db.commit()
+        # Um acesso já aberto por conta, como o app que guardou o login: abrir
+        # o app não confere a senha de novo. O login com senha é medido à
+        # parte (`carga.py --entrar`). O acesso vale 15 minutos.
+        for c in contas:
+            c["token"] = _entrar(db, c.pop("user"), None).access_token
     with open(saida, "w") as f:
         json.dump(contas, f)
     print(f"{quantos} contas pareadas em {saida}")

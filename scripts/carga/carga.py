@@ -235,12 +235,13 @@ class Celular:
     """Um app falso, com a tela de um computador aberta."""
 
     def __init__(self, base: str, cliente: httpx.AsyncClient, conta: dict,
-                 painel: bool, parar: asyncio.Event):
+                 painel: bool, parar: asyncio.Event, entrar: bool = False):
         self.base = base
         self.cliente = cliente
         self.conta = conta
         self.painel = painel
         self.parar = parar
+        self.entrar = entrar
         self.pronto = asyncio.Event()
 
     async def _entrar(self) -> str:
@@ -252,7 +253,10 @@ class Celular:
         return r.json()["access_token"]
 
     async def rodar(self) -> None:
-        token = await medir("celular_login", self._entrar())
+        if "token" in self.conta and not self.entrar:
+            token = self.conta["token"]
+        else:
+            token = await medir("celular_login", self._entrar())
         if token is None:
             self.pronto.set()
             return
@@ -420,7 +424,7 @@ async def fatia(args, indice: int, n: int, fila, barreira, parar_tudo) -> None:
                 if i in feitos_cel:
                     continue
                 feitos_cel.add(i)
-                cel = Celular(args.url, cliente, contas[i], args.painel, parar)
+                cel = Celular(args.url, cliente, contas[i], args.painel, parar, args.entrar)
                 celulares.append(asyncio.create_task(cel.rodar()))
                 novos_celulares.append(cel)
                 await asyncio.sleep(n / args.entrada_por_segundo)
@@ -565,7 +569,7 @@ def imprimir(linha: dict) -> None:
           f" {linha['celulares']} celulares{extra}")
     print(f"   {'operação':<20}{'n':>7}{'p50':>9}{'p95':>9}{'p99':>9}{'máx':>9}{'erros':>7}")
     for nome, v in linha.get("entrada", {}).items():
-        if nome in ("celular_login", "video_negocia", "computador_entra"):
+        if nome in ("celular_login", "celular_tela", "video_negocia", "computador_entra"):
             print(f"   entrada: {nome:<20}{v['n']:>7}{v['p50']:>9}{v['p95']:>9}"
                   f"{v['p99']:>9}{v['max']:>9}{v['erros']:>7}")
     for nome, v in linha["medidas"].items():
@@ -592,6 +596,8 @@ if __name__ == "__main__":
     p.add_argument("--pid", type=int, help="PID do servidor, quando roda na mesma máquina")
     p.add_argument("--prefixo", help="início do device_id dos computadores sem conta")
     p.add_argument("--saida", help="grava o resultado em JSON")
+    p.add_argument("--entrar", action="store_true",
+                   help="celulares fazem login com senha (senão usam o acesso já aberto)")
     p.add_argument("--processos", type=int, default=1,
                    help="processos simulando (um por núcleo livre)")
     sys.exit(principal(p.parse_args()))
