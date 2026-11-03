@@ -97,11 +97,55 @@ Menu ☰ → **Compute → Instances → Create instance:**
 6. **Create.** Em um ou dois minutos ela fica **Running**.
 
 > **"Out of capacity for shape VM.Standard.A1.Flex"** é comum.
-> - Tente outro *Availability Domain* em **Placement**, ou 1 OCPU / 6 GB.
+> - Tente outro *Availability Domain* em **Placement** (São Paulo só tem um),
+>   ou 1 OCPU / 6 GB.
 > - Repita em outro horário; de madrugada costuma ter vaga.
+> - Deixe tentando sozinho: `scripts/pedir-a1.sh`, no VPS de hoje, pede a
+>   máquina a cada 3 minutos até conseguir (como preparar está no começo do
+>   próprio script e em "Pedir a A1 sozinho", abaixo).
 > - Último recurso: passar a conta para *Pay As You Go*. As máquinas Always
 >   Free continuam grátis, e a fila de ARM costuma andar. Ponha um alerta de
 >   orçamento de R$ 1 se fizer isso.
+
+### Pedir a A1 sozinho (quando o console só dá "Out of capacity")
+
+O `scripts/pedir-a1.sh` roda no VPS de hoje e usa a linha de comando da
+Oracle. A máquina sai com o nome `deskside-a1`, Ubuntu 24.04 ARM, a mesma
+subnet da VM de hoje e a mesma chave SSH dela.
+
+**VPS de hoje, na pasta `~`.** Primeiro, instale a linha de comando e crie uma
+chave de API. A chave privada nasce e fica no VPS; só a pública vai ao
+console:
+```bash
+cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; git pull
+sudo apt update && sudo apt install -y python3-venv
+python3 -m venv ~/oci && ~/oci/bin/pip install -q oci-cli && ~/oci/bin/oci --version
+mkdir -p ~/.oci && chmod 700 ~/.oci
+openssl genrsa -out ~/.oci/chave-api.pem 2048 && chmod 600 ~/.oci/chave-api.pem
+openssl rsa -pubout -in ~/.oci/chave-api.pem
+```
+
+**Console da Oracle.** Ícone do perfil (canto superior direito) → **My
+profile → Tokens and keys** (ou *API keys*) → **Add API key → Paste a public
+key** → cole o bloco inteiro, de `-----BEGIN PUBLIC KEY-----` a
+`-----END PUBLIC KEY-----` → **Add**. Copie o *Configuration file preview*.
+
+**VPS de hoje.** `nano ~/.oci/config`, cole, salve (Ctrl+O, Enter, Ctrl+X), e:
+```bash
+sed -i 's|^key_file=.*|key_file=~/.oci/chave-api.pem|' ~/.oci/config && chmod 600 ~/.oci/config
+cd ~/Deskside 2>/dev/null || cd ~/RemoteOne
+scripts/pedir-a1.sh --uma
+```
+O certo é ver `conta ok`, uma linha `sem vaga` por tamanho e `fim da rodada
+única`. Então deixe rodando, e confira de vez em quando:
+```bash
+nohup scripts/pedir-a1.sh > ~/pedir-a1.log 2>&1 &
+tail -3 ~/pedir-a1.log
+```
+Quando aparecer `PRONTO`, siga para o passo 1.3. **Depois**, apague a chave
+de API no console (mesma tela, **⋮ → Delete**) e, no VPS,
+`rm -rf ~/.oci ~/oci`: ela dá acesso à conta inteira, e não serve para mais
+nada.
 
 ### 1.3 Tornar o IP da A1 reservado (já agora)
 
