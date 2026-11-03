@@ -425,6 +425,8 @@ pub async fn run(
     let (resposta_tx, mut resposta_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     // Entrada pelo canal de dados (Fase 6): chega P2P, sem passar pelo servidor.
     let (input_tx, mut input_rx) = tokio::sync::mpsc::unbounded_channel();
+    // Perguntas da tela pelo canal direto (ver `datachannel::PERGUNTAS_CHANNEL`).
+    let (perguntas_tx, mut perguntas_rx) = tokio::sync::mpsc::unbounded_channel();
     // Pedidos de quadro-chave do app (RTCP). Chegam de dentro das tarefas do
     // webrtc-rs e quem tem o codificador é este laço, então passam por canal.
     let (keyframe_tx, mut keyframe_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -433,6 +435,7 @@ pub async fn run(
     let mut video = crate::webrtc::Video::new(
         signal_tx,
         input_tx,
+        perguntas_tx,
         keyframe_tx,
         loss_tx,
         stream.ice_servers.clone(),
@@ -623,6 +626,13 @@ pub async fn run(
                     reads.remove(transfer_id);
                 }
                 ws.send(Message::Text(serde_json::to_string(&message)?)).await?;
+            }
+            // Uma pergunta da tela pelo canal direto: as mesmas respostas do
+            // caminho pelo servidor (ver `ForegroundInfo`, `ListApps` e
+            // `SystemInfo` abaixo), devolvidas pelo canal. As lentas correm
+            // numa tarefa própria, para não segurar a imagem.
+            Some(recebida) = perguntas_rx.recv() => {
+                responder_pergunta(recebida, &mut monitor, &foreground);
             }
             // Entrada vinda do canal de dados: um salto direto do celular até
             // aqui, sem HTTP e sem passar pelo servidor.
@@ -1823,6 +1833,54 @@ pub async fn vigiar_apresentacao(modo: crate::apresentacao::Compartilhado) {
                     m.sem_suporte();
                 }
             }
+        }
+    }
+}
+
+/// Responde uma pergunta da tela pelo canal direto.
+///
+/// As métricas são medidas aqui (o monitor guarda a leitura anterior para
+/// calcular a CPU, e é deste laço); o primeiro plano e os programas abertos
+/// podem custar um PowerShell, e saem numa tarefa à parte.
+fn responder_pergunta(
+    recebida: crate::webrtc::PerguntaRecebida,
+    monitor: &mut crate::system_info::Monitor,
+    foreground: &Arc<std::sync::Mutex<crate::foreground::Watcher>>,
+) {
+    use crate::datachannel::{resposta, Tipo};
+    let crate::webrtc::PerguntaRecebida { pergunta, canal } = recebida;
+    let id = pergunta.id;
+    match pergunta.tipo {
+        Tipo::Metricas => {
+            let valor = serde_json::to_value(monitor.snapshot()).unwrap_or_default();
+            tokio::spawn(async move {
+                let _ = canal.send_text(resposta(id, valor)).await;
+            });
+        }
+        Tipo::PrimeiroPlano => {
+            let watcher = Arc::clone(foreground);
+            tokio::spawn(async move {
+                let app = tokio::task::spawn_blocking(move || {
+                    watcher.lock().ok().and_then(|mut w| w.current())
+                })
+                .await
+                .unwrap_or(None);
+                // `app` sempre presente, nulo quando não há janela em foco:
+                // é o formato da resposta do servidor.
+                let valor = serde_json::json!({ "app": app });
+                let _ = canal.send_text(resposta(id, valor)).await;
+            });
+        }
+        Tipo::ProgramasAbertos => {
+            tokio::spawn(async move {
+                let apps = tokio::task::spawn_blocking(|| {
+                    crate::apps::list(crate::apps::AppKind::Running)
+                })
+                .await
+                .unwrap_or_default();
+                let valor = serde_json::to_value(apps).unwrap_or_default();
+                let _ = canal.send_text(resposta(id, valor)).await;
+            });
         }
     }
 }

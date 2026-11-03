@@ -235,13 +235,15 @@ class Celular:
     """Um app falso, com a tela de um computador aberta."""
 
     def __init__(self, base: str, cliente: aiohttp.ClientSession, conta: dict,
-                 painel: bool, parar: asyncio.Event, entrar: bool = False):
+                 painel: bool, parar: asyncio.Event, entrar: bool = False,
+                 canal_direto: bool = False):
         self.base = base
         self.cliente = cliente
         self.conta = conta
         self.painel = painel
         self.parar = parar
         self.entrar = entrar
+        self.canal_direto = canal_direto
         self.pronto = asyncio.Event()
 
     async def _entrar(self) -> str:
@@ -278,6 +280,12 @@ class Celular:
                         break
                 MEDIDAS.tempo("video_negocia", (time.perf_counter() - inicio) * 1000)
                 self.pronto.set()
+                if self.canal_direto:
+                    # Com o canal direto (a parte B), as perguntas da tela vão
+                    # do celular ao computador sem passar pelo servidor: para
+                    # ele, sobra só a tela aberta.
+                    await self._drenar(ws)
+                    return
                 tarefas = [
                     self._repetir("primeiro_plano", PRIMEIRO_PLANO_SEGUNDOS,
                                   f"/api/v1/devices/{device}/foreground", cabecalho),
@@ -432,7 +440,8 @@ async def fatia(args, indice: int, n: int, fila, barreira, parar_tudo) -> None:
                 if i in feitos_cel:
                     continue
                 feitos_cel.add(i)
-                cel = Celular(args.url, cliente, contas[i], args.painel, parar, args.entrar)
+                cel = Celular(args.url, cliente, contas[i], args.painel, parar, args.entrar,
+                              args.canal_direto)
                 celulares.append(asyncio.create_task(cel.rodar()))
                 novos_celulares.append(cel)
                 await asyncio.sleep(n / args.entrada_por_segundo)
@@ -604,6 +613,8 @@ if __name__ == "__main__":
     p.add_argument("--pid", type=int, help="PID do servidor, quando roda na mesma máquina")
     p.add_argument("--prefixo", help="início do device_id dos computadores sem conta")
     p.add_argument("--saida", help="grava o resultado em JSON")
+    p.add_argument("--canal-direto", action="store_true",
+                   help="as perguntas da tela vão pelo canal direto (não passam pelo servidor)")
     p.add_argument("--entrar", action="store_true",
                    help="celulares fazem login com senha (senão usam o acesso já aberto)")
     p.add_argument("--processos", type=int, default=1,

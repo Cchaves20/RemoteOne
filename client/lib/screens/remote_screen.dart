@@ -18,6 +18,7 @@ import '../l10n/strings.dart';
 import '../models/automation.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
+import '../models/foreground_app.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
@@ -1010,7 +1011,14 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (_rodandoInFlight || _rodandoFailed || !mounted) return;
     _rodandoInFlight = true;
     try {
-      final abertos = await widget.state.listApps(widget.device, kind: 'running');
+      // Pelo canal direto quando dá (sem passar pelo servidor); senão, como
+      // sempre.
+      final viaCanal = await _video?.perguntar('programas_abertos');
+      final abertos = viaCanal is List
+          ? viaCanal
+              .map((e) => RemoteApp.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : await widget.state.listApps(widget.device, kind: 'running');
       if (!mounted) return;
       final naDock = (_dockApps ?? const <RemoteApp>[])
           .map((a) => RemoteApp.matchName(a.name))
@@ -1100,7 +1108,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (_statsInFlight || !mounted) return;
     _statsInFlight = true;
     try {
-      final stats = await widget.state.systemStats(widget.device);
+      final viaCanal = await _video?.perguntar('metricas');
+      final stats = viaCanal is Map<String, dynamic>
+          ? SystemStats.fromJson(viaCanal)
+          : await widget.state.systemStats(widget.device);
       if (!mounted) return;
       setState(() {
         _stats = stats;
@@ -1143,7 +1154,10 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (!_profilesOpen || _zoomMode) return;
     _foregroundInFlight = true;
     try {
-      final app = await widget.state.foregroundApp(widget.device);
+      final viaCanal = await _video?.perguntar('primeiro_plano');
+      final app = viaCanal is Map<String, dynamic>
+          ? ForegroundApp.fromJson(viaCanal)
+          : await widget.state.foregroundApp(widget.device);
       if (!mounted || app == null) return;
       final icone = app.iconBytes;
       if (icone == null) return;

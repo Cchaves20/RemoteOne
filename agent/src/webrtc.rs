@@ -36,7 +36,9 @@ use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 use webrtc::track::track_local::TrackLocal;
 
-use crate::datachannel::InputEnvelope;
+use crate::datachannel::{InputEnvelope, Pergunta, PERGUNTAS_CHANNEL};
+use webrtc::data_channel::data_channel_state::RTCDataChannelState;
+use webrtc::data_channel::RTCDataChannel;
 use crate::h264::EncodedFrame;
 
 /// O que precisa voltar ao backend. O laço do cliente converte em
@@ -132,6 +134,56 @@ impl SaidaDeSom {
     }
 }
 
+/// Liga o canal das perguntas: avisa que este agente o entende e passa cada
+/// pergunta ao laço principal.
+///
+/// O aviso sai na hora se o canal já chegou aberto, e na abertura se não: o
+/// webrtc-rs entrega o canal ora antes, ora depois de ele abrir, e um aviso a
+/// mais não atrapalha o app (ele só marca que pode perguntar).
+async fn abrir_perguntas(
+    channel: Arc<RTCDataChannel>,
+    perguntas: UnboundedSender<PerguntaRecebida>,
+) {
+    let aberto = Arc::clone(&channel);
+    channel.on_open(Box::new(move || {
+        let canal = Arc::clone(&aberto);
+        Box::pin(async move {
+            let _ = canal.send_text(crate::datachannel::pronto()).await;
+        })
+    }));
+    if channel.ready_state() == RTCDataChannelState::Open {
+        let _ = channel.send_text(crate::datachannel::pronto()).await;
+    }
+    let canal = Arc::clone(&channel);
+    channel.on_message(Box::new(move |message| {
+        let perguntas = perguntas.clone();
+        let canal = Arc::clone(&canal);
+        Box::pin(async move {
+            match serde_json::from_slice::<Pergunta>(&message.data) {
+                Ok(pergunta) => {
+                    let _ = perguntas.send(PerguntaRecebida { pergunta, canal });
+                }
+                Err(e) => {
+                    // Um tipo que este agente não conhece: o app desiste
+                    // daquela pergunta por aqui e a faz pelo servidor.
+                    let id = serde_json::from_slice::<serde_json::Value>(&message.data)
+                        .ok()
+                        .and_then(|v| v.get("id").and_then(|i| i.as_u64()));
+                    let _ = canal
+                        .send_text(crate::datachannel::erro(id, &format!("{e}")))
+                        .await;
+                }
+            }
+        })
+    }));
+}
+
+/// Uma pergunta da tela, com o canal por onde a resposta volta.
+pub struct PerguntaRecebida {
+    pub pergunta: Pergunta,
+    pub canal: Arc<RTCDataChannel>,
+}
+
 /// As sessões de WebRTC deste agente.
 pub struct Video {
     api: API,
@@ -142,6 +194,10 @@ pub struct Video {
     /// teclado/mouse vive no laço principal, e o webrtc-rs chama de volta de
     /// dentro das tarefas dele — mesmo desenho da sinalização.
     input: UnboundedSender<InputEnvelope>,
+    /// Perguntas da tela pelo canal `perguntas` (ver `datachannel`). Saem por
+    /// aqui pelo mesmo motivo da entrada: quem tem o vigia do primeiro plano e
+    /// o monitor de métricas é o laço principal.
+    perguntas: UnboundedSender<PerguntaRecebida>,
     /// Pedidos de quadro-chave vindos do telefone (RTCP PLI/FIR). Mesmo
     /// desenho: quem tem o codificador é o laço principal.
     keyframe: UnboundedSender<()>,
@@ -158,6 +214,7 @@ impl Video {
     pub fn new(
         outbox: UnboundedSender<Signal>,
         input: UnboundedSender<InputEnvelope>,
+        perguntas: UnboundedSender<PerguntaRecebida>,
         keyframe: UnboundedSender<()>,
         loss: UnboundedSender<f32>,
         stun_urls: Vec<String>,
@@ -181,6 +238,7 @@ impl Video {
             peers: HashMap::new(),
             outbox,
             input,
+            perguntas,
             keyframe,
             loss,
             som: SaidaDeSom::default(),
@@ -419,12 +477,18 @@ impl Video {
         // O canal de dados é criado pelo **app** (que faz a oferta), então aqui
         // só se recebe. Fosse o contrário, precisaria renegociar a sessão.
         let input = self.input.clone();
+        let perguntas = self.perguntas.clone();
         let session = session_id.to_string();
         connection.on_data_channel(Box::new(move |channel| {
             let input = input.clone();
+            let perguntas = perguntas.clone();
             let session = session.clone();
             let label = channel.label().to_string();
             Box::pin(async move {
+                if label == PERGUNTAS_CHANNEL {
+                    abrir_perguntas(channel, perguntas).await;
+                    return;
+                }
                 if label != INPUT_CHANNEL {
                     println!("Canal de dados desconhecido ignorado: {label}");
                     return;
@@ -690,6 +754,8 @@ mod tests {
         std::mem::forget(_input_rx);
         // O canal de quadro-chave é descartado: estes testes cuidam da
         // negociação. O pedido em si é do laço principal.
+        let (perguntas_tx, _perguntas_rx) = mpsc::unbounded_channel();
+        std::mem::forget(_perguntas_rx);
         let (keyframe_tx, _keyframe_rx) = mpsc::unbounded_channel();
         std::mem::forget(_keyframe_rx);
         // Idem para a perda: a política que a consome é testada, pura, no
@@ -697,7 +763,7 @@ mod tests {
         let (loss_tx, _loss_rx) = mpsc::unbounded_channel();
         std::mem::forget(_loss_rx);
         (
-            Video::new(tx, input_tx, keyframe_tx, loss_tx, vec![]).unwrap(),
+            Video::new(tx, input_tx, perguntas_tx, keyframe_tx, loss_tx, vec![]).unwrap(),
             rx,
         )
     }

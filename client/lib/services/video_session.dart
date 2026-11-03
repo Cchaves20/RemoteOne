@@ -70,6 +70,7 @@ class VideoSession extends ChangeNotifier {
 
   /// Precisa casar com `INPUT_CHANNEL` no agente.
   static const _inputChannel = 'input';
+  static const _perguntasChannel = 'perguntas';
 
   /// Quanto se espera pela negociação antes de desistir e ficar no JPEG.
   ///
@@ -116,6 +117,80 @@ class VideoSession extends ChangeNotifier {
   /// Se dá para enviar entrada pelo caminho direto agora.
   bool get inputReady =>
       _input?.state == RTCDataChannelState.RTCDataChannelOpen;
+
+  /// Canal das perguntas da tela: programa em primeiro plano, programas
+  /// abertos e métricas, direto ao computador, sem passar pelo servidor.
+  ///
+  /// Elas eram quase toda a carga do servidor — com 1.000 celulares de tela
+  /// aberta, ~400 pedidos por segundo (`docs/teste-de-carga.md`).
+  ///
+  /// Só é usado depois de o agente dizer `pronto`: um agente antigo ignora o
+  /// canal, e sem o aviso as perguntas continuam indo pelo servidor.
+  RTCDataChannel? _perguntas;
+  bool _perguntasProntas = false;
+  int _perguntaSeq = 0;
+  final Map<int, Completer<Object?>> _esperando = {};
+
+  /// Pergunta ao computador pelo canal direto. `null` quando não deu — canal
+  /// fechado, agente antigo, demora, ou pergunta que ele não conhece — e
+  /// nesse caso quem chamou **precisa** perguntar pelo servidor.
+  Future<Object?> perguntar(
+    String tipo, {
+    Duration prazo = const Duration(seconds: 8),
+  }) async {
+    final canal = _perguntas;
+    if (canal == null ||
+        !_perguntasProntas ||
+        canal.state != RTCDataChannelState.RTCDataChannelOpen) {
+      return null;
+    }
+    final id = ++_perguntaSeq;
+    final espera = Completer<Object?>();
+    _esperando[id] = espera;
+    try {
+      canal.send(RTCDataChannelMessage(jsonEncode({'id': id, 'tipo': tipo})));
+      return await espera.future.timeout(prazo);
+    } catch (e) {
+      debugPrint('Deskside: pergunta "$tipo" pelo canal falhou — $e');
+      return null;
+    } finally {
+      _esperando.remove(id);
+    }
+  }
+
+  void _naResposta(RTCDataChannelMessage mensagem) {
+    final Object? dados;
+    try {
+      dados = jsonDecode(mensagem.text);
+    } catch (_) {
+      return;
+    }
+    if (dados is! Map<String, dynamic>) return;
+    if (dados['tipo'] == 'pronto') {
+      _perguntasProntas = true;
+      return;
+    }
+    final id = dados['id'];
+    final espera = id is int ? _esperando[id] : null;
+    if (espera == null || espera.isCompleted) return;
+    if (dados.containsKey('erro')) {
+      espera.completeError(StateError('${dados['erro']}'));
+    } else {
+      espera.complete(dados['resposta']);
+    }
+  }
+
+  /// Fecha o canal das perguntas e solta quem esperava — essas voltam ao
+  /// servidor.
+  void _fecharPerguntas() {
+    _perguntasProntas = false;
+    _perguntas?.close();
+    _perguntas = null;
+    for (final espera in _esperando.values) {
+      if (!espera.isCompleted) espera.complete(null);
+    }
+    _esperando.clear();
+  }
 
   RTCPeerConnection? _peer;
   Timer? _timeout;
@@ -216,6 +291,14 @@ class VideoSession extends ChangeNotifier {
       // entra no SDP e o agente o recebe sem precisar renegociar a sessão.
       final init = RTCDataChannelInit()..ordered = false;
       _input = await peer.createDataChannel(_inputChannel, init);
+      // O das perguntas também nasce antes da oferta, pelo mesmo motivo — e
+      // ordenado: pergunta e resposta não têm a pressa do mouse.
+      final perguntas = await peer.createDataChannel(
+        _perguntasChannel,
+        RTCDataChannelInit()..ordered = true,
+      );
+      perguntas.onMessage = _naResposta;
+      _perguntas = perguntas;
 
       // Só receber: o celular não manda vídeo nenhum.
       await peer.addTransceiver(
@@ -509,6 +592,7 @@ class VideoSession extends ChangeNotifier {
     // sozinha pelo servidor.
     _input?.close();
     _input = null;
+    _fecharPerguntas();
     // Solta a conexão, mas mantém o renderizador: a tela pode estar no meio de
     // um quadro, e destruí-lo aqui arriscaria pintar em cima de nada.
     _peer?.close();
@@ -526,6 +610,7 @@ class VideoSession extends ChangeNotifier {
     _timeout?.cancel();
     _input?.close();
     _input = null;
+    _fecharPerguntas();
     _peer?.close();
     _peer = null;
     if (_rendererReady) {
