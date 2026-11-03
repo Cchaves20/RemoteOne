@@ -213,6 +213,11 @@ e esses 145 ms aparecem em toda medida.
   servidor, 1.000 agentes levam perto de um minuto para voltar todos.
 - **No degrau de 1.500 o servidor começou a ceder**: só 63 dos 500 novos
   entraram, o `/health` deu um 502 e duas conexões caíram.
+- **O limite foi o processador, não a memória.** Pelo `docker stats`, a API
+  chegou a 202 MB dos 512 MB, com o processador no máximo (o `docker stats`
+  chegou a mostrar 394%, número distorcido pela VM de núcleo emprestado). Ela
+  não reiniciou durante o teste e não houve falta de memória. O 502 foi o
+  Caddy sem resposta de uma API sobrecarregada.
 
 Celulares não foram medidos no VPS. Para eles continua valendo a estimativa
 pela proporção com o teste local: 200 a 300 de tela aberta hoje, e 1.500 a
