@@ -9,9 +9,9 @@ import jwt
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from app import controle, entrega, lojas, pairing
+from app import controle, entrega, lojas, pairing, vinculos
 from app.agents import AgentRegistry
-from app.auth import get_current_user, sessao_valida
+from app.auth import get_current_user
 from app.auth import router as auth_router
 from app.automations import enviar_agenda
 from app.automations import router as automations_router
@@ -225,6 +225,18 @@ def _paired_email(device_id: str) -> str | None:
         if device is None:
             return None
         return device.user.email or device.user.phone or f"conta {device.user.id}"
+
+
+async def _pareado(device_id: str) -> bool:
+    """Se o computador está pareado, pela memória (ver `app.vinculos`).
+
+    É a pergunta de toda batida, a cada 10 s, de cada computador ligado — e a
+    resposta só muda quando alguém pareia ou despareia, que apaga a memória.
+    """
+    dono = vinculos.dono(device_id)
+    if not vinculos.sabe(dono):
+        dono = await asyncio.to_thread(vinculos.dono_do_banco, device_id)
+    return dono is not None
 
 
 def _segredo_do_aparelho(device_id: str) -> str | None:
@@ -668,7 +680,7 @@ async def agent_ws(websocket: WebSocket) -> None:
                 #  - vinculado agora → avisa o agente (`paired`);
                 #  - desvinculado no app → gera e reexibe um novo código, para o
                 #    usuário poder reparear sem reiniciar o agente.
-                now_paired = _paired_email(device_id) is not None
+                now_paired = await _pareado(device_id)
                 if now_paired and not paired_notified:
                     email = _paired_email(device_id)
                     # O segredo vai junto do aviso de pareamento: é o instante
@@ -809,12 +821,11 @@ def _vinculo_do_viewer_vale(payload: dict, device_id: str) -> bool:
     ainda é a atual. Trocar a senha, desparear o computador ou apagar a conta
     passam a fechar a tela em até `REVALIDAR_VIEWER_SEGUNDOS`.
     """
-    with SessionLocal() as db:
-        device = pairing.get_device(db, device_id)
-        if device is None or str(device.user_id) != str(payload.get("sub")):
-            return False
-        user = db.get(User, device.user_id)
-        return user is not None and sessao_valida(payload, user, db)
+    resposta = vinculos.na_memoria(payload, device_id) or vinculos.do_banco(
+        payload, device_id
+    )
+    vale, dono = resposta
+    return vale and str(dono) == str(payload.get("sub"))
 
 
 def _authenticate_viewer(token: str, device_id: str) -> dict | None:

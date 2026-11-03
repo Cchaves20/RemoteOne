@@ -357,39 +357,54 @@ async def saude(cliente: httpx.AsyncClient) -> None:
     await medir("saude", pedir())
 
 
-async def principal(args) -> int:
+def _dele(total: int, indice: int, n: int) -> list[int]:
+    """Os aparelhos (índices globais) que cabem a este processo: um a cada `n`.
+
+    O celular `i` usa a conta `i`, que é a do computador `i` — os dois caem
+    sempre no mesmo processo.
+    """
+    return [i for i in range(total) if i % n == indice]
+
+
+async def fatia(args, indice: int, n: int, fila, barreira, parar_tudo) -> None:
+    """O trabalho de um processo: a parte dele dos aparelhos, degrau a degrau.
+
+    Os processos andam juntos por uma barreira: todos terminam de entrar, todos
+    medem pelo mesmo intervalo, e cada um entrega os tempos crus ao processo
+    principal, que junta e decide se sobe mais.
+    """
     contas = []
     if args.contas:
         with open(args.contas) as f:
             contas = json.load(f)
+    ATRASO_MS["list_apps"] = args.atraso_programas_ms
     degraus = [int(x) for x in args.degraus.split(",")]
     celulares_degraus = (
         [int(x) for x in args.celulares_por_degrau.split(",")]
         if args.celulares_por_degrau else [0] * len(degraus)
     )
-    ATRASO_MS["list_apps"] = args.atraso_programas_ms
-    if contas and max(degraus) > len(contas):
-        print(f"só há {len(contas)} contas para {max(degraus)} computadores", file=sys.stderr)
-        return 2
-
+    prefixo = args.prefixo or "carga"
     parar = asyncio.Event()
     limites = httpx.Limits(max_connections=2000, max_keepalive_connections=2000)
-    resultados = []
     computadores: list[asyncio.Task] = []
     celulares: list[asyncio.Task] = []
-    quebrou_em = None
-    prefixo = args.prefixo or f"carga-{os.getpid()}"
+    feitos_pc: set[int] = set()
+    feitos_cel: set[int] = set()
+
+    async def esperar_barreira():
+        await asyncio.to_thread(barreira.wait)
 
     async with httpx.AsyncClient(base_url=args.url, timeout=30, limits=limites) as cliente:
-        uso_antes = None
-        pares = zip(degraus, celulares_degraus, strict=True)
-        for numero, (alvo, alvo_celulares) in enumerate(pares, 1):
+        for alvo, alvo_celulares in zip(degraus, celulares_degraus, strict=True):
             # Entram em lotes, como gente chegando, e não num estouro só.
             novos = []
-            for i in range(len(computadores), alvo):
+            for i in _dele(alvo, indice, n):
+                if i in feitos_pc:
+                    continue
+                feitos_pc.add(i)
                 if contas:
-                    c = contas[i]
-                    comp = Computador(args.url, c["device_id"], c["segredo"], parar)
+                    comp = Computador(args.url, contas[i]["device_id"], contas[i]["segredo"],
+                                      parar)
                 else:
                     comp = Computador(args.url, f"{prefixo}-{i:05d}", None, parar)
                 computadores.append(asyncio.create_task(comp.rodar()))
@@ -397,65 +412,143 @@ async def principal(args) -> int:
                 if len(novos) % 25 == 0:
                     await asyncio.sleep(0.5)
             await asyncio.gather(*(c.pronto.wait() for c in novos))
-            # Os celulares entram no ritmo de `--entrada-por-segundo`: o login
-            # custa um bcrypt de propósito, e uma multidão entrando no mesmo
-            # segundo é outro teste (ver o resumo "entrada").
+            # Os celulares entram no ritmo de `--entrada-por-segundo` (somando
+            # os processos): o login custa um bcrypt de propósito, e uma
+            # multidão entrando no mesmo segundo é outro teste.
             novos_celulares = []
-            for i in range(len(celulares), min(alvo_celulares, alvo)):
+            for i in _dele(min(alvo_celulares, alvo), indice, n):
+                if i in feitos_cel:
+                    continue
+                feitos_cel.add(i)
                 cel = Celular(args.url, cliente, contas[i], args.painel, parar)
                 celulares.append(asyncio.create_task(cel.rodar()))
                 novos_celulares.append(cel)
-                await asyncio.sleep(1 / args.entrada_por_segundo)
+                await asyncio.sleep(n / args.entrada_por_segundo)
             await asyncio.gather(*(c.pronto.wait() for c in novos_celulares))
 
-            # A entrada fica fora da medida do uso contínuo, num resumo à parte.
-            entrada = resumo(MEDIDAS.zerar())
+            entrada = MEDIDAS.zerar()
+            await esperar_barreira()
+            MEDIDAS.zerar()  # a espera pelos outros processos não conta
             fim = time.monotonic() + args.segundos
-            cpus, memorias = [], []
             while time.monotonic() < fim:
-                await saude(cliente)
-                if args.pid:
-                    cpu, mem, uso_antes = uso_do_processo(args.pid, uso_antes)
-                    if cpu is not None:
-                        cpus.append(cpu)
-                    if mem is not None:
-                        memorias.append(mem)
+                if indice == 0:
+                    await saude(cliente)
                 await asyncio.sleep(1)
-
-            m = MEDIDAS.zerar()
-            linha = {
-                "degrau": numero,
-                "computadores": alvo,
-                "celulares": min(alvo_celulares, alvo),
-                "entrada": entrada,
-                "medidas": resumo(m),
-            }
-            if cpus:
-                linha["servidor"] = {
-                    "cpu_media": round(statistics.mean(cpus), 1),
-                    "cpu_max": round(max(cpus), 1),
-                    "memoria_mb": round(max(memorias), 1),
-                }
-            resultados.append(linha)
-            imprimir(linha)
-
-            total = sum(v["n"] + v["erros"] for v in linha["medidas"].values())
-            erros = sum(v["erros"] for v in linha["medidas"].values())
-            # O atraso que o próprio computador simulado leva não é do servidor.
-            descontar = {"programas_abertos": args.atraso_programas_ms}
-            pior_p95 = max(
-                (v["p95"] - descontar.get(nome, 0) for nome, v in linha["medidas"].items()),
-                default=0,
-            )
-            if erros > args.teto_erros * max(1, total) or pior_p95 > args.teto_ms:
-                quebrou_em = numero
-                print(f"\nparou no degrau {numero}: p95 {pior_p95} ms, {erros}/{total} erros")
+            medidas = MEDIDAS.zerar()
+            fila.put((entrada, medidas))
+            await esperar_barreira()
+            if parar_tudo.is_set():
                 break
 
         parar.set()
         for t in computadores + celulares:
             t.cancel()
         await asyncio.gather(*computadores, *celulares, return_exceptions=True)
+
+
+def _rodar_fatia(args, indice, n, fila, barreira, parar_tudo) -> None:
+    asyncio.run(fatia(args, indice, n, fila, barreira, parar_tudo))
+
+
+def _juntar(partes: list[Medidas]) -> Medidas:
+    junto = Medidas()
+    for m in partes:
+        for nome, t in m.tempos.items():
+            junto.tempos.setdefault(nome, []).extend(t)
+        for nome, e in m.erros.items():
+            junto.erros[nome] = junto.erros.get(nome, 0) + e
+        for nome, ex in m.exemplos.items():
+            junto.exemplos.setdefault(nome, ex)
+    return junto
+
+
+def principal(args) -> int:
+    import multiprocessing
+
+    degraus = [int(x) for x in args.degraus.split(",")]
+    celulares_degraus = (
+        [int(x) for x in args.celulares_por_degrau.split(",")]
+        if args.celulares_por_degrau else [0] * len(degraus)
+    )
+    if len(celulares_degraus) != len(degraus):
+        print("--celulares-por-degrau precisa de um número por degrau", file=sys.stderr)
+        return 2
+    if args.contas:
+        with open(args.contas) as f:
+            quantas = len(json.load(f))
+        if max(degraus) > quantas:
+            print(f"só há {quantas} contas para {max(degraus)} computadores", file=sys.stderr)
+            return 2
+
+    # Um processo Python finge algumas centenas de aparelhos antes de virar,
+    # ele mesmo, o gargalo: com 320 celulares num processo só, o simulador
+    # ficava em 100% de um núcleo e o servidor em 10%.
+    n = args.processos
+    ctx = multiprocessing.get_context("spawn")
+    fila = ctx.Queue()
+    barreira = ctx.Barrier(n + 1, timeout=3600)
+    parar_tudo = ctx.Event()
+    processos = [
+        ctx.Process(target=_rodar_fatia, args=(args, i, n, fila, barreira, parar_tudo))
+        for i in range(n)
+    ]
+    for proc in processos:
+        proc.start()
+
+    resultados = []
+    quebrou_em = None
+    uso_antes = None
+    for numero, (alvo, alvo_celulares) in enumerate(
+        zip(degraus, celulares_degraus, strict=True), 1
+    ):
+        barreira.wait()  # todos entraram
+        print(f"medindo o degrau {numero}", flush=True)
+        cpus, memorias = [], []
+        if args.pid:
+            _, _, uso_antes = uso_do_processo(args.pid, None)
+            fim = time.monotonic() + args.segundos
+            while time.monotonic() < fim:
+                time.sleep(1)
+                cpu, mem, uso_antes = uso_do_processo(args.pid, uso_antes)
+                if cpu is not None:
+                    cpus.append(cpu)
+                if mem is not None:
+                    memorias.append(mem)
+        partes = [fila.get() for _ in range(n)]
+        linha = {
+            "degrau": numero,
+            "computadores": alvo,
+            "celulares": min(alvo_celulares, alvo),
+            "entrada": resumo(_juntar([p[0] for p in partes])),
+            "medidas": resumo(_juntar([p[1] for p in partes])),
+        }
+        if cpus:
+            linha["servidor"] = {
+                "cpu_media": round(statistics.mean(cpus), 1),
+                "cpu_max": round(max(cpus), 1),
+                "memoria_mb": round(max(memorias), 1),
+            }
+        resultados.append(linha)
+        imprimir(linha)
+
+        total = sum(v["n"] + v["erros"] for v in linha["medidas"].values())
+        erros = sum(v["erros"] for v in linha["medidas"].values())
+        # O atraso que o próprio computador simulado leva não é do servidor.
+        descontar = {"programas_abertos": args.atraso_programas_ms}
+        pior_p95 = max(
+            (v["p95"] - descontar.get(nome, 0) for nome, v in linha["medidas"].items()),
+            default=0,
+        )
+        if erros > args.teto_erros * max(1, total) or pior_p95 > args.teto_ms:
+            quebrou_em = numero
+            print(f"\nparou no degrau {numero}: p95 {pior_p95} ms, {erros}/{total} erros")
+            parar_tudo.set()
+        barreira.wait()  # todos entregaram; seguem juntos ou param
+        if quebrou_em:
+            break
+
+    for proc in processos:
+        proc.join()
 
     if args.saida:
         with open(args.saida, "w") as f:
@@ -499,4 +592,6 @@ if __name__ == "__main__":
     p.add_argument("--pid", type=int, help="PID do servidor, quando roda na mesma máquina")
     p.add_argument("--prefixo", help="início do device_id dos computadores sem conta")
     p.add_argument("--saida", help="grava o resultado em JSON")
-    sys.exit(asyncio.run(principal(p.parse_args())))
+    p.add_argument("--processos", type=int, default=1,
+                   help="processos simulando (um por núcleo livre)")
+    sys.exit(principal(p.parse_args()))

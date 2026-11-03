@@ -4,6 +4,7 @@ import asyncio
 import base64
 import logging
 
+import jwt
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -16,10 +17,11 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
-from app import alertas, cobranca, pairing, plano, teste
-from app.auth import get_current_user
+from app import alertas, cobranca, pairing, plano, teste, vinculos
+from app.auth import _bearer, get_current_user
 from app.connections import manager
 from app.db import get_db, liberar
 from app.ice import ice_servers
@@ -53,6 +55,7 @@ from app.schemas import (
     SystemStatsOut,
 )
 from app.screen import frame_store
+from app.security import decode_token
 from app.transfers import MAX_TRANSFER_BYTES, TransferError, transfers
 
 logger = logging.getLogger("deskside")
@@ -106,6 +109,41 @@ def _device_out(device: Device) -> DeviceOut:
 def _clamp(value: int, bounds: tuple[int, int]) -> int:
     low, high = bounds
     return max(low, min(high, value))
+
+
+async def dono_do_computador(
+    device_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+) -> int:
+    """O login vale e o computador é desta conta? Devolve o id da conta.
+
+    A mesma conferência de `get_current_user` + `_owned_device_or_404`, para
+    as perguntas que o app repete com a tela aberta (primeiro plano, programas,
+    métricas…), pela memória de `app.vinculos`: sem banco e sem thread quando
+    a resposta já é conhecida, que é quase sempre.
+    """
+    invalido = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="credenciais inválidas",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = decode_token(credentials.credentials)
+    except jwt.PyJWTError as exc:
+        raise invalido from exc
+    if payload.get("type") != "access":
+        raise invalido
+    resposta = vinculos.na_memoria(payload, device_id)
+    if resposta is None:
+        resposta = await asyncio.to_thread(vinculos.do_banco, payload, device_id)
+    vale, dono = resposta
+    if not vale:
+        raise invalido
+    if dono != int(payload["sub"]):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="dispositivo não encontrado"
+        )
+    return dono
 
 
 def _owned_device_or_404(db: Session, device_id: str, user: User) -> Device:
@@ -194,8 +232,7 @@ def remove_device(
 async def send_input(
     device_id: str,
     action: InputAction = Body(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Retransmite um comando de entrada (mouse) ao computador pareado.
 
@@ -203,8 +240,6 @@ async def send_input(
     do controle remoto (Etapa 6); o streaming contínuo do touchpad virá pelo
     canal WebSocket do app.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     envelope = {"type": "input", "action": action.model_dump()}
     if not await manager.send_to_agent(device_id, envelope):
@@ -218,12 +253,9 @@ async def send_input(
 async def power_device(
     device_id: str,
     body: PowerRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Desliga, reinicia ou suspende o computador pareado."""
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
     message = {"type": "power", "action": body.action}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -234,16 +266,13 @@ async def power_device(
 @router.get("/devices/{device_id}/system", response_model=SystemStatsOut)
 async def system_stats(
     device_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> SystemStatsOut:
     """Mede CPU, memória e disco do computador pareado.
 
     Pergunta e resposta com `request_id`, como a lista de aplicativos: o backend
     espera o agente medir.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "system_info", "request_id": request_id}
@@ -267,8 +296,7 @@ async def system_stats(
 async def set_brightness(
     device_id: str,
     body: BrightnessRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> BrightnessOut:
     """Ajusta o brilho da tela do computador e devolve o nível resultante.
 
@@ -281,8 +309,6 @@ async def set_brightness(
     O motivo da recusa vem do agente e sobe como `detail` de um 409, porque é a
     única explicação que existe - um 500 genérico a jogaria fora.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     request_id, future = pending.create()
     message = {
@@ -315,12 +341,9 @@ async def set_brightness(
 @router.get("/devices/{device_id}/clipboard", response_model=ClipboardOut)
 async def clipboard_get(
     device_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> ClipboardOut:
     """O que está na área de transferência do computador."""
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "clipboard_get", "request_id": request_id}
@@ -346,12 +369,9 @@ async def clipboard_get(
 async def clipboard_set(
     device_id: str,
     body: ClipboardIn,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Coloca um texto na área de transferência do computador."""
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
     message = {"type": "clipboard_set", "text": body.text}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -365,8 +385,7 @@ async def clipboard_set(
 async def clipboard_set_image(
     device_id: str,
     request: Request,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Põe uma imagem do celular na área de transferência do computador.
 
@@ -375,8 +394,6 @@ async def clipboard_set_image(
     decodificá-la de qualquer jeito — e a recusa dele volta como 400 com o
     motivo.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     limite_mb = MAX_CLIPBOARD_IMAGE_BYTES // 1024 // 1024
     declarado = request.headers.get("content-length")
@@ -431,16 +448,13 @@ async def clipboard_set_image(
 async def clipboard_sync(
     device_id: str,
     body: ClipboardSyncRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Liga ou desliga o aviso automático de cópia nova no computador.
 
     Desligado, o agente nem olha o que se copia por lá. É o padrão: o que passa
     pela área de transferência de alguém costuma incluir senha.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
     message = {"type": "clipboard_sync", "enabled": body.enabled}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -487,8 +501,7 @@ async def audio_stream(
 @router.get("/devices/{device_id}/foreground", response_model=ForegroundOut)
 async def foreground_app(
     device_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> ForegroundOut:
     """Qual programa está em primeiro plano no computador, com o ícone dele.
 
@@ -496,8 +509,6 @@ async def foreground_app(
     frente passa a mostrar o ícone real dele. Quem decide qual perfil combina
     com qual programa é o app - aqui só se repassa o que o agente respondeu.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "foreground_info", "request_id": request_id}
@@ -520,8 +531,7 @@ async def foreground_app(
 @router.get("/devices/{device_id}/keep-awake", response_model=KeepAwakeOut)
 async def keep_awake_state(
     device_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> KeepAwakeOut:
     """Se o computador está sendo mantido pronto para ser alcançado.
 
@@ -530,8 +540,6 @@ async def keep_awake_state(
     momento e sem passar por aqui. Um valor guardado estaria errado na hora
     exata em que a resposta importa.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "keep_awake_info", "request_id": request_id}
@@ -555,12 +563,9 @@ async def keep_awake_state(
 async def set_keep_awake(
     device_id: str,
     body: KeepAwakeRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Liga ou desliga o "manter pronto". O agente grava a escolha em disco."""
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
     message = {"type": "keep_awake", "enabled": body.enabled}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -571,8 +576,7 @@ async def set_keep_awake(
 @router.get("/devices/{device_id}/presentation", response_model=PresentationOut)
 async def presentation_state(
     device_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> PresentationOut:
     """Como está o modo apresentação naquele computador.
 
@@ -581,8 +585,6 @@ async def presentation_state(
     desliga o modo sozinha a cada três segundos, e um valor guardado no banco
     estaria errado justamente quando alguém abre a tela para conferir.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "presentation_info", "request_id": request_id}
@@ -636,12 +638,9 @@ async def set_presentation(
 async def media_key(
     device_id: str,
     body: MediaRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Aciona uma tecla de mídia (play/pause, faixa, volume) no computador."""
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
     message = {"type": "media", "action": body.action}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -860,8 +859,7 @@ async def _chunked(stream, size: int):
 async def list_apps(
     device_id: str,
     kind: str = Query("installed", pattern="^(desktop|installed|running)$"),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> list[AppOut]:
     """Lista os aplicativos do computador.
 
@@ -871,8 +869,6 @@ async def list_apps(
     Diferente dos outros comandos, aqui o backend **espera a resposta** do
     agente (pergunta e resposta com `request_id`), com tempo limite.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "list_apps", "request_id": request_id, "kind": kind}
@@ -895,12 +891,9 @@ async def list_apps(
 @router.get("/devices/{device_id}/monitors", response_model=MonitorsOut)
 async def list_monitors(
     device_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> MonitorsOut:
     """As telas do computador, e qual delas está sendo capturada."""
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     request_id, future = pending.create()
     message = {"type": "list_monitors", "request_id": request_id}
@@ -947,12 +940,9 @@ async def set_monitor(
 async def launch_app(
     device_id: str,
     body: AppActionRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Abre um aplicativo no computador (id = caminho do atalho)."""
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
     message = {"type": "launch_app", "id": body.id}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -964,8 +954,7 @@ async def launch_app(
 async def launch_many(
     device_id: str,
     body: LaunchManyRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> LaunchManyOut:
     """Abre vários programas de uma vez - o "abrir todos" de um perfil.
 
@@ -976,8 +965,6 @@ async def launch_many(
     Devolve o resultado de **cada** programa, e não um "deu certo": abrir quatro
     e não dizer que um falhou é o mesmo que falhar em silêncio.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
 
     request_id, future = pending.create()
     message = {
@@ -1011,12 +998,9 @@ async def launch_many(
 async def close_app(
     device_id: str,
     body: AppActionRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Encerra um aplicativo em execução (id = PID)."""
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
     message = {"type": "close_app", "id": body.id}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -1028,8 +1012,7 @@ async def close_app(
 async def focus_app(
     device_id: str,
     body: AppActionRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Traz a janela de um aplicativo para frente (id = PID).
 
@@ -1037,8 +1020,6 @@ async def focus_app(
     computador, e o app não tem o que fazer com um "deu certo" que chegaria
     depois de a pessoa já estar olhando o resultado.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
     message = {"type": "focus_app", "id": body.id}
     if not await manager.send_to_agent(device_id, message):
         raise HTTPException(
@@ -1052,16 +1033,13 @@ async def start_screen(
     fps: int = Body(_STREAM_FPS, embed=True),
     quality: int | None = Body(None, embed=True),
     max_width: int | None = Body(None, embed=True),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Pede ao agente que comece a transmitir a tela (Etapa 7).
 
     O app pode ajustar desempenho enviando `fps`, `quality` (JPEG) e
     `max_width`; valores fora da faixa são limitados aos extremos aceitos.
     """
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
     message: dict = {"type": "start_stream", "max_fps": _clamp(fps, _FPS_RANGE)}
     if quality is not None:
         message["quality"] = _clamp(quality, _QUALITY_RANGE)
@@ -1076,12 +1054,9 @@ async def start_screen(
 @router.post("/devices/{device_id}/screen/stop", status_code=status.HTTP_204_NO_CONTENT)
 async def stop_screen(
     device_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    _dono: int = Depends(dono_do_computador),
 ) -> None:
     """Pede ao agente que pare de transmitir a tela."""
-    _owned_device_or_404(db, device_id, current_user)
-    liberar(db)
     frame_store.clear(device_id)
     await manager.send_to_agent(device_id, {"type": "stop_stream"})
 

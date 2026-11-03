@@ -12,7 +12,7 @@ os.environ.setdefault("DESKSIDE_JWT_SECRET", "test-secret")
 
 import pytest  # noqa: E402
 
-from app import entrega, limite  # noqa: E402
+from app import entrega, limite, vinculos  # noqa: E402
 from app.db import Base, engine  # noqa: E402
 
 #: A senha que a suíte inteira usa. Cumpre as cinco regras da política — sem o
@@ -69,6 +69,11 @@ def fresh_db():
     #
     # Descobri isto do jeito certo: escrevi o limite, rodei a suíte, e ela caiu.
     limite.zerar_tudo()
+    # A mesma coisa com a memória de quem pode falar com qual computador: as
+    # tabelas são apagadas por fora do ORM, sem os eventos que a apagariam, e o
+    # SQLite reaproveita ids — o "dono do computador" de um teste valeria no
+    # seguinte.
+    vinculos.esquecer_tudo()
     yield
     Base.metadata.drop_all(bind=engine)
 
