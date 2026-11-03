@@ -22,7 +22,7 @@ desparear e a exclusão da conta passam todos por ali.
 
 Duas proteções a mais, para o que escapar disso:
 
-- **Validade de 60 s.** Uma mudança feita fora do ORM (um `UPDATE` em massa,
+- **Validade de cerca de 60 s.** Uma mudança feita fora do ORM (um `UPDATE` em massa,
   um ajuste à mão no banco) vale em no máximo um minuto — o mesmo atraso que
   a tela aberta já tinha para perceber uma expulsão (`REVALIDAR_VIEWER`).
 - **Geração.** Uma leitura do banco que começou antes de uma mudança não é
@@ -36,14 +36,25 @@ a sua, e a apagada num não apagaria no outro.
 
 from __future__ import annotations
 
+import random
 import threading
 import time
 
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-#: Por quanto tempo uma resposta vale sem voltar ao banco.
+#: Por quanto tempo uma resposta vale sem voltar ao banco, em média.
 VALIDADE = 60.0
+
+
+def _vence() -> float:
+    """Quando uma resposta guardada agora vence: 45 a 75 s, sorteado.
+
+    Sorteado porque tudo o que entra junto venceria junto: no teste de carga,
+    centenas de aparelhos que entraram no mesmo minuto voltavam ao banco no
+    mesmo instante, um minuto depois, e o servidor travava alguns segundos.
+    """
+    return time.monotonic() + VALIDADE * random.uniform(0.75, 1.25)
 
 _trava = threading.Lock()
 #: (user_id, chave do token, sid) -> quando vence. Só respostas "vale".
@@ -72,7 +83,7 @@ def guardar_sessao(payload: dict, desde: int) -> None:
     """Anota que o token vale — se nada mudou desde a geração `desde`."""
     with _trava:
         if _geracao == desde:
-            _sessoes[_chave(payload)] = time.monotonic() + VALIDADE
+            _sessoes[_chave(payload)] = _vence()
 
 
 _NAO_SEI = object()
@@ -93,7 +104,7 @@ def sabe(resposta) -> bool:
 def guardar_dono(device_id: str, user_id: int | None, desde: int) -> None:
     with _trava:
         if _geracao == desde:
-            _donos[device_id] = (user_id, time.monotonic() + VALIDADE)
+            _donos[device_id] = (user_id, _vence())
 
 
 def na_memoria(payload: dict, device_id: str) -> tuple[bool, int | None] | None:

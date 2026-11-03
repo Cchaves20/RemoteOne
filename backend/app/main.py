@@ -796,12 +796,26 @@ async def _vigiar_vinculo(websocket: WebSocket, credencial: dict, device_id: str
     try:
         while True:
             await asyncio.sleep(REVALIDAR_VIEWER_SEGUNDOS)
-            if not _vinculo_do_viewer_vale(credencial, device_id):
+            if not await _vinculo_vale(credencial, device_id):
                 logger.info("sessão de tela revogada: %s", device_id)
                 await websocket.close(code=4401)
                 return
     except asyncio.CancelledError:
         pass
+
+
+async def _vinculo_vale(payload: dict, device_id: str) -> bool:
+    """`_vinculo_do_viewer_vale` sem parar o laço principal.
+
+    Pela memória quando ela sabe; senão, o banco numa thread. Chamada a cada
+    30 s por tela aberta: feita no laço, cada ida ao banco o segurava — e com
+    centenas de telas, o servidor inteiro parava alguns segundos.
+    """
+    resposta = vinculos.na_memoria(payload, device_id)
+    if resposta is None:
+        return await asyncio.to_thread(_vinculo_do_viewer_vale, payload, device_id)
+    vale, dono = resposta
+    return vale and str(dono) == str(payload.get("sub"))
 
 
 def _vinculo_do_viewer_vale(payload: dict, device_id: str) -> bool:
