@@ -42,7 +42,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 
-import httpx
+import aiohttp
 import websockets
 
 #: O que o agente de verdade manda no `heartbeat` (ver `agent/src/client.rs`).
@@ -234,7 +234,7 @@ class Computador:
 class Celular:
     """Um app falso, com a tela de um computador aberta."""
 
-    def __init__(self, base: str, cliente: httpx.AsyncClient, conta: dict,
+    def __init__(self, base: str, cliente: aiohttp.ClientSession, conta: dict,
                  painel: bool, parar: asyncio.Event, entrar: bool = False):
         self.base = base
         self.cliente = cliente
@@ -245,12 +245,12 @@ class Celular:
         self.pronto = asyncio.Event()
 
     async def _entrar(self) -> str:
-        r = await self.cliente.post(
+        async with self.cliente.post(
             "/api/v1/auth/login",
             json={"email": self.conta["email"], "password": self.conta["senha"]},
-        )
-        r.raise_for_status()
-        return r.json()["access_token"]
+        ) as r:
+            r.raise_for_status()
+            return (await r.json())["access_token"]
 
     async def rodar(self) -> None:
         if "token" in self.conta and not self.entrar:
@@ -306,9 +306,10 @@ class Celular:
         await asyncio.sleep(random.uniform(0, intervalo))
         while not self.parar.is_set():
             async def pedir():
-                r = await self.cliente.get(caminho, headers=cabecalho)
-                if r.status_code != 200:
-                    raise RuntimeError(f"HTTP {r.status_code}: {r.text[:80]}")
+                async with self.cliente.get(caminho, headers=cabecalho) as r:
+                    corpo = await r.read()
+                    if r.status != 200:
+                        raise RuntimeError(f"HTTP {r.status}: {corpo[:80]!r}")
             await medir(nome, pedir())
             await asyncio.sleep(intervalo)
 
@@ -352,12 +353,13 @@ def resumo(m: Medidas) -> dict:
     return linhas
 
 
-async def saude(cliente: httpx.AsyncClient) -> None:
+async def saude(cliente: aiohttp.ClientSession) -> None:
     """O `/health` medido a cada segundo: o tempo de um pedido simples com o
     servidor carregado é o que uma pessoa de verdade sentiria abrindo o app."""
     async def pedir():
-        r = await cliente.get("/health")
-        r.raise_for_status()
+        async with cliente.get("/health") as r:
+            r.raise_for_status()
+            await r.read()
     await medir("saude", pedir())
 
 
@@ -389,7 +391,11 @@ async def fatia(args, indice: int, n: int, fila, barreira, parar_tudo) -> None:
     )
     prefixo = args.prefixo or "carga"
     parar = asyncio.Event()
-    limites = httpx.Limits(max_connections=2000, max_keepalive_connections=2000)
+    # aiohttp, e não httpx: com 1.000 celulares o httpx deixava os três
+    # processos do simulador em 100% e o servidor em 34% — o limite medido era
+    # o do simulador.
+    conector = aiohttp.TCPConnector(limit=0)
+    prazo = aiohttp.ClientTimeout(total=30)
     computadores: list[asyncio.Task] = []
     celulares: list[asyncio.Task] = []
     feitos_pc: set[int] = set()
@@ -398,7 +404,9 @@ async def fatia(args, indice: int, n: int, fila, barreira, parar_tudo) -> None:
     async def esperar_barreira():
         await asyncio.to_thread(barreira.wait)
 
-    async with httpx.AsyncClient(base_url=args.url, timeout=30, limits=limites) as cliente:
+    async with aiohttp.ClientSession(
+        base_url=args.url, connector=conector, timeout=prazo
+    ) as cliente:
         for alvo, alvo_celulares in zip(degraus, celulares_degraus, strict=True):
             # Entram em lotes, como gente chegando, e não num estouro só.
             novos = []
