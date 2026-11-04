@@ -404,14 +404,17 @@ workflows:
         - pattern: 'claude/*'
           include: true
     scripts:
-      - name: Gerar pasta android/ se ainda não versionada
+      - &android_gerar
+        name: Gerar pasta android/ se ainda não versionada
         script: |
           if [ ! -d android ]; then
             flutter create --org com.deskside --project-name deskside_client --platforms=android .
           fi
-      - name: Dependências
+      - &android_dependencias
+        name: Dependências
         script: flutter pub get
-      - name: Ícone e splash
+      - &android_icone
+        name: Ícone e splash
         script: |
           set -e
 
@@ -463,7 +466,8 @@ workflows:
           fi
           echo "--- ícone adaptativo gerado ---"
           cat "$ADAPTATIVO"
-      - name: Ajustes obrigatórios do Android
+      - &android_ajustes
+        name: Ajustes obrigatórios do Android
         script: |
           set -e
 
@@ -663,7 +667,8 @@ workflows:
 
           echo "--- manifesto final ---"
           cat "$MANIFESTO"
-      - name: Análise e testes
+      - &android_testes
+        name: Análise e testes
         script: |
           # `set -e` para o passo morrer no primeiro erro.
           #
@@ -727,3 +732,70 @@ workflows:
       - build/app/outputs/flutter-apk/*.apk
       - client/build/app/outputs/flutter-apk/*.apk
       - "**/*.apk"
+
+  # Android para a Play Store: .aab assinado com a chave de envio.
+  #
+  # Os passos de preparo são os mesmos do APK acima (as âncoras `*android_*`),
+  # para os dois nunca divergirem. O que muda: a assinatura de loja, o número
+  # da versão que cresce a cada build (a Play recusa número repetido) e o
+  # formato .aab, que é o único que a Play aceita.
+  #
+  # A chave de envio é cadastrada uma vez no Codemagic (Team settings > Code
+  # signing identities > Android keystores) com a referência `deskside_envio`.
+  # Ela não está no repositório e não aparece no log. Ver
+  # docs/publicar-na-play-store.md.
+  #
+  # Não dispara sozinho: você aperta. Cada build gasta um número de versão.
+  android-play:
+    name: Android (Play Store, .aab assinado)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    working_directory: client
+    environment:
+      flutter: stable
+      java: 17
+      android_signing:
+        - deskside_envio
+    scripts:
+      - *android_gerar
+      - *android_dependencias
+      - *android_icone
+      - *android_ajustes
+      - name: Assinatura de loja
+        script: python3 ../scripts/assinar-android.py
+      - *android_testes
+      - name: Build do .aab
+        # `--no-shrink` pelo mesmo motivo do APK: o R8 removeria classes que o
+        # WebRTC alcança por reflexão, e o app quebraria só ao mostrar a tela.
+        script: |
+          set -e
+          echo "commit do build: $CM_COMMIT · número da versão: $BUILD_NUMBER"
+          flutter build appbundle --release --no-shrink \
+            --build-number=$BUILD_NUMBER \
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br \
+            --dart-define=DESKSIDE_COMMIT=$CM_COMMIT
+
+          SAIDA=build/app/outputs/bundle/release
+          AAB="$SAIDA/app-release.aab"
+          test -f "$AAB" || { echo "FALHOU: $AAB não foi gerado."; ls -la "$SAIDA" || true; exit 1; }
+
+          # Quem assinou. Se aparecer a chave de depuração, a Play recusaria
+          # o envio só depois do upload, com uma mensagem que não diz isso.
+          keytool -printcert -jarfile "$AAB" | tee /tmp/certificado.txt
+          if grep -q "CN=Android Debug" /tmp/certificado.txt; then
+            echo "FALHOU: o .aab saiu assinado com a chave de depuração."
+            exit 1
+          fi
+          grep -q "Owner:" /tmp/certificado.txt || { echo "FALHOU: o .aab não está assinado."; exit 1; }
+
+          mv "$AAB" "$SAIDA/Deskside-$BUILD_NUMBER-${CM_COMMIT:0:7}.aab"
+          ls -la "$SAIDA"
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+    publishing:
+      email:
+        recipients:
+          - caiofbchaves@gmail.com
+        notify:
+          success: true
+          failure: true
