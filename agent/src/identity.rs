@@ -149,7 +149,9 @@ mod imp {
     }
 
     pub fn machine_guid() -> Option<String> {
-        let subchave: Vec<u16> = "SOFTWARE\\Microsoft\\Cryptography\0".encode_utf16().collect();
+        let subchave: Vec<u16> = "SOFTWARE\\Microsoft\\Cryptography\0"
+            .encode_utf16()
+            .collect();
         let valor: Vec<u16> = "MachineGuid\0".encode_utf16().collect();
         let mut dados = [0u16; 128];
         let mut tamanho = (dados.len() * 2) as u32;
@@ -219,7 +221,9 @@ mod maquina {
         // minúsculos); qualquer outra coisa ele trata como ausente.
         let r = resumo_da_maquina(GUID).unwrap();
         assert_eq!(r.len(), 64);
-        assert!(r.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(r
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
     }
 
     #[test]

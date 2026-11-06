@@ -687,7 +687,9 @@ fn escutar_area(conn: &Connection, sessao: &OwnedObjectPath) -> Option<Proxy<'st
     let sinais = match zbus::blocking::MessageIterator::for_match_rule(regra, conn, None) {
         Ok(s) => s,
         Err(e) => {
-            crate::diario(&format!("Wayland: não deu para ouvir a área de transferência: {e}"));
+            crate::diario(&format!(
+                "Wayland: não deu para ouvir a área de transferência: {e}"
+            ));
             return None;
         }
     };
@@ -763,10 +765,12 @@ fn copiaram(
 }
 
 fn colaram(area: &Proxy<'_>, sessao: &OwnedObjectPath, tipo: &str, serie: u32) {
-    let dados = ESTADO_DA_AREA
-        .lock()
-        .ok()
-        .and_then(|a| a.nosso.as_ref().and_then(|c| c.dados(tipo)).map(<[u8]>::to_vec));
+    let dados = ESTADO_DA_AREA.lock().ok().and_then(|a| {
+        a.nosso
+            .as_ref()
+            .and_then(|c| c.dados(tipo))
+            .map(<[u8]>::to_vec)
+    });
     let entregue = match dados {
         None => false,
         Some(dados) => area
@@ -844,7 +848,10 @@ pub fn area_tipos() -> Vec<String> {
 /// Lê um tipo do que está copiado (imagem, lista de arquivos).
 pub fn area_ler(tipo: &str, limite: usize) -> Result<Vec<u8>, String> {
     if let Some(dados) = ESTADO_DA_AREA.lock().ok().and_then(|a| {
-        a.nosso.as_ref().and_then(|c| c.dados(tipo)).map(<[u8]>::to_vec)
+        a.nosso
+            .as_ref()
+            .and_then(|c| c.dados(tipo))
+            .map(<[u8]>::to_vec)
     }) {
         return Ok(dados);
     }

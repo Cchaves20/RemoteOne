@@ -21,9 +21,6 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedSender;
 use webrtc::api::interceptor_registry::register_default_interceptors;
-use webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest;
-use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
-use webrtc::rtcp::receiver_report::ReceiverReport;
 use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264, MIME_TYPE_OPUS};
 use webrtc::api::{APIBuilder, API};
 use webrtc::data_channel::data_channel_state::RTCDataChannelState;
@@ -34,6 +31,9 @@ use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::peer_connection::RTCPeerConnection;
+use webrtc::rtcp::payload_feedbacks::full_intra_request::FullIntraRequest;
+use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
+use webrtc::rtcp::receiver_report::ReceiverReport;
 use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 use webrtc::track::track_local::TrackLocal;
@@ -83,7 +83,12 @@ struct FaixaDeSom {
 }
 
 impl SaidaDeSom {
-    fn por(&self, sessao: &str, conexao: Arc<RTCPeerConnection>, faixa: Arc<TrackLocalStaticSample>) {
+    fn por(
+        &self,
+        sessao: &str,
+        conexao: Arc<RTCPeerConnection>,
+        faixa: Arc<TrackLocalStaticSample>,
+    ) {
         if let Ok(mut l) = self.0.lock() {
             l.retain(|f| f.sessao != sessao);
             l.push(FaixaDeSom {
@@ -385,8 +390,7 @@ impl Video {
                     mime_type: MIME_TYPE_OPUS.to_owned(),
                     clock_rate: 48_000,
                     channels: 2,
-                    sdp_fmtp_line: "minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1"
-                        .to_owned(),
+                    sdp_fmtp_line: "minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1".to_owned(),
                     ..Default::default()
                 },
                 "som".to_owned(),
@@ -547,10 +551,8 @@ impl Video {
             self.som
                 .por(session_id, Arc::clone(&connection), Arc::clone(faixa));
         }
-        self.peers.insert(
-            session_id.to_string(),
-            Peer { connection, track },
-        );
+        self.peers
+            .insert(session_id.to_string(), Peer { connection, track });
         Ok(())
     }
 
@@ -819,8 +821,14 @@ mod tests {
         assert!(minusculo.contains("opus"), "a resposta não anuncia Opus");
         // Som e tela em fluxos diferentes: no mesmo, o celular atrasaria a
         // imagem para esperar o som.
-        assert!(sdp.contains("a=msid:deskside tela"), "a tela saiu do fluxo dela");
-        assert!(sdp.contains("a=msid:deskside-som som"), "o som ficou no fluxo da tela");
+        assert!(
+            sdp.contains("a=msid:deskside tela"),
+            "a tela saiu do fluxo dela"
+        );
+        assert!(
+            sdp.contains("a=msid:deskside-som som"),
+            "o som ficou no fluxo da tela"
+        );
 
         // O app aplica a resposta. É aqui que uma resposta inconsistente
         // (faixa a mais, faixa fora de ordem, codec que não casa) aparece.
@@ -1076,7 +1084,6 @@ mod tests {
             agent.wants_video(),
             "a conexão não fechou em 25s — sem isso não há o que medir"
         );
-
     }
 
     /// As perguntas da tela atravessam o canal direto de verdade: o agente
@@ -1100,7 +1107,10 @@ mod tests {
 
         let app = app_peer().await;
         // Como o app: o canal nasce antes da oferta.
-        let canal = app.create_data_channel(PERGUNTAS_CHANNEL, None).await.unwrap();
+        let canal = app
+            .create_data_channel(PERGUNTAS_CHANNEL, None)
+            .await
+            .unwrap();
         let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<serde_json::Value>();
         canal.on_message(Box::new(move |m| {
             let msg_tx = msg_tx.clone();
@@ -1265,7 +1275,9 @@ mod tests {
         let saida = agent.saida_de_som();
         let tarefa = tokio::spawn(async move {
             for _ in 0..50 {
-                saida.escrever(&[0xF8, 0xFF, 0xFE], Duration::from_millis(20)).await;
+                saida
+                    .escrever(&[0xF8, 0xFF, 0xFE], Duration::from_millis(20))
+                    .await;
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
         });

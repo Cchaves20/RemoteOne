@@ -2,8 +2,8 @@
 # Regera agent/LICENCAS-DE-TERCEIROS.txt, que vai dentro do executável do
 # agente (`deskside-agent licencas`) e no site (deskside.com.br/licencas).
 #
-# Rodar depois de mudar dependências do agente. O CI confere que o arquivo está
-# em dia: se ele reclamar, é rodar isto e fazer o commit.
+# Rodar depois de mudar dependências do agente (o Dependabot abre esses PRs), e
+# fazer o commit dos dois arquivos junto.
 #
 #   cargo install cargo-about --locked --features cli   (uma vez)
 #   sh scripts/licencas-do-agente.sh

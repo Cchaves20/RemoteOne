@@ -97,11 +97,9 @@ $ErrorActionPreference = 'Stop'
     fn interpretar(saida: &str) -> Result<u8, String> {
         let texto = saida.trim();
         if texto.is_empty() {
-            return Err(
-                "este computador não permite ajustar o brilho por software \
+            return Err("este computador não permite ajustar o brilho por software \
                  (só painel embutido de notebook)"
-                    .to_string(),
-            );
+                .to_string());
         }
         texto
             .parse::<u32>()

@@ -114,7 +114,10 @@ pub fn texto(quem: &[Controlador]) -> String {
 /// Esconder antes de o servidor confirmar é deliberado: o laço de rede derruba
 /// a tela deste lado no tique seguinte, e um botão que continua ali depois de
 /// clicado faz a pessoa clicar de novo, achando que não pegou.
-#[cfg_attr(not(any(windows, target_os = "macos", target_os = "linux")), allow(dead_code))]
+#[cfg_attr(
+    not(any(windows, target_os = "macos", target_os = "linux")),
+    allow(dead_code)
+)]
 pub(crate) fn desconectar(estado: &Compartilhado) {
     if let Ok(mut e) = estado.lock() {
         e.encerrar_controle = true;

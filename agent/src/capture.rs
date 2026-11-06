@@ -920,7 +920,11 @@ mod tests {
         // O quadro que já estava sendo reduzido pode sair na largura antiga.
         let _ = proximo(&pump);
         let depois = proximo(&pump);
-        assert!(depois.width <= 320, "largura nova não pegou: {}", depois.width);
+        assert!(
+            depois.width <= 320,
+            "largura nova não pegou: {}",
+            depois.width
+        );
         assert!(depois.width < antes.width);
     }
 

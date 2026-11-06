@@ -242,9 +242,7 @@ pub fn saiu_da_zona(maximizada: bool, atual: Retangulo, alvo: Retangulo) -> bool
 }
 
 #[cfg(windows)]
-pub use imp::{
-    area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela,
-};
+pub use imp::{area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela};
 
 #[cfg(windows)]
 mod imp {
@@ -695,7 +693,9 @@ mod imp {
                     e.retain(|p| !processos.contains(p));
                 }
                 if let Err(motivo) = resultado {
-                    crate::aviso::avisar(&format!("Não consegui pôr o programa no lugar: {motivo}."));
+                    crate::aviso::avisar(&format!(
+                        "Não consegui pôr o programa no lugar: {motivo}."
+                    ));
                 }
             });
     }
@@ -739,9 +739,7 @@ fn cobre(janela: (i32, i32, u32, u32), monitor: (i32, i32, u32, u32)) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-pub use imp::{
-    area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela,
-};
+pub use imp::{area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela};
 
 /// No Mac: trazer para a frente e reconhecer a tela cheia. Pôr a janela nova
 /// numa zona da tela (as zonas dos perfis) ainda não existe aqui — exige a API
@@ -891,7 +889,10 @@ mod tests {
 
     #[test]
     fn programa_sem_carregamento_e_posicionado_na_hora() {
-        assert_eq!(decidir(&[(7, Tipo::Janela)], false, s(1)), Decisao::Posicionar(7));
+        assert_eq!(
+            decidir(&[(7, Tipo::Janela)], false, s(1)),
+            Decisao::Posicionar(7)
+        );
         assert_eq!(decidir::<i32>(&[], false, s(1)), Decisao::Esperar);
         assert_eq!(decidir::<i32>(&[], false, s(6)), Decisao::Desistir);
     }
@@ -899,7 +900,10 @@ mod tests {
     #[test]
     fn a_tela_de_carregamento_nao_e_a_janela_do_programa() {
         // PyCharm: a de carregamento aparece primeiro e não é posicionada.
-        assert_eq!(decidir(&[(1, Tipo::Carregamento)], true, s(2)), Decisao::Esperar);
+        assert_eq!(
+            decidir(&[(1, Tipo::Carregamento)], true, s(2)),
+            Decisao::Esperar
+        );
         // Se a de verdade chega no tempo normal, é ela.
         assert_eq!(
             decidir(&[(1, Tipo::Carregamento), (2, Tipo::Janela)], true, s(3)),
@@ -911,7 +915,10 @@ mod tests {
     fn so_carregamento_no_tempo_normal_vai_para_o_segundo_plano() {
         // Ainda carregando aos 5 s: a lista segue, e a janela de verdade é
         // esperada à parte — em vez de desistir, como antes.
-        assert_eq!(decidir(&[(1, Tipo::Carregamento)], true, s(5)), Decisao::Adiar);
+        assert_eq!(
+            decidir(&[(1, Tipo::Carregamento)], true, s(5)),
+            Decisao::Adiar
+        );
         // A de carregamento já fechou e a de verdade não veio: idem.
         assert_eq!(decidir::<i32>(&[], true, s(6)), Decisao::Adiar);
     }

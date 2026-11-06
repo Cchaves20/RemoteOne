@@ -129,7 +129,10 @@ mod tests {
         assert_eq!(trocar_servidor("wss://deskside.com.br/ws/agent"), None);
         assert_eq!(trocar_servidor("ws://127.0.0.1:8000/ws/agent"), None);
         // Só o nome inteiro conta, não um pedaço dele.
-        assert_eq!(trocar_servidor("wss://caio-remoteone.duckdns.org.exemplo.com/ws"), None);
+        assert_eq!(
+            trocar_servidor("wss://caio-remoteone.duckdns.org.exemplo.com/ws"),
+            None
+        );
         assert_eq!(trocar_servidor("lixo"), None);
     }
 
@@ -176,7 +179,10 @@ mod tests {
 
         assert!(migrar(&antiga, &nova));
         // O device_id é o que impede a máquina de pedir pareamento de novo.
-        assert_eq!(std::fs::read_to_string(nova.join("device_id")).unwrap(), "abc-123");
+        assert_eq!(
+            std::fs::read_to_string(nova.join("device_id")).unwrap(),
+            "abc-123"
+        );
         assert_eq!(
             std::fs::read_to_string(nova.join("agent.conf")).unwrap(),
             "DESKSIDE_VIDEO_FPS=24\n"
@@ -197,8 +203,14 @@ mod tests {
         std::fs::write(antiga.join("device_id"), "velho").unwrap();
         std::fs::write(nova.join("device_id"), "novo").unwrap();
 
-        assert!(!migrar(&antiga, &nova), "não deveria migrar sobre a pasta nova");
-        assert_eq!(std::fs::read_to_string(nova.join("device_id")).unwrap(), "novo");
+        assert!(
+            !migrar(&antiga, &nova),
+            "não deveria migrar sobre a pasta nova"
+        );
+        assert_eq!(
+            std::fs::read_to_string(nova.join("device_id")).unwrap(),
+            "novo"
+        );
 
         std::fs::remove_dir_all(&base).ok();
     }

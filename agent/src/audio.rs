@@ -183,7 +183,11 @@ impl Shaper {
             let esquerdo = input[base];
             // Mono vira estéreo repetindo; 5.1 e afins ficam nos dois primeiros
             // canais, que no Windows são justamente esquerdo e direito.
-            let direito = if canais > 1 { input[base + 1] } else { esquerdo };
+            let direito = if canais > 1 {
+                input[base + 1]
+            } else {
+                esquerdo
+            };
             [esquerdo, direito]
         };
 
@@ -853,9 +857,9 @@ mod imp {
         pw::init();
         let laco = pw::main_loop::MainLoopRc::new(None).map_err(|e| e.to_string())?;
         let contexto = pw::context::ContextRc::new(&laco, None).map_err(|e| e.to_string())?;
-        let nucleo = contexto.connect_rc(None).map_err(|_| {
-            "este Linux não usa o PipeWire, e é por ele que o som sai".to_string()
-        })?;
+        let nucleo = contexto
+            .connect_rc(None)
+            .map_err(|_| "este Linux não usa o PipeWire, e é por ele que o som sai".to_string())?;
         let fluxo = pw::stream::StreamRc::new(
             nucleo,
             "Deskside",
@@ -1226,7 +1230,10 @@ mod tests {
     fn um_quadro_tem_vinte_milissegundos() {
         // Se estes números discordarem, o áudio chega com o relógio errado e
         // o app o toca acelerado ou lento.
-        assert_eq!(FRAME_SAMPLES as u32 * 1000 / SAMPLE_RATE, FRAME.as_millis() as u32);
+        assert_eq!(
+            FRAME_SAMPLES as u32 * 1000 / SAMPLE_RATE,
+            FRAME.as_millis() as u32
+        );
         assert_eq!(FRAME_INTERLEAVED, FRAME_SAMPLES * CHANNELS);
     }
 }

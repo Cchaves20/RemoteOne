@@ -5,12 +5,12 @@
 //! (`main.rs`) é apenas uma casca fina por cima dela.
 
 pub mod adaptive;
+pub mod agenda;
 pub mod apps;
 #[cfg(any(target_os = "linux", test))]
 pub mod apps_linux;
-pub mod atualizacao;
 pub mod apresentacao;
-pub mod agenda;
+pub mod atualizacao;
 pub mod audio;
 pub mod automacao;
 pub mod aviso;
@@ -29,16 +29,16 @@ pub mod h264;
 #[cfg(windows)]
 pub mod h264_placa;
 pub mod identity;
+pub mod injector;
+pub mod input;
 pub mod instance;
 #[cfg(target_os = "linux")]
 pub mod interface_linux;
-pub mod migracao;
-pub mod injector;
-pub mod input;
 pub mod janelas;
 pub mod lote;
 #[cfg(target_os = "macos")]
 pub mod mac;
+pub mod migracao;
 pub mod notify;
 #[cfg(any(target_os = "macos", target_os = "linux", test))]
 pub mod opus_puro;
@@ -191,7 +191,9 @@ pub fn migrar_servidor_antigo(url: String) -> String {
     {
         cfg.set("DESKSIDE_BACKEND_URL", &no_arquivo);
         if let Err(e) = save_config(&cfg) {
-            diario(&format!("servidor antigo: não consegui gravar a troca: {e}"));
+            diario(&format!(
+                "servidor antigo: não consegui gravar a troca: {e}"
+            ));
         }
     }
     diario(&format!("servidor antigo trocado: {url} → {nova}"));

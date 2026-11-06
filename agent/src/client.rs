@@ -1707,7 +1707,11 @@ impl AudioStats {
         let linha = format!(
             "Áudio: {} quadros em {segundos:.0}s ({kbps:.0} kbps{aviso}), faixa {}",
             self.packets,
-            if ouvindo { "conectada" } else { "SEM ninguém ouvindo" }
+            if ouvindo {
+                "conectada"
+            } else {
+                "SEM ninguém ouvindo"
+            }
         );
         self.packets = 0;
         self.bytes = 0;
@@ -1730,7 +1734,10 @@ const RITMO_DA_AGENDA: Duration = Duration::from_secs(10);
 /// agenda voltaria zerada. Aqui a única coisa que a conexão faz é entregar a
 /// lista; o disparo é do computador, e continua acontecendo com o servidor fora
 /// do ar e com o celular na gaveta.
-pub async fn vigiar_agenda(agenda: crate::agenda::Compartilhada, estado: crate::gui::Compartilhado) {
+pub async fn vigiar_agenda(
+    agenda: crate::agenda::Compartilhada,
+    estado: crate::gui::Compartilhado,
+) {
     let mut relogio = interval(RITMO_DA_AGENDA);
     loop {
         relogio.tick().await;
@@ -1955,25 +1962,19 @@ fn executar_passo(acao: &crate::automacao::Acao) -> crate::automacao::Desfecho {
                 relato.push_str(&format!("; falhou em {}", desfecho.falhas.join(", ")));
             }
             Desfecho::ComAviso(relato)
+        }
+        Acao::Input { action } => match crate::injector::controller().apply(action) {
+            Ok(()) => Desfecho::Ok,
+            Err(motivo) => Desfecho::Falhou(motivo),
         },
-        Acao::Input { action } => {
-            match crate::injector::controller().apply(action) {
-                Ok(()) => Desfecho::Ok,
-                Err(motivo) => Desfecho::Falhou(motivo),
-            }
-        }
-        Acao::Media { action } => {
-            match crate::injector::controller().media(*action) {
-                Ok(()) => Desfecho::Ok,
-                Err(motivo) => Desfecho::Falhou(motivo),
-            }
-        }
-        Acao::Brightness { level, delta } => {
-            match crate::brightness::ajustar(*level, *delta) {
-                Ok(_) => Desfecho::Ok,
-                Err(motivo) => Desfecho::Falhou(motivo),
-            }
-        }
+        Acao::Media { action } => match crate::injector::controller().media(*action) {
+            Ok(()) => Desfecho::Ok,
+            Err(motivo) => Desfecho::Falhou(motivo),
+        },
+        Acao::Brightness { level, delta } => match crate::brightness::ajustar(*level, *delta) {
+            Ok(_) => Desfecho::Ok,
+            Err(motivo) => Desfecho::Falhou(motivo),
+        },
         Acao::Power { action } => match crate::power::apply(*action) {
             Ok(()) => Desfecho::Ok,
             Err(motivo) => Desfecho::Falhou(motivo),
@@ -2003,12 +2004,10 @@ fn abrir_e_posicionar(item: &crate::lote::Item) -> crate::lote::Passo {
     }
 
     match (item.zone.as_ref(), antes) {
-        (Some(zona), Some(antes)) => {
-            match crate::janelas::posicionar_nova_janela(&antes, zona) {
-                Ok(()) => crate::lote::Passo::Ok,
-                Err(motivo) => crate::lote::Passo::ComAviso(motivo),
-            }
-        }
+        (Some(zona), Some(antes)) => match crate::janelas::posicionar_nova_janela(&antes, zona) {
+            Ok(()) => crate::lote::Passo::Ok,
+            Err(motivo) => crate::lote::Passo::ComAviso(motivo),
+        },
         _ => crate::lote::Passo::Ok,
     }
 }
@@ -2019,38 +2018,71 @@ enum Action {
     /// O servidor confirmou que o vínculo com a conta acabou.
     Desparelhado,
     /// A lista de quem está com a tela aberta mudou.
-    Controle { viewers: Vec<crate::protocol::Controlador> },
+    Controle {
+        viewers: Vec<crate::protocol::Controlador>,
+    },
     /// A agenda mudou: trocar a lista do que dispara sozinho.
     ///
     /// Volta como ação em vez de ser aplicada onde chega porque quem guarda a
     /// agenda é o laço principal — é ele que tem o relógio.
-    SetSchedule { items: Vec<crate::protocol::AgendaItem> },
+    SetSchedule {
+        items: Vec<crate::protocol::AgendaItem>,
+    },
     /// A transmissão ou o fps mudaram: reavaliar o ritmo do `frame_ticker`.
     RestartFrameTicker,
     /// Medir CPU/memória/disco e responder ao backend.
-    SystemInfo { request_id: String },
+    SystemInfo {
+        request_id: String,
+    },
     /// Listar os monitores e responder ao backend.
-    ListMonitors { request_id: String },
+    ListMonitors {
+        request_id: String,
+    },
     /// Trocar o monitor capturado. `None` volta ao principal.
-    SetMonitor { monitor: Option<u32> },
+    SetMonitor {
+        monitor: Option<u32>,
+    },
     /// Descobrir o programa em primeiro plano e responder ao backend.
-    ForegroundInfo { request_id: String },
+    ForegroundInfo {
+        request_id: String,
+    },
     /// Ligar ou desligar a captura do som do computador, com o ganho.
-    SetAudio { enabled: bool, gain: f32 },
+    SetAudio {
+        enabled: bool,
+        gain: f32,
+    },
     /// Ler a área de transferência e responder ao backend.
-    ClipboardGet { request_id: String },
+    ClipboardGet {
+        request_id: String,
+    },
     /// Escrever na área de transferência do computador.
-    ClipboardSet { text: String },
+    ClipboardSet {
+        text: String,
+    },
     /// Pôr na área de transferência uma imagem vinda do telefone e responder.
-    ClipboardSetImage { request_id: String, image: String },
+    ClipboardSetImage {
+        request_id: String,
+        image: String,
+    },
     /// Ligar/desligar o aviso automático de cópia nova.
-    ClipboardSync { enabled: bool },
+    ClipboardSync {
+        enabled: bool,
+    },
     /// Ligar/desligar o "manter o computador pronto", gravando a escolha.
-    KeepAwake { enabled: bool },
-    Presentation { on: Option<bool>, auto: Option<bool> },
-    PresentationInfo { request_id: String },
+    KeepAwake {
+        enabled: bool,
+    },
+    Presentation {
+        on: Option<bool>,
+        auto: Option<bool>,
+    },
+    PresentationInfo {
+        request_id: String,
+    },
     /// Responder ao backend se o computador está sendo mantido pronto.
-    KeepAwakeInfo { request_id: String },
+    KeepAwakeInfo {
+        request_id: String,
+    },
     /// Abrir vários programas e responder com o resultado de cada um.
     LaunchMany {
         request_id: String,
@@ -2072,9 +2104,15 @@ enum Action {
         servers: Vec<crate::protocol::IceServer>,
     },
     /// Listar uma pasta e responder ao backend.
-    ListFiles { request_id: String, path: String },
+    ListFiles {
+        request_id: String,
+        path: String,
+    },
     /// Ler um arquivo e mandá-lo em pedaços.
-    ReadFile { transfer_id: String, path: String },
+    ReadFile {
+        transfer_id: String,
+        path: String,
+    },
     /// Começar a receber um arquivo vindo do celular.
     WriteBegin {
         transfer_id: String,
@@ -2088,16 +2126,23 @@ enum Action {
         data: String,
     },
     /// Fim do envio: publicar o arquivo.
-    WriteEnd { transfer_id: String },
+    WriteEnd {
+        transfer_id: String,
+    },
     /// Desistir de uma transferência nos dois sentidos.
-    CancelTransfer { transfer_id: String },
+    CancelTransfer {
+        transfer_id: String,
+    },
     /// Listar aplicativos e responder ao backend.
     ListApps {
         request_id: String,
         kind: crate::apps::AppKind,
     },
     /// Negociar uma sessão de vídeo por WebRTC (criar a conexão e responder).
-    WebrtcOffer { session_id: String, sdp: String },
+    WebrtcOffer {
+        session_id: String,
+        sdp: String,
+    },
     /// Adicionar um candidato ICE do app a uma sessão.
     WebrtcIce {
         session_id: String,
@@ -2106,7 +2151,9 @@ enum Action {
         sdp_mline_index: Option<u32>,
     },
     /// Encerrar a sessão de vídeo de um app que saiu.
-    WebrtcClose { session_id: String },
+    WebrtcClose {
+        session_id: String,
+    },
 }
 
 /// Trata uma mensagem de texto do servidor. O que exige `await` volta como
@@ -2131,7 +2178,9 @@ fn handle_server_text(
             // o que evita a recusa na próxima conexão.
             identity.guardar_segredo(secret);
             if !ice_servers.is_empty() {
-                return Some(Action::SetIceServers { servers: ice_servers });
+                return Some(Action::SetIceServers {
+                    servers: ice_servers,
+                });
             }
         }
         Ok(ServerMessage::Ack) => { /* heartbeat confirmado */ }
@@ -2211,7 +2260,10 @@ fn handle_server_text(
             println!("Comando de energia recebido: {action:?}");
             if let Err(e) = crate::power::apply(action) {
                 eprintln!("Falha ao executar comando de energia: {e}");
-                crate::aviso::avisar(&format!("O computador não {}: {e}", crate::power::verbo(action)));
+                crate::aviso::avisar(&format!(
+                    "O computador não {}: {e}",
+                    crate::power::verbo(action)
+                ));
             }
         }
         Ok(ServerMessage::ListApps { request_id, kind }) => {
@@ -2443,7 +2495,10 @@ mod tests {
     fn a_primeira_tentativa_depois_de_uma_falha_e_quase_imediata() {
         // É o caso de ligar o computador: a rede chega em um ou dois segundos, e
         // esperar cinco era metade da demora que se sentia.
-        assert_eq!(proxima_espera(RECONEXAO_MINIMA, false), Duration::from_secs(2));
+        assert_eq!(
+            proxima_espera(RECONEXAO_MINIMA, false),
+            Duration::from_secs(2)
+        );
     }
 
     #[test]
@@ -2556,7 +2611,11 @@ mod tests {
     /// testes checam os tetos configurados.
     /// Uma captura pedida, para as comparações ficarem legíveis.
     fn quer(width: u32, fps: u32) -> Option<CaptureWanted> {
-        Some(CaptureWanted { monitor: None, width, fps })
+        Some(CaptureWanted {
+            monitor: None,
+            width,
+            fps,
+        })
     }
 
     fn topo() -> crate::adaptive::Level {
@@ -2581,7 +2640,10 @@ mod tests {
 
     #[test]
     fn jpeg_usa_a_largura_e_o_fps_do_preset() {
-        assert_eq!(desired_capture(true, false, &config(), topo(), None), quer(1600, 10));
+        assert_eq!(
+            desired_capture(true, false, &config(), topo(), None),
+            quer(1600, 10)
+        );
         assert_eq!(
             rhythm(desired_capture(true, false, &config(), topo(), None)),
             Duration::from_millis(100)
@@ -2591,7 +2653,10 @@ mod tests {
     #[test]
     fn video_tem_teto_proprio_e_manda_no_ritmo() {
         // 1280 e não 1600: codificar custa por pixel (ver `video_max_width`).
-        assert_eq!(desired_capture(true, true, &config(), topo(), None), quer(1280, 30));
+        assert_eq!(
+            desired_capture(true, true, &config(), topo(), None),
+            quer(1280, 30)
+        );
         assert_eq!(
             rhythm(desired_capture(true, true, &config(), topo(), None)),
             Duration::from_millis(33)
@@ -2601,7 +2666,10 @@ mod tests {
     #[test]
     fn video_dispensa_a_transmissao_jpeg() {
         // O app pode ter vídeo sem nunca pedir `start_stream`.
-        assert_eq!(desired_capture(false, true, &config(), topo(), None), quer(1280, 30));
+        assert_eq!(
+            desired_capture(false, true, &config(), topo(), None),
+            quer(1280, 30)
+        );
     }
 
     #[test]
@@ -2654,8 +2722,14 @@ mod tests {
             video_fps: 9999,
             ..config()
         };
-        assert_eq!(desired_capture(true, false, &cfg, topo(), None), quer(1600, 1));
-        assert_eq!(desired_capture(true, true, &cfg, topo(), None), quer(1280, 60));
+        assert_eq!(
+            desired_capture(true, false, &cfg, topo(), None),
+            quer(1600, 1)
+        );
+        assert_eq!(
+            desired_capture(true, true, &cfg, topo(), None),
+            quer(1280, 60)
+        );
         assert!(rhythm(desired_capture(true, true, &cfg, topo(), None)) > Duration::ZERO);
     }
 }

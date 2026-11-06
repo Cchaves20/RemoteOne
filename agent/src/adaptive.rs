@@ -438,7 +438,7 @@ mod tests {
         let mut l = Ladder::new();
         l.observe(0.30, s(2)).unwrap();
         feed(&mut l, 0.0, 2); // cumpre a espera
-        // Nove segundos de rede limpa ainda não bastam.
+                              // Nove segundos de rede limpa ainda não bastam.
         assert_eq!(feed(&mut l, 0.0, 4), None);
         assert_eq!(l.step(), 1);
         // O décimo fecha a conta.
@@ -450,8 +450,8 @@ mod tests {
         let mut l = Ladder::new();
         l.observe(0.30, s(2)).unwrap();
         feed(&mut l, 0.05, 2); // cumpre a espera
-        // Cinco por cento por dois minutos: não é ruim o bastante para descer
-        // nem bom o bastante para subir. A qualidade fica onde está.
+                               // Cinco por cento por dois minutos: não é ruim o bastante para descer
+                               // nem bom o bastante para subir. A qualidade fica onde está.
         assert_eq!(feed(&mut l, 0.05, 60), None);
         assert_eq!(l.step(), 1);
     }
@@ -464,7 +464,7 @@ mod tests {
         feed(&mut l, 0.30, 3); // duas janelas de espera + a que derruba
         assert_eq!(l.step(), 2);
         feed(&mut l, 0.0, 2); // cumpre a espera
-        // 10s de calmaria já teriam bastado com uma queda só; com duas, não.
+                              // 10s de calmaria já teriam bastado com uma queda só; com duas, não.
         assert_eq!(feed(&mut l, 0.0, 5), None);
         assert_eq!(l.step(), 2);
         assert_eq!(l.observe(0.0, s(10)), Some(LADDER[1]));

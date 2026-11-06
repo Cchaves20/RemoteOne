@@ -134,11 +134,7 @@ pub fn close_by_name(name: &str) -> Result<(), String> {
 /// não pertence a um nome de processo - a lista chega pela rede, e daqui sai um
 /// argumento de linha de comando.
 pub fn nome_de_processo(bruto: &str) -> Option<String> {
-    let base = bruto
-        .rsplit(['\\', '/'])
-        .next()
-        .unwrap_or(bruto)
-        .trim();
+    let base = bruto.rsplit(['\\', '/']).next().unwrap_or(bruto).trim();
     if base.is_empty() || base.len() > 120 {
         return None;
     }
@@ -188,8 +184,7 @@ fn aumid_valido(aumid: &str) -> bool {
     };
     let pedaco_bom = |s: &str| {
         !s.is_empty()
-            && s
-                .chars()
+            && s.chars()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
     };
     pedaco_bom(pacote) && pedaco_bom(app)
@@ -817,7 +812,7 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
             //
             // Sem `/F`: é o pedido educado, o mesmo do `close_by_name`.
             let saiu = Command::new("taskkill")
-            .sem_janela()
+                .sem_janela()
                 .args(["/PID", &app.id])
                 .output();
             match saiu {
@@ -1207,16 +1202,16 @@ mod loja {
             Some("AppleInc.iTunes_nzyj5cqn3pzs8!iTunes")
         );
         // Sem diferenciar maiúsculas, como o Explorer.
-        assert_eq!(
-            aumid_de(r"SHELL:appsfolder\A_b!C"),
-            Some("A_b!C")
-        );
+        assert_eq!(aumid_de(r"SHELL:appsfolder\A_b!C"), Some("A_b!C"));
     }
 
     #[test]
     fn caminho_de_atalho_nao_e_confundido_com_app_da_store() {
         // O `id` de programa clássico continua indo pelo caminho de sempre.
-        assert_eq!(aumid_de(r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\iTunes.lnk"), None);
+        assert_eq!(
+            aumid_de(r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\iTunes.lnk"),
+            None
+        );
         assert_eq!(aumid_de("notepad"), None);
         assert_eq!(aumid_de(PREFIXO_DA_LOJA), None);
         // Prefixo certo com AUMID forjado: recusado.
@@ -1258,7 +1253,10 @@ mod tests {
 
     #[test]
     fn programa_de_gente_passa() {
-        assert!(!e_ruido("Spotify", r"C:\Users\eu\AppData\Roaming\Spotify\Spotify.exe"));
+        assert!(!e_ruido(
+            "Spotify",
+            r"C:\Users\eu\AppData\Roaming\Spotify\Spotify.exe"
+        ));
         assert!(!e_ruido("notepad", r"C:\Windows\System32\notepad.exe"));
         // O notepad mora dentro de Windows e **não** é ruído: a peneira de
         // caminho olha SystemApps, não a pasta Windows inteira. Cortar por
@@ -1325,10 +1323,7 @@ mod tests {
             // Um caminho com `..` **não** é recusado, e não deve ser: ele
             // colapsa no nome do arquivo, que é o que o `/IM` aceita. Subir de
             // pasta não significa nada para quem só quer um nome de processo.
-            assert_eq!(
-                nome("..\\..\\evil.exe").as_deref(),
-                Some("evil.exe")
-            );
+            assert_eq!(nome("..\\..\\evil.exe").as_deref(), Some("evil.exe"));
         }
     }
 
@@ -1513,7 +1508,10 @@ mod tests {
         // O caso real: o perfil foi montado num computador e o caminho de lá
         // não existe aqui. O que sobrevive à troca de máquina é o nome.
         let dir = temp("subpasta");
-        arvore(&dir, &["Spotify/Spotify.lnk", "Acessórios/Bloco de Notas.lnk"]);
+        arvore(
+            &dir,
+            &["Spotify/Spotify.lnk", "Acessórios/Bloco de Notas.lnk"],
+        );
         let achado = find_shortcut(std::slice::from_ref(&dir), "Spotify").unwrap();
         assert!(achado.ends_with("Spotify.lnk"));
         let _ = std::fs::remove_dir_all(&dir);

@@ -636,8 +636,7 @@ mod tests {
             {"urls":["stun:a:19302"]},
             {"urls":["turn:b:3478?transport=udp"],"username":"1:u","credential":"x"}
         ]}"#;
-        let ServerMessage::Welcome { ice_servers, .. } = serde_json::from_str(json).unwrap()
-        else {
+        let ServerMessage::Welcome { ice_servers, .. } = serde_json::from_str(json).unwrap() else {
             panic!("esperava welcome");
         };
         assert_eq!(ice_servers.len(), 2);
@@ -645,7 +644,6 @@ mod tests {
         assert_eq!(ice_servers[1].username.as_deref(), Some("1:u"));
         assert_eq!(ice_servers[1].credential.as_deref(), Some("x"));
     }
-
 
     #[test]
     fn deserializes_ack_and_error() {

@@ -239,11 +239,7 @@ mod tests {
     /// Roda uma automação registrando as ações e as esperas pedidas.
     fn rodar(passos: &[Passo]) -> (Vec<ResultadoPasso>, Vec<Duration>) {
         let esperas: RefCell<Vec<Duration>> = RefCell::new(Vec::new());
-        let r = executar(
-            passos,
-            |d| esperas.borrow_mut().push(d),
-            |_| Desfecho::Ok,
-        );
+        let r = executar(passos, |d| esperas.borrow_mut().push(d), |_| Desfecho::Ok);
         let e = esperas.borrow().clone();
         (r, e)
     }
@@ -277,9 +273,7 @@ mod tests {
             &passos,
             |_| {},
             |acao| match acao {
-                Acao::Launch { id, .. } if id == "ruim" => {
-                    Desfecho::Falhou("não achei".into())
-                }
+                Acao::Launch { id, .. } if id == "ruim" => Desfecho::Falhou("não achei".into()),
                 _ => Desfecho::Ok,
             },
         );
@@ -321,10 +315,7 @@ mod tests {
     fn espera_depois_do_passo_e_nunca_no_fim() {
         // Esperar no fim seria o agente dormindo à toa com a automação já
         // terminada.
-        let (_, esperas) = rodar(&[
-            esperando(abrir("a"), 500),
-            esperando(abrir("b"), 700),
-        ]);
+        let (_, esperas) = rodar(&[esperando(abrir("a"), 500), esperando(abrir("b"), 700)]);
         assert_eq!(esperas, [Duration::from_millis(500)]);
     }
 
@@ -372,9 +363,11 @@ mod tests {
 
     #[test]
     fn automacao_vazia_nao_faz_nada() {
-        let r = executar(&[], |_| panic!("não deveria esperar"), |_| {
-            panic!("não deveria agir")
-        });
+        let r = executar(
+            &[],
+            |_| panic!("não deveria esperar"),
+            |_| panic!("não deveria agir"),
+        );
         assert!(r.is_empty());
     }
 
@@ -395,7 +388,10 @@ mod tests {
     fn fechar_e_desligar_sao_destrutivos_e_o_resto_nao() {
         // É esta lista que o app usa para pedir confirmação. Uma automação que
         // suspende a máquina sem avisar seria uma surpresa cara.
-        assert!(Acao::Close { name: "slack".into() }.destrutiva());
+        assert!(Acao::Close {
+            name: "slack".into()
+        }
+        .destrutiva());
         // O que fecha tudo é o mais destrutivo dos três, e seria o mais fácil
         // de esquecer nesta lista: ele não tem campo nenhum, então um
         // `matches!` desatento o deixaria de fora sem o compilador reclamar.
@@ -501,8 +497,7 @@ mod tests {
     fn passo_sem_wait_ms_no_json_nao_espera() {
         // O caso comum é não esperar, e exigir `"wait_ms":0` em todo passo
         // seria peso sem informação numa mensagem de até 24 itens.
-        let p: Passo =
-            serde_json::from_str(r#"{"kind":"media","action":"mute"}"#).unwrap();
+        let p: Passo = serde_json::from_str(r#"{"kind":"media","action":"mute"}"#).unwrap();
         assert_eq!(p.wait_ms, None);
         assert!(matches!(
             p.acao,

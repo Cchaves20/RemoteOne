@@ -230,7 +230,10 @@ pub struct CopiedFiles {
 /// Só volta o que está dentro da pasta do usuário: é o mesmo limite do
 /// download, e mostrar o que não dá para buscar seria oferecer um botão que
 /// falha. Igual no Windows e no Mac; só a leitura dos caminhos muda.
-#[cfg_attr(not(any(windows, target_os = "macos", target_os = "linux")), allow(dead_code))]
+#[cfg_attr(
+    not(any(windows, target_os = "macos", target_os = "linux")),
+    allow(dead_code)
+)]
 fn montar_lista(caminhos: Vec<String>) -> CopiedFiles {
     let mut fora = 0usize;
     let mut entradas = Vec::new();
@@ -414,16 +417,16 @@ mod imp {
             if !clipboard_win::raw::is_format_avail(clipboard_win::formats::CF_BITMAP) {
                 return None;
             }
-            let bruta: Vec<u8> =
-                match clipboard_win::get_clipboard(clipboard_win::formats::Bitmap) {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        crate::diario(&format!(
-                            "Área de transferência: não consegui ler a imagem copiada: {e}"
-                        ));
-                        return None;
-                    }
-                };
+            let bruta: Vec<u8> = match clipboard_win::get_clipboard(clipboard_win::formats::Bitmap)
+            {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    crate::diario(&format!(
+                        "Área de transferência: não consegui ler a imagem copiada: {e}"
+                    ));
+                    return None;
+                }
+            };
             match super::preparar_imagem(&bruta) {
                 Ok(img) => Some(img),
                 Err(motivo) => {
@@ -617,7 +620,10 @@ fn caminhos_da_lista_de_uris(texto: &str) -> Vec<String> {
 fn png_de_rgba(largura: u32, altura: u32, rgba: Vec<u8>) -> Result<Vec<u8>, String> {
     let img = image::RgbaImage::from_raw(largura, altura, rgba)
         .ok_or("a imagem copiada veio com o tamanho errado")?;
-    codificar(&image::DynamicImage::ImageRgba8(img), image::ImageFormat::Png)
+    codificar(
+        &image::DynamicImage::ImageRgba8(img),
+        image::ImageFormat::Png,
+    )
 }
 
 /// O BMP que o caminho comum prepara (ver `imagem_para_bmp`) de volta em PNG,
@@ -1000,7 +1006,11 @@ mod tests {
         // que se preserva aqui é que a imagem chega **do tamanho original**,
         // trocando de formato em vez de encolher.
         let img = preparar_imagem(&bmp(1000, 1000, true)).unwrap();
-        assert!(img.bytes.len() <= MAX_IMAGE_BYTES, "{} bytes", img.bytes.len());
+        assert!(
+            img.bytes.len() <= MAX_IMAGE_BYTES,
+            "{} bytes",
+            img.bytes.len()
+        );
         assert_eq!(img.mime, "image/jpeg");
         assert_eq!((img.width, img.height), (1000, 1000));
     }
@@ -1011,7 +1021,11 @@ mod tests {
         // ~3,5 MB). A saída é reduzir e tentar de novo - entregar uma imagem
         // menor é melhor que não entregar nada, e é o pior caso previsto.
         let img = preparar_imagem(&bmp(1600, 1600, true)).unwrap();
-        assert!(img.bytes.len() <= MAX_IMAGE_BYTES, "{} bytes", img.bytes.len());
+        assert!(
+            img.bytes.len() <= MAX_IMAGE_BYTES,
+            "{} bytes",
+            img.bytes.len()
+        );
         assert!(img.width < 1600, "não encolheu: {}", img.width);
     }
 

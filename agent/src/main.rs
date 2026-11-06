@@ -188,9 +188,9 @@ async fn laco_de_conexao(
 
     // O modo apresentação também vive fora da conexão: uma apresentação não
     // pode parar de ser detectada porque o Wi-Fi trocou de rede.
-    let apresentacao = deskside_agent::apresentacao::Compartilhado::new(
-        std::sync::Mutex::new(deskside_agent::apresentacao::Modo::novo(auto_apresentacao)),
-    );
+    let apresentacao = deskside_agent::apresentacao::Compartilhado::new(std::sync::Mutex::new(
+        deskside_agent::apresentacao::Modo::novo(auto_apresentacao),
+    ));
     tokio::spawn(client::vigiar_apresentacao(apresentacao.clone()));
 
     let compartilhados = client::Compartilhados {
@@ -236,10 +236,7 @@ async fn laco_de_conexao(
         espera = client::proxima_espera(espera, conectou);
         // No diário e não em `println!`: com o agente oculto, é esta linha que
         // conta quantas tentativas houve antes de a conexão pegar.
-        deskside_agent::diario(&format!(
-            "reconectando em {}s",
-            espera.as_secs()
-        ));
+        deskside_agent::diario(&format!("reconectando em {}s", espera.as_secs()));
         tokio::time::sleep(espera).await;
     }
 }
@@ -274,7 +271,9 @@ async fn laco_de_conexao(
 /// o mesmo caso por outro caminho. Sem console não há mais o que ler, e a
 /// comparação de caminhos continua sendo a que decide.
 fn instalar_no_primeiro_uso() -> bool {
-    deskside_agent::diario(&format!("primeiro uso: instalando o Deskside {AGENT_VERSION}"));
+    deskside_agent::diario(&format!(
+        "primeiro uso: instalando o Deskside {AGENT_VERSION}"
+    ));
     match setup::install(None) {
         Ok(()) => {
             deskside_agent::diario("instalado; a cópia instalada assumiu");
@@ -517,7 +516,10 @@ fn main() {
     std::thread::Builder::new()
         .name("deskside-agente".into())
         .spawn(move || {
-            let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
                 Ok(rt) => rt,
                 Err(e) => {
                     eprintln!("Não consegui criar o runtime do agente: {e}");

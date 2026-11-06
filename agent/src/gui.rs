@@ -353,7 +353,10 @@ mod imp {
     /// outra pessoa seria um jeito criativo de assombrar o usuário.
     #[cfg(windows)]
     fn achar_janela() -> Option<isize> {
-        let titulo: Vec<u16> = "Deskside".encode_utf16().chain(std::iter::once(0)).collect();
+        let titulo: Vec<u16> = "Deskside"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
         let meu_pid = unsafe { GetCurrentProcessId() };
         let mut atual = 0isize;
         loop {
@@ -662,7 +665,10 @@ mod imp {
     /// que vai rodar"), não uma sequência de eventos, e quem escreve não pode
     /// esperar quem lê — quem publica o aviso é o mesmo laço que mantém o
     /// computador alcançável.
-    fn ao_surgir_aviso(estado: Compartilhado, ao_aparecer: impl Fn(AvisoDeAgenda) + Send + 'static) {
+    fn ao_surgir_aviso(
+        estado: Compartilhado,
+        ao_aparecer: impl Fn(AvisoDeAgenda) + Send + 'static,
+    ) {
         std::thread::Builder::new()
             .name("deskside-agenda".into())
             .spawn(move || {
@@ -744,12 +750,7 @@ mod imp {
     }
 
     impl App {
-        fn desenhar(
-            &mut self,
-            ui: &mut egui::Ui,
-            estado: &Estado,
-            codigo: Option<(String, u64)>,
-        ) {
+        fn desenhar(&mut self, ui: &mut egui::Ui, estado: &Estado, codigo: Option<(String, u64)>) {
             ui.add_space(8.0);
             ui.heading("Deskside");
             ui.label(
@@ -918,10 +919,12 @@ mod imp {
                         self.confirmando_saida = false;
                     }
                     if ui
-                        .add(egui::Button::new(
-                            egui::RichText::new("Desinstalar").color(egui::Color32::WHITE),
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("Desinstalar").color(egui::Color32::WHITE),
+                            )
+                            .fill(vermelho),
                         )
-                        .fill(vermelho))
                         .clicked()
                     {
                         self.saindo = true;
@@ -1110,7 +1113,11 @@ mod imp {
         let _bandeja = construtor.build().ok();
         crate::diario(&format!(
             "bandeja simples ({})",
-            if _bandeja.is_some() { "criada" } else { "FALHOU" }
+            if _bandeja.is_some() {
+                "criada"
+            } else {
+                "FALHOU"
+            }
         ));
 
         // Sem janela, estas três coisas viram caixas do Windows.
@@ -1291,10 +1298,9 @@ mod imp {
     fn configuracao_wgpu() -> eframe::egui_wgpu::WgpuConfiguration {
         let mut cfg = eframe::egui_wgpu::WgpuConfiguration::default();
         if let eframe::egui_wgpu::WgpuSetup::CreateNew(novo) = &mut cfg.wgpu_setup {
-            novo.native_adapter_selector =
-                Some(std::sync::Arc::new(|adaptadores, superficie| {
-                    escolher_adaptador(adaptadores, superficie)
-                }));
+            novo.native_adapter_selector = Some(std::sync::Arc::new(|adaptadores, superficie| {
+                escolher_adaptador(adaptadores, superficie)
+            }));
         }
         cfg
     }
@@ -1364,11 +1370,7 @@ mod imp {
                 0,
                 texto.as_ptr(),
                 titulo.as_ptr(),
-                MB_YESNO
-                    | MB_ICONWARNING
-                    | MB_DEFBUTTON2
-                    | MB_SETFOREGROUND
-                    | MB_TOPMOST,
+                MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2 | MB_SETFOREGROUND | MB_TOPMOST,
             )
         };
         resposta == ID_YES
@@ -1400,11 +1402,7 @@ mod imp {
                 0,
                 texto.as_ptr(),
                 titulo.as_ptr(),
-                MB_YESNO
-                    | MB_ICONWARNING
-                    | MB_DEFBUTTON2
-                    | MB_SETFOREGROUND
-                    | MB_TOPMOST,
+                MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2 | MB_SETFOREGROUND | MB_TOPMOST,
             )
         };
         resposta == ID_YES

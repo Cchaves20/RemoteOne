@@ -81,7 +81,11 @@ impl Item {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Evento {
     /// Falta pouco: mostrar o aviso com a opção de cancelar.
-    Avisar { id: String, nome: String, faltam: i32 },
+    Avisar {
+        id: String,
+        nome: String,
+        faltam: i32,
+    },
     /// Chegou a hora.
     Disparar {
         id: String,
@@ -125,7 +129,8 @@ impl Agenda {
     /// automação apagada não pode deixar para trás um "já disparou hoje" que
     /// confundiria outra criada depois com o mesmo identificador.
     pub fn substituir(&mut self, itens: Vec<Item>) {
-        self.marcas.retain(|id, _| itens.iter().any(|i| &i.id == id));
+        self.marcas
+            .retain(|id, _| itens.iter().any(|i| &i.id == id));
         self.itens = itens;
     }
 

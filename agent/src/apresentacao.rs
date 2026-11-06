@@ -367,7 +367,11 @@ mod tests {
         let mut m = Modo::novo(true);
         m.avaliar(Some("slides"));
         assert_eq!(m.escolher(false), Some(false));
-        assert_eq!(m.avaliar(Some("slides")), None, "a detecção não pode religar sozinha");
+        assert_eq!(
+            m.avaliar(Some("slides")),
+            None,
+            "a detecção não pode religar sozinha"
+        );
         assert!(!m.ativo());
     }
 
@@ -378,7 +382,11 @@ mod tests {
         m.avaliar(Some("slides"));
         m.escolher(false);
         assert_eq!(m.avaliar(None), None, "já estava desligado");
-        assert_eq!(m.avaliar(Some("slides")), Some(true), "a apresentação nova liga");
+        assert_eq!(
+            m.avaliar(Some("slides")),
+            Some(true),
+            "a apresentação nova liga"
+        );
     }
 
     #[test]

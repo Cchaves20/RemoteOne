@@ -451,8 +451,14 @@ mod tests {
         // de som não tem "Músicas"). Oferecer um atalho que leva a erro é pior
         // do que não oferecer.
         let atalhos = shortcuts_from([
-            ("Existe".to_string(), std::env::var("HOME").unwrap_or_default()),
-            ("Não existe".to_string(), "/caminho/que/nao/existe".to_string()),
+            (
+                "Existe".to_string(),
+                std::env::var("HOME").unwrap_or_default(),
+            ),
+            (
+                "Não existe".to_string(),
+                "/caminho/que/nao/existe".to_string(),
+            ),
             ("Vazio".to_string(), String::new()),
         ]);
         assert_eq!(atalhos.len(), 1);
@@ -468,7 +474,11 @@ mod tests {
             ("Documentos".to_string(), casa.clone()),
             ("Meus Documentos".to_string(), casa),
         ]);
-        assert_eq!(atalhos.len(), 1, "a mesma pasta não deve aparecer duas vezes");
+        assert_eq!(
+            atalhos.len(),
+            1,
+            "a mesma pasta não deve aparecer duas vezes"
+        );
     }
 
     #[test]
@@ -604,7 +614,13 @@ mod tests {
     fn nomes_parecidos_com_reservados_passam_intactos() {
         // O risco do lado oposto: renomear arquivo legítimo é perder o nome que
         // a pessoa escolheu. `CONTA` começa com CON, `COM10` não é porta.
-        for comum in ["CONTA.pdf", "COM10.txt", "console.log", "auxiliar.doc", "NULO.txt"] {
+        for comum in [
+            "CONTA.pdf",
+            "COM10.txt",
+            "console.log",
+            "auxiliar.doc",
+            "NULO.txt",
+        ] {
             assert_eq!(safe_name(comum), comum, "{comum} foi renomeado à toa");
         }
     }

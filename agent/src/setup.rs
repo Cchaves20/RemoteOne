@@ -51,8 +51,7 @@ pub fn arquivos_da_identidade(config: &Path) -> Vec<PathBuf> {
 
 /// Chave de desinstalação, sob `HKCU`. Fica no usuário e não na máquina porque
 /// a instalação é por usuário — e escrever em `HKLM` exigiria administrador.
-pub const UNINSTALL_KEY: &str =
-    r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Deskside";
+pub const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Deskside";
 
 /// O launcher que roda o agente **oculto**.
 ///
@@ -99,7 +98,6 @@ pub fn launcher_script(exe: &Path) -> String {
 pub fn deve_oferecer_instalacao() -> bool {
     imp::deve_oferecer_instalacao()
 }
-
 
 /// O caminho do fluxo alternativo que marca um arquivo como vindo da internet.
 ///
@@ -594,8 +592,8 @@ pub fn explicacao_do_linux(l: &LugaresLinux) -> Vec<String> {
 
 #[cfg(windows)]
 mod imp {
-    use crate::sem_janela::SemJanela;
     use super::*;
+    use crate::sem_janela::SemJanela;
     use std::process::Command;
 
     fn pasta(var: &str) -> Result<PathBuf, String> {
@@ -677,8 +675,8 @@ mod imp {
         if let Some(pai) = destino.parent() {
             let _ = std::fs::create_dir_all(pai);
         }
-        let mut link = mslnk::ShellLink::new(exe)
-            .map_err(|e| format!("não montei o atalho: {e}"))?;
+        let mut link =
+            mslnk::ShellLink::new(exe).map_err(|e| format!("não montei o atalho: {e}"))?;
         link.set_name(Some(format!("{APP_NAME} - controle remoto")));
         // O ícone vem do próprio executável (embutido pelo build.rs).
         link.create_lnk(destino)
@@ -799,8 +797,12 @@ mod imp {
     }
 
     pub fn deve_oferecer_instalacao() -> bool {
-        let Ok(atual) = current_exe() else { return false };
-        let Ok(local) = pasta("LOCALAPPDATA") else { return false };
+        let Ok(atual) = current_exe() else {
+            return false;
+        };
+        let Ok(local) = pasta("LOCALAPPDATA") else {
+            return false;
+        };
         !already_installed(&atual, &install_dir(&local).join("deskside-agent.exe"))
     }
 
@@ -993,7 +995,9 @@ mod imp {
         let exe = pasta("LOCALAPPDATA")
             .map(|p| install_dir(&p).join("deskside-agent.exe"))
             .unwrap_or_default();
-        let startup = startup_dir().map(|p| p.join(STARTUP_FILE)).unwrap_or_default();
+        let startup = startup_dir()
+            .map(|p| p.join(STARTUP_FILE))
+            .unwrap_or_default();
         let cfg = crate::load_config();
         let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
             .map(|v| !v.trim().is_empty())
@@ -1221,7 +1225,10 @@ mod imp {
             unsafe { kill(*pid as i32, SIGKILL) };
         }
         if !outros.is_empty() {
-            crate::diario(&format!("instalar: {} agente(s) antigo(s) fechado(s)", outros.len()));
+            crate::diario(&format!(
+                "instalar: {} agente(s) antigo(s) fechado(s)",
+                outros.len()
+            ));
         }
         outros.len()
     }
@@ -1258,8 +1265,14 @@ mod imp {
             copiar_executavel(&exe, &l.exe)?;
         }
         gravar(&l.icone, include_bytes!("../assets/tray.png"))?;
-        gravar(&l.inicio, desktop_do_linux(&l.exe, &l.icone, true).as_bytes())?;
-        gravar(&l.menu, desktop_do_linux(&l.exe, &l.icone, false).as_bytes())?;
+        gravar(
+            &l.inicio,
+            desktop_do_linux(&l.exe, &l.icone, true).as_bytes(),
+        )?;
+        gravar(
+            &l.menu,
+            desktop_do_linux(&l.exe, &l.icone, false).as_bytes(),
+        )?;
         crate::diario(&format!("instalado em {}", l.pasta.display()));
         // Com um Deskside já rodando, o novo veria "já está rodando" e sairia
         // (uma instância só), e a versão antiga seguiria no ar sem ninguém
@@ -1475,7 +1488,10 @@ mod tests {
         // nesta máquina" e nada ligando à causa.
         let script = script_da_tarefa(&p(r"C:\Users\O'Brien\x.vbs"), "PC\\O'Brien");
         assert!(script.contains("O''Brien"), "{script}");
-        assert!(!script.contains("O'Brien"), "sobrou uma aspa solta: {script}");
+        assert!(
+            !script.contains("O'Brien"),
+            "sobrou uma aspa solta: {script}"
+        );
     }
 
     #[test]
@@ -1520,7 +1536,10 @@ mod tests {
         // o atalho quebrar no dia em que alguém a limpasse - sem aviso, e sem
         // ninguém associar uma coisa à outra.
         let lugares = lugares_de_teste();
-        let plano = plan(&caminho(&["C:", "Downloads", "deskside-agent.exe"]), &lugares);
+        let plano = plan(
+            &caminho(&["C:", "Downloads", "deskside-agent.exe"]),
+            &lugares,
+        );
         assert_eq!(plano.start_menu, lugares.start_menu.join("Deskside.lnk"));
         assert_eq!(plano.desktop, lugares.desktop.join("Deskside.lnk"));
         assert!(plano.exe.starts_with(&plano.dir));
@@ -1533,7 +1552,13 @@ mod tests {
         // roda `install` já instalado está reconfigurando.
         let local = caminho(&["C:", "Users", "eu", "AppData", "Local"]);
         let instalado = install_dir(&local).join("deskside-agent.exe");
-        let plano = plan(&instalado, &Places { local_app_data: local, ..lugares_de_teste() });
+        let plano = plan(
+            &instalado,
+            &Places {
+                local_app_data: local,
+                ..lugares_de_teste()
+            },
+        );
         assert!(!plano.copy);
     }
 
@@ -1687,9 +1712,18 @@ mod testes_do_linux {
     #[test]
     fn os_lugares_seguem_o_padrao_xdg() {
         let l = lugares_linux(Path::new("/home/ana"), None, None);
-        assert_eq!(l.exe, Path::new("/home/ana/.local/share/deskside/deskside-agent"));
-        assert_eq!(l.icone, Path::new("/home/ana/.local/share/deskside/deskside.png"));
-        assert_eq!(l.inicio, Path::new("/home/ana/.config/autostart/deskside.desktop"));
+        assert_eq!(
+            l.exe,
+            Path::new("/home/ana/.local/share/deskside/deskside-agent")
+        );
+        assert_eq!(
+            l.icone,
+            Path::new("/home/ana/.local/share/deskside/deskside.png")
+        );
+        assert_eq!(
+            l.inicio,
+            Path::new("/home/ana/.config/autostart/deskside.desktop")
+        );
         assert_eq!(
             l.menu,
             Path::new("/home/ana/.local/share/applications/deskside.desktop")
@@ -1706,7 +1740,10 @@ mod testes_do_linux {
             Some(Path::new("/etc/xdg-ana")),
         );
         assert!(l.exe.starts_with("/home/ana/.local/share"));
-        assert_eq!(l.inicio, Path::new("/etc/xdg-ana/autostart/deskside.desktop"));
+        assert_eq!(
+            l.inicio,
+            Path::new("/etc/xdg-ana/autostart/deskside.desktop")
+        );
     }
 
     #[test]
@@ -1742,7 +1779,12 @@ mod testes_do_linux {
         use std::os::unix::fs::MetadataExt;
         let proc = std::env::temp_dir().join(format!("deskside-proc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&proc);
-        for (pid, nome) in [("10", "deskside-agent"), ("11", "bash"), ("12", "deskside-agent"), ("self", "x")] {
+        for (pid, nome) in [
+            ("10", "deskside-agent"),
+            ("11", "bash"),
+            ("12", "deskside-agent"),
+            ("self", "x"),
+        ] {
             std::fs::create_dir_all(proc.join(pid)).unwrap();
             std::fs::write(proc.join(pid).join("comm"), format!("{nome}\n")).unwrap();
         }

@@ -262,7 +262,10 @@ pub(crate) fn rgb_para_nv12(rgb: &[u8], largura: usize, altura: usize, saida: &m
     saida.clear();
     saida.resize(largura * altura * 3 / 2, 0);
     let (brilho, cor) = saida.split_at_mut(largura * altura);
-    for (linha_y, linha_rgb) in brilho.chunks_exact_mut(largura).zip(rgb.chunks_exact(largura * 3)) {
+    for (linha_y, linha_rgb) in brilho
+        .chunks_exact_mut(largura)
+        .zip(rgb.chunks_exact(largura * 3))
+    {
         for (y, px) in linha_y.iter_mut().zip(linha_rgb.chunks_exact(3)) {
             let (r, g, b) = (px[0] as i32, px[1] as i32, px[2] as i32);
             *y = (((66 * r + 129 * g + 25 * b + 128) >> 8) + 16) as u8;
@@ -356,9 +359,20 @@ mod tests {
             let quadro: Vec<u8> = rgb.iter().copied().cycle().take(2 * 2 * 3).collect();
             rgb_para_nv12(&quadro, 2, 2, &mut saida);
             assert_eq!(saida.len(), 6, "4 de brilho + 1 par de cor");
-            assert!(saida[..4].iter().all(|b| (*b as i32 - y as i32).abs() <= 1), "{rgb:?}: {saida:?}");
-            assert!((saida[4] as i32 - u as i32).abs() <= 1, "{rgb:?}: U {}", saida[4]);
-            assert!((saida[5] as i32 - v as i32).abs() <= 1, "{rgb:?}: V {}", saida[5]);
+            assert!(
+                saida[..4].iter().all(|b| (*b as i32 - y as i32).abs() <= 1),
+                "{rgb:?}: {saida:?}"
+            );
+            assert!(
+                (saida[4] as i32 - u as i32).abs() <= 1,
+                "{rgb:?}: U {}",
+                saida[4]
+            );
+            assert!(
+                (saida[5] as i32 - v as i32).abs() <= 1,
+                "{rgb:?}: V {}",
+                saida[5]
+            );
         }
     }
 
@@ -397,7 +411,9 @@ mod tests {
     #[test]
     fn quadro_chave_sem_parametros_ganha_os_guardados() {
         let mut guardados = Vec::new();
-        let primeiro = vec![0, 0, 0, 1, 0x67, 9, 0, 0, 0, 1, 0x68, 8, 0, 0, 0, 1, 0x65, 1];
+        let primeiro = vec![
+            0, 0, 0, 1, 0x67, 9, 0, 0, 0, 1, 0x68, 8, 0, 0, 0, 1, 0x65, 1,
+        ];
         assert_eq!(com_parametros(primeiro.clone(), &mut guardados), primeiro);
         assert_eq!(guardados, vec![0, 0, 0, 1, 0x67, 9, 0, 0, 0, 1, 0x68, 8]);
 

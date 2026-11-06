@@ -63,7 +63,10 @@ pub fn abrir(largura: u32, altura: u32, fps: u32, taxa: u32) -> Option<Placa> {
     }
     match Placa::new(largura, altura, fps, taxa) {
         Ok(placa) => {
-            avisar_uma_vez(&format!("Vídeo: codificando na placa de vídeo ({})", placa.nome));
+            avisar_uma_vez(&format!(
+                "Vídeo: codificando na placa de vídeo ({})",
+                placa.nome
+            ));
             Some(placa)
         }
         Err(e) => {
@@ -230,13 +233,21 @@ impl Placa {
 
             // Para codificadores, o tipo de saída vem antes do de entrada.
             let tipo_saida = MFCreateMediaType().map_err(texto)?;
-            tipo_saida.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(texto)?;
-            tipo_saida.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_H264).map_err(texto)?;
-            tipo_saida.SetUINT32(&MF_MT_AVG_BITRATE, taxa).map_err(texto)?;
+            tipo_saida
+                .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)
+                .map_err(texto)?;
+            tipo_saida
+                .SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_H264)
+                .map_err(texto)?;
+            tipo_saida
+                .SetUINT32(&MF_MT_AVG_BITRATE, taxa)
+                .map_err(texto)?;
             tipo_saida
                 .SetUINT64(&MF_MT_FRAME_SIZE, par(largura, altura))
                 .map_err(texto)?;
-            tipo_saida.SetUINT64(&MF_MT_FRAME_RATE, par(fps, 1)).map_err(texto)?;
+            tipo_saida
+                .SetUINT64(&MF_MT_FRAME_RATE, par(fps, 1))
+                .map_err(texto)?;
             tipo_saida
                 .SetUINT32(&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive.0 as u32)
                 .map_err(texto)?;
@@ -251,19 +262,27 @@ impl Placa {
                 .map_err(|e| format!("tipo de saída recusado: {e}"))?;
 
             let tipo_entrada = MFCreateMediaType().map_err(texto)?;
-            tipo_entrada.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(texto)?;
-            tipo_entrada.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_NV12).map_err(texto)?;
+            tipo_entrada
+                .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)
+                .map_err(texto)?;
+            tipo_entrada
+                .SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_NV12)
+                .map_err(texto)?;
             tipo_entrada
                 .SetUINT64(&MF_MT_FRAME_SIZE, par(largura, altura))
                 .map_err(texto)?;
-            tipo_entrada.SetUINT64(&MF_MT_FRAME_RATE, par(fps, 1)).map_err(texto)?;
+            tipo_entrada
+                .SetUINT64(&MF_MT_FRAME_RATE, par(fps, 1))
+                .map_err(texto)?;
             tipo_entrada
                 .SetUINT32(&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive.0 as u32)
                 .map_err(texto)?;
             tipo_entrada
                 .SetUINT64(&MF_MT_PIXEL_ASPECT_RATIO, par(1, 1))
                 .map_err(texto)?;
-            tipo_entrada.SetUINT32(&MF_MT_DEFAULT_STRIDE, largura).map_err(texto)?;
+            tipo_entrada
+                .SetUINT32(&MF_MT_DEFAULT_STRIDE, largura)
+                .map_err(texto)?;
             mft.SetInputType(entrada, &tipo_entrada, 0)
                 .map_err(|e| format!("tipo de entrada recusado: {e}"))?;
 
@@ -457,7 +476,9 @@ impl Placa {
                         .mft
                         .GetOutputAvailableType(self.saida, 0)
                         .map_err(texto)?;
-                    self.mft.SetOutputType(self.saida, &novo, 0).map_err(texto)?;
+                    self.mft
+                        .SetOutputType(self.saida, &novo, 0)
+                        .map_err(texto)?;
                     return Ok(None);
                 }
                 Err(e) => return Err(texto(e)),

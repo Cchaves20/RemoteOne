@@ -712,7 +712,12 @@ mod tests {
         // Linha em branco: dois Enters, nada perdido.
         assert_eq!(
             pedacos("a\n\nb"),
-            vec![Pedaco::Texto("a"), Pedaco::Enter, Pedaco::Enter, Pedaco::Texto("b")]
+            vec![
+                Pedaco::Texto("a"),
+                Pedaco::Enter,
+                Pedaco::Enter,
+                Pedaco::Texto("b")
+            ]
         );
         assert!(pedacos("").is_empty());
     }

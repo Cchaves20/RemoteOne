@@ -382,7 +382,10 @@ mod imp {
                 &(o_que, "Deskside", MOTIVO, "block"),
             )
             .map_err(|e| e.to_string())?;
-        resposta.body().deserialize::<OwnedFd>().map_err(|e| e.to_string())
+        resposta
+            .body()
+            .deserialize::<OwnedFd>()
+            .map_err(|e| e.to_string())
     }
 
     fn pedido_ao_gnome(tela: bool) -> Result<(Connection, u32), String> {
@@ -536,13 +539,22 @@ mod tests {
         let carregando = fonte("Battery", "", "", "Charging", "80");
         let mouse = fonte("Battery", "", "Device", "Discharging", "15");
 
-        assert_eq!(fonte_do_sysfs(&[tomada, fonte("Battery", "", "", "Charging", "80")]), PowerSource::Ac);
-        assert_eq!(fonte_do_sysfs(&[tomada_solta, fonte("Battery", "", "", "Discharging", "41")]), PowerSource::Battery);
+        assert_eq!(
+            fonte_do_sysfs(&[tomada, fonte("Battery", "", "", "Charging", "80")]),
+            PowerSource::Ac
+        );
+        assert_eq!(
+            fonte_do_sysfs(&[tomada_solta, fonte("Battery", "", "", "Discharging", "41")]),
+            PowerSource::Battery
+        );
         assert_eq!(bateria_do_sysfs(&[bateria]), Some(41));
         assert_eq!(bateria_do_sysfs(&[carregando]), Some(80));
         // A pilha do mouse não é a bateria do computador: um computador de
         // mesa com mouse sem fio não pode parecer "na bateria".
-        assert_eq!(fonte_do_sysfs(std::slice::from_ref(&mouse)), PowerSource::Unknown);
+        assert_eq!(
+            fonte_do_sysfs(std::slice::from_ref(&mouse)),
+            PowerSource::Unknown
+        );
         assert_eq!(bateria_do_sysfs(&[mouse]), None);
         // Máquina virtual: nada exposto.
         assert_eq!(fonte_do_sysfs(&[]), PowerSource::Unknown);

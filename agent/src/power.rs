@@ -193,7 +193,11 @@ mod imp {
     }
 
     fn executar(programa: &str, argumentos: &[&str]) -> Result<(), String> {
-        match Command::new(programa).sem_janela().args(argumentos).status() {
+        match Command::new(programa)
+            .sem_janela()
+            .args(argumentos)
+            .status()
+        {
             Ok(s) if s.success() => Ok(()),
             Ok(s) => Err(format!("comando de energia falhou (código {s})")),
             Err(e) => Err(format!("não foi possível executar o comando: {e}")),
@@ -269,39 +273,40 @@ mod imp {
             }
 
             let mut luid = Luid { low: 0, high: 0 };
-            let resultado = if LookupPrivilegeValueW(std::ptr::null(), nome.as_ptr(), &mut luid) == 0 {
-                Err(format!(
-                    "o Windows não reconheceu a permissão de suspender (erro {})",
-                    GetLastError()
-                ))
-            } else {
-                let pedido = TokenPrivileges {
-                    count: 1,
-                    privileges: [LuidAndAttributes {
-                        luid,
-                        attributes: SE_PRIVILEGE_ENABLED,
-                    }],
-                };
-                let ok = AdjustTokenPrivileges(
-                    token,
-                    0,
-                    &pedido,
-                    0,
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                );
-                // `AdjustTokenPrivileges` devolve sucesso até quando **não**
-                // ligou nada; a resposta de verdade está no `GetLastError`, e
-                // ele precisa ser lido logo em seguida.
-                let erro = GetLastError();
-                if ok == 0 || erro == ERROR_NOT_ALL_ASSIGNED {
+            let resultado =
+                if LookupPrivilegeValueW(std::ptr::null(), nome.as_ptr(), &mut luid) == 0 {
                     Err(format!(
-                        "esta conta do Windows não tem permissão de suspender (erro {erro})"
+                        "o Windows não reconheceu a permissão de suspender (erro {})",
+                        GetLastError()
                     ))
                 } else {
-                    Ok(())
-                }
-            };
+                    let pedido = TokenPrivileges {
+                        count: 1,
+                        privileges: [LuidAndAttributes {
+                            luid,
+                            attributes: SE_PRIVILEGE_ENABLED,
+                        }],
+                    };
+                    let ok = AdjustTokenPrivileges(
+                        token,
+                        0,
+                        &pedido,
+                        0,
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                    );
+                    // `AdjustTokenPrivileges` devolve sucesso até quando **não**
+                    // ligou nada; a resposta de verdade está no `GetLastError`, e
+                    // ele precisa ser lido logo em seguida.
+                    let erro = GetLastError();
+                    if ok == 0 || erro == ERROR_NOT_ALL_ASSIGNED {
+                        Err(format!(
+                            "esta conta do Windows não tem permissão de suspender (erro {erro})"
+                        ))
+                    } else {
+                        Ok(())
+                    }
+                };
             CloseHandle(token);
             resultado
         }
@@ -315,7 +320,12 @@ mod imp {
     /// que estivesse sem responder.
     fn apagar_a_tela() -> Result<(), String> {
         let ok = unsafe {
-            PostMessageW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, TELA_DESLIGADA)
+            PostMessageW(
+                HWND_BROADCAST,
+                WM_SYSCOMMAND,
+                SC_MONITORPOWER,
+                TELA_DESLIGADA,
+            )
         };
         if ok != 0 {
             Ok(())
