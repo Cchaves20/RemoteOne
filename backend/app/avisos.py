@@ -111,7 +111,9 @@ def rodar(agora: datetime | None = None) -> int:
                 # Não marca: falhar hoje tem que deixar a tarefa de amanhã
                 # tentar de novo. Marcar antes de enviar é como se perde um
                 # aviso para sempre por causa de um provedor fora do ar.
-                print(f"aviso não saiu para {user.email}: {exc}")
+                # O id, e não o e-mail: o diário não precisa de dado pessoal
+                # para alguém achar a conta depois.
+                print(f"aviso não saiu para a conta {user.id}: {exc}")
                 continue
             user.aviso_fim_teste_em = agora
             enviados += 1

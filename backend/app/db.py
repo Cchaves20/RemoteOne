@@ -150,6 +150,14 @@ def _migrate() -> None:
             "plano": "VARCHAR(16) DEFAULT 'pago' NOT NULL",
             "plano_ate": "TIMESTAMP",
             "aviso_fim_teste_em": "TIMESTAMP",
+            # Aceite dos termos (ver `app/termos.py`). Conta antiga nasce sem
+            # aceite registrado, que é a verdade: o app pede na próxima vez.
+            "termos_versao": "VARCHAR(20) DEFAULT '' NOT NULL",
+            "termos_aceitos_em": "TIMESTAMP",
+        },
+        "pending_signups": {
+            "termos_versao": "VARCHAR(20) DEFAULT '' NOT NULL",
+            "termos_aceitos_em": "TIMESTAMP",
         },
     }
     with engine.begin() as conn:
@@ -160,9 +168,28 @@ def _migrate() -> None:
                     conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"))
 
     _email_deixa_de_ser_obrigatorio()
+    _apagar_datas_de_nascimento()
     _sortear_chaves_de_sessao()
     _cifrar_segredos_do_2fa()
     _registrar_testes_ja_dados()
+
+
+def _apagar_datas_de_nascimento() -> None:
+    """Apaga as datas de nascimento guardadas antes de o cadastro parar de guardar.
+
+    A data só serve para conferir a idade mínima, no início do cadastro (ver
+    `auth.signup_start`). Depois disso ela é dado sem finalidade, e a LGPD
+    (art. 6º, III) pede que não fique. Roda a cada subida e não faz nada quando
+    não há o que apagar.
+    """
+    from sqlalchemy import inspect, text
+
+    with engine.begin() as conn:
+        for tabela in ("users", "pending_signups"):
+            if tabela in inspect(engine).get_table_names():
+                conn.execute(
+                    text(f"UPDATE {tabela} SET birth_date = NULL WHERE birth_date IS NOT NULL")
+                )
 
 
 def _registrar_testes_ja_dados() -> None:

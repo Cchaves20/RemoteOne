@@ -12,7 +12,7 @@ os.environ.setdefault("DESKSIDE_JWT_SECRET", "test-secret")
 
 import pytest  # noqa: E402
 
-from app import entrega, limite, vinculos  # noqa: E402
+from app import entrega, limite, termos, vinculos  # noqa: E402
 from app.db import Base, engine  # noqa: E402
 
 #: A senha que a suíte inteira usa. Cumpre as cinco regras da política — sem o
@@ -113,6 +113,7 @@ def criar_conta(
         "birth_date": extras.get("birth_date", "1998-04-20"),
         "password": password,
         "password_confirm": extras.get("password_confirm", password),
+        "terms_version": extras.get("terms_version", termos.VERSAO),
     }
     if email is not None:
         corpo["email"] = email

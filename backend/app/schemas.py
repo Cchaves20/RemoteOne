@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
+from app import termos
+
 
 class Credentials(BaseModel):
     """Dados de login: e-mail **ou** telefone, mais a senha.
@@ -58,6 +60,9 @@ class SignupStart(BaseModel):
     #: resposta poder listar **o que falta** em vez de um "senha inválida".
     password: str = Field(min_length=1, max_length=72)
     password_confirm: str = Field(min_length=1, max_length=72)
+    #: A versão dos termos que a pessoa marcou como aceita no formulário (ver
+    #: `app/termos.py`). Precisa ser a que está em vigor.
+    terms_version: str = Field(default="", max_length=20)
 
     @model_validator(mode="after")
     def coerente(self) -> "SignupStart":
@@ -326,8 +331,18 @@ class UserOut(BaseModel):
     #: Durante os 30 dias iniciais é `false`, porque nenhuma cobrança vem —
     #: ninguém comprou nada ainda.
     renova: bool = False
+    #: A versão dos termos que esta conta aceitou ("" = nunca aceitou pelo app).
+    termos_versao: str = ""
+    #: A versão em vigor. Diferente da de cima, o app pede o aceite de novo.
+    termos_atual: str = Field(default_factory=lambda: termos.VERSAO)
 
     model_config = {"from_attributes": True}
+
+
+class TermsAccept(BaseModel):
+    """O aceite de uma nova versão dos termos, dado pelo app."""
+
+    version: str = Field(max_length=20)
 
 
 class ClaimRequest(BaseModel):

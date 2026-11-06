@@ -11,7 +11,7 @@ quais contas existem.
 from conftest import SENHA, criar_conta
 from fastapi.testclient import TestClient
 
-from app import limite
+from app import limite, termos
 from app.main import app
 
 client = TestClient(app)
@@ -274,6 +274,7 @@ def test_o_reenvio_do_cadastro_tambem_tem_teto():
         "birth_date": "1998-04-20",
         "password": SENHA,
         "password_confirm": SENHA,
+        "terms_version": termos.VERSAO,
     }
     assert client.post("/api/v1/auth/signup/start", json=corpo).status_code == 201
 
@@ -310,6 +311,7 @@ def test_apertar_reenviar_antes_da_hora_nao_gasta_o_limite():
         "birth_date": "1998-04-20",
         "password": SENHA,
         "password_confirm": SENHA,
+        "terms_version": termos.VERSAO,
     }
     client.post("/api/v1/auth/signup/start", json=corpo)
     for _ in range(10):

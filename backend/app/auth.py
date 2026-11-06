@@ -37,6 +37,7 @@ from app import (
     segundo_fator,
     sessoes,
     telefone,
+    termos,
     teste,
     verificacao,
 )
@@ -61,6 +62,7 @@ from app.schemas import (
     SignupResend,
     SignupStart,
     SignupVerify,
+    TermsAccept,
     TokenPair,
     TwoFactorDisableRequest,
     TwoFactorEnableRequest,
@@ -243,6 +245,38 @@ def _idade(nascimento: date, hoje: date | None = None) -> int:
     )
 
 
+def _exigir_entrega(canal: str) -> None:
+    """Recusa o canal que não entrega o código de verdade.
+
+    Sem provedor de SMS, um código "mandado" para um telefone ia parar no
+    diário do servidor - ninguém o recebia, e o número da pessoa ficava gravado
+    num log. O app já não oferece telefone; isto fecha o mesmo caminho para
+    quem chama a API direto. O login por telefone e senha, que não manda
+    código, continua valendo para as contas antigas.
+    """
+    if canal != "email" and not entrega.manda_sms():
+        raise _erro(
+            status.HTTP_400_BAD_REQUEST,
+            "envio de código por SMS indisponível; use um e-mail",
+        )
+
+
+def _conferir_senha_atual(user: User, senha: str, request: Request, recusa: str) -> None:
+    """A senha da conta, pedida de novo antes de trocar a senha ou excluir a conta.
+
+    Com o mesmo limite do login. Sem ele, quem tivesse uma sessão roubada -
+    um celular destravado, um token copiado - podia testar senhas à vontade
+    até achar a atual, e reaproveitá-la em outros serviços da vítima. E cada
+    tentativa gasta um bcrypt, o que já basta para pesar no servidor.
+    """
+    chave, ip = f"senha-atual:{user.id}", limite.ip_do_pedido(request)
+    limite.cobrar_login(chave, ip)
+    if not verify_password(senha, user.hashed_password):
+        limite.punir_login(chave, ip)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=recusa)
+    limite.perdoar_login(chave, ip)
+
+
 def _destino(
     body: SignupStart | Credentials | ForgotPasswordRequest | ContactChangeStart,
 ) -> tuple[str, str]:
@@ -363,8 +397,17 @@ def signup_start(
             status.HTTP_400_BAD_REQUEST,
             f"é preciso ter pelo menos {settings.idade_minima} anos",
         )
+    # Sem o aceite da versão em vigor, não há contrato. Um app antigo, que não
+    # conhece a caixa de aceite, cai aqui também - e a mensagem diz o que fazer.
+    if body.terms_version != termos.VERSAO:
+        raise _erro(
+            status.HTTP_400_BAD_REQUEST,
+            "é preciso aceitar os termos de uso e a política de privacidade "
+            "(se a caixa de aceite não aparece, atualize o aplicativo)",
+        )
 
     destino, canal = _destino(body)
+    _exigir_entrega(canal)
     limite.cobrar_destino(destino)
     _livre(db, destino, canal)
 
@@ -384,7 +427,10 @@ def signup_start(
         hashed_password=hash_password(body.password),
         first_name=body.first_name.strip(),
         last_name=body.last_name.strip(),
-        birth_date=body.birth_date,
+        # A data de nascimento já cumpriu o papel dela (a idade, acima) e não
+        # é guardada: ver `User.birth_date`.
+        termos_versao=body.terms_version,
+        termos_aceitos_em=agora,
         hashed_code=verificacao.resumo(codigo),
         expires_at=verificacao.prazo(agora),
         last_sent_at=agora,
@@ -490,7 +536,8 @@ def signup_verify(
         hashed_password=pendente.hashed_password,
         first_name=pendente.first_name,
         last_name=pendente.last_name,
-        birth_date=pendente.birth_date,
+        termos_versao=pendente.termos_versao,
+        termos_aceitos_em=pendente.termos_aceitos_em,
         plano=plano_inicial,
         plano_ate=plano_ate,
     )
@@ -537,6 +584,7 @@ def forgot_password(
     limite.cobrar_envio(limite.ip_do_pedido(request))
 
     destino, canal = _destino(body)
+    _exigir_entrega(canal)
     # Também por endereço, e também antes da busca - igual para conta que
     # existe e que não existe. Só por IP, muitos IPs enchiam a caixa de uma
     # vítima, e cada código novo trazia mais cinco palpites para trocar a senha.
@@ -834,6 +882,27 @@ def me(
     return saida
 
 
+@router.post("/me/terms", status_code=status.HTTP_204_NO_CONTENT)
+def accept_terms(
+    body: TermsAccept,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Registra o aceite da versão dos termos em vigor.
+
+    Só a versão em vigor: aceitar uma antiga (um app desatualizado mandando o
+    que conhece) não pode valer como aceite do texto novo.
+    """
+    if body.version != termos.VERSAO:
+        raise _erro(
+            status.HTTP_409_CONFLICT,
+            f"a versão em vigor é {termos.VERSAO}; atualize o aplicativo",
+        )
+    current_user.termos_versao = termos.VERSAO
+    current_user.termos_aceitos_em = datetime.now(UTC)
+    db.commit()
+
+
 # --- aparelhos conectados -------------------------------------------------------
 
 
@@ -964,6 +1033,7 @@ def contact_change_start(
     # login — que normaliza — nunca encontraria: a pessoa trocaria o número e
     # ficaria fora da própria conta sem entender por quê.
     destino, canal = _destino(body)
+    _exigir_entrega(canal)
     # Mesmo logado, isto manda e-mail para um endereço escolhido por quem pede:
     # sem limite, uma conta qualquer serviria para encher a caixa de terceiros.
     limite.cobrar_envio(limite.ip_do_pedido(request), destino)
@@ -1132,10 +1202,7 @@ def update_password(
     computador para de valer na requisição seguinte, e é isso que se espera de
     trocar a senha por desconfiança.
     """
-    if not verify_password(body.current_password, current_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="senha atual incorreta"
-        )
+    _conferir_senha_atual(current_user, body.current_password, request, "senha atual incorreta")
     tipo = _exigir_segundo_fator(current_user, body.totp_code, request)
     current_user.hashed_password = hash_password(body.new_password)
     current_user.token_key = nova_chave_de_sessao()
@@ -1260,10 +1327,7 @@ def delete_account(
 ) -> None:
     """Exclui a conta e todos os dispositivos vinculados (senha e, se ligada, a
     verificação em duas etapas)."""
-    if not verify_password(body.password, current_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="senha incorreta"
-        )
+    _conferir_senha_atual(current_user, body.password, request, "senha incorreta")
     _exigir_segundo_fator(current_user, body.totp_code, request)
     db.delete(current_user)
     db.commit()

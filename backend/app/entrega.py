@@ -206,10 +206,10 @@ class PorTwilio(Entregador):
 class Composto(Entregador):
     """Um caminho para o e-mail, outro para o SMS.
 
-    Os dois se configuram separadamente, e o objeto reflete isso. Um servidor
-    com SMTP pronto e Twilio ainda não contratado continua aceitando cadastro
-    por telefone — com o código indo para o diário — em vez de recusar metade
-    do formulário por causa de uma credencial que falta.
+    Os dois se configuram separadamente, e o objeto reflete isso. Sem Twilio,
+    o lado do SMS é o diário - e os fluxos que mandam código recusam telefone
+    (`auth._exigir_entrega`, com `manda_sms()` abaixo), em vez de gravar o
+    número e o código num log que ninguém lê.
     """
 
     def __init__(self, por_email: Entregador, por_sms: Entregador) -> None:
@@ -246,6 +246,18 @@ def _escolher() -> Entregador:
 
 #: O entregador em uso. Trocável nos testes.
 entregador: Entregador = _escolher()
+
+
+def manda_sms() -> bool:
+    """O entregador em uso manda SMS de verdade, ou só escreveria no diário?
+
+    Olha o **objeto em uso**, e não a configuração: é ele que entrega, e é ele
+    que os testes trocam.
+    """
+    alvo = entregador
+    if isinstance(alvo, Composto):
+        alvo = alvo._sms
+    return not isinstance(alvo, NoDiario)
 
 
 def configurado() -> dict[str, bool]:

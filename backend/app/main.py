@@ -10,7 +10,7 @@ import jwt
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from app import controle, entrega, lojas, pairing, vinculos
+from app import controle, entrega, faxina, lojas, pairing, vinculos
 from app.agents import AgentRegistry
 from app.auth import get_current_user
 from app.auth import router as auth_router
@@ -22,6 +22,7 @@ from app.connections import Viewer, manager, viewers
 from app.db import SessionLocal, get_db, init_db
 from app.devices import router as devices_router
 from app.ice import ice_servers, precisa_renovar
+from app.meus_dados import router as meus_dados_router
 from app.models import User
 from app.profiles import router as profiles_router
 from app.protocol import (
@@ -75,7 +76,29 @@ async def lifespan(_app: FastAPI):
     # Cria as tabelas ausentes na subida (MVP; futuramente via Alembic).
     init_db()
     _acalmar_o_coletor()
+    faxineira = asyncio.create_task(_faxina_periodica())
     yield
+    faxineira.cancel()
+
+
+async def _faxina_periodica() -> None:
+    """Roda `app.faxina` na subida e a cada `faxina.INTERVALO`.
+
+    Numa thread, porque apaga com o banco e o laço principal não pode esperar
+    o disco. Uma falha vai para o diário e não derruba nada: tenta de novo na
+    próxima volta.
+    """
+    while True:
+        try:
+            await asyncio.to_thread(_faxinar)
+        except Exception:  # noqa: BLE001 - a próxima volta tenta de novo
+            logger.exception("faxina falhou")
+        await asyncio.sleep(faxina.INTERVALO.total_seconds())
+
+
+def _faxinar() -> None:
+    with SessionLocal() as db:
+        faxina.limpar(db)
 
 
 def _acalmar_o_coletor() -> None:
@@ -113,6 +136,7 @@ app = FastAPI(
     openapi_url="/openapi.json" if _docs else None,
 )
 app.include_router(auth_router)
+app.include_router(meus_dados_router)
 app.include_router(devices_router)
 app.include_router(profiles_router)
 app.include_router(automations_router)

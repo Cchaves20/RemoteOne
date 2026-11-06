@@ -18,7 +18,7 @@ from conftest import SENHA, criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app import entrega, telefone, verificacao
+from app import entrega, telefone, termos, verificacao
 from app.db import SessionLocal
 from app.main import app
 from app.models import PendingSignup, User
@@ -34,6 +34,7 @@ def formulario(**mudancas) -> dict:
         "email": "novo@example.com",
         "password": SENHA,
         "password_confirm": SENHA,
+        "terms_version": termos.VERSAO,
     }
     base.update(mudancas)
     return {k: v for k, v in base.items() if v is not None}
@@ -84,7 +85,10 @@ def test_os_dados_do_formulario_chegam_na_conta(espiao):
         u = db.scalar(select(User).where(User.email == "dados@example.com"))
     assert u.first_name == "Ana"
     assert u.last_name == "Souza"
-    assert u.birth_date.isoformat() == "1998-04-20"
+    # A data de nascimento confere a idade e não é guardada (minimização).
+    assert u.birth_date is None
+    assert u.termos_versao == termos.VERSAO
+    assert u.termos_aceitos_em is not None
     assert u.phone is None
 
 

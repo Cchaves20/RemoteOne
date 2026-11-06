@@ -37,10 +37,20 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255))
     first_name: Mapped[str] = mapped_column(String(80), default="")
     last_name: Mapped[str] = mapped_column(String(80), default="")
-    #: `Date` e não `DateTime`: uma data de nascimento não tem hora, e guardar
-    #: uma inventaria um fuso que faria a data mudar de dia conforme quem lê.
+    #: **Não é mais preenchida.** A data de nascimento serve para uma conta só
+    #: - a idade mínima, conferida no início do cadastro - e guardá-la depois
+    #: disso seria guardar sem finalidade (LGPD, art. 6º, III). A coluna fica
+    #: porque o SQLite não remove coluna sem refazer a tabela; `db.py` apaga o
+    #: que ficou de antes.
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    #: Qual versão dos termos e da privacidade a pessoa aceitou, e quando (ver
+    #: `app/termos.py`). Vazio = nunca aceitou pelo app: conta de antes do
+    #: aceite, que o app pede na próxima abertura.
+    termos_versao: Mapped[str] = mapped_column(String(20), default="")
+    termos_aceitos_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Verificação em duas etapas (TOTP). O segredo fica pendente até o usuário
     # confirmar um código; só então `totp_enabled` vira verdadeiro.
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -210,7 +220,13 @@ class PendingSignup(Base):
     hashed_password: Mapped[str] = mapped_column(String(255))
     first_name: Mapped[str] = mapped_column(String(80))
     last_name: Mapped[str] = mapped_column(String(80))
+    #: Não é mais preenchida: a idade é conferida antes de este registro nascer.
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: O aceite dado no formulário, que passa para a conta na confirmação.
+    termos_versao: Mapped[str] = mapped_column(String(20), default="")
+    termos_aceitos_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     #: O código também com hash. Contra quem lê o banco, um hash de seis
     #: dígitos vale pouco — são um milhão de tentativas. Vale mesmo assim: o
     #: custo é zero e tira o código de qualquer despejo acidental de tabela.
