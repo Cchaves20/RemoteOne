@@ -81,6 +81,8 @@ enum Cmd {
     },
     Uninstall,
     Status,
+    /// Mostra as licenças das bibliotecas de terceiros embutidas no agente.
+    Licencas,
     Help,
 }
 
@@ -104,6 +106,7 @@ fn parse_args(args: &[String]) -> Cmd {
         }
         Some("uninstall") | Some("remove") => Cmd::Uninstall,
         Some("status") => Cmd::Status,
+        Some("licencas") | Some("licenses") => Cmd::Licencas,
         Some("run") => Cmd::Run { atualizado: false },
         Some(a) if a == deskside_agent::atualizacao::ARG_ATUALIZADO => {
             Cmd::Run { atualizado: true }
@@ -129,6 +132,7 @@ Deskside Agent — controla este computador pelo celular.
                                      no login e no menu de aplicativos)
   deskside-agent uninstall          desfaz a instalação
   deskside-agent status             onde está instalado e para onde aponta
+  deskside-agent licencas           licenças das bibliotecas de terceiros
 
 A URL é a do backend (ex.: wss://seu-servidor/ws/agent). Sem ela, vale a que
 já estiver configurada e, na primeira instalação, o servidor do Deskside -
@@ -324,6 +328,17 @@ fn main() {
             }
             return;
         }
+        Cmd::Licencas => {
+            // As licenças das bibliotecas de código aberto vão **dentro** do
+            // executável: MIT, BSD e Apache pedem que o aviso acompanhe cada
+            // cópia distribuída, e o agente é distribuído como um arquivo só.
+            // Gerado por `scripts/licencas-do-agente.sh`.
+            // `write_all` e não `print!`: quem lê com `| more` e fecha no meio
+            // não pode ver um pânico por causa do cano fechado.
+            use std::io::Write;
+            let _ = std::io::stdout().write_all(include_bytes!("../LICENCAS-DE-TERCEIROS.txt"));
+            return;
+        }
         Cmd::AplicarAtualizacao { pid } => {
             // Antes da guarda de instância e de tudo o mais: o ajudante não é
             // um agente, e subir como um disputaria o nome com o novo.
@@ -387,9 +402,9 @@ fn main() {
 
     let plat = platform::current();
     let cfg = load_config();
-    let url = deskside_agent::migrar_servidor_antigo(
+    let url = deskside_agent::servidor_permitido(deskside_agent::migrar_servidor_antigo(
         resolve(&cfg, "DESKSIDE_BACKEND_URL").unwrap_or_else(|| DEFAULT_BACKEND_URL.to_string()),
-    );
+    ));
 
     let device_id = load_or_create_device_id(&device_id_path())
         .expect("não foi possível ler/criar o device_id");
@@ -602,6 +617,7 @@ mod tests {
     #[test]
     fn desinstalar_atende_pelos_dois_nomes() {
         assert!(matches!(parse_args(&args(&["uninstall"])), Cmd::Uninstall));
+        assert!(matches!(parse_args(&args(&["licencas"])), Cmd::Licencas));
         assert!(matches!(parse_args(&args(&["remove"])), Cmd::Uninstall));
     }
 

@@ -1,0 +1,22 @@
+# Alertas do `cargo audit` aceitos, cada um com o motivo.
+#
+# Não é uma lista de coisas a esquecer. É o registro de que cada alerta foi
+# lido e por que, **hoje**, ele não alcança o agente. Reveja ao atualizar
+# `xcap` ou `webrtc`: a entrada sai quando a dependência sair.
+
+[advisories]
+ignore = [
+    # quick-xml 0.30 (dois alertas: tempo quadrático e memória sem teto ao ler
+    # XML). Só entra como dependência **de compilação** do `xcb` (via `xcap`),
+    # que lê os arquivos XML do protocolo X11 que vêm dentro da própria crate.
+    # Nenhum XML de fora passa por ele, nem durante a compilação nem depois.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+    # crypto-bigint 0.5 (variações de tempo em operações que deviam ser de
+    # tempo constante). Vem do DTLS da `webrtc` 0.17, na troca de chaves P-256
+    # do vídeo direto, e a correção exige a `webrtc` subir de versão. O
+    # vídeo já é cifrado de ponta a ponta; o alerta é sobre um canal lateral de
+    # tempo, que exige medir muitas trocas de chave. Sai quando a `webrtc`
+    # atualizar.
+    "RUSTSEC-2026-0387",
+]

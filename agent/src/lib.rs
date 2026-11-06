@@ -133,6 +133,46 @@ pub fn migrar_configuracao_antiga() {
     }
 }
 
+/// Conexão sem criptografia (`ws://`) só com o próprio computador.
+///
+/// O agente recebe por este canal tudo o que o dono digita no celular. Sem TLS,
+/// qualquer um na mesma rede (um Wi-Fi de café, um roteador comprometido) lê e
+/// altera o que passa. `ws://` continua aceito para `localhost`, que é o
+/// servidor de quem desenvolve, e para quem pedir de propósito com
+/// `DESKSIDE_PERMITIR_SEM_TLS=1`.
+pub fn url_segura(url: &str) -> bool {
+    let url = url.trim();
+    if url.starts_with("wss://") {
+        return true;
+    }
+    let Some(resto) = url.strip_prefix("ws://") else {
+        return false;
+    };
+    let hospedeiro = resto.split('/').next().unwrap_or("");
+    let hospedeiro = match hospedeiro.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or(""),
+        None => hospedeiro.split(':').next().unwrap_or(""),
+    };
+    matches!(hospedeiro, "localhost" | "127.0.0.1" | "::1")
+}
+
+/// A URL do servidor que vale, depois da conferência de `url_segura`.
+///
+/// Uma URL sem TLS para outra máquina não é seguida: o agente volta ao padrão
+/// de fábrica e diz no diário por quê. Melhor um computador conectado ao
+/// servidor certo do que um mandando as teclas do dono em texto puro.
+pub fn servidor_permitido(url: String) -> String {
+    let liberado = std::env::var("DESKSIDE_PERMITIR_SEM_TLS").is_ok_and(|v| v == "1");
+    if url_segura(&url) || liberado {
+        return url;
+    }
+    diario(&format!(
+        "servidor recusado por não usar TLS: {url}. Usando {DEFAULT_BACKEND_URL} \
+         (para desenvolver em outra máquina, DESKSIDE_PERMITIR_SEM_TLS=1)"
+    ));
+    DEFAULT_BACKEND_URL.to_string()
+}
+
 /// Tira o agente do servidor antigo do DuckDNS (ver `migracao::trocar_servidor`).
 ///
 /// Recebe a URL em uso e devolve a que vale. Se o arquivo de configuração
@@ -338,6 +378,20 @@ pub fn save_config(cfg: &config::Config) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn so_aceita_sem_tls_o_proprio_computador() {
+        use super::url_segura;
+        assert!(url_segura("wss://deskside.com.br/ws/agent"));
+        assert!(url_segura("ws://127.0.0.1:8000/ws/agent"));
+        assert!(url_segura("ws://localhost:8000/ws/agent"));
+        assert!(url_segura("ws://[::1]:8000/ws/agent"));
+        assert!(!url_segura("ws://deskside.com.br/ws/agent"));
+        assert!(!url_segura("ws://192.168.0.10:8000/ws/agent"));
+        // "localhost" no começo de outro nome não engana.
+        assert!(!url_segura("ws://localhost.atacante.com/ws/agent"));
+        assert!(!url_segura("http://deskside.com.br/ws/agent"));
+    }
+
     use super::DEFAULT_BACKEND_URL;
 
     /// Guarda contra a volta do padrão antigo.
