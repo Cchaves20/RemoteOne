@@ -9,11 +9,11 @@ Ver `docs/revisao-de-seguranca.md`.
 
 import importlib
 
+from conftest import criar_conta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.main import app
-from tests.conftest import criar_conta
 
 client = TestClient(app)
 

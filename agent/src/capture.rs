@@ -157,7 +157,7 @@ impl Scaler {
 /// Converte RGBA em RGB, descartando o alfa.
 pub fn rgba_to_rgb(rgba: &[u8]) -> Vec<u8> {
     let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
-    for px in rgba.chunks_exact(4) {
+    for px in rgba.as_chunks::<4>().0 {
         rgb.extend_from_slice(&px[0..3]);
     }
     rgb
@@ -991,7 +991,7 @@ mod tests {
             rgba.extend_from_slice(&[10, 200, 40, 255]);
         }
         let frame = Scaler::new().scale(rgba, 120, 80, 60).unwrap();
-        for px in frame.rgb.chunks_exact(3) {
+        for px in frame.rgb.as_chunks::<3>().0 {
             assert_eq!(px, &[10, 200, 40], "cor mudou na redução");
         }
     }

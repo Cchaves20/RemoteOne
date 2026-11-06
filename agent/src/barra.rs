@@ -332,7 +332,7 @@ mod imp {
         let classe = ClasseDeJanela {
             tamanho: std::mem::size_of::<ClasseDeJanela>() as u32,
             estilo: 0,
-            procedimento: procedimento,
+            procedimento,
             extra_classe: 0,
             extra_janela: 0,
             instancia,

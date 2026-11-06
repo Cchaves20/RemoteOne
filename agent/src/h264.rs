@@ -266,14 +266,14 @@ pub(crate) fn rgb_para_nv12(rgb: &[u8], largura: usize, altura: usize, saida: &m
         .chunks_exact_mut(largura)
         .zip(rgb.chunks_exact(largura * 3))
     {
-        for (y, px) in linha_y.iter_mut().zip(linha_rgb.chunks_exact(3)) {
+        for (y, px) in linha_y.iter_mut().zip(linha_rgb.as_chunks::<3>().0) {
             let (r, g, b) = (px[0] as i32, px[1] as i32, px[2] as i32);
             *y = (((66 * r + 129 * g + 25 * b + 128) >> 8) + 16) as u8;
         }
     }
     for (bloco, linha_uv) in cor.chunks_exact_mut(largura).enumerate() {
         let (cima, baixo) = (bloco * 2, bloco * 2 + 1);
-        for (coluna, uv) in linha_uv.chunks_exact_mut(2).enumerate() {
+        for (coluna, uv) in linha_uv.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             let (mut r, mut g, mut b) = (0i32, 0i32, 0i32);
             for linha in [cima, baixo] {
                 for x in [coluna * 2, coluna * 2 + 1] {

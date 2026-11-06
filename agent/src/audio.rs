@@ -282,7 +282,7 @@ impl Processador {
                  som está sendo cortado."
             );
         }
-        for quadro in self.quadros.chunks_exact(FRAME_INTERLEAVED) {
+        for quadro in self.quadros.as_chunks::<FRAME_INTERLEAVED>().0 {
             match self.codificador.codificar(quadro, &mut self.saida) {
                 // `try_send`, como no Windows: quem chama é a fila do sistema,
                 // e esperar a rede ali engasgaria a captura.
@@ -458,7 +458,7 @@ mod imp {
                              computador e o som está sendo cortado."
                         );
                     }
-                    for quadro in quadros.chunks_exact(FRAME_INTERLEAVED) {
+                    for quadro in quadros.as_chunks::<FRAME_INTERLEAVED>().0 {
                         match encoder.encode_float(quadro, &mut saida) {
                             Ok(n) => {
                                 // `try_send`, nunca `send`: esta é a thread da

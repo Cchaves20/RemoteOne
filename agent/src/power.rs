@@ -154,7 +154,10 @@ mod imp {
     #[link(name = "kernel32")]
     extern "system" {
         fn GetCurrentProcess() -> Handle;
-        fn CloseHandle(objeto: Handle) -> i32;
+        // `isize`, como em `instance.rs` e `atualizacao.rs`: a mesma função do
+        // sistema declarada com tipos diferentes em dois módulos é erro no
+        // clippy (`clashing_extern_declarations`). Quem chama converte.
+        fn CloseHandle(objeto: isize) -> i32;
         fn GetLastError() -> u32;
     }
 
@@ -307,7 +310,7 @@ mod imp {
                         Ok(())
                     }
                 };
-            CloseHandle(token);
+            CloseHandle(token as isize);
             resultado
         }
     }
