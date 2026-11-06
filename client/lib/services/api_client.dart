@@ -18,6 +18,7 @@ import '../models/sessao.dart';
 import '../models/system_stats.dart';
 import '../models/widget_config.dart';
 import '../models/window_zone.dart';
+import '../config.dart';
 import '../l10n/strings.dart';
 import 'erros.dart';
 import 'token_store.dart';
@@ -146,6 +147,9 @@ class ApiClient {
             if (country != null) 'country': country,
             'password': password,
             'password_confirm': passwordConfirm,
+            // A caixa de aceite é obrigatória para chegar aqui: a versão
+            // aceita é a que este app mostra (ver `config.versaoDosTermos`).
+            'terms_version': versaoDosTermos,
           }),
         )
         .timeout(_timeout);
@@ -594,6 +598,30 @@ class ApiClient {
         .get(_uri('/api/v1/assinatura'), headers: _authHeaders)
         .timeout(_timeout);
     return _decode(res) as Map<String, dynamic>;
+  }
+
+  /// Registra o aceite da versão dos termos em vigor.
+  Future<void> acceptTerms() async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/me/terms'),
+          headers: _authHeaders,
+          body: jsonEncode({'version': versaoDosTermos}),
+        )
+        .timeout(_timeout);
+    if (res.statusCode != 204) throw _error(res);
+  }
+
+  /// Tudo o que o servidor guarda sobre a conta, em JSON (LGPD, art. 18).
+  ///
+  /// Devolve o texto como veio, sem decodificar: ele vai direto para um
+  /// arquivo que a pessoa guarda ou compartilha.
+  Future<String> exportMyData() async {
+    final res = await _http
+        .get(_uri('/api/v1/auth/me/export'), headers: _authHeaders)
+        .timeout(_timeout);
+    if (res.statusCode != 200) throw _error(res);
+    return utf8.decode(res.bodyBytes);
   }
 
   /// Exclui a conta (exige a senha e, se ligada, a verificação em duas

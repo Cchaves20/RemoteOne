@@ -1784,6 +1784,13 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   /// Alça de arrastar. Fica só nela para não brigar com a rolagem da lista.
   Widget _dockGrip({required bool vertical, required Size area}) {
+    return Semantics(
+      label: widget.state.t.barraDeProgramasArrastar,
+      child: _dockGripSemRotulo(vertical: vertical, area: area),
+    );
+  }
+
+  Widget _dockGripSemRotulo({required bool vertical, required Size area}) {
     return GestureDetector(
       onPanUpdate: (d) {
         // Converte o arrasto em deslocamento relativo à metade da área.
@@ -2406,7 +2413,8 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   /// Seta de deslocamento posicionada numa borda (só no modo lupa).
-  Widget _panArrow(Alignment alignment, IconData icon, VoidCallback onTap) {
+  Widget _panArrow(
+      Alignment alignment, IconData icon, String rotulo, VoidCallback onTap) {
     return Align(
       alignment: alignment,
       child: Padding(
@@ -2415,6 +2423,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           color: Colors.black54,
           shape: const CircleBorder(),
           child: IconButton(
+            tooltip: rotulo,
             iconSize: 32,
             icon: Icon(icon, color: Colors.white),
             onPressed: onTap,
@@ -2454,8 +2463,19 @@ class _RemoteScreenState extends State<RemoteScreen>
   }
 
   Widget _screenView(Key key) {
-    return Center(
+    // Um rótulo para o leitor de tela: sem ele, a área maior da tela era
+    // anunciada como nada, e quem usa TalkBack ou VoiceOver não sabia onde
+    // estava nem o que fazer ali.
+    return Semantics(
       key: key,
+      container: true,
+      label: widget.state.t.telaDoComputadorRotulo,
+      child: _screenViewSemRotulo(),
+    );
+  }
+
+  Widget _screenViewSemRotulo() {
+    return Center(
       child: AspectRatio(
         aspectRatio: _aspectRatio,
         child: Container(
@@ -2516,13 +2536,13 @@ class _RemoteScreenState extends State<RemoteScreen>
                         child: image,
                       ),
                     ),
-                    _panArrow(Alignment.centerLeft, Icons.chevron_left,
+                    _panArrow(Alignment.centerLeft, Icons.chevron_left, widget.state.t.moverEsquerda,
                         () => _pan(0.30, 0)),
-                    _panArrow(Alignment.centerRight, Icons.chevron_right,
+                    _panArrow(Alignment.centerRight, Icons.chevron_right, widget.state.t.moverDireita,
                         () => _pan(-0.30, 0)),
-                    _panArrow(Alignment.topCenter, Icons.expand_less,
+                    _panArrow(Alignment.topCenter, Icons.expand_less, widget.state.t.moverCima,
                         () => _pan(0, 0.30)),
-                    _panArrow(Alignment.bottomCenter, Icons.expand_more,
+                    _panArrow(Alignment.bottomCenter, Icons.expand_more, widget.state.t.moverBaixo,
                         () => _pan(0, -0.30)),
                   ],
                 );
@@ -3143,6 +3163,7 @@ class _RemoteScreenState extends State<RemoteScreen>
             fontSize: 11,
           )),
       trailing: IconButton(
+        tooltip: widget.state.t.trazerArquivo,
         icon: const Icon(Icons.download, size: 20),
         color: auroraCyan,
         onPressed: bloqueado ? null : () => _bringFile(file),
@@ -3312,6 +3333,7 @@ class _RemoteScreenState extends State<RemoteScreen>
       child: Row(
         children: [
           IconButton(
+            tooltip: MaterialLocalizations.of(context).backButtonTooltip,
             icon: const Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () => Navigator.of(context).pop(),
           ),
@@ -3394,6 +3416,9 @@ class _RemoteScreenState extends State<RemoteScreen>
             ),
             if (showToggle)
               IconButton(
+                tooltip: _keyboardVisible
+                    ? widget.state.t.esconderTeclado
+                    : widget.state.t.mostrarTeclado,
                 icon: Icon(
                   _keyboardVisible ? Icons.keyboard_hide : Icons.keyboard,
                   color: Colors.white,

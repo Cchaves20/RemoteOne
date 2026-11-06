@@ -1,5 +1,4 @@
 import 'package:deskside_client/widgets/barra_do_sistema.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

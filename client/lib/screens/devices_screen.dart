@@ -7,6 +7,7 @@ import '../models/device.dart';
 import '../services/app_state.dart';
 import '../services/atalhos_do_icone.dart';
 import '../theme.dart';
+import '../widgets/links_legais.dart';
 import '../widgets/plano.dart';
 import '../widgets/pulse.dart';
 import '../widgets/transitions.dart';
@@ -34,11 +35,16 @@ class _DevicesScreenState extends State<DevicesScreen>
   /// Um atalho do ícone está rodando: o segundo toque espera este terminar.
   bool _rodandoAtalho = false;
 
+  /// O pedido de aceite dos termos está na tela: não abre outro por cima.
+  bool _pedindoTermos = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.state.addListener(_talvezRodarAtalho);
+    widget.state.addListener(_talvezPedirTermos);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _talvezPedirTermos());
     // O app pode ter aberto **pelo** atalho: o pedido já está lá esperando.
     WidgetsBinding.instance.addPostFrameCallback((_) => _talvezRodarAtalho());
     // Atualiza a lista ao abrir. `recarregar` não lança: sem rede, marca
@@ -52,8 +58,22 @@ class _DevicesScreenState extends State<DevicesScreen>
   @override
   void dispose() {
     widget.state.removeListener(_talvezRodarAtalho);
+    widget.state.removeListener(_talvezPedirTermos);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// Pede o aceite quando a conta ainda não aceitou a versão em vigor dos
+  /// termos (conta de antes do aceite, ou termos que mudaram).
+  ///
+  /// Depois do desbloqueio, pelo mesmo motivo do atalho: esta tela fica montada
+  /// por baixo do bloqueio, e o pedido apareceria antes de a pessoa entrar.
+  void _talvezPedirTermos() {
+    final state = widget.state;
+    if (_pedindoTermos || !mounted || state.bloqueado) return;
+    if (!(state.conta?.termosPendentes ?? false)) return;
+    _pedindoTermos = true;
+    pedirAceiteDosTermos(context, state).whenComplete(() => _pedindoTermos = false);
   }
 
   /// Roda a automação que um atalho do ícone pediu, quando der.

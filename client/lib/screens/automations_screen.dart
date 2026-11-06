@@ -872,6 +872,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             onPressed: () => _editarEspera(i),
           ),
           IconButton(
+            tooltip: MaterialLocalizations.of(context).deleteButtonTooltip,
             icon: const Icon(Icons.close, size: 20, color: Colors.white38),
             onPressed: () => setState(() {
               final nova = [..._passos]..removeAt(i);

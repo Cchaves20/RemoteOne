@@ -1717,6 +1717,82 @@ class Strings {
       'Ensuite, votre compte continue sur le forfait gratuit — rien n’est supprimé.',
       'Después tu cuenta sigue funcionando en el plan gratis: no se borra nada.');
   /// Os dois documentos que a Apple exige na tela de compra (diretriz 3.1.2).
+  // --- Rótulos para leitor de tela -------------------------------------------
+
+  String get telaDoComputadorRotulo => _t(
+      'Tela do computador. Os gestos sobre ela controlam o mouse; veja Configurações, Como controlar.',
+      'Computer screen. Gestures on it control the mouse; see Settings, How to control.',
+      '电脑屏幕。在上面的手势控制鼠标；请参阅“设置”中的“如何控制”。',
+      "Écran de l'ordinateur. Les gestes dessus contrôlent la souris ; voir Réglages, Comment contrôler.",
+      'Pantalla del ordenador. Los gestos sobre ella controlan el ratón; consulta Ajustes, Cómo controlar.');
+  String get barraDeProgramasArrastar => _t('Arrastar a barra de programas',
+      'Drag the app bar', '拖动应用栏', 'Déplacer la barre des programmes',
+      'Arrastrar la barra de programas');
+  String get mostrarSenha => _t('Mostrar senha', 'Show password', '显示密码',
+      'Afficher le mot de passe', 'Mostrar contraseña');
+  String get esconderSenha => _t('Esconder senha', 'Hide password', '隐藏密码',
+      'Masquer le mot de passe', 'Ocultar contraseña');
+  String get mostrarTeclado => _t('Mostrar teclado', 'Show keyboard', '显示键盘',
+      'Afficher le clavier', 'Mostrar teclado');
+  String get esconderTeclado => _t('Esconder teclado', 'Hide keyboard', '隐藏键盘',
+      'Masquer le clavier', 'Ocultar teclado');
+  String get trazerArquivo => _t('Trazer para o celular', 'Bring to phone', '传到手机',
+      'Transférer vers le téléphone', 'Traer al teléfono');
+  String get moverEsquerda => _t('Mover para a esquerda', 'Move left', '向左移动',
+      'Déplacer à gauche', 'Mover a la izquierda');
+  String get moverDireita => _t('Mover para a direita', 'Move right', '向右移动',
+      'Déplacer à droite', 'Mover a la derecha');
+  String get moverCima => _t('Mover para cima', 'Move up', '向上移动',
+      'Déplacer vers le haut', 'Mover hacia arriba');
+  String get moverBaixo => _t('Mover para baixo', 'Move down', '向下移动',
+      'Déplacer vers le bas', 'Mover hacia abajo');
+
+  // --- Termos, privacidade e direitos (LGPD) ---------------------------------
+
+  /// "Li e aceito os [Termos de uso] e a [Política de privacidade]", em três
+  /// pedaços: os dois do meio são links.
+  String get termosAceitoPrefixo =>
+      _t('Li e aceito os ', 'I have read and accept the ', '我已阅读并接受', "J'ai lu et j'accepte les ",
+          'He leído y acepto los ');
+  String get termosAceitoMeio =>
+      _t(' e a ', ' and the ', '和', ' et la ', ' y la ');
+  String get termosNovaVersaoTitulo => _t('Termos atualizados', 'Updated terms', '条款已更新',
+      'Conditions mises à jour', 'Términos actualizados');
+  String get termosNovaVersaoTexto => _t(
+      'Atualizamos os termos de uso e a política de privacidade. Para continuar usando o Deskside, leia e aceite a nova versão.',
+      'We have updated the Terms of Use and the Privacy Policy. To keep using Deskside, please read and accept the new version.',
+      '我们更新了使用条款和隐私政策。如需继续使用 Deskside，请阅读并接受新版本。',
+      "Nous avons mis à jour les conditions d'utilisation et la politique de confidentialité. Pour continuer à utiliser Deskside, lisez et acceptez la nouvelle version.",
+      'Actualizamos los términos de uso y la política de privacidad. Para seguir usando Deskside, lee y acepta la nueva versión.');
+  String get termosAceitar => _t('Li e aceito', 'I accept', '我接受', "J'accepte", 'Acepto');
+  String get termosAceitarFalhou => _t(
+      'Não deu para registrar o aceite. Confira a conexão e tente de novo.',
+      'Could not record your acceptance. Check the connection and try again.',
+      '无法记录您的同意。请检查网络后重试。',
+      "Impossible d'enregistrer votre acceptation. Vérifiez la connexion et réessayez.",
+      'No se pudo registrar la aceptación. Revisa la conexión e inténtalo de nuevo.');
+  String get privacidadeETermos => _t('Privacidade e termos', 'Privacy and terms',
+      '隐私与条款', 'Confidentialité et conditions', 'Privacidad y términos');
+  String get licencasAbertas => _t('Licenças de código aberto', 'Open source licenses',
+      '开源许可', 'Licences open source', 'Licencias de código abierto');
+  String get exportarDados => _t('Baixar meus dados', 'Download my data', '下载我的数据',
+      'Télécharger mes données', 'Descargar mis datos');
+  String get exportarDadosSub => _t(
+      'Uma cópia de tudo o que guardamos sobre a sua conta',
+      'A copy of everything we store about your account',
+      '我们保存的关于您账户的全部数据副本',
+      'Une copie de tout ce que nous conservons sur votre compte',
+      'Una copia de todo lo que guardamos sobre tu cuenta');
+  String get exportarDadosFalhou => _t(
+      'Não deu para baixar os dados. Tente de novo.',
+      'Could not download your data. Please try again.',
+      '无法下载数据，请重试。',
+      'Impossible de télécharger vos données. Réessayez.',
+      'No se pudieron descargar los datos. Inténtalo de nuevo.');
+  String get gerenciarAssinatura => _t('Gerenciar ou cancelar assinatura',
+      'Manage or cancel subscription', '管理或取消订阅', "Gérer ou résilier l'abonnement",
+      'Gestionar o cancelar suscripción');
+
   String get assinaturaTermos =>
       _t('Termos de uso', 'Terms of Use', '使用条款', "Conditions d'utilisation",
           'Términos de uso');

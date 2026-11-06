@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../config.dart';
 import '../l10n/strings.dart';
@@ -8,6 +12,7 @@ import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/compra.dart';
 import '../widgets/brand.dart';
+import '../widgets/links_legais.dart';
 import '../widgets/segundo_fator.dart';
 import '../widgets/transitions.dart';
 import 'assinatura_screen.dart';
@@ -160,6 +165,21 @@ class SettingsScreen extends StatelessWidget {
                         .push(fadeThroughRoute(GestureTutorialScreen(state: state))),
                     subtitle: t.howToControlSub),
               ])),
+              staggered(_card(context, t.privacidadeETermos, Icons.privacy_tip_outlined, [
+                _action(context, Icons.description_outlined, t.assinaturaTermos,
+                    () => abrirNoSite(context, state, '/termos')),
+                _action(context, Icons.shield_outlined, t.assinaturaPrivacidade,
+                    () => abrirNoSite(context, state, '/privacidade')),
+                _action(context, Icons.download_outlined, t.exportarDados,
+                    () => _exportarDados(context),
+                    subtitle: t.exportarDadosSub),
+                _action(context, Icons.article_outlined, t.licencasAbertas,
+                    () => showLicensePage(
+                          context: context,
+                          applicationName: 'Deskside',
+                          applicationVersion: versaoVisivel(_appVersion),
+                        )),
+              ])),
               staggered(_card(context, t.about, Icons.info_outline, [
                 Row(
                   children: [
@@ -182,6 +202,34 @@ class SettingsScreen extends StatelessWidget {
         },
       ),
     );
+  }
+
+  /// Baixa tudo o que o servidor guarda sobre a conta e entrega à pessoa pela
+  /// folha de compartilhar do sistema (salvar em Arquivos, mandar por e-mail).
+  ///
+  /// O arquivo fica na pasta temporária do app, que o sistema limpa sozinho:
+  /// ele tem dados pessoais, e não há por que sobrar uma cópia além da que a
+  /// pessoa escolheu guardar.
+  Future<void> _exportarDados(BuildContext context) async {
+    final t = state.t;
+    final mensageiro = ScaffoldMessenger.of(context);
+    final caixa = context.findRenderObject() as RenderBox?;
+    final origem = caixa == null
+        ? null
+        : caixa.localToGlobal(Offset.zero) & caixa.size;
+    try {
+      final json = await state.exportMyData();
+      final dir = await getTemporaryDirectory();
+      final dia = DateTime.now().toIso8601String().split('T').first;
+      final arquivo = File('${dir.path}/deskside-meus-dados-$dia.json');
+      await arquivo.writeAsString(json);
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(arquivo.path, mimeType: 'application/json')],
+        sharePositionOrigin: origem,
+      ));
+    } catch (_) {
+      mensageiro.showSnackBar(SnackBar(content: Text(t.exportarDadosFalhou)));
+    }
   }
 
   // --- blocos visuais ---------------------------------------------------------

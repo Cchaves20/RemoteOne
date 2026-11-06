@@ -17,6 +17,8 @@ class Conta {
     this.planoAte,
     this.emTeste = false,
     this.renova = false,
+    this.termosVersao = '',
+    this.termosAtual = '',
   });
 
   final int id;
@@ -52,6 +54,20 @@ class Conta {
   /// teste e assinatura chegam os dois como `pago` com trinta dias, e pelo
   /// calendário são a mesma coisa.
   final bool emTeste;
+
+  /// A versão dos termos que esta conta aceitou ("" = nunca pelo app).
+  final String termosVersao;
+
+  /// A versão em vigor no servidor. Vazia num servidor antigo.
+  final String termosAtual;
+
+  /// Há uma versão dos termos que a pessoa ainda não aceitou.
+  ///
+  /// Só quando o servidor conhece o aceite (`termosAtual` não vazio): um
+  /// servidor antigo não manda o campo, e pedir um aceite que ele não sabe
+  /// registrar travaria o app numa tela sem saída.
+  bool get termosPendentes =>
+      termosAtual.isNotEmpty && termosVersao != termosAtual;
 
   /// Se há uma **cobrança marcada** para quando o prazo acabar.
   ///
@@ -113,5 +129,7 @@ class Conta {
         // cartão diz "acaba em N dias", que é verdade em todo caso —
         // enquanto prometer uma cobrança que não vem não é.
         renova: json['renova'] as bool? ?? false,
+        termosVersao: (json['termos_versao'] as String?) ?? '',
+        termosAtual: (json['termos_atual'] as String?) ?? '',
       );
 }

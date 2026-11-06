@@ -835,6 +835,17 @@ class AppState extends ChangeNotifier {
 
   Future<void> endOtherSessions() => api.endOtherSessions();
 
+    /// Aceita a versão dos termos em vigor e relê a conta, para o pedido de
+  /// aceite sumir da tela.
+  Future<void> acceptTerms() async {
+    await api.acceptTerms();
+    conta = await api.fetchAccount();
+    notifyListeners();
+  }
+
+  /// O JSON com tudo o que o servidor guarda sobre a conta.
+  Future<String> exportMyData() => api.exportMyData();
+
     Future<void> deleteAccount(String password, {String? totpCode}) async {
     await api.deleteAccount(password, totpCode: totpCode);
     _esquecerSessao();

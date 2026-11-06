@@ -5,6 +5,7 @@ import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/senha.dart';
 import '../widgets/brand.dart';
+import '../widgets/links_legais.dart';
 import 'verify_screen.dart';
 
 /// Criação de conta: o formulário inteiro, antes da verificação.
@@ -34,6 +35,10 @@ class _SignupScreenState extends State<SignupScreen> {
 
   DateTime? _nascimento;
   bool _verSenha = false;
+
+  /// A caixa de aceite dos termos e da privacidade. Começa desmarcada: um
+  /// aceite que vem marcado não é escolha de ninguém.
+  bool _aceitou = false;
   bool _enviando = false;
   String? _erro;
 
@@ -69,7 +74,8 @@ class _SignupScreenState extends State<SignupScreen> {
       _nascimento != null &&
       _contato.text.trim().isNotEmpty &&
       senhaValida(_senha.text) &&
-      _confere;
+      _confere &&
+      _aceitou;
 
   Future<void> _escolherData() async {
     final t = widget.state.t;
@@ -205,6 +211,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         labelText: t.password,
                         prefixIcon: const Icon(Icons.lock_outline),
                         suffixIcon: IconButton(
+                          tooltip: _verSenha ? t.esconderSenha : t.mostrarSenha,
                           icon: Icon(_verSenha
                               ? Icons.visibility_off_outlined
                               : Icons.visibility_outlined),
@@ -228,6 +235,23 @@ class _SignupScreenState extends State<SignupScreen> {
                             ? null
                             : t.passwordMismatch,
                       ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Checkbox(
+                          key: const Key('cadastro-aceite'),
+                          value: _aceitou,
+                          onChanged: (v) => setState(() => _aceitou = v ?? false),
+                        ),
+                        Expanded(
+                          child: TextoDeAceite(
+                            state: widget.state,
+                            estilo: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                      ],
                     ),
                     if (_erro != null) ...[
                       const SizedBox(height: 14),

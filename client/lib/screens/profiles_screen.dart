@@ -349,6 +349,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
             onPressed: () => runAutomationFlow(context, widget.state, a),
           ),
           IconButton(
+            tooltip: MaterialLocalizations.of(context).deleteButtonTooltip,
             icon: const Icon(Icons.delete_outline, color: Colors.white38),
             onPressed: () => _apagarAutomacao(a),
           ),
@@ -654,6 +655,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       }),
                     ),
                   IconButton(
+                    tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                     icon: const Icon(Icons.close, color: Colors.white38),
                     onPressed: () => setState(
                         () => _apps = _apps.where((x) => x != a).toList()),
@@ -780,6 +782,7 @@ class _AutoApresentacaoState extends State<_AutoApresentacao> {
         subtitle: Text(t.presentationUnreachable,
             style: const TextStyle(color: Colors.white38, fontSize: 12)),
         trailing: IconButton(
+          tooltip: widget.state.t.refresh,
           icon: const Icon(Icons.refresh, color: Colors.white38),
           onPressed: _carregar,
         ),

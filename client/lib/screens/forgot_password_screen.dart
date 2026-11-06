@@ -276,6 +276,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             labelText: t.newPassword,
             prefixIcon: const Icon(Icons.lock_outline),
             suffixIcon: IconButton(
+              tooltip: _verSenha ? t.esconderSenha : t.mostrarSenha,
               icon: Icon(_verSenha
                   ? Icons.visibility_off_outlined
                   : Icons.visibility_outlined),

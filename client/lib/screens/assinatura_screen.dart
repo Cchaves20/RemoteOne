@@ -326,6 +326,24 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
     }
   }
 
+  /// A página de assinaturas da loja, onde se troca de plano ou se cancela.
+  Future<void> _gerenciar() async {
+    final endereco = Uri.parse(_ehAndroid
+        ? 'https://play.google.com/store/account/subscriptions?package=$pacoteAndroid'
+        : 'https://apps.apple.com/account/subscriptions');
+    var abriu = false;
+    try {
+      abriu = await launchUrl(endereco, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      abriu = false;
+    }
+    if (!abriu && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(widget.state.t.assinaturaLinkFalhou)),
+      );
+    }
+  }
+
   void _falhar(String mensagem) {
     if (!mounted) return;
     setState(() {
@@ -436,6 +454,17 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
                         style: TextStyle(color: theme.colorScheme.error),
                       ),
                     ],
+                    // Cancelar tem que ser tão fácil quanto assinar (CDC): um
+                    // toque leva à página de assinaturas da loja, que é o único
+                    // lugar onde uma assinatura da loja se cancela. Sempre
+                    // visível, como os documentos abaixo.
+                    const SizedBox(height: 18),
+                    OutlinedButton.icon(
+                      key: const Key('assinatura-gerenciar'),
+                      icon: const Icon(Icons.manage_accounts_outlined),
+                      label: Text(t.gerenciarAssinatura),
+                      onPressed: _gerenciar,
+                    ),
                     // Os dois documentos, **sempre visíveis** e fora de todo
                     // `if` acima. A diretriz 3.1.2 da Apple os exige na tela
                     // de compra, e é a rejeição mais comum em app de

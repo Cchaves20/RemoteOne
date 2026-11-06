@@ -127,6 +127,7 @@ class _AppsScreenState extends State<AppsScreen>
         title: Text(t.apps),
         actions: [
           IconButton(
+            tooltip: t.refresh,
             icon: const Icon(Icons.refresh),
             onPressed: () => _load(_tabs.index),
           ),

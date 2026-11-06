@@ -40,6 +40,16 @@ const backendPadrao = String.fromEnvironment(
 /// programa daquele endereço — que não serve página nenhuma.
 const siteDeskside = 'deskside.com.br';
 
+/// A versão dos termos de uso e da política de privacidade que este app mostra
+/// e manda como aceita no cadastro. Tem que ser a mesma de
+/// `backend/app/termos.py`: o servidor recusa o cadastro com outra, e pede o
+/// aceite de novo a quem aceitou uma anterior.
+const versaoDosTermos = '2026-11';
+
+/// O nome do pacote na Play Store (ver docs/publicar-na-play-store.md). Usado
+/// para abrir direto a página da assinatura deste app na Play.
+const pacoteAndroid = 'com.deskside.deskside_client';
+
 /// Se este endereço só funcionaria na máquina de quem compilou.
 ///
 /// A regra que o teste cobra. Espelha a que o agente já tem em Rust
