@@ -50,7 +50,39 @@ pub fn save_secret(path: &Path, secret: &str) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, secret.trim())
+    escrever_so_para_o_dono(path, secret.trim().as_bytes())
+}
+
+/// Grava legível só pelo dono do arquivo (0600) no Linux e no Mac.
+///
+/// Com a permissão padrão (0644), outro usuário do mesmo computador lia o
+/// segredo e podia se passar por este computador no servidor. A permissão vai
+/// **antes** do conteúdo: abrir já restrito no arquivo novo, e restringir o
+/// arquivo antigo antes de escrever nele - nunca há um instante com o segredo
+/// num arquivo aberto a todos.
+///
+/// No Windows a pasta fica no perfil do usuário, que o sistema já fecha para
+/// os outros usuários.
+#[cfg(unix)]
+fn escrever_so_para_o_dono(path: &Path, conteudo: &[u8]) -> io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let mut arquivo = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    // O `mode` só vale ao criar; um arquivo de antes desta mudança mantinha o
+    // 0644 que já tinha.
+    arquivo.set_permissions(fs::Permissions::from_mode(0o600))?;
+    arquivo.write_all(conteudo)
+}
+
+#[cfg(not(unix))]
+fn escrever_so_para_o_dono(path: &Path, conteudo: &[u8]) -> io::Result<()> {
+    fs::write(path, conteudo)
 }
 
 /// O resumo que vai ao servidor no lugar do identificador da máquina.
@@ -272,6 +304,26 @@ mod tests {
         // Aparado dos dois lados: um "\n" que sobrasse viraria um segredo
         // diferente do que o servidor guardou, e a recusa não diria por quê.
         assert_eq!(load_secret(&caminho), "abc-123");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn segredo_fica_legivel_so_pelo_dono() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("deskside-seg-{}", Uuid::new_v4()));
+        let caminho = dir.join("agent_secret");
+        let modo = |c: &Path| std::fs::metadata(c).unwrap().permissions().mode() & 0o777;
+
+        save_secret(&caminho, "novo").unwrap();
+        assert_eq!(modo(&caminho), 0o600);
+
+        // Arquivo antigo, aberto a todos: a próxima gravação o fecha.
+        std::fs::set_permissions(&caminho, std::fs::Permissions::from_mode(0o644)).unwrap();
+        save_secret(&caminho, "outro").unwrap();
+        assert_eq!(modo(&caminho), 0o600);
+        assert_eq!(load_secret(&caminho), "outro");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

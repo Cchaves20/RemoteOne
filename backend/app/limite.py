@@ -174,6 +174,7 @@ def zerar_tudo() -> None:
     por_conta._contagens.clear()
     por_ip._contagens.clear()
     por_ip_envio._contagens.clear()
+    por_destino_envio._contagens.clear()
 
 
 #: Entregas (SMS/e-mail) partindo do mesmo IP, antes de a espera começar.
@@ -195,6 +196,17 @@ LIMIAR_IP_ENVIO = 20
 
 por_ip_envio = Limitador(limiar=LIMIAR_IP_ENVIO)
 
+#: Códigos mandados ao **mesmo endereço** antes de a espera começar.
+#:
+#: O limite por IP sozinho deixava um furo: quem tem muitos IPs (uma botnet,
+#: uma lista de proxies) enche a caixa de uma vítima com códigos, um IP por
+#: pedido, e a cada código novo ganha mais cinco palpites. Cinco envios em
+#: quinze minutos é mais do que alguém precisa de verdade - o reenvio já
+#: espera um minuto entre um e outro.
+LIMIAR_DESTINO_ENVIO = 5
+
+por_destino_envio = Limitador(limiar=LIMIAR_DESTINO_ENVIO)
+
 
 def ip_do_pedido(request) -> str:
     """O IP de quem pediu, atravessando o proxy.
@@ -202,12 +214,19 @@ def ip_do_pedido(request) -> str:
     Atrás do Caddy, `request.client.host` é sempre o próprio contêiner — usar
     esse valor faria **todo mundo** compartilhar a mesma contagem, e o limite por
     IP viraria um limite global: o primeiro atacante tiraria o serviço do ar para
-    todos os outros usuários. O endereço real vem no `X-Forwarded-For`, e o
-    primeiro da lista é o cliente.
+    todos os outros usuários.
+
+    O endereço vem do `X-Real-IP`, que o **Caddy escreve** com o IP de quem
+    conectou nele (`header_up` no Caddyfile), substituindo o que o cliente
+    tenha mandado. Já foi o primeiro valor do `X-Forwarded-For`, e esse valor
+    é do cliente: trocá-lo a cada pedido fugia do limite por IP. Por isso o
+    `X-Forwarded-For` não é lido aqui de jeito nenhum.
+
+    Sem o cabeçalho (testes, servidor local sem Caddy), vale a conexão.
     """
-    encaminhado = request.headers.get("x-forwarded-for")
-    if encaminhado:
-        return encaminhado.split(",")[0].strip()
+    real = (request.headers.get("x-real-ip") or "").strip()
+    if real:
+        return real
     return request.client.host if request.client else "desconhecido"
 
 
@@ -258,14 +277,36 @@ def perdoar_login(destino: str, ip: str) -> None:
     por_conta.registrar_acerto(destino)
 
 
-def cobrar_envio(ip: str) -> None:
+def cobrar_envio(ip: str, destino: str | None = None) -> None:
     """Recusa — e já contabiliza — um pedido que gasta SMS ou e-mail.
 
     Contabiliza na hora, e não depois, porque aqui não existe "deu errado": a
     entrega sai de qualquer forma. Esperar por um resultado que não vem deixaria
     o contador sempre em zero, e o limite existiria só no papel.
+
+    Com `destino`, conta também por endereço: o IP limita quem pede, o destino
+    protege quem recebe. Os dois são conferidos antes de qualquer um contar,
+    para um pedido recusado não gastar o orçamento do outro.
     """
-    falta = por_ip_envio.falta_esperar(ip)
+    pares = [(ip, por_ip_envio)]
+    if destino:
+        pares.insert(0, (destino.strip().lower(), por_destino_envio))
+    for chave, limitador in pares:
+        falta = limitador.falta_esperar(chave)
+        if falta > 0:
+            raise _recusar(falta)
+    for chave, limitador in pares:
+        limitador.registrar_falha(chave)
+
+
+def cobrar_destino(destino: str) -> None:
+    """Só a parte por endereço de `cobrar_envio`.
+
+    Para as rotas que já cobraram o IP antes de saber o destino - cobrar o IP
+    de novo contaria cada pedido duas vezes.
+    """
+    chave = destino.strip().lower()
+    falta = por_destino_envio.falta_esperar(chave)
     if falta > 0:
         raise _recusar(falta)
-    por_ip_envio.registrar_falha(ip)
+    por_destino_envio.registrar_falha(chave)

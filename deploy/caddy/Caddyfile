@@ -91,6 +91,14 @@
 	}
 
 	handle {
-		reverse_proxy api:8000
+		# O IP de quem conectou, escrito pelo Caddy - e não lido do que o
+		# cliente mandou. O `X-Forwarded-For` aceita o que vier de fora no
+		# começo da lista, e o limite de tentativas usava esse primeiro valor:
+		# trocar o cabeçalho a cada pedido era fugir do limite por IP. O
+		# `header_up` substitui qualquer `X-Real-IP` que o cliente tenha
+		# mandado. Ver `backend/app/limite.py`, `ip_do_pedido`.
+		reverse_proxy api:8000 {
+			header_up X-Real-IP {remote_host}
+		}
 	}
 }

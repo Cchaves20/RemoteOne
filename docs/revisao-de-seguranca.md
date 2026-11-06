@@ -387,3 +387,34 @@ pode parar de conferir:
 E, antes de cobrar de estranhos: **uma revisão por alguém que não escreveu este
 código**. Tudo acima saiu de leitura minha, e há um limite conhecido para o que
 se enxerga no próprio trabalho.
+
+## Auditoria de novembro de 2026
+
+Cinco perguntas: autenticação nas rotas, senhas, limite de tentativas,
+isolamento entre contas (RLS) e dados sensíveis. Corrigido:
+
+- **Canal do agente sem segredo.** Com a trava `exigir_segredo_do_agente`
+  desligada, um computador que **já tinha provado** ter segredo aceitava
+  conexão sem ele: bastava saber o `device_id` para se passar pelo computador
+  e receber o que o dono digitasse. Agora quem já provou não entra mais sem o
+  segredo (`main._autorizar_agente`); o agente antigo, que nunca o apresentou,
+  continua entrando até a trava fechar.
+- **Envio de códigos por endereço.** O reenvio do cadastro e o da troca de
+  contato não passavam pelo limite, e nenhum envio tinha teto por endereço.
+  Agora há os dois (`limite.cobrar_envio`, `limite.cobrar_destino`), e o
+  reenvio só conta depois da espera de um minuto.
+- **IP do limite.** Vinha do primeiro valor do `X-Forwarded-For`, que é do
+  cliente. Agora vem do `X-Real-IP` que o Caddy escreve. Medido com o Caddy
+  2.10: ele já substituía os dois cabeçalhos, então na prática não havia fuga
+  - a mudança tira a dependência desse comportamento.
+- **`/docs`, `/redoc` e `/openapi.json`** fechados em produção
+  (`DESKSIDE_DOCS_PUBLICAS` liga).
+- **`/ws/viewer`** com dez segundos para a primeira mensagem.
+- **Segredo do agente no Linux e no Mac** gravado com permissão 0600.
+- **Isolamento entre contas:** o banco não tem RLS (SQLite, um usuário só), e
+  quem garante é a conferência de dono em cada rota. `tests/test_outra_conta.py`
+  percorre **todas** as rotas com identificador no caminho e exige 404 para
+  outra conta; uma rota nova sem conferência quebra o teste.
+
+Ficou como configuração no servidor: `DESKSIDE_BACKUP_KEY` e
+`DESKSIDE_TOTP_KEY` no `deploy/.env`, com cópia das chaves fora da VM.

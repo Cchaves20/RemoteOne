@@ -184,3 +184,53 @@ class TestAdocao:
         linha = _linha("dev-seg-9")
         assert linha.agent_secret == hashlib.sha256(emitido.encode()).hexdigest()
         assert linha.agent_secret_pendente is None
+
+
+class TestSemSegredo:
+    """Quem chega sem segredo a um computador que já provou ter um.
+
+    Antes, `secret` ausente era aceito sempre que a trava estivesse desligada -
+    inclusive para um computador cujo agente já guardava segredo. Bastava saber
+    o `device_id` para se passar por ele e receber o que o dono digitasse.
+    """
+
+    def test_computador_que_ja_provou_recusa_quem_chega_sem(self):
+        import pytest
+
+        from app.main import SegredoRecusado
+
+        segredo, _ = _parear("seg-sem1@example.com", "dev-seg-sem-1")
+        assert _autorizar_agente("dev-seg-sem-1", segredo)[1] is True
+
+        with pytest.raises(SegredoRecusado):
+            _autorizar_agente("dev-seg-sem-1", None)
+
+        # E o dono de verdade continua entrando.
+        assert _autorizar_agente("dev-seg-sem-1", segredo) == (None, True)
+
+    def test_agente_antigo_pareado_continua_entrando(self):
+        """O agente antigo recebe segredo no pareamento mas nunca o apresenta:
+        recusá-lo deixaria o computador desligado para sempre, sem explicação.
+        É a trava `exigir_segredo_do_agente` que o fecha, quando chegar a hora.
+        """
+        _parear("seg-sem2@example.com", "dev-seg-sem-2")
+        assert _linha("dev-seg-sem-2").agent_secret_pendente
+
+        assert _autorizar_agente("dev-seg-sem-2", None) == (None, False)
+
+    def test_depois_da_adocao_tambem_recusa_quem_chega_sem(self):
+        import pytest
+
+        from app.main import SegredoRecusado
+
+        _parear("seg-sem3@example.com", "dev-seg-sem-3")
+        with SessionLocal() as db:
+            linha = db.scalar(select(Device).where(Device.device_id == "dev-seg-sem-3"))
+            linha.agent_secret = None
+            linha.agent_secret_pendente = None
+            db.commit()
+        novo, autenticado = _autorizar_agente("dev-seg-sem-3", "")
+        assert novo and autenticado
+
+        with pytest.raises(SegredoRecusado):
+            _autorizar_agente("dev-seg-sem-3", None)

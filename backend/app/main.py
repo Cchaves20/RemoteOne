@@ -100,7 +100,18 @@ def _acalmar_o_coletor() -> None:
     gc.set_threshold(50_000, 50, 100)
 
 
-app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)
+# A documentação interativa só existe quando pedida (`DESKSIDE_DOCS_PUBLICAS`):
+# ver `config.docs_publicas`. O esquema continua sendo gerado por
+# `app.openapi()` para quem precisa dele dentro do processo (os testes).
+_docs = settings.docs_publicas
+app = FastAPI(
+    title=settings.app_name,
+    version=settings.version,
+    lifespan=lifespan,
+    docs_url="/docs" if _docs else None,
+    redoc_url="/redoc" if _docs else None,
+    openapi_url="/openapi.json" if _docs else None,
+)
 app.include_router(auth_router)
 app.include_router(devices_router)
 app.include_router(profiles_router)
@@ -354,6 +365,23 @@ def _autorizar_agente(device_id: str, apresentado: str | None) -> tuple[str | No
 
         if apresentado is None:
             if settings.exigir_segredo_do_agente:
+                raise SegredoRecusado("agente sem segredo")
+            # Este computador já **provou** ter o segredo pelo menos uma vez:
+            # o resumo está na coluna e o pendente já foi apagado, o que só
+            # acontece quando um agente apresenta o segredo certo (abaixo) ou o
+            # adota nesta mesma conversa. Um agente que sabe guardar segredo
+            # nunca mais conecta sem ele - então quem chega sem, aqui, é alguém
+            # que sabe o `device_id` e não sabe o segredo.
+            #
+            # O agente **antigo** continua entrando: o pareamento grava o
+            # segredo para ele também, mas ele nunca o apresenta, e o pendente
+            # fica lá. É ele que a trava `exigir_segredo_do_agente` vai
+            # fechar, quando todos tiverem atualizado.
+            if (
+                device.agent_secret
+                and pairing.e_resumo(device.agent_secret)
+                and not device.agent_secret_pendente
+            ):
                 raise SegredoRecusado("agente sem segredo")
             return None, False
 
@@ -896,6 +924,14 @@ def _authenticate_viewer(token: str, device_id: str) -> dict | None:
 #: conexão meio-aberta engana os dois.
 SILENCIO_DO_AGENTE = 35
 
+#: Quanto o `/ws/viewer` espera pela primeira mensagem (o token).
+#:
+#: Sem prazo, uma conexão que nunca se identifica ficava aberta para sempre,
+#: segurando memória e uma tarefa do servidor: abrir milhares delas, sem conta
+#: e sem token, bastava para esgotar a VM. O app manda o token logo depois de
+#: conectar; dez segundos cobrem uma rede móvel ruim.
+PRAZO_DA_IDENTIFICACAO = 10
+
 _pending_stops: dict[str, asyncio.Task] = {}
 _STREAM_GRACE_SECONDS = 8
 
@@ -951,7 +987,16 @@ async def viewer_ws(websocket: WebSocket, device_id: str) -> None:
     sender_task: asyncio.Task | None = None
     vigia: asyncio.Task | None = None
     try:
-        auth = await websocket.receive_json()
+        try:
+            auth = await asyncio.wait_for(
+                websocket.receive_json(), timeout=PRAZO_DA_IDENTIFICACAO
+            )
+        except (TimeoutError, json.JSONDecodeError):
+            await websocket.close(code=4401)  # não se identificou a tempo
+            return
+        if not isinstance(auth, dict):
+            await websocket.close(code=4401)
+            return
         credencial = _authenticate_viewer(auth.get("token", ""), device_id)
         if credencial is None:
             await websocket.close(code=4401)  # não autorizado

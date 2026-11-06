@@ -150,6 +150,13 @@ class Settings(BaseSettings):
     #: o `/health` denuncia quando está ligado.
     aceitar_sandbox: bool = False
 
+    # Publicar `/docs`, `/redoc` e `/openapi.json`.
+    #
+    # Desligado por padrão: em produção, o mapa completo da API (cada rota,
+    # cada campo, cada formato) é um roteiro pronto para quem procura a rota
+    # esquecida sem conferência. Quem desenvolve liga no próprio computador.
+    docs_publicas: bool = False
+
     # Idade mínima para criar conta.
     #
     # Treze não é número escolhido a esmo: é o piso da LGPD para tratamento de

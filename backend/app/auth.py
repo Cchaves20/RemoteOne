@@ -365,6 +365,7 @@ def signup_start(
         )
 
     destino, canal = _destino(body)
+    limite.cobrar_destino(destino)
     _livre(db, destino, canal)
 
     # Recomeçar substitui o cadastro pendente anterior. Guardar os dois deixaria
@@ -401,11 +402,15 @@ def signup_start(
 
 
 @router.post("/signup/resend", response_model=SignupPending)
-def signup_resend(body: SignupResend, db: Session = Depends(get_db)) -> SignupPending:
+def signup_resend(
+    body: SignupResend, request: Request, db: Session = Depends(get_db)
+) -> SignupPending:
     """Manda outro código, com um novo prazo — e zera as tentativas erradas.
 
     Zerar é o certo: as tentativas contam contra *aquele* código, e o que a
-    pessoa vai digitar agora é outro.
+    pessoa vai digitar agora é outro. É também por isso que o reenvio passa
+    pelo limite de envios: sem ele, cada minuto dava cinco palpites novos, sem
+    teto, e a caixa da vítima recebia um código por minuto para sempre.
     """
     pendente = _pendente(db, body.destination)
     if not verificacao.pode_reenviar(pendente.last_sent_at):
@@ -415,6 +420,7 @@ def signup_resend(body: SignupResend, db: Session = Depends(get_db)) -> SignupPe
             "para pedir outro código",
         )
 
+    limite.cobrar_envio(limite.ip_do_pedido(request), pendente.destino)
     codigo = verificacao.gerar()
     agora = datetime.now(UTC)
     pendente.hashed_code = verificacao.resumo(codigo)
@@ -531,6 +537,10 @@ def forgot_password(
     limite.cobrar_envio(limite.ip_do_pedido(request))
 
     destino, canal = _destino(body)
+    # Também por endereço, e também antes da busca - igual para conta que
+    # existe e que não existe. Só por IP, muitos IPs enchiam a caixa de uma
+    # vítima, e cada código novo trazia mais cinco palpites para trocar a senha.
+    limite.cobrar_destino(destino)
     coluna = User.email if canal == "email" else User.phone
     user = db.scalar(select(User).where(coluna == destino))
 
@@ -954,6 +964,9 @@ def contact_change_start(
     # login — que normaliza — nunca encontraria: a pessoa trocaria o número e
     # ficaria fora da própria conta sem entender por quê.
     destino, canal = _destino(body)
+    # Mesmo logado, isto manda e-mail para um endereço escolhido por quem pede:
+    # sem limite, uma conta qualquer serviria para encher a caixa de terceiros.
+    limite.cobrar_envio(limite.ip_do_pedido(request), destino)
     if destino in (current_user.email, current_user.phone):
         raise _erro(status.HTTP_400_BAD_REQUEST, "este já é o contato da conta")
     _livre(db, destino, canal)
@@ -998,6 +1011,7 @@ def contact_change_start(
 
 @router.post("/me/contact/resend", response_model=SignupPending)
 def contact_change_resend(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SignupPending:
@@ -1014,6 +1028,7 @@ def contact_change_resend(
             "para pedir outro código",
         )
 
+    limite.cobrar_envio(limite.ip_do_pedido(request), pendente.destino)
     codigo = verificacao.gerar()
     agora = datetime.now(UTC)
     pendente.hashed_code = verificacao.resumo(codigo)
