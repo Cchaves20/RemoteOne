@@ -9,10 +9,23 @@
 #
 # Ver docs/deploy-vps-oracle.md para o passo a passo completo (Oracle + DuckDNS).
 
+# Logs do Docker com teto. Sem isto o driver padrão (json-file) cresce para
+# sempre: numa VM de 45 GB, um laço de erro enche o disco e derruba o servidor
+# inteiro. 5 arquivos de 10 MB por contêiner.
+#
+# (Os registros de acesso que o Marco Civil pede guardar por 6 meses não são
+# estes: ficam no log próprio do Caddy, ver deploy/caddy/Caddyfile.)
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *logs
     ports:
       - "80:80"
       - "443:443"
@@ -34,6 +47,17 @@ services:
   api:
     build: ../backend
     restart: unless-stopped
+    logging: *logs
+    # O servidor responde? Sem isto o Docker só sabe se o processo existe, e
+    # um uvicorn travado aparece como "Up" para sempre. Com isto, `docker
+    # compose ps` mostra "unhealthy" e o `restart` tem o que fazer. Python
+    # puro, porque a imagem não tem curl.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     environment:
       DESKSIDE_DATABASE_URL: postgresql://deskside:${POSTGRES_PASSWORD}@db:5432/deskside
       DESKSIDE_REDIS_URL: redis://redis:6379/0
@@ -50,6 +74,7 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logs
     environment:
       POSTGRES_USER: deskside
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -60,6 +85,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *logs
 
   # Servidor de relay (TURN). Sem ele, celular no 5G + computador atrás do
   # roteador de casa **não** fecham conexão direta: os dois lados estão atrás
@@ -72,6 +98,7 @@ services:
   coturn:
     image: coturn/coturn:4.6
     restart: unless-stopped
+    logging: *logs
     network_mode: host
     # Sem shell e sem entrypoint próprio: quem substitui as variáveis é o
     # compose, aqui, antes de o contêiner existir. A versão anterior passava

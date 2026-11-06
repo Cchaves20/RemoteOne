@@ -7,7 +7,9 @@
 <style>
   :root { --fundo:#0b0c1a; --texto:#f2f3ff; --fraco:#a8abc9; --linha:#262a4a; --ciano:#35d6d0; }
   @media (prefers-color-scheme: light) {
-    :root { --fundo:#f7f8fc; --texto:#14162c; --fraco:#5a5f80; --linha:#e2e4f0; }
+    :root { --fundo:#f7f8fc; --texto:#14162c; --fraco:#5a5f80; --linha:#e2e4f0;
+      /* O ciano do modo escuro dava 1,7:1 sobre o fundo claro; este dá 4,75:1. */
+      --ciano:#0a7c77; }
   }
   body { margin:0; background:var(--fundo); color:var(--texto);
     font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
@@ -20,6 +22,19 @@
   a { color:var(--ciano); }
   ul { padding-left:20px; }
   li { margin-bottom:6px; }
+  table { width:100%; border-collapse:collapse; font-size:0.92rem; margin:12px 0; }
+  th, td { text-align:left; vertical-align:top; padding:8px 10px;
+    border-bottom:1px solid var(--linha); }
+  th { color:var(--fraco); font-weight:600; }
+  /* No celular a tabela vira uma lista: três colunas em 360 px não se leem. */
+  @media (max-width: 600px) {
+    thead { display:none; }
+    tr { display:block; padding:8px 0; border-bottom:1px solid var(--linha); }
+    td { display:block; border:0; padding:2px 0; }
+    td:nth-child(1) { font-weight:600; }
+    td:nth-child(2)::before { content:"Para quê: "; color:var(--fraco); }
+    td:nth-child(3)::before { content:"Base legal: "; color:var(--fraco); }
+  }
   footer { margin-top:48px; padding-top:20px; border-top:1px solid var(--linha);
     font-size:0.9rem; color:var(--fraco); }
 </style>
@@ -27,80 +42,93 @@
 <body>
 <div class="caixa">
   <h1>Política de privacidade</h1>
-  <p class="data">Atualizado em agosto de 2026.</p>
-<div class="rascunho">
-    <strong>Rascunho.</strong> Este texto foi conferido linha a linha contra o
-    código que está no ar — o que ele descreve é o que o programa faz de verdade.
-    Mas <strong>ainda não passou por revisão jurídica</strong>, e será revisado
-    antes de existir cobrança automática.
+  <p class="data">Versão 2026-11 &middot; atualizada em novembro de 2026.</p>
+  <div class="rascunho">
+    <strong>Ainda sem revisão jurídica.</strong> Este texto foi conferido linha a
+    linha contra o código que está no ar — o que ele descreve é o que o programa
+    faz de verdade —, mas ainda vai passar pela revisão de um advogado.
   </div>
-  <h2>1. O que guardamos</h2>
-  <p>Para manter a sua conta e os seus computadores:</p>
-  <ul>
-    <li><strong>Nome e sobrenome</strong>, para identificar a conta.</li>
-    <li><strong>Data de nascimento</strong>, para conferir a idade mínima.</li>
-    <li><strong>E-mail ou telefone</strong>, para entrar e receber os códigos de
-      verificação. Um dos dois basta — mas hoje só o <strong>e-mail</strong>
-      recebe códigos: o envio por SMS ainda não está contratado. Se você criar a
-      conta por telefone, fale com a gente para concluir a verificação.</li>
-    <li><strong>Senha</strong>, guardada apenas como hash (bcrypt). Não temos
-      como ler a sua senha.</li>
-    <li><strong>Dos computadores pareados</strong>: um identificador, o nome da
-      máquina, o sistema operacional, o endereço MAC (usado para ligar o
-      computador pela rede), o último endereço IP público visto e um segredo
-      sorteado no pareamento — é ele que prova ao servidor que aquele computador
-      é mesmo o seu. Também um <strong>resumo</strong> (hash SHA-256) do
-      identificador que o próprio Windows dá à máquina: o identificador em si
-      nunca sai do computador.</li>
-    <li><strong>O que você configurou</strong>: perfis de atalho e automações,
-      incluindo horários.</li>
-    <li><strong>Do seu plano</strong>: se a conta está no Deskside grátis ou no
-      pago, até quando o plano vale, e se já avisamos que o seu mês completo
-      está acabando.</li>
-    <li><strong>Quem já teve o teste grátis</strong>: um resumo (hash SHA-256)
-      do seu e-mail — ou telefone — e, se você pareou um computador durante o
-      teste, o resumo daquele computador. Serve a uma coisa só: impedir que o
-      teste de 30 dias seja tirado de novo com uma conta nova. O resumo não
-      permite descobrir o seu e-mail; só serve para reconhecer um e-mail que
-      já se conheça.</li>
-    <li><strong>Se você ligou a verificação em duas etapas</strong>: a chave que
-      o seu aplicativo autenticador usa, guardada cifrada. Ela não vale nada sem
-      a chave de cifra, que fica fora do banco.</li>
-  </ul>
 
-  <h2>2. O que <em>não</em> guardamos</h2>
+  <h2>1. O que guardamos, para quê, e com que base legal</h2>
+  <p>
+    A Lei Geral de Proteção de Dados (Lei 13.709/2018) exige uma finalidade e
+    uma base legal para cada dado. Estas são as nossas:
+  </p>
+  <table>
+    <thead>
+      <tr><th>Dado</th><th>Para quê</th><th>Base legal (LGPD, art. 7º)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Nome e sobrenome</td><td>Identificar a conta</td>
+        <td>Execução de contrato (V)</td></tr>
+      <tr><td>E-mail (ou telefone, nas contas antigas que entram por telefone)</td>
+        <td>Entrar, receber os códigos de verificação, os avisos de segurança e
+          o aviso de fim do mês completo</td><td>Execução de contrato (V)</td></tr>
+      <tr><td>Senha</td><td>Entrar. Guardada só como hash (bcrypt): não temos como
+          ler a sua senha</td><td>Execução de contrato (V)</td></tr>
+      <tr><td>Data de nascimento</td><td>Conferir a idade mínima no cadastro.
+          <strong>Não é guardada</strong>: serve na hora e é descartada</td>
+        <td>Execução de contrato (V)</td></tr>
+      <tr><td>Aceite dos termos (versão e data)</td><td>Provar o contrato</td>
+        <td>Execução de contrato (V)</td></tr>
+      <tr><td>Dos computadores pareados: um identificador, o nome que você deu, o
+          nome da máquina na rede, o sistema operacional, um resumo (hash
+          SHA-256) do identificador que o próprio sistema dá à máquina — o
+          identificador em si nunca sai do computador — e o resumo do segredo que
+          prova ao servidor que aquele computador é o seu</td>
+        <td>Parear e controlar os seus computadores</td>
+        <td>Execução de contrato (V)</td></tr>
+      <tr><td>Perfis de atalho, automações (com horários) e o widget</td>
+        <td>Guardar o que você configurou</td><td>Execução de contrato (V)</td></tr>
+      <tr><td>Aparelhos conectados: o nome do aparelho e as datas de entrada e
+          último uso</td><td>Mostrar onde a conta está aberta e deixar você
+          encerrar</td><td>Execução de contrato (V) e legítimo interesse na
+          segurança da conta (IX)</td></tr>
+      <tr><td>Plano e assinatura: plano, validade, a loja, o produto, o estado da
+          assinatura e um resumo do identificador da compra</td>
+        <td>Liberar a versão paga e manter o plano em dia</td>
+        <td>Execução de contrato (V)</td></tr>
+      <tr><td>Verificação em duas etapas: a chave do seu autenticador, guardada
+          cifrada, e os códigos de recuperação, só como resumo</td>
+        <td>Proteger a conta</td><td>Execução de contrato (V)</td></tr>
+      <tr><td>Quem já teve o teste grátis: um resumo (hash SHA-256) do e-mail ou
+          telefone e, se houve pareamento no teste, do computador</td>
+        <td>Impedir que o teste de 30 dias seja tirado de novo com outra conta. O
+          resumo não permite descobrir o e-mail</td>
+        <td>Legítimo interesse na prevenção de fraude (IX)</td></tr>
+      <tr><td>Registros de acesso: endereço IP, porta de origem, data, hora e o
+          endereço pedido</td><td>Guarda exigida pelo Marco Civil da Internet
+          (Lei 12.965/2014, art. 15)</td><td>Cumprimento de obrigação legal (II)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>2. O que não guardamos</h2>
   <p>Esta é a parte mais importante desta página:</p>
   <ul>
     <li><strong>A imagem da sua tela não é gravada.</strong> Ela viaja do
       computador ao celular e é descartada — nunca vai para disco. O servidor
-      mantém, no máximo, o <em>último</em> quadro em memória, para a tela
-      aparecer no instante em que você abre o aplicativo em vez de você olhar
-      para um retângulo preto; ele some assim que o computador se desconecta.
-      <br>
-      Sempre que possível a conexão é <strong>direta</strong> entre os dois
+      mantém, no máximo, o último quadro <em>em memória</em>, para a tela
+      aparecer no instante em que você abre o aplicativo; ele some assim que o
+      computador se desconecta.
+      Sempre que possível a conexão é direta entre os dois
       aparelhos e não passa pelos nossos servidores. Quando a rede não permite,
-      ela passa por um servidor de relay — e aí vale a parte forte: o vídeo é
-      cifrado de ponta a ponta pelo próprio WebRTC, então
-      <strong>o relay não tem como ler o que repassa</strong>. Não é uma promessa
-      nossa, é como o protocolo funciona.</li>
+      ela passa por um servidor de relay — e o vídeo é cifrado de ponta a ponta
+      pelo próprio WebRTC, então o relay não tem como ler o que repassa.</li>
     <li><strong>Não guardamos o que você digita</strong> nem os movimentos do
       mouse.</li>
     <li><strong>Não guardamos os seus arquivos.</strong> As transferências vão de
       um aparelho ao outro.</li>
     <li><strong>Não acessamos os seus computadores.</strong> E aqui preferimos
       ser exatos, porque o contrário seria fácil de escrever e falso: um
-      servidor do Deskside <em>conseguiria</em> mandar comandos a um computador
-      pareado — é assim que o seu próprio celular o controla. Não existe mágica
-      que impeça isso do lado de cá.
-      <br>
-      Por isso o compromisso aqui é de conduta e de operação, e não de
-      impossibilidade: pouquíssimas pessoas alcançam o servidor, o acesso é por
-      chave e com verificação em duas etapas, e usar essa capacidade para entrar
-      no computador de alguém sem pedido dele é violação destes termos
-      <em>por nós</em>. Se algum dia lermos ou controlarmos uma máquina sua sem
-      que você tenha pedido, estaremos quebrando o nosso próprio contrato.</li>
-    <li>Não vendemos nem compartilhamos dados com anunciantes. Não usamos
-      rastreadores de publicidade.</li>
+      servidor do Deskside conseguiria mandar comandos a um computador
+      pareado — é assim que o seu próprio celular o controla.
+      Por isso o compromisso aqui é de conduta e de operação: pouquíssimas
+      pessoas alcançam o servidor, o acesso é por chave e com verificação em duas
+      etapas, e usar essa capacidade para entrar no computador de alguém sem
+      pedido dele é violação destes termos <em>por nós</em>.</li>
+    <li><strong>Não usamos</strong> rastreadores, ferramentas de análise de uso,
+      anúncios, cookies nem inteligência artificial. Não vendemos nem
+      compartilhamos dados com anunciantes.</li>
   </ul>
 
   <h2>3. A área de transferência</h2>
@@ -112,49 +140,82 @@
 
   <h2>4. Com quem compartilhamos</h2>
   <ul>
-    <li><strong>Provedor de e-mail</strong>, apenas para entregar os
-      códigos de verificação.</li>
-    <li><strong>Provedor de hospedagem</strong>, onde os servidores rodam.</li>
+    <li><strong>Hospedagem</strong>: os servidores rodam na Oracle Cloud, em São
+      Paulo.</li>
+    <li><strong>Provedor de e-mail</strong>, apenas para entregar os códigos de
+      verificação e os avisos. Ele pode processar o seu endereço fora do Brasil,
+      com as garantias do art. 33 da LGPD.</li>
+    <li><strong>Apple e Google</strong>, quando você assina pelo aplicativo: o
+      pagamento é feito com eles, sob as regras deles, e nós recebemos só a
+      confirmação da compra.</li>
+    <li>O <strong>ditado por voz</strong> é o do teclado do seu próprio aparelho:
+      o áudio é tratado pela Apple ou pelo Google, sob os termos deles, e não
+      passa por nós.</li>
   </ul>
   <p>Nada além disso.</p>
 
-  <h2>5. Seus direitos (LGPD)</h2>
+  <h2>5. Seus direitos</h2>
   <p>
-    A Lei 13.709/2018 lhe dá direito a confirmar o tratamento, acessar,
-    corrigir, portar e <strong>eliminar</strong> os seus dados, e a revogar o
-    consentimento. O aplicativo já permite corrigir o contato e
-    <strong>excluir a conta inteira</strong> — a exclusão apaga também os
-    computadores, perfis e automações. Para os demais pedidos, escreva para
-    <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>.
+    A LGPD (art. 18) lhe dá direito a confirmar o tratamento, acessar, corrigir,
+    portar e eliminar os seus dados, saber com quem os compartilhamos e revogar o
+    consentimento. No aplicativo, em Configurações, você pode
+    <strong>corrigir o contato</strong>, <strong>baixar uma cópia dos seus
+    dados</strong> (um arquivo JSON com tudo o que guardamos sobre a conta, menos
+    as credenciais) e <strong>excluir a conta inteira</strong>. Para os demais
+    pedidos, escreva para
+    <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>:
+    respondemos em até 15 dias.
   </p>
 
   <h2>6. Por quanto tempo</h2>
+  <ul>
+    <li><strong>A conta e o que você configurou</strong>: enquanto a conta
+      existir. Excluída a conta, os dados são removidos — com a exceção do
+      registro de quem já teve o teste grátis (item 1), que continua, pelo motivo
+      dito lá.</li>
+    <li><strong>Cadastros e recuperações de senha não concluídos</strong>: são
+      apagados até um dia depois de o código vencer.</li>
+    <li><strong>Aparelhos que saíram da conta</strong>: 30 dias.</li>
+    <li><strong>Registros de acesso</strong>: 6 meses, como pede o Marco Civil,
+      e então são apagados.</li>
+    <li><strong>Cópias de segurança</strong>: catorze, uma por dia, e as mais
+      antigas são descartadas automaticamente. Uma cópia cifrada pode ser
+      guardada fora da nossa infraestrutura, para o caso de o servidor ser perdido
+      por inteiro. Por isso dados de uma conta excluída podem sobreviver alguns
+      dias dentro dessas cópias, até serem substituídas.</li>
+  </ul>
+
+  <h2>7. Crianças e adolescentes</h2>
   <p>
-    Enquanto a conta existir. Excluída a conta, os dados são removidos — com
-    uma exceção, que dizemos aqui para não ser surpresa: o
-    <strong>registro de quem já teve o teste grátis</strong> (item 1) continua.
-    Se ele fosse apagado junto, bastaria excluir a conta e criar outra para
-    ganhar mais 30 dias, e é justamente isso que ele existe para impedir. Ele
-    guarda só resumos, não o seu nome, e-mail ou telefone, e se apoia no
-    legítimo interesse de prevenir fraude (LGPD, art. 7º, IX).
-    <br><br>
-    As cópias de segurança do banco são <strong>catorze</strong>, uma por dia, e
-    as mais antigas são descartadas automaticamente. Uma cópia cifrada pode ser
-    guardada fora da nossa infraestrutura, para o caso de o servidor ser perdido
-    por inteiro — é o que faz um backup ser backup. Isso significa que dados de
-    uma conta excluída podem sobreviver alguns dias dentro dessas cópias, até
-    serem substituídas.
+    O Deskside é para quem tem pelo menos 13 anos. A idade é conferida no
+    cadastro pela data de nascimento, que não fica guardada.
   </p>
 
-  <h2>7. Encarregado</h2>
+  <h2>8. Segurança e incidentes</h2>
+  <p>
+    Senhas e segredos ficam só como resumo ou cifrados, o acesso aos servidores é
+    restrito, e cada novo acesso, computador pareado ou troca de senha gera um
+    aviso para você. Se acontecer um incidente de segurança que possa trazer
+    risco aos seus dados, comunicamos a Autoridade Nacional de Proteção de Dados
+    (ANPD) e as pessoas afetadas em até três dias úteis.
+  </p>
+
+  <h2>9. Encarregado</h2>
   <p>
     Pedidos e dúvidas sobre dados pessoais:
     <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>.
   </p>
 
+  <h2>10. Mudanças</h2>
+  <p>
+    Quando esta política mudar de forma relevante, avisamos no aplicativo ou por
+    e-mail, e o aplicativo pede o aceite da versão nova.
+  </p>
+
   <footer>
     <a href="/">Deskside</a> &middot; <a href="/termos">Termos</a> &middot;
     <a href="/privacidade">Privacidade</a> &middot;
+    <a href="/licencas.txt">Licenças</a> &middot;
     <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>
   </footer>
 </div>

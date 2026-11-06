@@ -21,6 +21,8 @@
     :root {
       --fundo: #f7f8fc; --cartao: #ffffff; --texto: #14162c; --fraco: #5a5f80;
       --linha: #e2e4f0;
+      /* O ciano do modo escuro dava 1,7:1 sobre o fundo claro; este dá 4,75:1. */
+      --ciano: #0a7c77;
     }
   }
   * { box-sizing: border-box; }
@@ -34,7 +36,9 @@
   .sub { font-size: 1.15rem; color: var(--fraco); margin: 0 auto; max-width: 30em; }
   .baixar {
     display: inline-block; margin: 32px 0 8px; padding: 16px 32px;
-    background: linear-gradient(120deg, var(--violeta), var(--ciano));
+    /* Texto branco: o degradê termina num ciano escuro, que segura 5:1 com
+       o branco. Com o ciano claro, o fim do botão ficava abaixo de 2:1. */
+    background: linear-gradient(120deg, var(--violeta), #0a7c77);
     color: #fff; text-decoration: none; border-radius: 14px;
     font-weight: 600; font-size: 1.05rem;
   }
@@ -177,6 +181,7 @@
     <p>
       <a href="/termos">Termos de uso</a> &middot;
       <a href="/privacidade">Privacidade</a> &middot;
+      <a href="/licencas.txt">Licenças</a> &middot;
       <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>
     </p>
     <p>Deskside &middot; deskside.com.br</p>

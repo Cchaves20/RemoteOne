@@ -164,10 +164,12 @@ falta para o Deskside poder ser vendido:
 - **Provedor de e-mail e SMS.** O cadastro verifica por código, e a entrega está pronta atrás de uma interface — falta contratar SMTP e Twilio e pôr as credenciais no `deploy/.env`. Sem isso o código vai para o registro do servidor, e o app avisa.
 - **App Store.** Hoje é sideload que expira em sete dias por aparelho.
 - **Cobrança e planos.**
-- **Termos de uso, política de privacidade, LGPD.** Existem em
-  `deploy/site/termos.html` e `privacidade.html`, e a própria página diz que são
-  rascunho. Escritos por quem não é advogado, e o que trava a cobrança é a
-  revisão — não a redação.
+- **Termos de uso, política de privacidade, LGPD.** Versão 2026-11 em
+  `deploy/site/termos.html` e `privacidade.html`, conferida contra o código
+  (assinatura pelas lojas, bases legais, prazos de guarda). Aceite com versão e
+  data no cadastro, cópia dos dados e exclusão pelo app, plano de incidente
+  (`docs/plano-de-incidente.md`). **Falta a revisão jurídica**, e a
+  identificação de quem vende (CNPJ ou CPF e endereço) no site e nos termos.
 - **SQLite** onde o plano pedia PostgreSQL + Redis, e **sem Alembic** — a
   migração de esquema é remendada na mão em `db.py`.
 - **Revisão de segurança** antes de abrir para terceiros.

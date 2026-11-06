@@ -5,7 +5,9 @@ name: Client (Flutter)
 
 on:
   push:
-    branches: [main]
+    # A branch de desenvolvimento também: é dela que o servidor e os
+    # instaladores saem. Só na `main`, estes testes nunca rodavam.
+    branches: [main, "claude/**"]
     paths: ["client/**", ".github/workflows/client.yml"]
   pull_request:
     paths: ["client/**", ".github/workflows/client.yml"]

@@ -445,6 +445,48 @@ As cópias saem numa pasta montada do disco (`deploy/backups`), e não num volum
 do Docker, justamente para o `scp` alcançá-las de fora. A pasta está no
 `.gitignore`: são dados de usuário, e o repositório é público.
 
+## Monitoramento e registros
+
+### Saber quando o servidor cai, antes dos usuários
+
+O `docker compose ps` mostra a API como `healthy` ou `unhealthy` (o compose
+pergunta ao `/health` a cada 30 s). Isso só ajuda quem está olhando. Para receber
+um aviso:
+
+1. Crie uma conta grátis em **uptimerobot.com** (ou **healthchecks.io**).
+2. **Add New Monitor → HTTP(s)**, URL `https://deskside.com.br/health`,
+   intervalo de 5 minutos, alerta para o seu e-mail.
+3. Opcional: em **Keyword**, procure por `"status":"ok"`, para pegar também o
+   caso em que o Caddy responde mas a API não.
+
+### Registros de acesso (Marco Civil)
+
+O Caddy grava cada acesso (IP, porta de origem, data, hora e endereço pedido)
+em `/data/acessos/acesso.log`, dentro do volume `caddy_data`, e apaga o que
+passa de 184 dias. O Marco Civil (art. 15) pede 6 meses, sob sigilo: o arquivo
+fica só na VM, não entra no backup do banco, e os cabeçalhos de credencial
+(`Authorization`, `Cookie`) saem redigidos. Para ler, ver
+`docs/plano-de-incidente.md`, "Investigar".
+
+### Logs do Docker
+
+Cada contêiner guarda no máximo 5 arquivos de 10 MB de log (`logging` no
+compose). Antes disso, os logs cresciam sem limite.
+
+### Backup fora da VM, toda semana
+
+O `-Backup` traz a cópia mais recente para o Dell. Para não depender de lembrar,
+uma tarefa agendada do Windows. **Dell, PowerShell, pasta
+`C:\Users\caiof_lv78yyf\RemoteOne`:**
+
+```powershell
+schtasks /Create /TN "Deskside backup" /SC WEEKLY /D SUN /ST 20:17 /TR "cmd /c cd /d C:\Users\caiof_lv78yyf\RemoteOne && scripts\atualizar.cmd -Backup"
+```
+
+O Dell precisa estar ligado no horário. Guarde também uma cópia do
+`deploy/.env` num gerenciador de senhas: sem ele, o backup restaura o banco mas
+não abre o 2FA de ninguém.
+
 ## Manutenção
 
 - **Atualizar o backend** (após um `git pull`):

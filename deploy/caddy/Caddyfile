@@ -37,6 +37,26 @@
 # outros continuam atendidos. Então acrescentar o nome novo antes de o DNS
 # propagar não tira o serviço do ar.
 {$CADDY_DOMAINS} {
+	# ## Registro de acesso (Marco Civil da Internet, art. 15)
+	#
+	# Quem acessou - IP **e porta de origem** - e quando. O provedor de
+	# aplicação guarda estes registros por 6 meses, sob sigilo. A porta entra
+	# porque a operadora de celular põe milhares de clientes atrás do mesmo IP
+	# (CGNAT): sem ela, o registro não identifica ninguém.
+	#
+	# Fica no volume `caddy_data` (/data), fora do Git e só acessível pela VM.
+	# 184 dias = 6 meses com folga. O Caddy omite do log os cabeçalhos de
+	# credencial (Authorization, Cookie). `roll_keep` alto para o teto ser o
+	# prazo, e não a quantidade de arquivos: 200 x 20 MB = 4 GB no pior caso.
+	log {
+		output file /data/acessos/acesso.log {
+			roll_size 20MiB
+			roll_keep 200
+			roll_keep_for 4416h
+		}
+		format json
+	}
+
 	# ## Cabeçalhos de segurança, em toda resposta — site e API
 	#
 	# Nenhum deles conserta um defeito nosso: eles instruem o **navegador** a
@@ -59,9 +79,9 @@
 		# ser interpretado como script.
 		X-Content-Type-Options "nosniff"
 		# Nenhuma página de fora pode embutir estas num quadro invisível e
-		# colher cliques. Os dois dizem a mesma coisa para navegadores de
-		# gerações diferentes.
-		Content-Security-Policy "frame-ancestors 'none'"
+		# colher cliques. O mesmo vale pela `frame-ancestors` da CSP, que fica
+		# em cada `handle` abaixo: definida aqui, ela ganhava da do site - medido
+		# com o Caddy 2.10, a de dentro do `handle` não a substituía.
 		X-Frame-Options "DENY"
 		# O endereço completo da página não vai junto ao sair para outro site.
 		Referrer-Policy "strict-origin-when-cross-origin"
@@ -79,8 +99,11 @@
 	#
 	# Nesta ordem, o pior caso é uma página do site cair no 404 da API: visível,
 	# inofensivo, e conserta-se acrescentando um caminho aqui.
-	@site path / /index.html /termos /privacidade /baixar/*
+	@site path / /index.html /termos /privacidade /licencas.txt /baixar/*
 	handle @site {
+		# O site é HTML e CSS sem script, imagem ou fonte de fora: a política
+		# mais fechada que ainda o desenha.
+		header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 		root * /srv/site
 		# `try_files` é o que faz `/termos` servir `termos.html`. Sem ele, a URL
 		# bonita daria 404 e a única forma de acessar seria com a extensão à
@@ -91,6 +114,8 @@
 	}
 
 	handle {
+		# A API só devolve JSON e o canal da tela: basta proibir quadros.
+		header Content-Security-Policy "frame-ancestors 'none'"
 		# O IP de quem conectou, escrito pelo Caddy - e não lido do que o
 		# cliente mandou. O `X-Forwarded-For` aceita o que vier de fora no
 		# começo da lista, e o limite de tentativas usava esse primeiro valor:

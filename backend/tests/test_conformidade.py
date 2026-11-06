@@ -286,3 +286,24 @@ def test_data_de_hoje_continua_conferindo_a_idade():
     crianca = date.today().replace(year=date.today().year - 10).isoformat()
     resp = client.post("/api/v1/auth/signup/start", json=_formulario(birth_date=crianca))
     assert resp.status_code == 400
+
+
+# --- incidente -----------------------------------------------------------------
+
+
+def test_derrubar_sessoes_invalida_todo_token_sem_mexer_no_segredo():
+    """Num incidente: todo mundo entra de novo, e o 2FA continua abrindo."""
+    from app import incidente, vinculos
+
+    cab = _cabecalho("incidente@example.com")
+    assert client.get("/api/v1/auth/me", headers=cab).status_code == 200
+    segredo_antes = settings.jwt_secret
+
+    assert incidente.derrubar_sessoes() >= 1
+    vinculos.esquecer_tudo()  # o que o `restart api` faz no servidor
+
+    assert client.get("/api/v1/auth/me", headers=cab).status_code == 401
+    assert settings.jwt_secret == segredo_antes
+    with SessionLocal() as db:
+        abertas = db.scalars(select(Sessao).where(Sessao.encerrada_em.is_(None))).all()
+    assert abertas == []

@@ -1,10 +1,16 @@
-# Agente Rust: compila e testa em Windows, Linux e macOS a cada push.
-# É assim que o macOS é coberto sem possuir um Mac.
+# Agente Rust no Windows, mais formatação e auditoria das dependências.
+#
+# Linux e Mac têm workflows próprios (agente-linux.yml e agente-mac.yml), que
+# instalam as bibliotecas do sistema que o agente precisa lá, testam e montam
+# os instaladores. Aqui fica o Windows - a plataforma principal - e o que vale
+# para todas: `cargo fmt` e o `cargo audit`.
 name: Agent (Rust)
 
 on:
   push:
-    branches: [main]
+    # A branch de desenvolvimento também: é dela que o servidor e os
+    # instaladores saem. Só na `main`, estes testes nunca rodavam.
+    branches: [main, "claude/**"]
     paths: ["agent/**", ".github/workflows/agent.yml"]
   pull_request:
     paths: ["agent/**", ".github/workflows/agent.yml"]
@@ -16,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest]
     defaults:
       run:
         working-directory: agent
@@ -42,3 +48,23 @@ jobs:
 
       - name: Build release
         run: cargo build --release
+
+  # Vulnerabilidades conhecidas (base RustSec) no Cargo.lock. Os alertas aceitos,
+  # com o motivo de cada um, estão em agent/.cargo/audit.toml.
+  auditoria:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Formatação
+        run: cargo fmt --check
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Auditoria das dependências
+        run: cargo audit

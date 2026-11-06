@@ -7,7 +7,9 @@
 <style>
   :root { --fundo:#0b0c1a; --texto:#f2f3ff; --fraco:#a8abc9; --linha:#262a4a; --ciano:#35d6d0; }
   @media (prefers-color-scheme: light) {
-    :root { --fundo:#f7f8fc; --texto:#14162c; --fraco:#5a5f80; --linha:#e2e4f0; }
+    :root { --fundo:#f7f8fc; --texto:#14162c; --fraco:#5a5f80; --linha:#e2e4f0;
+      /* O ciano do modo escuro dava 1,7:1 sobre o fundo claro; este dá 4,75:1. */
+      --ciano:#0a7c77; }
   }
   body { margin:0; background:var(--fundo); color:var(--texto);
     font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
@@ -27,25 +29,25 @@
 <body>
 <div class="caixa">
   <h1>Termos de uso</h1>
-  <p class="data">Atualizado em agosto de 2026.</p>
-<div class="rascunho">
-    <strong>Rascunho.</strong> Este texto foi conferido linha a linha contra o
-    código que está no ar — o que ele descreve é o que o programa faz de verdade.
-    Mas <strong>ainda não passou por revisão jurídica</strong>, e será revisado
-    antes de existir cobrança automática.
+  <p class="data">Versão 2026-11 &middot; atualizada em novembro de 2026.</p>
+  <div class="rascunho">
+    <strong>Ainda sem revisão jurídica.</strong> Este texto foi conferido linha a
+    linha contra o código que está no ar — o que ele descreve é o que o programa
+    faz de verdade —, mas ainda vai passar pela revisão de um advogado.
   </div>
+
   <h2>1. O que é o Deskside</h2>
   <p>
-    O Deskside permite controlar um computador Windows a partir de um celular ou
-    tablet: mover o mouse, digitar, ver a tela, abrir e fechar programas,
-    transferir arquivos e executar sequências de ações — inclusive em horário
-    marcado.
+    O Deskside permite controlar um computador — Windows, Mac ou Linux (com
+    GNOME) — a partir de um celular ou tablet: mover o mouse, digitar, ver a
+    tela, abrir e fechar programas, transferir arquivos e executar sequências de
+    ações, inclusive em horário marcado.
   </p>
 
   <h2>2. Você controla apenas os seus computadores</h2>
   <p>
-    Um computador só passa a ser controlável depois que <strong>você digita, no
-    aplicativo, um código que aparece naquele computador</strong>. Isso exige
+    Um computador só passa a ser controlável depois que você digita, no
+    aplicativo, um código que aparece naquele computador. Isso exige
     acesso físico ou visual à máquina, e é o que garante que ninguém pareia um
     computador que não é seu.
   </p>
@@ -54,56 +56,67 @@
     proibido e pode ser crime (art. 154-A do Código Penal). Você é responsável
     pelo que faz nas máquinas que pareou.
   </p>
+  <p>
+    Alguns programas, como os aplicativos de banco, escondem a própria janela de
+    quem transmite a tela, para proteger você de golpes. O Deskside respeita essa
+    proteção: essas janelas não aparecem no celular, e o aplicativo avisa quando
+    isso acontece.
+  </p>
 
   <h2>3. Sua conta</h2>
   <ul>
-    <li>Você precisa ter pelo menos 13 anos.</li>
+    <li>Você precisa ter pelo menos <strong>13 anos</strong>. Se tiver menos de
+      18, use o Deskside com o conhecimento de um responsável.</li>
+    <li>Ao criar a conta você aceita estes termos e a
+      <a href="/privacidade">política de privacidade</a>. Registramos a versão
+      aceita e a data. Quando eles mudarem de forma relevante, o aplicativo pede
+      o aceite da versão nova.</li>
     <li>A senha é sua responsabilidade. Recomendamos ativar a verificação em duas
       etapas nas configurações do aplicativo.</li>
-    <li>Trocar a senha <strong>encerra as sessões abertas em outros
-      aparelhos</strong>. É deliberado: é assim que você recupera o controle se
+    <li>Trocar a senha encerra as sessões abertas em outros
+      aparelhos. É deliberado: é assim que você recupera o controle se
       alguém tiver entrado.</li>
-    <li>Você pode excluir a conta a qualquer momento pelo aplicativo. A exclusão
-      remove os seus computadores pareados, perfis e automações.</li>
+    <li>Você pode baixar uma cópia dos seus dados e excluir a conta a qualquer
+      momento, pelo aplicativo. A exclusão remove os seus computadores pareados,
+      perfis e automações.</li>
   </ul>
 
   <h2>4. Planos e pagamento</h2>
-  <p>
-    O Deskside tem uma <strong>versão grátis que não expira</strong> e uma versão
-    paga de <strong>R$ 30 por mês</strong>.
-  </p>
-  <p>
-    Toda conta nova começa com <strong>30 dias da versão paga</strong>. Quando
-    esses dias acabam, a conta <strong>passa para a versão grátis</strong> — ela
-    não é bloqueada e nada é apagado. Seus computadores continuam pareados, suas
-    automações continuam salvas, e mouse, teclado e a tela ao vivo continuam
-    funcionando. O que fica no plano pago é mais de um computador, automação em
-    horário marcado, transferência de arquivos, modo apresentação, som do
-    computador, perfis de controle e vários monitores.
-  </p>
-  <p>
-    Avisamos por e-mail alguns dias antes de o seu mês completo terminar.
-  </p>
-  <p>
-    <strong>Como se assina hoje:</strong> escrevendo para
-    <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>. O
-    pagamento automático ainda está sendo montado; enquanto isso, ativamos e
-    renovamos à mão. Não há cobrança automática, não guardamos dados de cartão e
-    não há nada a cancelar: se você não pedir a renovação, a conta simplesmente
-    volta para a versão grátis.
-  </p>
-  <p>
-    <strong>Cancelar e reembolso.</strong> Você pode parar de usar a versão paga
-    quando quiser, e a conta volta para a grátis no fim do período já pago. Se
-    pediu por engano ou desistiu, escreva: devolvemos o valor. Compras feitas
-    pela internet têm, por lei, sete dias de arrependimento
-    (art. 49 do Código de Defesa do Consumidor).
-  </p>
-  <p>
-    <strong>Mudança de preço.</strong> Se o preço mudar, avisamos com pelo menos
-    30 dias de antecedência, por e-mail, e o valor novo só vale a partir da
-    renovação seguinte.
-  </p>
+  <ul>
+    <li>O Deskside tem uma versão <strong>grátis</strong> que não expira e uma
+      versão <strong>paga</strong>, com assinatura mensal. O preço aparece na
+      tela de assinatura do aplicativo antes de você confirmar, já com os
+      impostos — é o valor que a loja cobra.</li>
+    <li><strong>Toda conta nova começa com 30 dias da versão paga</strong>, sem
+      cobrança. Quando esses dias acabam, a conta passa para a versão grátis: ela
+      não é bloqueada e nada é apagado. Seus computadores continuam pareados, suas
+      automações continuam salvas, e mouse, teclado e a tela ao vivo continuam
+      funcionando. O que fica no plano pago é mais de um computador, automação
+      em horário marcado, transferência de arquivos, modo apresentação, som do
+      computador, perfis de controle e vários monitores. Avisamos por e-mail
+      alguns dias antes de o seu mês completo terminar.</li>
+    <li><strong>A assinatura é feita pela App Store (iPhone e iPad) ou pela
+      Google Play (Android)</strong>, e quem cobra é a loja. Ela
+      <strong>se renova sozinha todo mês</strong> até você cancelar. Não
+      recebemos nem guardamos dados do seu cartão.</li>
+    <li><strong>Cancelar</strong>: a qualquer momento, no próprio aplicativo
+      (Assinatura &rsaquo; Gerenciar ou cancelar assinatura), que leva à página
+      de assinaturas da loja. A versão paga continua até o fim do mês já pago, e
+      depois a conta volta para a grátis.</li>
+    <li><strong>Arrependimento</strong>: compras pela internet têm, por lei,
+      sete dias de arrependimento (art. 49 do Código de Defesa do Consumidor).
+      Para pedir o reembolso: no iPhone, em
+      <a href="https://reportaproblem.apple.com">reportaproblem.apple.com</a>; no
+      Android, na Play Store, em Pagamentos e assinaturas. Se preferir, escreva
+      para <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>
+      em até sete dias da compra, e cuidamos do pedido com você.</li>
+    <li><strong>Mudança de preço</strong>: avisamos com pelo menos 30 dias de
+      antecedência, por e-mail, e o valor novo só vale a partir da renovação
+      seguinte. A loja também pede a sua confirmação antes de cobrar um valor
+      maior.</li>
+    <li>Planos combinados por e-mail antes de existir a assinatura pelas lojas
+      continuam valendo até a data combinada, e não se renovam sozinhos.</li>
+  </ul>
 
   <h2>5. O que não prometemos</h2>
   <p>
@@ -112,7 +125,8 @@
     servidores, e pode ficar indisponível. Não nos responsabilizamos por perda de
     dados, trabalho não salvo ou prejuízo decorrente do uso — em particular, as
     automações executam o que você configurou, incluindo fechar programas e
-    desligar o computador.
+    desligar o computador. Nada disso afasta os direitos que o Código de Defesa
+    do Consumidor garante.
   </p>
   <p>
     O passo "salvar o trabalho" das automações funciona numa lista conhecida de
@@ -122,8 +136,9 @@
 
   <h2>6. Mudanças</h2>
   <p>
-    Estes termos podem mudar. Mudanças relevantes serão avisadas no aplicativo ou
-    por e-mail antes de entrarem em vigor.
+    Estes termos podem mudar. Mudanças relevantes são avisadas no aplicativo ou
+    por e-mail antes de entrarem em vigor, e o aplicativo pede o aceite da
+    versão nova.
   </p>
 
   <h2>7. Contato</h2>
@@ -132,6 +147,7 @@
   <footer>
     <a href="/">Deskside</a> &middot; <a href="/termos">Termos</a> &middot;
     <a href="/privacidade">Privacidade</a> &middot;
+    <a href="/licencas.txt">Licenças</a> &middot;
     <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>
   </footer>
 </div>

@@ -1,0 +1,42 @@
+# Atualizações de dependências, uma vez por semana, em pull requests.
+#
+# Os PRs vão para a branch de desenvolvimento, que é de onde o servidor e os
+# instaladores saem. O CI de cada parte roda nos PRs (pull_request nos
+# workflows), e nada entra sem alguém aprovar.
+#
+# Atenção: o GitHub lê este arquivo da branch **padrão** do repositório. Ele
+# só passa a valer quando estiver na `main` (ver docs/revisao-de-codigo.md).
+#
+# Depois de um PR do `cargo`, regerar as licenças do agente:
+# sh scripts/licencas-do-agente.sh
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    target-branch: claude/testing-strategy-multiplatform-0nztwm
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: cargo
+    directory: /agent
+    target-branch: claude/testing-strategy-multiplatform-0nztwm
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pub
+    directory: /client
+    target-branch: claude/testing-strategy-multiplatform-0nztwm
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: claude/testing-strategy-multiplatform-0nztwm
+    schedule:
+      interval: monthly

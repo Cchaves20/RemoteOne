@@ -2,7 +2,9 @@ name: Backend (FastAPI)
 
 on:
   push:
-    branches: [main]
+    # A branch de desenvolvimento também: é dela que o servidor e os
+    # instaladores saem. Só na `main`, estes testes nunca rodavam.
+    branches: [main, "claude/**"]
     paths: ["backend/**", ".github/workflows/backend.yml"]
   pull_request:
     paths: ["backend/**", ".github/workflows/backend.yml"]
@@ -26,6 +28,14 @@ jobs:
 
       - name: Lint
         run: ruff check .
+
+      # Vulnerabilidades conhecidas nas dependências travadas. Falha o build:
+      # uma versão com falha publicada não pode ir para o servidor sem alguém
+      # decidir que pode.
+      - name: Auditoria das dependências
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt --require-hashes --disable-pip --no-deps
 
       - name: Testes
         run: pytest

@@ -418,3 +418,27 @@ isolamento entre contas (RLS) e dados sensíveis. Corrigido:
 
 Ficou como configuração no servidor: `DESKSIDE_BACKUP_KEY` e
 `DESKSIDE_TOTP_KEY` no `deploy/.env`, com cópia das chaves fora da VM.
+
+## Auditoria de conformidade de novembro de 2026
+
+Segunda rodada, juntando segurança, operação e LGPD/CDC. Feito:
+
+- Dependências: PyJWT e dnspython atualizados (pip-audit limpo); rustls e
+  rustls-webpki atualizados no agente; os três alertas restantes do `cargo
+  audit` aceitos com o motivo em `agent/.cargo/audit.toml`.
+- CI do servidor, do app e do agente no Windows rodando nesta branch, com
+  `pip-audit` e `cargo audit`; Dependabot configurado.
+- Confirmação da senha atual com o limite do login; canal telefone recusado
+  sem SMS; agente recusa `ws://` fora do próprio computador.
+- Registro de acesso do Caddy por 184 dias (Marco Civil, art. 15); CSP fechado
+  no site; rotação dos logs do Docker; `healthcheck` da API.
+- Aceite dos termos com versão e data; data de nascimento não guardada; cópia
+  dos dados pelo app; faxina dos registros vencidos; e-mail fora do diário.
+- Licenças de terceiros no agente (`deskside-agent licencas`), no app e no site.
+- `docs/plano-de-incidente.md` (com `python -m app.incidente
+  derrubar-sessoes`) e `docs/revisao-de-codigo.md`.
+
+Fora do código, e por isso pendente: MFA na conta da Oracle, as chaves
+`DESKSIDE_TOTP_KEY` e `DESKSIDE_BACKUP_KEY`, o monitor externo, a identificação
+de quem vende no site, a revisão jurídica, os contratos com os provedores, o
+licenciamento do H.264 e o processo de PR com proteção da `main`.

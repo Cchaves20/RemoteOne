@@ -8,10 +8,23 @@
 #
 # (POSTGRES_PASSWORD não é usado aqui.)
 
+# Logs do Docker com teto. Sem isto o driver padrão (json-file) cresce para
+# sempre: numa VM de 45 GB, um laço de erro enche o disco e derruba o servidor
+# inteiro. 5 arquivos de 10 MB por contêiner.
+#
+# (Os registros de acesso que o Marco Civil pede guardar por 6 meses não são
+# estes: ficam no log próprio do Caddy, ver deploy/caddy/Caddyfile.)
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *logs
     security_opt:
       - no-new-privileges:true
     # Sem `cap_drop: ALL` aqui, ao contrário da API: o Caddy escuta nas portas
@@ -75,6 +88,17 @@ services:
   api:
     build: ../backend
     restart: unless-stopped
+    logging: *logs
+    # O servidor responde? Sem isto o Docker só sabe se o processo existe, e
+    # um uvicorn travado aparece como "Up" para sempre. Com isto, `docker
+    # compose ps` mostra "unhealthy" e o `restart` tem o que fazer. Python
+    # puro, porque a imagem não tem curl.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     depends_on:
       init-permissoes:
         condition: service_completed_successfully
@@ -155,6 +179,7 @@ services:
   coturn:
     image: coturn/coturn:4.6
     restart: unless-stopped
+    logging: *logs
     network_mode: host
     security_opt:
       - no-new-privileges:true
