@@ -24,7 +24,7 @@ fn synthetic_rgba(w: u32, h: u32) -> Vec<u8> {
 
 fn to_rgb(rgba: &[u8], w: u32, h: u32) -> RgbImage {
     let mut rgb = Vec::with_capacity((w * h * 3) as usize);
-    for px in rgba.chunks_exact(4) {
+    for px in rgba.as_chunks::<4>().0 {
         rgb.extend_from_slice(&px[0..3]);
     }
     RgbImage::from_raw(w, h, rgb).unwrap()

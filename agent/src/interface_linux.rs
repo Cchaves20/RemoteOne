@@ -298,7 +298,7 @@ fn icone() -> Vec<ksni::Icon> {
     let (largura, altura) = imagem.dimensions();
     let mut dados = imagem.into_raw();
     // RGBA → ARGB, que é o que o protocolo pede.
-    for px in dados.chunks_exact_mut(4) {
+    for px in dados.as_chunks_mut::<4>().0 {
         px.rotate_right(1);
     }
     vec![ksni::Icon {
