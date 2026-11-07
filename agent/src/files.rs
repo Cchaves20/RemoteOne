@@ -453,7 +453,8 @@ mod tests {
         let atalhos = shortcuts_from([
             (
                 "Existe".to_string(),
-                std::env::var("HOME").unwrap_or_default(),
+                // HOME não existe no Windows; a pasta do usuário, sim.
+                super::home().unwrap().to_string_lossy().into_owned(),
             ),
             (
                 "Não existe".to_string(),
@@ -469,7 +470,7 @@ mod tests {
     #[test]
     fn atalhos_nao_repetem_a_mesma_pasta() {
         use super::shortcuts_from;
-        let casa = std::env::var("HOME").unwrap_or_default();
+        let casa = super::home().unwrap().to_string_lossy().into_owned();
         let atalhos = shortcuts_from([
             ("Documentos".to_string(), casa.clone()),
             ("Meus Documentos".to_string(), casa),

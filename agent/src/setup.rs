@@ -1730,6 +1730,9 @@ mod testes_do_linux {
         );
     }
 
+    // Caminhos do Linux: no Windows, "/etc/xdg-ana" não é absoluto (falta a
+    // unidade) e o separador vira "\", então o teste só vale num Unix.
+    #[cfg(unix)]
     #[test]
     fn variavel_xdg_relativa_nao_vale() {
         // O padrão manda ignorar: um caminho relativo dependeria da pasta de
@@ -1796,6 +1799,9 @@ mod testes_do_linux {
         std::fs::remove_dir_all(&proc).unwrap();
     }
 
+    // Caminhos do Linux: no Windows, "/etc/xdg-ana" não é absoluto (falta a
+    // unidade) e o separador vira "\", então o teste só vale num Unix.
+    #[cfg(unix)]
     #[test]
     fn a_explicacao_fala_do_login_automatico_sem_liga_lo() {
         let l = lugares_linux(Path::new("/home/ana"), None, None);
