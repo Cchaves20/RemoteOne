@@ -211,6 +211,45 @@ def test_lista_a_pasta_do_computador():
     assert agent.of_type("list_files")[0]["path"] == ""
 
 
+def test_lista_repassa_a_pagina_e_o_total():
+    headers, uid = _auth_headers("arq-pag@example.com")
+    _add_device(uid, "dev-arq-pag")
+    agent = FileAgent(listing={**LISTING, "total": 1200, "offset": 500})
+    manager.register("dev-arq-pag", agent)
+    try:
+        resp = client.get(
+            "/api/v1/devices/dev-arq-pag/files?path=/home/caio&offset=500",
+            headers=headers,
+        )
+    finally:
+        manager.unregister("dev-arq-pag")
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1200
+    assert resp.json()["offset"] == 500
+    assert agent.of_type("list_files")[0]["offset"] == 500
+
+
+def test_agente_antigo_sem_total_continua_valendo():
+    """Agente de antes das páginas: manda a pasta inteira e nada de `total`."""
+    headers, uid = _auth_headers("arq-velho@example.com")
+    _add_device(uid, "dev-arq-velho")
+    manager.register("dev-arq-velho", FileAgent(listing=LISTING))
+    try:
+        resp = client.get("/api/v1/devices/dev-arq-velho/files", headers=headers)
+    finally:
+        manager.unregister("dev-arq-velho")
+    assert resp.status_code == 200
+    assert resp.json()["total"] is None
+    assert len(resp.json()["entries"]) == 2
+
+
+def test_offset_negativo_e_recusado():
+    headers, uid = _auth_headers("arq-neg@example.com")
+    _add_device(uid, "dev-arq-neg")
+    resp = client.get("/api/v1/devices/dev-arq-neg/files?offset=-1", headers=headers)
+    assert resp.status_code == 422
+
+
 def test_lista_com_erro_do_agente_vira_400():
     """Sem permissão não pode chegar ao app como pasta vazia."""
     headers, uid = _auth_headers("arq2@example.com")

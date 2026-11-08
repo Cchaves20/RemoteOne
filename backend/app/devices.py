@@ -652,6 +652,7 @@ async def media_key(
 async def list_files(
     device_id: str,
     path: str = Query("", max_length=4096),
+    offset: int = Query(0, ge=0, le=10_000_000),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ListingOut:
@@ -659,13 +660,17 @@ async def list_files(
 
     O agente só enxerga dentro da pasta do usuário; um caminho fora dela volta
     como 400, não como pasta vazia.
+
+    Uma página por vez: o agente manda até 500 itens a partir de `offset`, e o
+    `total` diz se há mais. Um agente antigo ignora o `offset` e manda a pasta
+    inteira, sem `total` — o app trata isso como "veio tudo".
     """
     _owned_device_or_404(db, device_id, current_user)
     cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
     liberar(db)
 
     request_id, future = pending.create()
-    message = {"type": "list_files", "request_id": request_id, "path": path}
+    message = {"type": "list_files", "request_id": request_id, "path": path, "offset": offset}
     if not await manager.send_to_agent(device_id, message):
         pending.cancel(request_id)
         raise HTTPException(

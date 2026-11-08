@@ -45,6 +45,12 @@ pub struct Listing {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
     pub entries: Vec<FileEntry>,
+    /// Quantos itens a pasta tem ao todo. Maior que `offset + entries.len()`
+    /// quando há mais páginas: o app oferece "carregar mais".
+    pub total: usize,
+    /// De onde esta página começa.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub offset: usize,
     /// Atalhos para as pastas conhecidas (Área de Trabalho, Downloads...).
     ///
     /// Só vêm preenchidos **na raiz**: é onde eles servem para alguma coisa.
@@ -89,9 +95,31 @@ pub fn resolve(path: &str) -> Result<std::path::PathBuf, String> {
     Ok(real)
 }
 
-/// Lista uma pasta: subpastas primeiro, depois arquivos, cada grupo em ordem
-/// alfabética — a ordem em que se procura algo com o olho.
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+/// Itens por página da listagem.
+///
+/// Sem teto, uma pasta de Downloads com 10 mil arquivos virava uma resposta de
+/// alguns megabytes, atravessando o servidor e o 4G de uma vez, para mostrar
+/// as primeiras quinze linhas. Com 500, a primeira página chega em
+/// ~100 KB, e o resto vem só se a pessoa rolar até o fim e pedir.
+pub const POR_PAGINA: usize = 500;
+
+/// Lista uma pasta inteira (ver `list_page`).
+#[cfg(test)]
 pub fn list(path: &str) -> Result<Listing, String> {
+    list_page(path, 0)
+}
+
+/// Lista uma página de uma pasta: subpastas primeiro, depois arquivos, cada
+/// grupo em ordem alfabética — a ordem em que se procura algo com o olho.
+///
+/// A pasta é lida e ordenada inteira a cada página: é o que garante que a
+/// página 2 continua de onde a 1 parou. Ler os nomes custa pouco ao disco; o
+/// que pesava era mandar todos eles pela rede.
+pub fn list_page(path: &str, offset: usize) -> Result<Listing, String> {
     let dir = resolve(path)?;
     if !dir.is_dir() {
         return Err("não é uma pasta".to_string());
@@ -122,7 +150,13 @@ pub fn list(path: &str) -> Result<Listing, String> {
         b.is_dir
             .cmp(&a.is_dir)
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            // Desempate pelo nome exato: "Foto" e "foto" convivem no Linux, e
+            // sem isto a ordem entre os dois podia mudar de uma página para
+            // a outra — um repetido e um sumido.
+            .then_with(|| a.name.cmp(&b.name))
     });
+    let total = entries.len();
+    let entries: Vec<FileEntry> = entries.into_iter().skip(offset).take(POR_PAGINA).collect();
 
     let parent = if dir == root {
         None
@@ -133,8 +167,11 @@ pub fn list(path: &str) -> Result<Listing, String> {
         path: dir.to_string_lossy().to_string(),
         parent: parent.clone(),
         entries,
-        // Na raiz, e só nela: é onde os atalhos servem para alguma coisa.
-        shortcuts: if parent.is_none() {
+        total,
+        offset,
+        // Na raiz, e só nela, e só na primeira página: é onde os atalhos
+        // servem para alguma coisa.
+        shortcuts: if parent.is_none() && offset == 0 {
             shortcuts()
         } else {
             Vec::new()
@@ -566,6 +603,52 @@ mod tests {
         let arquivo = listing.entries.iter().find(|e| !e.is_dir).unwrap();
         assert_eq!(arquivo.size, 2);
 
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn pasta_grande_vem_em_paginas_sem_repetir_nem_perder() {
+        let base = home().unwrap().join("deskside-teste-paginas");
+        std::fs::create_dir_all(&base).unwrap();
+        let quantos = POR_PAGINA + 7;
+        for i in 0..quantos {
+            std::fs::write(base.join(format!("arq-{i:04}.txt")), b"").unwrap();
+        }
+        // Dois nomes que só diferem na caixa: o desempate pelo nome exato é
+        // o que impede um de trocar de lugar com o outro entre as páginas.
+        std::fs::write(base.join("Caixa.txt"), b"").unwrap();
+        std::fs::write(base.join("caixa.txt"), b"").unwrap();
+        let caminho = base.to_string_lossy().to_string();
+
+        let primeira = list_page(&caminho, 0).unwrap();
+        let total = primeira.total;
+        assert!(total >= quantos, "o total conta a pasta inteira");
+        assert_eq!(primeira.entries.len(), POR_PAGINA);
+        assert_eq!(primeira.offset, 0);
+
+        let segunda = list_page(&caminho, POR_PAGINA).unwrap();
+        assert_eq!(segunda.offset, POR_PAGINA);
+        assert_eq!(segunda.total, total);
+        assert_eq!(segunda.entries.len(), total - POR_PAGINA);
+        assert!(
+            segunda.shortcuts.is_empty(),
+            "atalhos só na primeira página"
+        );
+
+        let mut nomes: Vec<String> = primeira
+            .entries
+            .iter()
+            .chain(&segunda.entries)
+            .map(|e| e.name.clone())
+            .collect();
+        let juntos = nomes.len();
+        nomes.sort();
+        nomes.dedup();
+        assert_eq!(nomes.len(), juntos, "nenhum nome em duas páginas");
+        assert_eq!(juntos, total, "nenhum nome perdido");
+
+        // Passar do fim é uma página vazia, e não um erro.
+        assert!(list_page(&caminho, total + 10).unwrap().entries.is_empty());
         std::fs::remove_dir_all(&base).ok();
     }
 

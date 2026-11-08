@@ -459,6 +459,10 @@ pub enum ServerMessage {
         request_id: String,
         #[serde(default)]
         path: String,
+        /// De onde começa a página (ver `files::POR_PAGINA`). Ausente = do
+        /// começo, que é o que um servidor antigo manda.
+        #[serde(default)]
+        offset: usize,
     },
     /// Pede que o agente leia um arquivo e o mande em pedaços (`file_chunk`).
     ReadFile {
@@ -829,7 +833,8 @@ mod tests {
             listar,
             ServerMessage::ListFiles {
                 request_id: "r1".into(),
-                path: "C:\\Users".into()
+                path: "C:\\Users".into(),
+                offset: 0,
             }
         );
         // `path` ausente = a pasta do usuário: é como o app abre a tela.
@@ -839,9 +844,19 @@ mod tests {
             raiz,
             ServerMessage::ListFiles {
                 request_id: "r1".into(),
-                path: String::new()
+                path: String::new(),
+                offset: 0,
             }
         );
+        // A página seguinte de uma pasta grande.
+        let pagina: ServerMessage = serde_json::from_str(
+            r#"{"type":"list_files","request_id":"r1","path":"C:\\Users","offset":500}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            pagina,
+            ServerMessage::ListFiles { offset: 500, .. }
+        ));
         let inicio: ServerMessage = serde_json::from_str(
             r#"{"type":"write_file_begin","transfer_id":"t1","name":"foto.png","size":10}"#,
         )
@@ -904,6 +919,8 @@ mod tests {
                     is_dir: false,
                     size: 12,
                 }],
+                total: 1,
+                offset: 0,
                 // Vazio aqui de propósito: o teste fixa o formato no fio, e
                 // atalhos ausentes não devem aparecer no JSON.
                 shortcuts: Vec::new(),
@@ -914,6 +931,11 @@ mod tests {
         assert_eq!(ok["listing"]["entries"][0]["name"], "nota.txt");
         assert_eq!(ok["listing"]["entries"][0]["is_dir"], false);
         assert!(ok["listing"].get("parent").is_none(), "raiz não volta");
+        assert_eq!(ok["listing"]["total"], 1);
+        assert!(
+            ok["listing"].get("offset").is_none(),
+            "primeira página: sem offset no fio"
+        );
     }
 
     #[test]

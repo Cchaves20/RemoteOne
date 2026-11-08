@@ -668,6 +668,10 @@ class ListingOut(BaseModel):
     path: str
     parent: str | None = None
     entries: list[FileEntryOut] = []
+    #: Quantos itens a pasta tem ao todo, e de onde esta página começa. `None`
+    #: vem de um agente antigo, que manda a pasta inteira de uma vez.
+    total: int | None = None
+    offset: int = 0
     #: Atalhos para as pastas conhecidas do usuário (Área de Trabalho,
     #: Downloads...), preenchidos só na raiz.
     shortcuts: list[FileEntryOut] = []

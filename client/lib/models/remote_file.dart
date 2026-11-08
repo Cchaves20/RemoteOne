@@ -35,6 +35,8 @@ class RemoteListing {
     required this.parent,
     required this.entries,
     this.shortcuts = const [],
+    this.total,
+    this.offset = 0,
   });
 
   final String path;
@@ -49,6 +51,31 @@ class RemoteListing {
   /// Downloads...). Só vêm na raiz — é onde eles servem para alguma coisa.
   final List<RemoteFile> shortcuts;
 
+  /// Quantos itens a pasta tem ao todo. `null` vem de um agente antigo, que
+  /// manda a pasta inteira de uma vez: nada a carregar depois.
+  final int? total;
+
+  /// De onde a primeira entrada desta listagem começa, na pasta inteira.
+  final int offset;
+
+  /// Itens da pasta que ainda não vieram.
+  int get restantes {
+    final t = total;
+    if (t == null) return 0;
+    final faltam = t - offset - entries.length;
+    return faltam > 0 ? faltam : 0;
+  }
+
+  /// Esta listagem com a página seguinte no fim.
+  RemoteListing comMais(RemoteListing proxima) => RemoteListing(
+        path: path,
+        parent: parent,
+        entries: [...entries, ...proxima.entries],
+        shortcuts: shortcuts,
+        total: proxima.total ?? total,
+        offset: offset,
+      );
+
   factory RemoteListing.fromJson(Map<String, dynamic> json) {
     final entries = (json['entries'] as List<dynamic>? ?? [])
         .map((e) => RemoteFile.fromJson(e as Map<String, dynamic>))
@@ -60,6 +87,8 @@ class RemoteListing {
       shortcuts: (json['shortcuts'] as List<dynamic>? ?? [])
           .map((e) => RemoteFile.fromJson(e as Map<String, dynamic>))
           .toList(),
+      total: (json['total'] as num?)?.toInt(),
+      offset: (json['offset'] as num?)?.toInt() ?? 0,
     );
   }
 

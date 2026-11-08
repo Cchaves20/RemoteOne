@@ -1234,9 +1234,13 @@ pub async fn run(
                                 ws.send(Message::Text(reply)).await?;
                             }
                             // Listar uma pasta toca o disco: sai do event loop.
-                            Some(Action::ListFiles { request_id, path }) => {
+                            Some(Action::ListFiles {
+                                request_id,
+                                path,
+                                offset,
+                            }) => {
                                 let resultado = tokio::task::spawn_blocking(move || {
-                                    crate::files::list(&path)
+                                    crate::files::list_page(&path, offset)
                                 })
                                 .await
                                 .unwrap_or_else(|e| Err(format!("tarefa falhou: {e}")));
@@ -2107,6 +2111,7 @@ enum Action {
     ListFiles {
         request_id: String,
         path: String,
+        offset: usize,
     },
     /// Ler um arquivo e mandá-lo em pedaços.
     ReadFile {
@@ -2320,8 +2325,16 @@ fn handle_server_text(
         }
         // Arquivos: tudo precisa do socket ou do estado das transferências, que
         // vivem no laço. Aqui só viram ação.
-        Ok(ServerMessage::ListFiles { request_id, path }) => {
-            return Some(Action::ListFiles { request_id, path });
+        Ok(ServerMessage::ListFiles {
+            request_id,
+            path,
+            offset,
+        }) => {
+            return Some(Action::ListFiles {
+                request_id,
+                path,
+                offset,
+            });
         }
         Ok(ServerMessage::ReadFile { transfer_id, path }) => {
             return Some(Action::ReadFile { transfer_id, path });

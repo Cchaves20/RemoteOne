@@ -1108,10 +1108,18 @@ class ApiClient {
   // --- arquivos ---------------------------------------------------------------
 
   /// Lista uma pasta do computador. Caminho vazio = a pasta do usuário.
-  Future<RemoteListing> listFiles(String deviceId, {String path = ''}) async {
+  Future<RemoteListing> listFiles(
+    String deviceId, {
+    String path = '',
+    int offset = 0,
+  }) async {
+    // `offset` só quando é a página seguinte: a primeira fica no endereço de
+    // sempre, que é o que um servidor antigo entende.
+    final pagina = offset > 0 ? '&offset=$offset' : '';
     final res = await _http
         .get(
-          _uri('/api/v1/devices/$deviceId/files?path=${Uri.encodeQueryComponent(path)}'),
+          _uri('/api/v1/devices/$deviceId/files'
+              '?path=${Uri.encodeQueryComponent(path)}$pagina'),
           headers: _authHeaders,
         )
         .timeout(const Duration(seconds: 30));

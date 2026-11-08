@@ -783,8 +783,12 @@ class AppState extends ChangeNotifier {
 
   // --- arquivos ----------------------------------------------------------------
 
-  Future<RemoteListing> listFiles(Device device, {String path = ''}) =>
-      api.listFiles(device.deviceId, path: path);
+  Future<RemoteListing> listFiles(
+    Device device, {
+    String path = '',
+    int offset = 0,
+  }) =>
+      api.listFiles(device.deviceId, path: path, offset: offset);
 
   Future<Uint8List> downloadFile(Device device, String path) =>
       api.downloadFile(device.deviceId, path);

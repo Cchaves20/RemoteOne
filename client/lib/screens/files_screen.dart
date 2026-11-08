@@ -31,6 +31,9 @@ class _FilesScreenState extends State<FilesScreen> {
   String? _error;
   bool _loading = false;
 
+  /// A página seguinte de uma pasta grande está vindo.
+  bool _carregandoMais = false;
+
   /// Nome do arquivo em transferência, ou `null` se nada está em curso.
   ///
   /// Um de cada vez: são operações caras e o celular não ganha nada iniciando
@@ -57,6 +60,31 @@ class _FilesScreenState extends State<FilesScreen> {
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// A página seguinte da pasta aberta, no fim da lista.
+  ///
+  /// Se a pessoa trocou de pasta enquanto ela vinha, a página é descartada:
+  /// juntá-la à pasta nova misturaria arquivos de dois lugares.
+  Future<void> _carregarMais() async {
+    final atual = _listing;
+    if (atual == null || _carregandoMais || atual.restantes == 0) return;
+    setState(() => _carregandoMais = true);
+    try {
+      final proxima = await widget.state.listFiles(
+        widget.device,
+        path: atual.path,
+        offset: atual.offset + atual.entries.length,
+      );
+      if (!mounted || !identical(_listing, atual)) return;
+      setState(() => _listing = atual.comMais(proxima));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _carregandoMais = false);
     }
   }
 
@@ -225,7 +253,9 @@ class _FilesScreenState extends State<FilesScreen> {
     // resposta para "onde eu ponho as coisas", que quase nunca é a pasta do
     // usuário em si.
     final atalhos = listing.shortcuts;
-    final extras = (subir == null ? 0 : 1) + (atalhos.isEmpty ? 0 : 1);
+    final extras = (subir == null ? 0 : 1) +
+        (atalhos.isEmpty ? 0 : 1) +
+        (listing.restantes > 0 ? 1 : 0);
     return RefreshIndicator(
       onRefresh: () => _open(listing.path),
       child: ListView.separated(
@@ -239,6 +269,20 @@ class _FilesScreenState extends State<FilesScreen> {
               leading: const Icon(Icons.drive_file_move_rtl),
               title: Text(t.filesUp),
               onTap: _loading ? null : () => _open(subir),
+            );
+          }
+          // A última linha de uma pasta que não veio inteira.
+          if (listing.restantes > 0 && i == listing.entries.length + extras - 1) {
+            return ListTile(
+              leading: _carregandoMais
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.expand_more),
+              title: Text(t.filesLoadMore(listing.restantes)),
+              onTap: _carregandoMais ? null : _carregarMais,
             );
           }
           final item = listing.entries[deslocado - (subir == null ? 0 : 1)];

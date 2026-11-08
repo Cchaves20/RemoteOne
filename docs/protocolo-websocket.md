@@ -33,7 +33,7 @@ Agente                          Backend
 | `hello` | `device_id`, `hostname`, `os`, `agent_version`, `secret?` | Primeira mensagem ao conectar (ver "o segredo do agente") |
 | `heartbeat` | — | Periódico, mantém a sessão viva |
 | `app_list` | `request_id`, `apps[]` (`id`, `name`, `icon?`) | Resposta a um `list_apps`; `icon` é o ícone real do programa em PNG base64 (ver "pergunta e resposta" abaixo) |
-| `file_list` | `request_id`, `listing?` (`path`, `parent?`, `entries[]`), `error?` | Resposta a um `list_files`. Vem `listing` **ou** `error` — pasta sem permissão não pode chegar ao app como pasta vazia |
+| `file_list` | `request_id`, `listing?` (`path`, `parent?`, `entries[]`, `total`, `offset?`), `error?` | Resposta a um `list_files`. Vem `listing` **ou** `error` — pasta sem permissão não pode chegar ao app como pasta vazia. Até 500 itens por página; `total` é a pasta inteira (agente antigo não manda, e manda tudo) |
 | `file_chunk` | `transfer_id`, `seq`, `data` (base64) | Um pedaço de arquivo indo ao celular; `seq` detecta pedaço fora de ordem |
 | `file_done` | `transfer_id`, `ok`, `detail?`, `size?` | Fim de transferência nos dois sentidos: `detail` traz o caminho salvo ou o motivo da falha |
 | `automation_result` | `request_id`, `results[]` (`index`, `ok`, `error?`) | Resposta a um `run_automation`: uma só, no fim da sequência inteira. Identificado por **índice** e não por nome — dois passos podem ser idênticos. O `error` também vem com `ok` verdadeiro, quando o passo aconteceu com ressalva (a janela abriu mas não foi para o lugar pedido) |
@@ -56,7 +56,7 @@ Agente                          Backend
 | `launch_app` | `id` (caminho do atalho) | Abre um programa no computador |
 | `close_app` | `id` (PID) | Encerra um programa em execução |
 | `system_info` | `request_id` | Pede as métricas do computador; o agente responde com `system_stats` |
-| `list_files` | `request_id`, `path` (vazio = pasta do usuário) | Pede o conteúdo de uma pasta |
+| `list_files` | `request_id`, `path` (vazio = pasta do usuário), `offset?` (padrão 0) | Pede uma página do conteúdo de uma pasta |
 | `read_file` | `transfer_id`, `path` | Pede que o agente leia um arquivo e o mande em `file_chunk` |
 | `write_file_begin` | `transfer_id`, `name`, `size` | Começa a receber um arquivo vindo do celular |
 | `write_file_chunk` | `transfer_id`, `seq`, `data` (base64) | Um pedaço do arquivo que sobe ao computador |

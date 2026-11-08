@@ -567,6 +567,9 @@ class Strings {
       _t('Atualizar', 'Refresh', '刷新', 'Actualiser', 'Actualizar');
   String get filesUp =>
       _t('Pasta acima', 'Up one folder', '上一级', 'Dossier parent', 'Carpeta superior');
+  /// O fim de uma página da pasta: `n` itens ainda não carregados.
+  String filesLoadMore(int n) => _t('Carregar mais ($n)', 'Load more ($n)',
+      '加载更多（$n）', 'Charger plus ($n)', 'Cargar más ($n)');
   String get filesEmpty =>
       _t('Pasta vazia', 'Empty folder', '空文件夹', 'Dossier vide', 'Carpeta vacía');
   String get filesBackToHome => _t('Voltar ao início', 'Back to start', '回到起点',
