@@ -167,11 +167,33 @@ def _migrate() -> None:
                 if coluna not in existing:
                     conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"))
 
+    _criar_indices()
     _email_deixa_de_ser_obrigatorio()
     _apagar_datas_de_nascimento()
     _sortear_chaves_de_sessao()
     _cifrar_segredos_do_2fa()
     _registrar_testes_ja_dados()
+
+
+#: Índices que o modelo pede e que um banco antigo não tem: o `create_all` cria
+#: índice só junto com a tabela, nunca numa tabela que já existe. O nome é o que
+#: o próprio SQLAlchemy daria (`ix_<tabela>_<coluna>`), então num banco novo o
+#: `IF NOT EXISTS` encontra o índice já criado e não faz nada.
+_INDICES = {
+    # Toda lista de computadores, os perfis, o widget e o limite do plano
+    # procuram os computadores de uma conta por esta coluna.
+    "ix_devices_user_id": ("devices", "user_id"),
+}
+
+
+def _criar_indices() -> None:
+    from sqlalchemy import inspect, text
+
+    tabelas = set(inspect(engine).get_table_names())
+    with engine.begin() as conn:
+        for nome, (tabela, coluna) in _INDICES.items():
+            if tabela in tabelas:
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {nome} ON {tabela} ({coluna})"))
 
 
 def _apagar_datas_de_nascimento() -> None:

@@ -104,6 +104,32 @@
 		# O site é HTML e CSS sem script, imagem ou fonte de fora: a política
 		# mais fechada que ainda o desenha.
 		header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+		# Compressão. Medido com gzip: o `licencas.txt` cai de 505 KB para
+		# 43 KB, e a página inicial de 8 KB para 3,4 KB. Só aqui, e não na API, de
+		# propósito: o JSON da API é pequeno, e a VM tem 1/8 de núcleo para
+		# gastar comprimindo. Sem Brotli porque o Caddy não o traz sem módulo
+		# extra; zstd e gzip cobrem todo navegador. O `encode` só comprime
+		# tipo de texto: o `.exe` sai como está.
+		encode zstd gzip
+
+		# Cache no navegador. Os arquivos daqui não têm versão no nome, então
+		# o prazo é curto: em 5 minutos uma página corrigida já chega a todos.
+		# Depois disso o navegador revalida pelo `ETag` que o `file_server`
+		# manda, e recebe só um "não mudou".
+		#
+		# O instalador **sempre** revalida: o nome `Deskside.exe` é o mesmo a
+		# cada versão, e um cache de minutos entregaria o agente velho logo
+		# depois de publicar o novo. Revalidar custa um pedido pequeno.
+		#
+		# Dois filtros que não se sobrepõem, e não um `header` geral mais um
+		# para `/baixar`: medido com o Caddy 2.10, o geral roda depois e
+		# sobrescreve o do instalador.
+		@instalador path /baixar/*
+		@paginas not path /baixar/*
+		header @paginas Cache-Control "public, max-age=300"
+		header @instalador Cache-Control "no-cache"
+
 		root * /srv/site
 		# `try_files` é o que faz `/termos` servir `termos.html`. Sem ele, a URL
 		# bonita daria 404 e a única forma de acessar seria com a extensão à

@@ -19,6 +19,7 @@ from app.automations import router as automations_router
 from app.compras import router as compras_router
 from app.config import settings
 from app.connections import Viewer, manager, viewers
+from app.cronometro import Cronometro
 from app.db import SessionLocal, get_db, init_db
 from app.devices import router as devices_router
 from app.ice import ice_servers, precisa_renovar
@@ -142,6 +143,8 @@ app.include_router(profiles_router)
 app.include_router(automations_router)
 app.include_router(widget_router)
 app.include_router(compras_router)
+# Anota no diário as requisições HTTP que passam de 1 s (ver app/cronometro.py).
+app.add_middleware(Cronometro)
 
 # Registro de agentes conectados (em memória; ver app/agents.py).
 registry = AgentRegistry()

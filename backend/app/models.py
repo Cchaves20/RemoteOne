@@ -315,7 +315,9 @@ class Device(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     device_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # Indexada: é por ela que se acham os computadores de uma conta. Em banco
+    # antigo, o índice entra pelo `db._criar_indices`.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     os: Mapped[str] = mapped_column(String(32))
     hostname: Mapped[str] = mapped_column(String(120))
