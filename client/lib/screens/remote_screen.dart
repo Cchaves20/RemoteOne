@@ -118,7 +118,11 @@ class _RemoteScreenState extends State<RemoteScreen>
   Timer? _flushTimer;
 
   int _frameCount = 0;
-  int _fps = 0;
+
+  /// Quadros por segundo do modo por imagens. Um `ValueNotifier`, como o
+  /// `_frame`: a contagem muda a cada segundo, e um `setState` aqui
+  /// redesenhava a tela remota inteira só para trocar um número da barra.
+  final ValueNotifier<int> _fps = ValueNotifier<int>(0);
   Timer? _fpsTimer;
   Timer? _reconnectTimer;
   bool _disposed = false;
@@ -266,12 +270,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     _flushTimer =
         Timer.periodic(const Duration(milliseconds: 60), (_) => _flushScroll());
     _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {
-          _fps = _frameCount;
-          _frameCount = 0;
-        });
-      }
+      // Só o texto da barra escuta, e só quando o número muda.
+      _fps.value = _frameCount;
+      _frameCount = 0;
     });
     // A dock de aplicativos carrega em segundo plano, sem travar a tela.
     _loadDockApps();
@@ -978,6 +979,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     widget.state.saveLearnedWords();
     _frame.value?.dispose();
     _frame.dispose();
+    _fps.dispose();
     WakelockPlus.disable();
     super.dispose();
   }
@@ -3286,7 +3288,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   Widget _videoStatus() {
     final t = widget.state.t;
     final video = _video;
-    final String texto;
+    String? texto;
     Color cor = Colors.white38;
     VoidCallback? aoTocar;
 
@@ -3305,16 +3307,25 @@ class _RemoteScreenState extends State<RemoteScreen>
     } else if (video.state == VideoState.negotiating) {
       texto = t.videoConnecting;
     } else {
-      // 0 fps com a imagem no ar significa tela parada: o agente deixa de
-      // enviar frames idênticos para poupar rede e bateria.
-      texto = _fps == 0 && _hasFrame ? t.screenStill : '$_fps fps';
+      // Fica nulo: o número vem do `_fps`, logo abaixo.
     }
 
+    final estilo = TextStyle(color: cor, fontSize: 12);
     return GestureDetector(
       onTap: aoTocar,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Text(texto, style: TextStyle(color: cor, fontSize: 12)),
+        child: texto != null
+            ? Text(texto, style: estilo)
+            : ValueListenableBuilder<int>(
+                valueListenable: _fps,
+                // 0 fps com a imagem no ar significa tela parada: o agente
+                // deixa de enviar frames idênticos para poupar rede e bateria.
+                builder: (_, fps, __) => Text(
+                  fps == 0 && _hasFrame ? t.screenStill : '$fps fps',
+                  style: estilo,
+                ),
+              ),
       ),
     );
   }

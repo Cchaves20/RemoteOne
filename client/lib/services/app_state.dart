@@ -307,27 +307,44 @@ class AppState extends ChangeNotifier {
 
   Future<void> _recarregar() async {
     if (!isAuthenticated) return;
+    // Os quatro pedidos saem **juntos**. Um depois do outro, a lista só
+    // aparecia depois da quarta ida e volta ao servidor — no 4G, meio segundo
+    // a mais em toda abertura do app, só esperando.
+    //
+    // As automações também, porque os atalhos do ícone saem delas: sem isto,
+    // só existiriam depois de alguém abrir a tela de automações. Elas e o
+    // widget são opcionais: falham para `null` e nunca derrubam a recarga
+    // (backend antigo, ou plano sem o recurso).
+    final automacoes = api.automations().then<List<Automation>?>(
+          (v) => v,
+          onError: (Object _) => null,
+        );
+    final doWidget = api.widget().then<ConfigDoWidget?>(
+          (v) => v,
+          onError: (Object _) => null,
+        );
     try {
-      final lista = await api.listDevices();
-      final lida = await api.fetchAccount();
+      // `Future.wait`, e não o `.wait` de record: este repassa o primeiro erro
+      // como ele é, e o `on ApiException` abaixo continua pegando. O `.wait`
+      // o embrulharia num `ParallelWaitError`, e uma sessão encerrada passaria
+      // a contar como "sem rede".
+      final lidos = await Future.wait<Object>(
+        [api.listDevices(), api.fetchAccount()],
+      );
+      final lista = lidos[0] as List<Device>;
+      final lida = lidos[1] as Conta;
       // Saiu da conta enquanto a resposta vinha: ela é da sessão que acabou.
       if (!isAuthenticated) return;
       devices = lista;
       conta = lida;
       twoFactorEnabled = lida.twoFactorEnabled;
       _conexaoVoltou();
-      // As automações também, porque os atalhos do ícone saem delas: sem
-      // isto, só existiriam depois de alguém abrir a tela de automações.
-      try {
-        automations = await api.automations();
-      } catch (_) {
-        // Backend antigo ou plano sem o recurso: os atalhos ficam vazios.
-      }
-      try {
-        widget = await api.widget();
-      } catch (_) {
-        // Servidor antigo: os atalhos usam as primeiras automações.
-      }
+      final autos = await automacoes;
+      final config = await doWidget;
+      if (!isAuthenticated) return;
+      if (autos != null) automations = autos;
+      // Sem resposta, os atalhos usam as primeiras automações.
+      if (config != null) widget = config;
     } on ApiException {
       // O servidor respondeu, então há conexão. O erro em si (sessão
       // encerrada, servidor em manutenção) já tem quem trate.

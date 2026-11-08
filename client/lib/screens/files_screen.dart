@@ -10,6 +10,7 @@ import '../models/device.dart';
 import '../models/remote_file.dart';
 import '../services/app_state.dart';
 import '../theme.dart';
+import '../widgets/pulse.dart';
 
 /// Arquivos do computador: navegar, trazer para o celular e mandar para lá.
 ///
@@ -206,7 +207,12 @@ class _FilesScreenState extends State<FilesScreen> {
       );
     }
     if (listing == null) {
-      return const SizedBox.shrink(); // a barra de progresso já diz o que houve
+      // A primeira pasta ainda vem do computador: o formato da lista, no
+      // lugar de uma tela vazia. Ao trocar de pasta, a anterior fica à vista
+      // e só a barra de progresso aparece.
+      return _loading
+          ? EsqueletoDeLista(rotulo: t.appsQuerying, duasLinhas: false)
+          : const SizedBox.shrink();
     }
     if (listing.entries.isEmpty && listing.parent == null) {
       return _centered(icon: Icons.folder_open, title: t.filesEmpty);

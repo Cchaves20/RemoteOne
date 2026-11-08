@@ -10,6 +10,7 @@ import '../models/window_zone.dart';
 import '../services/app_state.dart';
 import '../theme.dart';
 import '../widgets/layout_picker.dart';
+import '../widgets/pulse.dart';
 import 'app_picker_screen.dart';
 import 'automations_screen.dart';
 
@@ -176,7 +177,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(t.profilesTitle)),
       body: _carregando
-          ? const Center(child: CircularProgressIndicator())
+          ? EsqueletoDeLista(rotulo: t.carregando, itens: 4)
           // Duas listas numa rolagem só, e a de perfis continua arrastável:
           // é para isso que existe o `SliverReorderableList`. Empilhar duas
           // listas roláveis daria duas barras de rolagem competindo pelo dedo.

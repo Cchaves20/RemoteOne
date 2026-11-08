@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/sessao.dart';
 import '../services/app_state.dart';
+import '../widgets/pulse.dart';
 
 /// Aparelhos conectados: onde a conta está aberta, e sair de um ou de todos.
 ///
@@ -121,7 +122,7 @@ class _ConnectedDevicesScreenState extends State<ConnectedDevicesScreen> {
 
     Widget corpo;
     if (sessoes == null && _erro == null) {
-      corpo = const Center(child: CircularProgressIndicator());
+      corpo = EsqueletoDeLista(rotulo: widget.state.t.carregando, itens: 3);
     } else if (sessoes == null) {
       corpo = Center(
         child: Padding(

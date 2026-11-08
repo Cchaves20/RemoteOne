@@ -286,6 +286,9 @@ class Strings {
   String get appsRunning => _t('Abertos', 'Running', '运行中', 'Ouvertes', 'Abiertas');
   String get appsSearch => _t('Buscar aplicativo', 'Search app', '搜索应用',
       'Rechercher une application', 'Buscar aplicación');
+  /// O que o leitor de tela anuncia num esqueleto de carregamento.
+  String get carregando => _t(
+      'Carregando…', 'Loading…', '正在加载…', 'Chargement…', 'Cargando…');
   String get appsQuerying => _t(
       'Consultando o computador…',
       'Asking the computer…',
