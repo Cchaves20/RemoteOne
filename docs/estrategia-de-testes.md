@@ -143,3 +143,11 @@ funcionando", semanas depois.
 
 Único custo inevitável: Apple Developer (US$ 99/ano). Todo o resto tem
 camada gratuita suficiente para o desenvolvimento.
+
+## Desempenho percebido
+
+O teste de carga ([`teste-de-carga.md`](teste-de-carga.md)) mede o servidor.
+O que a pessoa sente — o app num 4G ruim, num celular modesto — tem roteiro
+próprio em [`teste-em-rede-lenta.md`](teste-em-rede-lenta.md): emulador com
+rede de 3G no Dell, iPhone em rede real ruim, e o diário de requisições lentas
+do servidor para separar lentidão de rede de lentidão nossa.
