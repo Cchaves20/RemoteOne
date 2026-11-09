@@ -15,6 +15,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../l10n/strings.dart';
+import '../models/atalhos_do_programa.dart';
 import '../models/automation.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
@@ -31,6 +32,7 @@ import '../services/video_session.dart';
 import '../theme.dart';
 import '../widgets/profile_bar.dart';
 import '../widgets/ditado.dart';
+import '../widgets/identidade.dart';
 import '../widgets/remote_keyboard.dart';
 import '../widgets/transitions.dart';
 import 'automations_screen.dart' show runAutomationFlow;
@@ -124,6 +126,22 @@ class _RemoteScreenState extends State<RemoteScreen>
   /// redesenhava a tela remota inteira só para trocar um número da barra.
   final ValueNotifier<int> _fps = ValueNotifier<int>(0);
   Timer? _fpsTimer;
+
+  /// Como a conexão está agora (direta ou pelo relay, e os ms), para o
+  /// indicador da barra. Medida a cada 3 s enquanto o vídeo está no ar.
+  Conexao? _conexao;
+  Timer? _medidor;
+
+  /// O executável em primeiro plano, que escolhe os atalhos acima do teclado.
+  String? _exeEmFoco;
+
+  /// A barra de cima some sozinha alguns segundos depois de a imagem chegar,
+  /// para a tela do computador ficar inteira; um puxador a traz de volta.
+  bool _barraVisivel = true;
+  Timer? _esconderBarra;
+
+  /// Já vibrou o "conectou" desta sessão (vibra uma vez, e o "caiu" só depois).
+  bool _vibrouConectado = false;
   Timer? _reconnectTimer;
   bool _disposed = false;
 
@@ -269,6 +287,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _connect();
     _flushTimer =
         Timer.periodic(const Duration(milliseconds: 60), (_) => _flushScroll());
+    _medidor = Timer.periodic(const Duration(seconds: 3), (_) => _medirConexao());
     _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       // Só o texto da barra escuta, e só quando o número muda.
       _fps.value = _frameCount;
@@ -830,6 +849,7 @@ class _RemoteScreenState extends State<RemoteScreen>
         _videoRetry.sucesso();
         _videoFailureShown = false;
         _hasFrame = true; // já há imagem, mesmo que nenhum JPEG tenha chegado
+        _conectou();
         _error = null;
         final ratio = video.aspectRatio;
         if (ratio != null && ratio > 0) {
@@ -850,6 +870,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   static const fechadoNoComputador = 4403;
 
   Future<void> _encerradoNoComputador() async {
+    _caiu();
     if (_disposed) return;
     _reconnectTimer?.cancel();
     final t = widget.state.t;
@@ -876,6 +897,7 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   void _scheduleReconnect() {
     if (_disposed) return;
+    _caiu();
     if (mounted) setState(() => _error = widget.state.t.reconnecting);
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 2), () {
@@ -912,6 +934,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           _hasFrame = true;
           _error = null;
         });
+        _conectou();
       }
     } catch (_) {
       // Frame corrompido (ex.: conexão instável): ignora e espera o próximo.
@@ -954,6 +977,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     _devolverBarrasDoAndroid();
     _flushTimer?.cancel();
     _fpsTimer?.cancel();
+    _medidor?.cancel();
+    _esconderBarra?.cancel();
     _reconnectTimer?.cancel();
     _videoRetryTimer?.cancel();
     _sub?.cancel();
@@ -1172,6 +1197,7 @@ class _RemoteScreenState extends State<RemoteScreen>
           : await widget.state.foregroundApp(widget.device);
       if (!mounted) return;
       _atualizarEscondido(app);
+      if (app?.exe != _exeEmFoco) setState(() => _exeEmFoco = app?.exe);
       if (app == null) return;
       // Barra escondida ou lupa aberta: ninguém está olhando os ícones.
       if (!_profilesOpen || _zoomMode) return;
@@ -2447,20 +2473,260 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
+  /// Enquanto a imagem não chega: o monitor do início (o mesmo, que voou até
+  /// aqui) "ligando", e os três passos da conexão, que se acendem um a um.
+  ///
+  /// No lugar do círculo girando com "aguardando": a pessoa vê **onde** está a
+  /// espera — achar o computador, fechar a conexão, receber a imagem — e, se
+  /// travar, em qual dos três.
   Widget _waitingView(Key key) {
-    return Column(
+    final t = widget.state.t;
+    final c = context.cores;
+    final video = _video;
+    final achou = _channel != null && (video == null || video.state != VideoState.idle);
+    final conectou = video == null ? _channel != null : video.isLive || video.peerAlive;
+    final rotuloDaConexao = video == null
+        ? t.passoConexaoServidor
+        : (_conexao?.direta == false ? t.passoConexaoRelay : t.passoConexaoDireta);
+    return LayoutBuilder(
       key: key,
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const CircularProgressIndicator(),
-        const SizedBox(height: 16),
-        Text(
-          _error ?? widget.state.t.waitingScreen,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white70),
+      builder: (context, limites) {
+        final largura = (limites.maxWidth - 48).clamp(160.0, 360.0);
+        return Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.25, end: 1),
+                  duration: const Duration(milliseconds: 1200),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, brilho, _) => MonitorDeskside(
+                    ligado: true,
+                    largura: largura,
+                    intensidade: brilho,
+                    heroTag: 'monitor-${widget.device.deviceId}',
+                    conteudo: Center(child: CursorDaMarca(tamanho: largura * 0.11)),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Text(widget.device.name,
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 4),
+                Text(_error ?? t.ligandoATela,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: c.texto2, fontSize: 14)),
+                const SizedBox(height: 20),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: c.superficie,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: c.linha),
+                    ),
+                    child: Column(
+                      children: [
+                        _passoDaConexao(t.passoAchando, feito: achou, atual: !achou),
+                        _passoDaConexao(rotuloDaConexao,
+                            feito: conectou,
+                            atual: achou && !conectou,
+                            valor: _conexao?.idaEVoltaMs == null
+                                ? null
+                                : '${_conexao!.idaEVoltaMs} ms'),
+                        _passoDaConexao(t.passoImagem,
+                            feito: _hasFrame, atual: conectou && !_hasFrame),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _passoDaConexao(String rotulo,
+      {required bool feito, required bool atual, String? valor}) {
+    final c = context.cores;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 26,
+            height: 26,
+            child: feito
+                ? DecoratedBox(
+                    decoration: BoxDecoration(color: c.aoVivoFundo, shape: BoxShape.circle),
+                    child: Icon(Icons.check_rounded, size: 16, color: c.aoVivo),
+                  )
+                : atual
+                    ? CircularProgressIndicator(strokeWidth: 2.2, color: c.aoVivo)
+                    : DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: c.bordaApagada, width: 2),
+                        ),
+                      ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(rotulo,
+                style: TextStyle(
+                    fontSize: 15, color: feito || atual ? c.texto : c.texto3)),
+          ),
+          if (valor != null)
+            Text(valor, style: context.numeros.copyWith(fontSize: 12, color: c.texto3)),
+        ],
+      ),
+    );
+  }
+
+  // --- conexão: medida, vibração e a barra que some ----------------------------
+
+  Future<void> _medirConexao() async {
+    final video = _video;
+    if (video == null || !mounted) return;
+    final medida = await video.medirConexao();
+    if (!mounted || medida == null) return;
+    if (medida.direta != _conexao?.direta ||
+        medida.idaEVoltaMs != _conexao?.idaEVoltaMs) {
+      setState(() => _conexao = medida);
+    }
+  }
+
+  void _conectou() {
+    if (_vibrouConectado) return;
+    _vibrouConectado = true;
+    Vibracao.conectou();
+    _agendarEsconderBarra();
+    _medirConexao();
+  }
+
+  void _caiu() {
+    if (!_vibrouConectado) return;
+    _vibrouConectado = false;
+    Vibracao.desconectou();
+    _mostrarBarra();
+  }
+
+  /// Esconde a barra de cima depois de alguns segundos sem uso — só com a
+  /// imagem no ar e nenhum painel aberto: com a lupa ou um painel abertos, a
+  /// barra é o que a pessoa está usando.
+  void _agendarEsconderBarra() {
+    _esconderBarra?.cancel();
+    _esconderBarra = Timer(const Duration(seconds: 6), () {
+      if (!mounted || !_hasFrame || _zoomMode || _statsOpen || _mediaOpen) return;
+      setState(() => _barraVisivel = false);
+    });
+  }
+
+  void _mostrarBarra() {
+    if (!mounted) return;
+    if (!_barraVisivel) setState(() => _barraVisivel = true);
+    if (_hasFrame) _agendarEsconderBarra();
+  }
+
+  /// O que sobra da barra quando ela some: um puxador fino no topo.
+  Widget _puxador() {
+    final t = widget.state.t;
+    return Semantics(
+      button: true,
+      label: t.mostrarBarra,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _mostrarBarra,
+        onVerticalDragEnd: (_) => _mostrarBarra(),
+        child: SizedBox(
+          height: 18,
+          width: double.infinity,
+          child: Center(
+            child: Container(
+              width: 44,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(70),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
         ),
-      ],
+      ),
+    );
+  }
+
+  /// A linha de atalhos acima do teclado: muda com o programa em primeiro
+  /// plano (VS Code, navegador, explorador), e cai nos de sempre quando o
+  /// programa não é conhecido.
+  Widget _linhaDeAtalhos() {
+    final t = widget.state.t;
+    final c = context.cores;
+    final atalhos = atalhosPara(t, _exeEmFoco, mac: widget.device.ehMac);
+    final nome = nomeCurtoDoPrograma(_exeEmFoco);
+    return Container(
+      height: 44,
+      color: c.fundo,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        children: [
+          if (nome != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8, left: 2),
+                child: Text(nome,
+                    style: TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600, color: c.texto3)),
+              ),
+            ),
+          for (final a in atalhos)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Material(
+                color: c.superficie,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(color: c.linha),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () {
+                    Vibracao.tecla();
+                    _send({
+                      'kind': 'key_combo',
+                      'modifiers': a.modificadores,
+                      'key': a.tecla,
+                    }, avisarFalha: true);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: c.aoVivoFundo,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(a.combinacao,
+                              style: context.numeros
+                                  .copyWith(fontSize: 11, color: c.aoVivo)),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(a.rotulo, style: TextStyle(fontSize: 13, color: c.texto)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -2732,11 +2998,17 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
 
     final Widget tela = Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF05060D),
       body: SafeArea(
         child: Column(
           children: [
-            _topBar(showToggle: !isPortrait || _tecladoFisico),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              child: _barraVisivel || !_hasFrame
+                  ? _topBar(showToggle: !isPortrait || _tecladoFisico)
+                  : _puxador(),
+            ),
             // Deitado, as métricas viram uma coluna ao lado da imagem: a tela
             // é baixa e uma faixa horizontal comeria altura demais. Em pé, o
             // contrário — sobra altura, e a faixa fica no topo.
@@ -2760,6 +3032,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                 onEnviar: _ditar,
                 onFechar: () => setState(() => _ditando = false),
               ),
+            if (showKeyboard && !_ditando) _linhaDeAtalhos(),
             if (showKeyboard && !_ditando)
               RemoteKeyboard(
                 onDitar: () => setState(() => _ditando = true),
@@ -2793,23 +3066,6 @@ class _RemoteScreenState extends State<RemoteScreen>
       autofocus: true,
       onKeyEvent: _aoTeclar,
       child: tela,
-    );
-  }
-
-  /// Botão da barra de cima que abre/fecha um painel. Aceso quando aberto —
-  /// é o que diz de onde veio a faixa que apareceu.
-  Widget _barToggle({
-    required IconData icon,
-    required bool open,
-    required String tooltip,
-    required VoidCallback onPressed,
-  }) {
-    return IconButton(
-      tooltip: tooltip,
-      // Compacto: a barra já carrega voltar, nome, indicador, lupa e teclado.
-      visualDensity: VisualDensity.compact,
-      icon: Icon(icon, color: open ? auroraCyan : Colors.white),
-      onPressed: onPressed,
     );
   }
 
@@ -3330,123 +3586,226 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
-  Widget _topBar({required bool showToggle}) {
+  /// O indicador da conexão: barrinhas de sinal, "direto" ou "relay", e os
+  /// ms da ida e volta. Enquanto ainda não há medida (ou sem vídeo direto), o
+  /// texto de estado de antes.
+  Widget _indicadorDeConexao() {
+    final t = widget.state.t;
+    final c = context.cores;
+    final medida = _conexao;
+    final video = _video;
+    if (video == null || !video.isLive || medida == null) return _videoStatus();
+    final ms = medida.idaEVoltaMs;
+    final barras = ms == null
+        ? 3
+        : ms < 60
+            ? 4
+            : ms < 120
+                ? 3
+                : ms < 250
+                    ? 2
+                    : 1;
+    // Relay em âmbar: funciona, mas é o caminho mais lento, e quem vê o
+    // cursor "arrastando" ganha aqui a explicação.
+    final cor = medida.direta ? c.aoVivo : const Color(0xFFFBBF24);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      // Faixa escura com um leve brilho da marca, separando a barra da tela.
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF14162C), Colors.black],
-        ),
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: cor.withAlpha(26),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cor.withAlpha(64)),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
-            tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          Expanded(
-            child: Text(
-              widget.device.name,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
+          for (var i = 0; i < 4; i++)
+            Container(
+              width: 3,
+              height: 4.0 + i * 3,
+              margin: const EdgeInsets.only(right: 1.5),
+              decoration: BoxDecoration(
+                color: i < barras ? cor : cor.withAlpha(60),
+                borderRadius: BorderRadius.circular(1),
               ),
             ),
-          ),
-          if (_zoomMode) ...[
-            IconButton(
-              tooltip: widget.state.t.zoomOut,
-              icon: const Icon(Icons.remove_circle_outline, color: Colors.white),
-              onPressed: () => _zoomBy(1 / 1.4),
-            ),
-            IconButton(
-              tooltip: widget.state.t.zoomIn,
-              icon: const Icon(Icons.add_circle_outline, color: Colors.white),
-              onPressed: () => _zoomBy(1.4),
-            ),
-            IconButton(
-              tooltip: widget.state.t.zoomFit,
-              icon: const Icon(Icons.fit_screen, color: Colors.white),
-              onPressed: _resetZoom,
-            ),
-            IconButton(
-              tooltip: widget.state.t.zoomExit,
-              icon: const Icon(Icons.close, color: Colors.white),
-              onPressed: _toggleZoomMode,
-            ),
-          ] else ...[
-            _videoStatus(),
-            // Os dois painéis retráteis moram aqui, na moldura do app: fora
-            // da imagem do computador, que é o que a pessoa veio olhar.
-            _barToggle(
-              icon: Icons.memory,
-              open: _statsOpen,
-              tooltip: widget.state.t.systemPanel,
-              onPressed: _toggleStats,
-            ),
-            _barToggle(
-              icon: Icons.music_note,
-              open: _mediaOpen,
-              tooltip: widget.state.t.mediaPanel,
-              onPressed: _toggleMedia,
-            ),
-            // A barra de perfis não é uma faixa: ela flutua, como a dock. Por
-            // isso este botão só a mostra ou esconde — não empurra a imagem.
-            _barToggle(
-              icon: Icons.tune,
-              open: _profilesOpen,
-              tooltip: widget.state.t.profilesPanel,
-              onPressed: _toggleProfiles,
-            ),
-            // Só aparece quando há mais de uma tela: um botão que abre uma
-            // lista de um item só é ruído na barra.
-            if (_monitors.length > 1)
-              _barToggle(
-                icon: Icons.desktop_windows,
-                open: _selectedMonitor != null,
-                tooltip: widget.state.t.monitorsTitle,
-                onPressed: _openMonitors,
-              ),
-            // Área de transferência: abre uma folha, não uma faixa - é uma
-            // visita curta, não algo para ficar na tela.
-            _barToggle(
-              icon: Icons.content_paste,
-              open: widget.state.clipboardSync,
-              tooltip: widget.state.t.clipboardTitle,
-              onPressed: _openClipboard,
-            ),
-            IconButton(
-              tooltip: widget.state.t.zoomEnter,
-              icon: const Icon(Icons.zoom_in, color: Colors.white),
-              onPressed: _toggleZoomMode,
-            ),
-            if (showToggle)
-              IconButton(
-                tooltip: _keyboardVisible
-                    ? widget.state.t.esconderTeclado
-                    : widget.state.t.mostrarTeclado,
-                icon: Icon(
-                  _keyboardVisible ? Icons.keyboard_hide : Icons.keyboard,
-                  color: Colors.white,
-                ),
-                onPressed: () {
-                  // Fechar a faixa também sai do ditado: o ícone da barra diz
-                  // "teclado", e reabrir tem de devolver o teclado — não a
-                  // caixa em que a pessoa estava três minutos atrás.
-                  setState(() {
-                    _keyboardVisible = !_keyboardVisible;
-                    if (!_keyboardVisible) _ditando = false;
-                  });
-                },
-              ),
+          const SizedBox(width: 6),
+          Text(medida.direta ? t.direto : t.relay,
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: cor)),
+          if (ms != null) ...[
+            const SizedBox(width: 6),
+            Text('$ms ms', style: context.numeros.copyWith(fontSize: 12, color: cor)),
           ],
         ],
       ),
+    );
+  }
+
+  /// A barra de cima.
+  ///
+  /// Cabe numa tela estreita, em qualquer estado: o nome e o indicador
+  /// encolhem antes dos botões, e o que se usa menos (métricas, mídia,
+  /// monitores, área de transferência, lupa) fica no "⋯". Antes, oito botões
+  /// em fila mais o "conectando vídeo…" passavam da borda, e a lupa saía
+  /// cortada.
+  ///
+  /// Regra de cor dos ícones: brancos; ciano quando o que eles ligam está
+  /// ligado.
+  Widget _topBar({required bool showToggle}) {
+    final t = widget.state.t;
+    return Listener(
+      // Mexer na barra adia o sumiço dela.
+      onPointerDown: (_) => _mostrarBarra(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF14162C), Color(0xFF05060D)],
+          ),
+        ),
+        child: Row(
+          children: [
+            IconButton(
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      widget.device.name,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        fontFamily: fonteDosTitulos,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 17,
+                      ),
+                    ),
+                  ),
+                  if (!_zoomMode) ...[
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: _indicadorDeConexao(),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (_zoomMode) ...[
+              IconButton(
+                tooltip: t.zoomOut,
+                icon: const Icon(Icons.remove_circle_outline, color: Colors.white),
+                onPressed: () => _zoomBy(1 / 1.4),
+              ),
+              IconButton(
+                tooltip: t.zoomIn,
+                icon: const Icon(Icons.add_circle_outline, color: Colors.white),
+                onPressed: () => _zoomBy(1.4),
+              ),
+              IconButton(
+                tooltip: t.zoomFit,
+                icon: const Icon(Icons.fit_screen, color: Colors.white),
+                onPressed: _resetZoom,
+              ),
+              IconButton(
+                tooltip: t.zoomExit,
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: _toggleZoomMode,
+              ),
+            ] else ...[
+              // A barra de perfis não é uma faixa: ela flutua, como a dock. Por
+              // isso este botão só a mostra ou esconde — não empurra a imagem.
+              IconButton(
+                tooltip: t.profilesPanel,
+                visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  backgroundColor:
+                      _profilesOpen ? auroraCyan.withAlpha(36) : Colors.transparent,
+                ),
+                icon: IconeDaMarca(IconeDeskside.perfis,
+                    tamanho: 22, cor: _profilesOpen ? auroraCyan : Colors.white),
+                onPressed: _toggleProfiles,
+              ),
+              if (showToggle)
+                IconButton(
+                  tooltip: _keyboardVisible ? t.esconderTeclado : t.mostrarTeclado,
+                  visualDensity: VisualDensity.compact,
+                  icon: IconeDaMarca(IconeDeskside.teclado,
+                      tamanho: 22,
+                      cor: _keyboardVisible ? auroraCyan : Colors.white),
+                  onPressed: () {
+                    // Fechar a faixa também sai do ditado: o ícone da barra diz
+                    // "teclado", e reabrir tem de devolver o teclado — não a
+                    // caixa em que a pessoa estava três minutos atrás.
+                    setState(() {
+                      _keyboardVisible = !_keyboardVisible;
+                      if (!_keyboardVisible) _ditando = false;
+                    });
+                  },
+                ),
+              _maisOpcoes(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// O "⋯" da barra: o que se abre de vez em quando. Os painéis que ficam
+  /// abertos aparecem marcados, para dizer de onde veio a faixa na tela.
+  Widget _maisOpcoes() {
+    final t = widget.state.t;
+    final ligado = _statsOpen || _mediaOpen || widget.state.clipboardSync;
+    return PopupMenuButton<String>(
+      tooltip: t.maisOpcoes,
+      icon: Icon(Icons.more_horiz, color: ligado ? auroraCyan : Colors.white),
+      onSelected: (v) {
+        switch (v) {
+          case 'stats':
+            _toggleStats();
+          case 'media':
+            _toggleMedia();
+          case 'monitors':
+            _openMonitors();
+          case 'clipboard':
+            _openClipboard();
+          case 'zoom':
+            _toggleZoomMode();
+        }
+        // Um painel aberto segura a barra; fechado, ela volta a sumir sozinha.
+        _mostrarBarra();
+      },
+      itemBuilder: (context) => [
+        CheckedPopupMenuItem(value: 'stats', checked: _statsOpen, child: Text(t.systemPanel)),
+        CheckedPopupMenuItem(value: 'media', checked: _mediaOpen, child: Text(t.mediaPanel)),
+        if (_monitors.length > 1)
+          CheckedPopupMenuItem(
+              value: 'monitors',
+              checked: _selectedMonitor != null,
+              child: Text(t.monitorsTitle)),
+        CheckedPopupMenuItem(
+            value: 'clipboard',
+            checked: widget.state.clipboardSync,
+            child: Text(t.clipboardTitle)),
+        PopupMenuItem(
+          value: 'zoom',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.zoom_in),
+            title: Text(t.zoomEnter),
+          ),
+        ),
+      ],
     );
   }
 }

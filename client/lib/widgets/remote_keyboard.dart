@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../services/word_suggester.dart';
+import '../theme.dart';
+import 'identidade.dart';
 
 enum _Layer { letters, symbols, accents }
 
@@ -263,16 +265,19 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
     // Todas as teclas realçam. Fica como parâmetro só para o caso de alguma
     // tecla futura em que o balão atrapalhe.
     bool preview = true,
+    bool especial = false,
+    bool enter = false,
   }) {
     // `final`, e num nome que não é reatribuído: a versão anterior fazia
     // `botao = Builder(... child: botao)`, e a closure captura a **variável**,
     // não o valor dela. Quando o builder rodava, `botao` já era o próprio
     // Builder — cada tecla se construía dentro de si mesma, sem fim.
-    final Widget conteudo = SizedBox(
-      height: 34,
-      child: active
-          ? FilledButton(onPressed: onTap, style: _style, child: FittedBox(child: child))
-          : OutlinedButton(onPressed: onTap, style: _style, child: FittedBox(child: child)),
+    final Widget conteudo = _Tecla(
+      onTap: onTap,
+      ativa: active,
+      especial: especial,
+      enter: enter,
+      child: child,
     );
 
     final Widget botao = !preview
@@ -288,7 +293,10 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
 
     return Expanded(
       flex: flex,
-      child: Padding(padding: const EdgeInsets.all(1.5), child: botao),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2.5, vertical: 3.5),
+        child: botao,
+      ),
     );
   }
 
@@ -338,7 +346,7 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
   Widget build(BuildContext context) {
     final rows = _rowsFor(_layer);
     return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color: context.cores.fundo,
       child: SafeArea(
         top: false,
         child: Padding(
@@ -350,13 +358,17 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
               // Especiais (sempre visíveis).
               Row(
                 children: [
-                  _key(const Text('Esc'), () => _special('escape')),
-                  _key(const Text('Tab'), () => _special('tab')),
-                  _key(const Icon(Icons.arrow_upward, size: 16), () => _special('up')),
-                  _key(const Icon(Icons.arrow_downward, size: 16), () => _special('down')),
-                  _key(const Icon(Icons.arrow_back, size: 16), () => _special('left')),
-                  _key(const Icon(Icons.arrow_forward, size: 16), () => _special('right')),
-                  _key(const Text('Del'), () => _special('delete')),
+                  _key(const Text('Esc'), () => _special('escape'), especial: true),
+                  _key(const Text('Tab'), () => _special('tab'), especial: true),
+                  _key(const Icon(Icons.arrow_upward, size: 16), () => _special('up'),
+                      especial: true),
+                  _key(const Icon(Icons.arrow_downward, size: 16), () => _special('down'),
+                      especial: true),
+                  _key(const Icon(Icons.arrow_back, size: 16), () => _special('left'),
+                      especial: true),
+                  _key(const Icon(Icons.arrow_forward, size: 16), () => _special('right'),
+                      especial: true),
+                  _key(const Text('Del'), () => _special('delete'), especial: true),
                 ],
               ),
               _charRow(rows[0]),
@@ -366,24 +378,24 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
                 children: [
                   _key(const Icon(Icons.keyboard_capslock, size: 16),
                       () => _toggleMod('shift'),
-                      flex: 3, active: _mods.contains('shift')),
+                      flex: 3, active: _mods.contains('shift'), especial: true),
                   for (final c in rows[2]) _charKey(c),
                   _key(const Icon(Icons.backspace_outlined, size: 16),
                       () => _special('backspace'),
-                      flex: 3),
+                      flex: 3, especial: true),
                 ],
               ),
               // Camada + modificadores + espaço + ponto + Enter.
               Row(
                 children: [
-                  _key(Text(_layerLabel), _cycleLayer, flex: 3),
+                  _key(Text(_layerLabel), _cycleLayer, flex: 3, especial: true),
                   if (widget.onDitar != null)
                     _key(const Icon(Icons.mic_none, size: 16), widget.onDitar!,
-                        flex: 3),
+                        flex: 3, especial: true),
                   _key(const Text('Ctrl'), () => _toggleMod('ctrl'),
-                      flex: 3, active: _mods.contains('ctrl')),
+                      flex: 3, active: _mods.contains('ctrl'), especial: true),
                   _key(const Text('Alt'), () => _toggleMod('alt'),
-                      flex: 3, active: _mods.contains('alt')),
+                      flex: 3, active: _mods.contains('alt'), especial: true),
                   // Sete e não oito quando há microfone: a barra de espaço
                   // devolve parte da largura em vez de espremer Ctrl e Alt,
                   // que são as teclas que ninguém acerta por engano.
@@ -392,10 +404,109 @@ class _RemoteKeyboardState extends State<RemoteKeyboard> {
                   _key(const Text('.'), () => _typeChar('.')),
                   _key(const Icon(Icons.keyboard_return, size: 16),
                       () => _special('enter'),
-                      flex: 4),
+                      flex: 4, enter: true),
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Uma tecla com relevo: a "borda de baixo" escura que afunda quando o dedo
+/// encosta, e um toque leve de vibração. É o que faz o teclado parecer um
+/// objeto, e não uma grade de botões de formulário.
+///
+/// As especiais (Esc, setas, Ctrl...) num tom mais fundo e em fonte
+/// monoespaçada; o modificador ligado (Ctrl preso, Shift) na cor de "ao vivo";
+/// o Enter no degradê de ação.
+class _Tecla extends StatefulWidget {
+  const _Tecla({
+    required this.onTap,
+    required this.child,
+    this.ativa = false,
+    this.especial = false,
+    this.enter = false,
+  });
+
+  final VoidCallback onTap;
+  final Widget child;
+  final bool ativa;
+  final bool especial;
+  final bool enter;
+
+  @override
+  State<_Tecla> createState() => _TeclaState();
+}
+
+class _TeclaState extends State<_Tecla> {
+  bool _apertada = false;
+
+  void _apertar(bool sim) {
+    if (_apertada == sim) return;
+    if (sim) Vibracao.tecla();
+    setState(() => _apertada = sim);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.cores;
+    const relevo = 3.0;
+    final Color fundo;
+    final Color texto;
+    Gradient? degrade;
+    Color sombra = c.teclaSombra;
+    if (widget.enter) {
+      fundo = auroraBlue;
+      degrade = degradeDeAcao;
+      texto = Colors.white;
+      sombra = sombraDoBotao;
+    } else if (widget.ativa) {
+      fundo = c.aoVivoFundo;
+      texto = c.aoVivo;
+    } else if (_apertada) {
+      fundo = c.teclaApertada;
+      texto = c.teclaTexto;
+    } else if (widget.especial) {
+      fundo = c.teclaEspecial;
+      texto = c.teclaTextoEspecial;
+    } else {
+      fundo = c.tecla;
+      texto = c.teclaTexto;
+    }
+    final descida = _apertada ? relevo : 0.0;
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => _apertar(true),
+        onTapUp: (_) => _apertar(false),
+        onTapCancel: () => _apertar(false),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 50),
+          height: 38,
+          margin: EdgeInsets.only(top: descida, bottom: relevo - descida),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: degrade == null ? fundo : null,
+            gradient: degrade,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [BoxShadow(color: sombra, offset: Offset(0, relevo - descida))],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: IconTheme(
+              data: IconThemeData(color: texto, size: 17),
+              child: DefaultTextStyle(
+                style: widget.especial
+                    ? context.numeros.copyWith(fontSize: 13, color: texto)
+                    : TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: texto),
+                child: FittedBox(child: widget.child),
+              ),
+            ),
           ),
         ),
       ),

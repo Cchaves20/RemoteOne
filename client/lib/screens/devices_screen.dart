@@ -225,7 +225,14 @@ class _DevicesScreenState extends State<DevicesScreen>
   void _openControl(Device device) {
     widget.state.selectDevice(device);
     Navigator.of(context).push(
-      fadeThroughRoute(RemoteScreen(state: widget.state, device: device)),
+      // A tela remota é sempre escura, como uma cabine, qualquer que seja o
+      // tema do app. O tema vai na **rota**, e não dentro da tela: as folhas e
+      // os diálogos que ela abre herdam o tema de quem os abriu, e precisam
+      // sair escuros também.
+      fadeThroughRoute(Theme(
+        data: temaDaCabine,
+        child: RemoteScreen(state: widget.state, device: device),
+      )),
     );
   }
 

@@ -202,6 +202,45 @@ class Strings {
       'Enter the code shown on the computer.', '输入电脑上显示的代码。',
       "Saisissez le code affiché sur l'ordinateur.", 'Introduce el código que aparece en el equipo.');
 
+  // Tela remota: os passos da conexão e o indicador.
+  String get ligandoATela => _t('Ligando a tela…', 'Turning the screen on…', '正在点亮屏幕…',
+      "Allumage de l'écran…", 'Encendiendo la pantalla…');
+  String get passoAchando => _t('Achando o computador', 'Finding the computer', '正在寻找电脑',
+      "Recherche de l'ordinateur", 'Buscando el equipo');
+  String get passoConexaoDireta => _t('Conexão direta', 'Direct connection', '直接连接',
+      'Connexion directe', 'Conexión directa');
+  String get passoConexaoRelay => _t('Conexão pelo relay', 'Connection via relay',
+      '通过中继连接', 'Connexion via relais', 'Conexión por relé');
+  String get passoConexaoServidor => _t('Conexão pelo servidor', 'Connection via server',
+      '通过服务器连接', 'Connexion via le serveur', 'Conexión por el servidor');
+  String get passoImagem => _t('Imagem da tela', 'Screen image', '屏幕画面',
+      "Image de l'écran", 'Imagen de la pantalla');
+  String get direto => _t('direto', 'direct', '直连', 'direct', 'directo');
+  String get relay => _t('relay', 'relay', '中继', 'relais', 'relé');
+  String get maisOpcoes => _t('Mais opções', 'More options', '更多选项',
+      "Plus d'options", 'Más opciones');
+  String get mostrarBarra => _t('Mostrar a barra', 'Show the bar', '显示工具栏',
+      'Afficher la barre', 'Mostrar la barra');
+  // Atalhos por programa.
+  String get atalhoSalvar => _t('Salvar', 'Save', '保存', 'Enregistrer', 'Guardar');
+  String get atalhoAbrirArquivo => _t('Abrir arquivo', 'Open file', '打开文件',
+      'Ouvrir un fichier', 'Abrir archivo');
+  String get atalhoTerminal => _t('Terminal', 'Terminal', '终端', 'Terminal', 'Terminal');
+  String get atalhoComentar => _t('Comentar', 'Comment', '注释', 'Commenter', 'Comentar');
+  String get atalhoNovaAba => _t('Nova aba', 'New tab', '新标签页', 'Nouvel onglet', 'Nueva pestaña');
+  String get atalhoFecharAba => _t('Fechar aba', 'Close tab', '关闭标签页', "Fermer l'onglet",
+      'Cerrar pestaña');
+  String get atalhoEndereco => _t('Endereço', 'Address bar', '地址栏', 'Adresse', 'Dirección');
+  String get atalhoVoltar => _t('Voltar', 'Back', '返回', 'Retour', 'Atrás');
+  String get atalhoRenomear => _t('Renomear', 'Rename', '重命名', 'Renommer', 'Renombrar');
+  String get atalhoNovaPasta => _t('Nova pasta', 'New folder', '新建文件夹', 'Nouveau dossier',
+      'Nueva carpeta');
+  String get atalhoCopiar => _t('Copiar', 'Copy', '复制', 'Copier', 'Copiar');
+  String get atalhoColar => _t('Colar', 'Paste', '粘贴', 'Coller', 'Pegar');
+  String get atalhoDesfazer => _t('Desfazer', 'Undo', '撤销', 'Annuler', 'Deshacer');
+  String get atalhoTudo => _t('Selecionar tudo', 'Select all', '全选', 'Tout sélectionner',
+      'Seleccionar todo');
+
   String get myComputers =>
       _t('Meus computadores', 'My computers', '我的电脑', 'Mes ordinateurs', 'Mis equipos');
   String get settings =>

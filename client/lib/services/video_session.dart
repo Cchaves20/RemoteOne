@@ -498,6 +498,22 @@ class VideoSession extends ChangeNotifier {
     }
   }
 
+  /// Como a conexão está agora: direta ou pelo relay (TURN), e a ida e volta
+  /// em milissegundos. Nulo enquanto não há par de candidatos escolhido.
+  ///
+  /// Lido das estatísticas do próprio WebRTC, e não do caminho que se tentou:
+  /// o ICE pode começar num par e terminar noutro, e o que a pessoa sente é o
+  /// par que está passando os pacotes agora.
+  Future<Conexao?> medirConexao() async {
+    final peer = _peer;
+    if (peer == null || !isLive) return null;
+    try {
+      return conexaoDasEstatisticas(await peer.getStats());
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _applyAnswer(String? sdp) async {
     final peer = _peer;
     if (peer == null || sdp == null) return;
@@ -619,4 +635,51 @@ class VideoSession extends ChangeNotifier {
     }
     super.dispose();
   }
+}
+
+/// O par de candidatos em uso: se é direto, e a ida e volta.
+@immutable
+class Conexao {
+  const Conexao({required this.direta, this.idaEVoltaMs});
+
+  /// Falso quando passa pelo relay (TURN), que é o caminho mais lento.
+  final bool direta;
+  final int? idaEVoltaMs;
+}
+
+/// Acha, nas estatísticas do WebRTC, o par de candidatos que está em uso.
+///
+/// Separado da sessão para ser testável sem uma conexão de verdade. Os nomes
+/// dos campos são os da especificação (`candidate-pair`, `nominated`,
+/// `currentRoundTripTime` em segundos, `candidateType`), que é o que o
+/// libwebrtc do iPhone e do Android devolvem.
+Conexao? conexaoDasEstatisticas(List<StatsReport> relatorios) {
+  StatsReport? par;
+  for (final r in relatorios) {
+    if (r.type != 'candidate-pair') continue;
+    final v = r.values;
+    final emUso = v['state'] == 'succeeded' &&
+        (v['nominated'] == true || v['nominated'] == 'true' || v['selected'] == true);
+    if (emUso) {
+      par = r;
+      break;
+    }
+  }
+  if (par == null) return null;
+  final idLocal = par.values['localCandidateId'];
+  final idRemoto = par.values['remoteCandidateId'];
+  var relay = false;
+  for (final r in relatorios) {
+    if ((r.id == idLocal || r.id == idRemoto) &&
+        (r.type == 'local-candidate' || r.type == 'remote-candidate') &&
+        r.values['candidateType'] == 'relay') {
+      relay = true;
+    }
+  }
+  final rtt = par.values['currentRoundTripTime'];
+  final segundos = rtt is num ? rtt.toDouble() : double.tryParse('$rtt');
+  return Conexao(
+    direta: !relay,
+    idaEVoltaMs: segundos == null ? null : (segundos * 1000).round(),
+  );
 }
