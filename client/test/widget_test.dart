@@ -7,6 +7,8 @@ import 'package:http/testing.dart';
 import 'package:deskside_client/config.dart';
 import 'package:deskside_client/l10n/strings.dart';
 import 'package:deskside_client/main.dart';
+import 'package:deskside_client/screens/devices_screen.dart';
+import 'package:deskside_client/widgets/identidade.dart';
 import 'package:deskside_client/services/api_client.dart';
 import 'package:deskside_client/services/app_state.dart';
 import 'package:deskside_client/services/token_store.dart';
@@ -109,7 +111,9 @@ void main() {
     await tester.pumpWidget(DesksideApp(state: state));
     await _entrar(tester);
 
-    expect(find.text('Meus computadores'), findsOneWidget);
+    // O título "Meus computadores" virou a saudação ("Boa noite, …"), que
+    // muda com a hora: o que se confere é ter chegado à tela.
+    expect(find.byType(DevicesScreen), findsOneWidget);
     // A tela de primeiro uso, e não só o título dela: o que importa é que ela
     // diga **o que fazer**. O texto anterior ("toque em + e informe o código
     // exibido pelo agente") supunha um programa já instalado no computador e
@@ -117,7 +121,7 @@ void main() {
     // este teste passava do mesmo jeito.
     expect(find.textContaining('Nenhum computador'), findsOneWidget);
     expect(find.textContaining('baixe o Deskside'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Tenho um código'), findsOneWidget);
+    expect(find.widgetWithText(BotaoDeskside, 'Tenho um código'), findsOneWidget);
   });
 
   testWidgets('erro de login exibe mensagem', (tester) async {

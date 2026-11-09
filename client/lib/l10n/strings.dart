@@ -149,6 +149,55 @@ class Strings {
       '验证码无效，请重试。', 'Code invalide. Réessayez.', 'Código inválido. Inténtalo de nuevo.');
 
   // Dispositivos
+  // Saudação do início (ver `services/saudacao.dart`). Com nome e sem nome:
+  // conta antiga pode não ter nome nenhum.
+  String bomDia(String nome) => nome.isEmpty
+      ? _t('Bom dia', 'Good morning', '早上好', 'Bonjour', 'Buenos días')
+      : _t('Bom dia, $nome', 'Good morning, $nome', '早上好，$nome', 'Bonjour, $nome',
+          'Buenos días, $nome');
+  String boaTarde(String nome) => nome.isEmpty
+      ? _t('Boa tarde', 'Good afternoon', '下午好', 'Bon après-midi', 'Buenas tardes')
+      : _t('Boa tarde, $nome', 'Good afternoon, $nome', '下午好，$nome',
+          'Bon après-midi, $nome', 'Buenas tardes, $nome');
+  String boaNoite(String nome) => nome.isEmpty
+      ? _t('Boa noite', 'Good evening', '晚上好', 'Bonsoir', 'Buenas noches')
+      : _t('Boa noite, $nome', 'Good evening, $nome', '晚上好，$nome', 'Bonsoir, $nome',
+          'Buenas noches, $nome');
+  String felizAniversario(String nome) => nome.isEmpty
+      ? _t('Feliz aniversário!', 'Happy birthday!', '生日快乐！', 'Joyeux anniversaire !',
+          '¡Feliz cumpleaños!')
+      : _t('Feliz aniversário, $nome!', 'Happy birthday, $nome!', '$nome，生日快乐！',
+          'Joyeux anniversaire, $nome !', '¡Feliz cumpleaños, $nome!');
+  String computadoresOnline(int online, int total) => total == 1
+      ? (online == 1
+          ? _t('Seu computador está online', 'Your computer is online', '你的电脑在线',
+              'Votre ordinateur est en ligne', 'Tu equipo está en línea')
+          : _t('Seu computador está offline', 'Your computer is offline', '你的电脑离线',
+              'Votre ordinateur est hors ligne', 'Tu equipo está desconectado'))
+      : _t('$online de $total computadores online', '$online of $total computers online',
+          '$total 台电脑中 $online 台在线', '$online ordinateurs sur $total en ligne',
+          '$online de $total equipos en línea');
+
+  String get outrosComputadores => _t('Outros computadores', 'Other computers',
+      '其他电脑', 'Autres ordinateurs', 'Otros equipos');
+  String get segureParaAcoes => _t(
+      'Segure um computador para ver as automações, desligar ou reiniciar.',
+      'Press and hold a computer for automations, shut down or restart.',
+      '长按电脑可查看自动化、关机或重启。',
+      "Maintenez un ordinateur appuyé pour les automatisations, l'éteindre ou le redémarrer.",
+      'Mantén pulsado un equipo para ver automatizaciones, apagar o reiniciar.');
+  String estaOffline(String nome) => _t(
+      '$nome está offline. Abra o Deskside nele para conectar.',
+      '$nome is offline. Open Deskside on it to connect.',
+      '$nome 离线。在那台电脑上打开 Deskside 即可连接。',
+      '$nome est hors ligne. Ouvrez Deskside dessus pour vous connecter.',
+      '$nome está desconectado. Abre Deskside en él para conectarte.');
+  String get acoesDoComputador => _t('Ações do computador', 'Computer actions',
+      '电脑操作', "Actions de l'ordinateur", 'Acciones del equipo');
+  String get digiteOCodigo => _t('Digite o código que aparece no computador.',
+      'Enter the code shown on the computer.', '输入电脑上显示的代码。',
+      "Saisissez le code affiché sur l'ordinateur.", 'Introduce el código que aparece en el equipo.');
+
   String get myComputers =>
       _t('Meus computadores', 'My computers', '我的电脑', 'Mes ordinateurs', 'Mis equipos');
   String get settings =>

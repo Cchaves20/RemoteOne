@@ -101,6 +101,28 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/deskside_glyph.png
+    # As licenças das duas fontes, que a tela de licenças mostra (ver
+    # `registrarLicencasDasFontes` em main.dart). A OFL pede que vão junto.
+    - assets/fonts/OFL-SpaceGrotesk.txt
+    - assets/fonts/OFL-JetBrainsMono.txt
+  # Títulos e números (ver `theme.dart`). Dentro do app, e não baixadas de um
+  # serviço de fontes: a política de privacidade promete que o app não fala com
+  # ninguém além do nosso servidor. Cortadas para os pesos usados e para o
+  # alfabeto latino (scripts no histórico do commit): ~200 KB no total. Chinês
+  # cai na fonte do sistema, como antes.
+  fonts:
+    - family: SpaceGrotesk
+      fonts:
+        - asset: assets/fonts/SpaceGrotesk-600.ttf
+          weight: 600
+        - asset: assets/fonts/SpaceGrotesk-700.ttf
+          weight: 700
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-400.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono-500.ttf
+          weight: 500
 
 # Ícone do app: a configuração fica em **dois arquivos**, e não aqui.
 #

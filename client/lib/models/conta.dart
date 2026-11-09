@@ -19,6 +19,7 @@ class Conta {
     this.renova = false,
     this.termosVersao = '',
     this.termosAtual = '',
+    this.aniversario,
   });
 
   final int id;
@@ -60,6 +61,39 @@ class Conta {
 
   /// A versão em vigor no servidor. Vazia num servidor antigo.
   final String termosAtual;
+
+  /// Dia e mês do aniversário, `"MM-DD"`, sem o ano. Nulo = não informado
+  /// (conta de antes, ou quem apagou), e o app só cumprimenta pelo horário.
+  final String? aniversario;
+
+  /// O mês e o dia de [aniversario], ou nulo se ele faltar ou vier torto.
+  (int mes, int dia)? get mesEDia {
+    final a = aniversario;
+    if (a == null || a.length != 5 || a[2] != '-') return null;
+    final mes = int.tryParse(a.substring(0, 2));
+    final dia = int.tryParse(a.substring(3));
+    if (mes == null || dia == null || mes < 1 || mes > 12 || dia < 1 || dia > 31) {
+      return null;
+    }
+    return (mes, dia);
+  }
+
+  /// Se [dia] (a data do celular) é o aniversário.
+  ///
+  /// Quem nasceu em 29 de fevereiro faz aniversário no dia 28 nos anos que
+  /// não são bissextos: sem isso, passaria três anos sem parabéns.
+  bool ehAniversarioEm(DateTime dia) {
+    final md = mesEDia;
+    if (md == null) return false;
+    final (mes, d) = md;
+    if (mes == 2 && d == 29 && !_bissexto(dia.year)) {
+      return dia.month == 2 && dia.day == 28;
+    }
+    return dia.month == mes && dia.day == d;
+  }
+
+  static bool _bissexto(int ano) =>
+      (ano % 4 == 0 && ano % 100 != 0) || ano % 400 == 0;
 
   /// Há uma versão dos termos que a pessoa ainda não aceitou.
   ///
@@ -131,5 +165,6 @@ class Conta {
         renova: json['renova'] as bool? ?? false,
         termosVersao: (json['termos_versao'] as String?) ?? '',
         termosAtual: (json['termos_atual'] as String?) ?? '',
+        aniversario: json['aniversario'] as String?,
       );
 }

@@ -601,6 +601,18 @@ class ApiClient {
   }
 
   /// Registra o aceite da versão dos termos em vigor.
+  /// Define (`"MM-DD"`) ou apaga (`null`) o dia e o mês do aniversário.
+  Future<void> setBirthday(String? mesDia) async {
+    final res = await _http
+        .put(
+          _uri('/api/v1/auth/me/birthday'),
+          headers: _authHeaders,
+          body: jsonEncode({'aniversario': mesDia}),
+        )
+        .timeout(_timeout);
+    if (res.statusCode != 204) throw _error(res);
+  }
+
   Future<void> acceptTerms() async {
     final res = await _http
         .post(

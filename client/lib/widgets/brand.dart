@@ -1,50 +1,27 @@
 import 'package:flutter/material.dart';
 
-import '../theme.dart';
+import 'identidade.dart';
 
-/// Símbolo do Deskside: a "tela com cursor" em gradiente (mesmo glifo do
-/// ícone do app). Usado no login e no "Sobre".
+/// Símbolo do Deskside: o monitor aceso com o cursor da marca dentro. Usado no
+/// login, no cadastro e no "Sobre".
+///
+/// Desenhado, e não mais a imagem do ícone: o desenho acompanha o tamanho sem
+/// serrilhar e tem o brilho da tela, que a imagem achatava.
 class DesksideMark extends StatelessWidget {
   const DesksideMark({super.key, this.size = 72});
 
   final double size;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Image.asset(
-        'assets/icon/deskside_glyph.png',
-        width: size,
-        height: size,
-        filterQuality: FilterQuality.medium,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => LogoDeskside(largura: size * 1.3);
 }
 
-/// Fundo com um brilho suave da marca no topo (para telas como o login).
+/// Fundo com o brilho suave da marca no topo (login, cadastro e afins).
 class AuroraBackground extends StatelessWidget {
   const AuroraBackground({super.key, required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: RadialGradient(
-          center: const Alignment(0, -1.1),
-          radius: 1.3,
-          colors: [
-            auroraViolet.withAlpha(Theme.of(context).brightness == Brightness.dark ? 80 : 40),
-            scheme.surface.withAlpha(0),
-          ],
-        ),
-      ),
-      child: child,
-    );
-  }
+  Widget build(BuildContext context) => BrilhoDoTopo(child: child);
 }

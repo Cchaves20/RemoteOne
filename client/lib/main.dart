@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'config.dart';
 import 'screens/devices_screen.dart';
@@ -15,6 +17,7 @@ import 'widgets/barra_do_sistema.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registrarLicencasDasFontes();
   final state = AppState(
       ApiClient(baseUrl: backendPadrao)..aparelho = nomeDoAparelho());
   // Só o carregamento local (rápido) roda antes de desenhar a tela.
@@ -37,6 +40,19 @@ Future<void> main() async {
   final widgetDaTela = SincronizadorDoWidget();
   state.addListener(() => widgetDaTela.sincronizar(
       state.widget, state.isAuthenticated, state.t, state.language));
+}
+
+/// As duas fontes do app são OFL, e a licença pede que vá junto com elas. A
+/// tela de licenças do Flutter só mostra o que foi registrado.
+void registrarLicencasDasFontes() {
+  LicenseRegistry.addLicense(() async* {
+    for (final (nome, arquivo) in const [
+      ('Space Grotesk', 'assets/fonts/OFL-SpaceGrotesk.txt'),
+      ('JetBrains Mono', 'assets/fonts/OFL-JetBrainsMono.txt'),
+    ]) {
+      yield LicenseEntryWithLineBreaks([nome], await rootBundle.loadString(arquivo));
+    }
+  });
 }
 
 class DesksideApp extends StatelessWidget {

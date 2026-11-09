@@ -189,6 +189,7 @@ class AppState extends ChangeNotifier {
     webrtcVideoEnabled = prefs.getBool('webrtcVideo') ?? true;
     suggestionsEnabled = prefs.getBool('suggestions') ?? true;
     profileId = prefs.getString('profileId');
+    ultimoComputador = prefs.getString('ultimoComputador');
     audioGain = (prefs.getDouble('audioGain') ?? 1).clamp(1.0, 32.0);
     clipboardSync = prefs.getBool('clipboardSync') ?? false;
     _learnedWords = _decodeLearned(prefs.getString('learnedWords'));
@@ -535,6 +536,33 @@ class AppState extends ChangeNotifier {
 
   void selectDevice(Device device) {
     selected = device;
+    ultimoComputador = device.deviceId;
+    notifyListeners();
+    SharedPreferences.getInstance()
+        .then((p) => p.setString('ultimoComputador', device.deviceId));
+  }
+
+  /// O computador aberto por último, que o início mostra grande, com o
+  /// "Continuar". Fica no celular: é sobre este aparelho, não sobre a conta.
+  String? ultimoComputador;
+
+  /// O computador em destaque no início: o último usado, se ainda está na
+  /// conta; senão, o primeiro online; senão, o primeiro da lista.
+  Device? get computadorEmDestaque {
+    if (devices.isEmpty) return null;
+    for (final d in devices) {
+      if (d.deviceId == ultimoComputador) return d;
+    }
+    for (final d in devices) {
+      if (d.online) return d;
+    }
+    return devices.first;
+  }
+
+  /// Define ou apaga o dia e o mês do aniversário (`"MM-DD"`).
+  Future<void> setAniversario(String? mesDia) async {
+    await api.setBirthday(mesDia);
+    conta = await api.fetchAccount();
     notifyListeners();
   }
 
