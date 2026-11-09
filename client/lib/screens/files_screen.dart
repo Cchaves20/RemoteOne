@@ -318,7 +318,7 @@ class _FilesScreenState extends State<FilesScreen> {
         children: [
           Text(
             t.filesShortcuts,
-            style: const TextStyle(color: Colors.white54, fontSize: 12),
+            style: TextStyle(color: context.cores.texto3, fontSize: 12),
           ),
           const SizedBox(height: 8),
           SizedBox(
@@ -336,7 +336,7 @@ class _FilesScreenState extends State<FilesScreen> {
                     width: 92,
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.white10,
+                      color: context.cores.linha,
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Column(
@@ -395,7 +395,7 @@ class _FilesScreenState extends State<FilesScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: Colors.white24),
+            Icon(icon, size: 48, color: context.cores.bordaApagada),
             const SizedBox(height: 12),
             Text(title, textAlign: TextAlign.center),
             if (action != null) ...[const SizedBox(height: 12), action],

@@ -29,6 +29,10 @@ class Strings {
   String get disable => _t('Desativar', 'Disable', '停用', 'Désactiver', 'Desactivar');
 
   // Login
+  /// A frase da marca, a mesma do material de divulgação.
+  String get fraseDaMarca => _t('Seu computador junto, sem carregar ele.',
+      'Your computer with you, without carrying it.', '电脑随身，无需携带。',
+      'Votre ordinateur avec vous, sans le porter.', 'Tu computadora contigo, sin cargarla.');
   String get signInTitle => _t('Entrar', 'Sign in', '登录', 'Se connecter', 'Entrar');
   String get createAccountTitle =>
       _t('Criar conta', 'Create account', '创建账户', 'Créer un compte', 'Crear cuenta');
@@ -381,6 +385,46 @@ class Strings {
       'Toca para abrir. La lista viene del equipo y puede tardar unos segundos.');
 
   // Configurações
+  // Configurações › Você.
+  String get voce => _t('Você', 'You', '你', 'Vous', 'Tú');
+  String get aniversarioTitulo =>
+      _t('Aniversário', 'Birthday', '生日', 'Anniversaire', 'Cumpleaños');
+  String get aniversarioDica => _t('Para o app te dar parabéns no dia',
+      'So the app can wish you a happy birthday', '让应用在当天祝你生日快乐',
+      "Pour que l'app vous souhaite un joyeux anniversaire",
+      'Para que la app te felicite en tu día');
+  String get aniversarioNaoInformado =>
+      _t('Não informado', 'Not set', '未设置', 'Non renseigné', 'Sin indicar');
+  String get aniversarioTirar => _t('Tirar o aniversário', 'Remove birthday',
+      '移除生日', "Retirer l'anniversaire", 'Quitar el cumpleaños');
+  String get aniversarioSoDiaEMes => _t('Só o dia e o mês. O ano não é guardado.',
+      'Only the day and month. The year is not stored.', '只保存日和月，不保存年份。',
+      "Seulement le jour et le mois. L'année n'est pas conservée.",
+      'Solo el día y el mes. El año no se guarda.');
+  String get avancado => _t('Avançado', 'Advanced', '高级', 'Avancé', 'Avanzado');
+  String get atalhos => _t('Atalhos', 'Shortcuts', '快捷方式', 'Raccourcis', 'Atajos');
+  String get ajudaEPrivacidade => _t('Ajuda e privacidade', 'Help and privacy',
+      '帮助与隐私', 'Aide et confidentialité', 'Ayuda y privacidad');
+
+  /// O nome do mês, para o aniversário ("abril").
+  String nomeDoMes(int mes) {
+    const pt = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho',
+      'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const en = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+      'August', 'September', 'October', 'November', 'December'];
+    const fr = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet',
+      'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    const es = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+      'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    final i = (mes - 1).clamp(0, 11);
+    return _t(pt[i], en[i], '$mes月', fr[i], es[i]);
+  }
+
+  /// "20 de abril", "April 20", "4月20日"…
+  String diaEMes(int dia, int mes) => _t('$dia de ${nomeDoMes(mes)}',
+      '${nomeDoMes(mes)} $dia', '$mes月$dia日', '$dia ${nomeDoMes(mes)}',
+      '$dia de ${nomeDoMes(mes)}');
+
   String get appearance => _t('Aparência', 'Appearance', '外观', 'Apparence', 'Apariencia');
   String get screenQuality => _t('Qualidade da tela', 'Screen quality', '画面质量',
       "Qualité de l'écran", 'Calidad de pantalla');

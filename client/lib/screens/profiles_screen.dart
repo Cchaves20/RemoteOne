@@ -228,8 +228,8 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                       padding: const EdgeInsets.fromLTRB(18, 4, 18, 0),
                       child: Text(
                         t.automationsEmpty,
-                        style: const TextStyle(
-                            color: Colors.white38, fontSize: 12),
+                        style: TextStyle(
+                            color: context.cores.texto3, fontSize: 12),
                       ),
                     ),
                   ),
@@ -245,12 +245,12 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(t.presentationMode,
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 17)),
+                            style: TextStyle(
+                                color: context.cores.texto, fontSize: 17)),
                         const SizedBox(height: 4),
                         Text(t.presentationAutoHint,
-                            style: const TextStyle(
-                                color: Colors.white38, fontSize: 12)),
+                            style: TextStyle(
+                                color: context.cores.texto3, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -262,8 +262,8 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
                       child: Text(t.presentationNoDevices,
-                          style: const TextStyle(
-                              color: Colors.white38, fontSize: 12)),
+                          style: TextStyle(
+                              color: context.cores.texto3, fontSize: 12)),
                     ),
                 ]),
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
@@ -284,13 +284,13 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (comDivisor) const Divider(height: 24, color: Colors.white12),
+          if (comDivisor) Divider(height: 24, color: context.cores.linha),
           Row(
             children: [
               Expanded(
                 child: Text(
                   titulo,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  style: TextStyle(color: context.cores.texto, fontSize: 15),
                 ),
               ),
               TextButton.icon(
@@ -302,7 +302,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
           ),
           Text(
             dica,
-            style: const TextStyle(color: Colors.white54, fontSize: 12),
+            style: TextStyle(color: context.cores.texto3, fontSize: 12),
           ),
           const SizedBox(height: 4),
         ],
@@ -324,8 +324,8 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         .map((d) => d.name);
     return ListTile(
       key: ValueKey(a.id),
-      leading: Icon(a.iconData, color: auroraCyan),
-      title: Text(a.name, style: const TextStyle(color: Colors.white)),
+      leading: Icon(a.iconData, color: context.cores.aoVivo),
+      title: Text(a.name, style: TextStyle(color: context.cores.texto)),
       subtitle: Text(
         [
           t.automationStepCount(a.steps.length),
@@ -335,7 +335,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
           // e isso não pode estar escondido dentro do editor.
           if (a.isScheduled) _quando(a, t),
         ].join(' · '),
-        style: const TextStyle(color: Colors.white54, fontSize: 12),
+        style: TextStyle(color: context.cores.texto3, fontSize: 12),
       ),
       onTap: () => _editarAutomacao(a),
       trailing: Row(
@@ -346,12 +346,12 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
           // do recurso de um toque um recurso de três.
           IconButton(
             tooltip: t.automationRun,
-            icon: const Icon(Icons.play_arrow, color: Colors.white70),
+            icon: Icon(Icons.play_arrow, color: context.cores.texto2),
             onPressed: () => runAutomationFlow(context, widget.state, a),
           ),
           IconButton(
             tooltip: MaterialLocalizations.of(context).deleteButtonTooltip,
-            icon: const Icon(Icons.delete_outline, color: Colors.white38),
+            icon: Icon(Icons.delete_outline, color: context.cores.texto3),
             onPressed: () => _apagarAutomacao(a),
           ),
         ],
@@ -363,10 +363,10 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
     final quantos = p.actions.length;
     return ListTile(
       key: ValueKey(p.id),
-      leading: Icon(p.icon, color: p.custom ? auroraCyan : Colors.white54),
+      leading: Icon(p.icon, color: p.custom ? context.cores.aoVivo : context.cores.texto3),
       title: Text(
         p.custom ? p.rawName : p.name(t),
-        style: const TextStyle(color: Colors.white),
+        style: TextStyle(color: context.cores.texto),
       ),
       subtitle: Text(
         p.custom
@@ -375,7 +375,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                 if (p.devices.isNotEmpty) t.profileOnComputers(p.devices.length),
               ].join(' · ')
             : t.profileBuiltIn,
-        style: const TextStyle(color: Colors.white54, fontSize: 12),
+        style: TextStyle(color: context.cores.texto3, fontSize: 12),
       ),
       // Só os criados abrem para edição. Um perfil de fábrica é código: um
       // editor que não edita nada seria pior que a ausência dele.
@@ -385,14 +385,14 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         children: [
           if (p.custom)
             IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.white38),
+              icon: Icon(Icons.delete_outline, color: context.cores.texto3),
               onPressed: () => _apagar(p),
             ),
           // O `SliverReorderableList` não desenha alça por conta própria (ao
           // contrário do `ReorderableListView`): quem arrasta é este ouvinte.
           ReorderableDragStartListener(
             index: i,
-            child: const Icon(Icons.drag_handle, color: Colors.white38),
+            child: Icon(Icons.drag_handle, color: context.cores.texto3),
           ),
         ],
       ),
@@ -527,7 +527,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   Future<Device?> _escolherComputador(List<Device> lista, Strings t) {
     return showModalBottomSheet<Device>(
       context: context,
-      backgroundColor: const Color(0xFF14162C),
+      backgroundColor: context.cores.superficie,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -536,13 +536,13 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
               padding: const EdgeInsets.all(16),
               child: Text(
                 t.profilePickFrom,
-                style: const TextStyle(color: Colors.white, fontSize: 15),
+                style: TextStyle(color: context.cores.texto, fontSize: 15),
               ),
             ),
             for (final d in lista)
               ListTile(
-                leading: const Icon(Icons.computer, color: Colors.white70),
-                title: Text(d.name, style: const TextStyle(color: Colors.white)),
+                leading: Icon(Icons.computer, color: context.cores.texto2),
+                title: Text(d.name, style: TextStyle(color: context.cores.texto)),
                 onTap: () => Navigator.of(ctx).pop(d),
               ),
           ],
@@ -570,7 +570,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
           TextField(
             controller: _nome,
             maxLength: 60,
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: context.cores.texto),
             decoration: InputDecoration(
               labelText: t.profileName,
               hintText: t.profileNameHint,
@@ -578,7 +578,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
           ),
           const SizedBox(height: 12),
           Text(t.profileIcon,
-              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              style: TextStyle(color: context.cores.texto3, fontSize: 12)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 10,
@@ -591,7 +591,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                     width: 46,
                     height: 46,
                     decoration: BoxDecoration(
-                      color: _icone == e.key ? auroraViolet : Colors.white10,
+                      color: _icone == e.key ? auroraViolet : context.cores.superficieAlta,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(e.value, color: Colors.white),
@@ -599,13 +599,13 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                 ),
             ],
           ),
-          const Divider(height: 32, color: Colors.white12),
+          Divider(height: 32, color: context.cores.linha),
           Row(
             children: [
               Expanded(
                 child: Text(
                   t.profilePrograms,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  style: TextStyle(color: context.cores.texto, fontSize: 15),
                 ),
               ),
               TextButton.icon(
@@ -620,19 +620,19 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 t.profileNoPrograms,
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                style: TextStyle(color: context.cores.texto3, fontSize: 12),
               ),
             ),
           for (final a in _apps)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.launch, color: Colors.white70),
-              title: Text(a.name, style: const TextStyle(color: Colors.white)),
+              leading: Icon(Icons.launch, color: context.cores.texto2),
+              title: Text(a.name, style: TextStyle(color: context.cores.texto)),
               subtitle: Text(
                 a.path,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
+                style: TextStyle(color: context.cores.texto3, fontSize: 11),
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -657,7 +657,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                     ),
                   IconButton(
                     tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                    icon: const Icon(Icons.close, color: Colors.white38),
+                    icon: Icon(Icons.close, color: context.cores.texto3),
                     onPressed: () => setState(
                         () => _apps = _apps.where((x) => x != a).toList()),
                   ),
@@ -684,21 +684,21 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
               }),
             ),
           ],
-          const Divider(height: 32, color: Colors.white12),
+          Divider(height: 32, color: context.cores.linha),
           Text(t.profileComputers,
-              style: const TextStyle(color: Colors.white, fontSize: 15)),
+              style: TextStyle(color: context.cores.texto, fontSize: 15)),
           Padding(
             padding: const EdgeInsets.only(top: 4, bottom: 8),
             child: Text(
               t.profileComputersHint,
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
+              style: TextStyle(color: context.cores.texto3, fontSize: 12),
             ),
           ),
           for (final d in widget.state.devices)
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               value: _devices.contains(d.deviceId),
-              title: Text(d.name, style: const TextStyle(color: Colors.white)),
+              title: Text(d.name, style: TextStyle(color: context.cores.texto)),
               onChanged: (v) => setState(() {
                 if (v == true) {
                   _devices.add(d.deviceId);
@@ -779,12 +779,12 @@ class _AutoApresentacaoState extends State<_AutoApresentacao> {
     if (_erro != null) {
       return ListTile(
         title: Text(widget.device.name,
-            style: const TextStyle(color: Colors.white54)),
+            style: TextStyle(color: context.cores.texto3)),
         subtitle: Text(t.presentationUnreachable,
-            style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            style: TextStyle(color: context.cores.texto3, fontSize: 12)),
         trailing: IconButton(
           tooltip: widget.state.t.refresh,
-          icon: const Icon(Icons.refresh, color: Colors.white38),
+          icon: Icon(Icons.refresh, color: context.cores.texto3),
           onPressed: _carregar,
         ),
       );
@@ -795,9 +795,9 @@ class _AutoApresentacaoState extends State<_AutoApresentacao> {
       // mandaria ao computador um valor que ninguém leu.
       onChanged: _auto == null ? null : _trocar,
       title:
-          Text(widget.device.name, style: const TextStyle(color: Colors.white)),
+          Text(widget.device.name, style: TextStyle(color: context.cores.texto)),
       subtitle: Text(t.presentationAutoDetect,
-          style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          style: TextStyle(color: context.cores.texto3, fontSize: 12)),
     );
   }
 }

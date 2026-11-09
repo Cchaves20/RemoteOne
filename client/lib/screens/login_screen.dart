@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../config.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
-import '../widgets/brand.dart';
+import '../theme.dart';
+import '../widgets/identidade.dart';
 import 'forgot_password_screen.dart';
 import 'signup_screen.dart';
 
@@ -117,179 +118,172 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final t = widget.state.t;
     final theme = Theme.of(context);
+    final c = context.cores;
     return Scaffold(
-      body: AuroraBackground(
+      body: BrilhoDoTopo(
         child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+          child: LayoutBuilder(
+            builder: (context, limites) => SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const DesksideMark(size: 84),
-                    const SizedBox(height: 18),
-                    Text('Deskside', style: theme.textTheme.headlineSmall),
-                    const SizedBox(height: 4),
-                    Text(
-                      t.signInTitle,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 28),
-                    Card(
-                      elevation: 0,
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
+                // A altura toda da tela, para o "Usar outro servidor" ficar no
+                // rodapé quando cabe, e descer junto quando não cabe.
+                constraints: BoxConstraints(minHeight: limites.maxHeight),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 56),
+                        const Center(child: LogoDeskside(largura: 104)),
+                        const SizedBox(height: 20),
+                        Text('Deskside',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.displaySmall
+                                ?.copyWith(fontSize: 36, letterSpacing: -1)),
+                        const SizedBox(height: 6),
+                        Text(t.fraseDaMarca,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: c.texto2, fontSize: 15)),
+                        const SizedBox(height: 36),
+                        // Só e-mail. Ver signup_screen.dart: sem provedor de
+                        // SMS, o caminho por telefone saiu das telas. O login
+                        // por telefone **não** usava SMS (é telefone e senha),
+                        // então quem tinha conta só com telefone perderia o
+                        // acesso. Conferi antes de remover: havia uma, e ela
+                        // ganhou e-mail primeiro.
+                        //
+                        // Os campos direto sobre o fundo, sem o cartão em volta:
+                        // caixa dentro de caixa era o que mais deixava a tela
+                        // com cara de formulário genérico.
+                        TextField(
+                          controller: _contato,
+                          keyboardType: TextInputType.emailAddress,
+                          autocorrect: false,
+                          autofillHints: const [AutofillHints.email],
+                          decoration: InputDecoration(labelText: t.email),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: _password,
+                          obscureText: true,
+                          autofillHints: const [AutofillHints.password],
+                          onSubmitted: (_) => _busy ? null : _submit(),
+                          decoration: InputDecoration(labelText: t.password),
+                        ),
+                        if (_needsCode) ...[
+                          const SizedBox(height: 14),
+                          TextField(
+                            // A chave muda com o modo para o campo nascer de
+                            // novo com o teclado certo.
+                            key: ValueKey(_recuperacao),
+                            controller: _code,
+                            keyboardType: _recuperacao
+                                ? TextInputType.text
+                                : TextInputType.number,
+                            textCapitalization: _recuperacao
+                                ? TextCapitalization.characters
+                                : TextCapitalization.none,
+                            autocorrect: false,
+                            autofocus: true,
+                            style: context.numeros.copyWith(fontSize: 17),
+                            decoration: InputDecoration(
+                              labelText:
+                                  _recuperacao ? t.recoveryCode : t.twoFactorCode,
+                              helperText: _recuperacao
+                                  ? t.secondFactorRecoveryBody
+                                  : t.twoFactorCodeHint,
+                              helperMaxLines: 2,
+                              hintText: _recuperacao ? 'ABCDE-FGHJK' : null,
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: () => setState(() {
+                                _recuperacao = !_recuperacao;
+                                _code.clear();
+                              }),
+                              child: Text(_recuperacao
+                                  ? t.useAuthenticatorCode
+                                  : t.useRecoveryCode),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 22),
+                        BotaoDeskside(
+                          rotulo: t.signInButton,
+                          largo: true,
+                          carregando: _busy,
+                          onPressed: _submit,
+                        ),
+                        const SizedBox(height: 6),
+                        // `Wrap`, e não `Row`: em francês, num celular
+                        // estreito, os dois não cabem lado a lado, e a `Row`
+                        // estourava a tela.
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
                           children: [
-                            // Só e-mail. Ver signup_screen.dart: sem
-                            // provedor de SMS, o caminho por telefone saiu das
-                            // telas. Aqui vale uma ressalva — o login por
-                            // telefone **não** usava SMS (é telefone e senha,
-                            // sem código), então quem tinha conta só com
-                            // telefone perderia o acesso. Conferi antes de
-                            // remover: havia uma, e ela ganhou e-mail primeiro.
-                            TextField(
-                              controller: _contato,
-                              keyboardType: TextInputType.emailAddress,
-                              autocorrect: false,
-                              decoration: InputDecoration(
-                                labelText: t.email,
-                                prefixIcon: const Icon(Icons.alternate_email),
-                              ),
+                            TextButton(
+                              style: TextButton.styleFrom(foregroundColor: c.texto2),
+                              onPressed: _busy ? null : _esqueciSenha,
+                              child: Text(t.forgotLink),
                             ),
-                            const SizedBox(height: 12),
-                            TextField(
-                              controller: _password,
-                              obscureText: true,
-                              decoration: InputDecoration(
-                                labelText: t.password,
-                                prefixIcon: const Icon(Icons.lock_outline),
-                              ),
+                            TextButton(
+                              onPressed: _busy ? null : _criarConta,
+                              child: Text(t.createOne),
                             ),
-                            if (_needsCode) ...[
-                              const SizedBox(height: 12),
-                              TextField(
-                                // A chave muda com o modo para o campo nascer
-                                // de novo com o teclado certo.
-                                key: ValueKey(_recuperacao),
-                                controller: _code,
-                                keyboardType: _recuperacao
-                                    ? TextInputType.text
-                                    : TextInputType.number,
-                                textCapitalization: _recuperacao
-                                    ? TextCapitalization.characters
-                                    : TextCapitalization.none,
-                                autocorrect: false,
-                                autofocus: true,
-                                decoration: InputDecoration(
-                                  labelText: _recuperacao
-                                      ? t.recoveryCode
-                                      : t.twoFactorCode,
-                                  helperText: _recuperacao
-                                      ? t.secondFactorRecoveryBody
-                                      : t.twoFactorCodeHint,
-                                  helperMaxLines: 2,
-                                  hintText: _recuperacao ? 'ABCDE-FGHJK' : null,
-                                  prefixIcon: Icon(_recuperacao
-                                      ? Icons.key_outlined
-                                      : Icons.verified_user_outlined),
-                                ),
-                              ),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: TextButton(
-                                  onPressed: () => setState(() {
-                                    _recuperacao = !_recuperacao;
-                                    _code.clear();
-                                  }),
-                                  child: Text(_recuperacao
-                                      ? t.useAuthenticatorCode
-                                      : t.useRecoveryCode),
-                                ),
-                              ),
-                            ],
-                            // O endereço do servidor **não** fica à mostra.
-                            //
-                            // Enquanto o padrão embutido era `localhost`, este
-                            // campo era obrigatório: sem digitar um endereço, o
-                            // app não alcançava nada. Agora ele já nasce
-                            // apontando para o servidor certo, e um campo de URL
-                            // na tela de entrada de um produto para o público
-                            // diz "isto é ferramenta de programador" — além de
-                            // ser mais uma coisa que dá para preencher errado.
-                            //
-                            // Some, mas **não deixa de existir**: apontar o
-                            // celular a um servidor da mesma rede continua
-                            // legítimo, e é o que se usa para desenvolver.
-                            const SizedBox(height: 4),
-                            if (!_servidorAberto)
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: TextButton(
-                                  onPressed: () =>
-                                      setState(() => _servidorAberto = true),
-                                  child: Text(t.usarOutroServidor),
-                                ),
-                              )
-                            else ...[
-                              const SizedBox(height: 8),
-                              TextField(
-                                controller: _server,
-                                keyboardType: TextInputType.url,
-                                autocorrect: false,
-                                decoration: InputDecoration(
-                                  labelText: t.server,
-                                  helperText: t.serverHint,
-                                  prefixIcon: const Icon(Icons.dns_outlined),
-                                ),
-                              ),
-                              // A saída para quem ficou com um endereço salvo que
-                              // não responde mais. Sem ela, o único conserto seria
-                              // reinstalar o app — e ninguém adivinharia que era
-                              // isso.
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: TextButton(
-                                  onPressed: () => setState(
-                                      () => _server.text = backendPadrao),
-                                  child: Text(t.voltarAoServidorPadrao),
-                                ),
-                              ),
-                            ],
                           ],
                         ),
-                      ),
+                        const SizedBox(height: 24),
+                        // O endereço do servidor **não** fica à mostra.
+                        //
+                        // Ele já nasce apontando para o servidor certo, e um
+                        // campo de URL na tela de entrada de um produto para o
+                        // público diz "isto é ferramenta de programador". Some,
+                        // mas **não deixa de existir**: apontar o celular a um
+                        // servidor da mesma rede continua legítimo, e é o que se
+                        // usa para desenvolver. Por isso fica no rodapé, pequeno.
+                        if (_servidorAberto) ...[
+                          TextField(
+                            controller: _server,
+                            keyboardType: TextInputType.url,
+                            autocorrect: false,
+                            style: context.numeros.copyWith(fontSize: 14),
+                            decoration: InputDecoration(
+                              labelText: t.server,
+                              helperText: t.serverHint,
+                            ),
+                          ),
+                          // A saída para quem ficou com um endereço salvo que
+                          // não responde mais. Sem ela, o único conserto seria
+                          // reinstalar o app.
+                          Center(
+                            child: TextButton(
+                              style: TextButton.styleFrom(foregroundColor: c.texto2),
+                              onPressed: () =>
+                                  setState(() => _server.text = backendPadrao),
+                              child: Text(t.voltarAoServidorPadrao),
+                            ),
+                          ),
+                        ] else
+                          Center(
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                foregroundColor: c.texto3,
+                                textStyle: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w500),
+                              ),
+                              onPressed: () => setState(() => _servidorAberto = true),
+                              child: Text(t.usarOutroServidor),
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: _busy ? null : _submit,
-                        child: _busy
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : Text(t.signInButton),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _busy ? null : _esqueciSenha,
-                      child: Text(t.forgotLink),
-                    ),
-                    TextButton(
-                      onPressed: _busy ? null : _criarConta,
-                      child: Text(t.createOne),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

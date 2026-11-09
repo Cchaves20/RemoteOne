@@ -144,7 +144,13 @@ class _VerifyScreenState extends State<VerifyScreen> {
     final theme = Theme.of(context);
     final podeReenviar = _faltam <= 0;
     return Scaffold(
-      appBar: AppBar(title: Text(t.verifyTitle)),
+      // O brilho da marca começa atrás da barra do título, e não abaixo
+      // dela: senão a barra vira uma faixa lisa cortando o brilho.
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text(t.verifyTitle),
+        backgroundColor: Colors.transparent,
+      ),
       body: AuroraBackground(
         child: SafeArea(
           child: SingleChildScrollView(

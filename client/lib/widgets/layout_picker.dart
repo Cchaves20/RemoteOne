@@ -49,8 +49,8 @@ class LayoutThumb extends StatelessWidget {
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: highlight == null
-                        ? Colors.white24
-                        : (z == highlight ? auroraCyan : Colors.white12),
+                        ? context.cores.bordaApagada
+                        : (z == highlight ? context.cores.aoVivo : context.cores.superficieAlta),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -86,12 +86,12 @@ class LayoutPicker extends StatelessWidget {
       children: [
         Text(
           strings.layoutTitle,
-          style: const TextStyle(color: Colors.white, fontSize: 15),
+          style: TextStyle(color: context.cores.texto, fontSize: 15),
         ),
         const SizedBox(height: 2),
         Text(
           strings.layoutHint,
-          style: const TextStyle(color: Colors.white38, fontSize: 12),
+          style: TextStyle(color: context.cores.texto3, fontSize: 12),
         ),
         const SizedBox(height: 10),
         SingleChildScrollView(
@@ -108,7 +108,7 @@ class LayoutPicker extends StatelessWidget {
                   child: Icon(
                     Icons.close,
                     size: 18,
-                    color: selected == null ? auroraCyan : Colors.white24,
+                    color: selected == null ? context.cores.aoVivo : context.cores.bordaApagada,
                   ),
                 ),
               ),
@@ -142,7 +142,7 @@ class LayoutPicker extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: escolhido ? auroraCyan : Colors.white12,
+              color: escolhido ? context.cores.aoVivo : context.cores.superficieAlta,
               width: escolhido ? 2 : 1,
             ),
           ),
@@ -190,7 +190,7 @@ class ZoneChooser extends StatelessWidget {
   Future<void> _abrir(BuildContext context) async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF14162C),
+      backgroundColor: context.cores.superficie,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -203,8 +203,8 @@ class ZoneChooser extends StatelessWidget {
             children: [
               Text(
                 strings.zoneChoose,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: context.cores.texto,
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
                 ),
@@ -226,7 +226,7 @@ class ZoneChooser extends StatelessWidget {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: z == zone ? auroraCyan : Colors.white12,
+                            color: z == zone ? context.cores.aoVivo : context.cores.superficieAlta,
                             width: z == zone ? 2 : 1,
                           ),
                         ),

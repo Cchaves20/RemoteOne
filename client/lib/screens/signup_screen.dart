@@ -4,7 +4,9 @@ import '../l10n/strings.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/senha.dart';
+import '../theme.dart';
 import '../widgets/brand.dart';
+import '../widgets/identidade.dart';
 import '../widgets/links_legais.dart';
 import 'verify_screen.dart';
 
@@ -133,7 +135,13 @@ class _SignupScreenState extends State<SignupScreen> {
     final t = widget.state.t;
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(t.createAccountTitle)),
+      // O brilho da marca começa atrás da barra do título, e não abaixo
+      // dela: senão a barra vira uma faixa lisa cortando o brilho.
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text(t.createAccountTitle),
+        backgroundColor: Colors.transparent,
+      ),
       body: AuroraBackground(
         child: SafeArea(
           child: SingleChildScrollView(
@@ -150,6 +158,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           child: TextField(
                             controller: _nome,
                             textCapitalization: TextCapitalization.words,
+                            autofillHints: const [AutofillHints.givenName],
                             decoration: InputDecoration(labelText: t.firstName),
                             onChanged: (_) => setState(() {}),
                           ),
@@ -159,6 +168,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           child: TextField(
                             controller: _sobrenome,
                             textCapitalization: TextCapitalization.words,
+                            autofillHints: const [AutofillHints.familyName],
                             decoration: InputDecoration(labelText: t.lastName),
                             onChanged: (_) => setState(() {}),
                           ),
@@ -171,7 +181,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       child: InputDecorator(
                         decoration: InputDecoration(
                           labelText: t.birthDate,
-                          prefixIcon: const Icon(Icons.cake_outlined),
+                          prefixIcon: const Icon(Icons.calendar_today_outlined, size: 20),
                         ),
                         child: Text(
                           _nascimento == null
@@ -197,19 +207,17 @@ class _SignupScreenState extends State<SignupScreen> {
                       controller: _contato,
                       keyboardType: TextInputType.emailAddress,
                       autocorrect: false,
-                      decoration: InputDecoration(
-                        labelText: t.email,
-                        prefixIcon: const Icon(Icons.alternate_email),
-                      ),
+                      autofillHints: const [AutofillHints.email],
+                      decoration: InputDecoration(labelText: t.email),
                       onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 18),
                     TextField(
                       controller: _senha,
                       obscureText: !_verSenha,
+                      autofillHints: const [AutofillHints.newPassword],
                       decoration: InputDecoration(
                         labelText: t.password,
-                        prefixIcon: const Icon(Icons.lock_outline),
                         suffixIcon: IconButton(
                           tooltip: _verSenha ? t.esconderSenha : t.mostrarSenha,
                           icon: Icon(_verSenha
@@ -227,7 +235,6 @@ class _SignupScreenState extends State<SignupScreen> {
                       obscureText: !_verSenha,
                       decoration: InputDecoration(
                         labelText: t.passwordConfirm,
-                        prefixIcon: const Icon(Icons.lock_reset_outlined),
                         // O erro só aparece depois de a pessoa começar a
                         // digitar: acusar "não confere" num campo vazio seria
                         // brigar com quem ainda nem tentou.
@@ -261,15 +268,11 @@ class _SignupScreenState extends State<SignupScreen> {
                       ),
                     ],
                     const SizedBox(height: 22),
-                    FilledButton(
-                      onPressed: (_completo && !_enviando) ? _enviar : null,
-                      child: _enviando
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(t.continueButton),
+                    BotaoDeskside(
+                      rotulo: t.continueButton,
+                      largo: true,
+                      carregando: _enviando,
+                      onPressed: _completo ? _enviar : null,
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -293,35 +296,45 @@ class _SignupScreenState extends State<SignupScreen> {
   /// Todas visíveis desde o começo, e não uma de cada vez: um formulário que
   /// revela uma exigência por vez faz a pessoa tentar cinco vezes para
   /// descobrir cinco regras.
+  ///
+  /// Etiquetas que acendem (com a cor de "ao vivo" e um tique) conforme a
+  /// regra é cumprida.
   Widget _regras(Strings t, ThemeData theme) {
+    final c = context.cores;
     return Wrap(
-      spacing: 12,
-      runSpacing: 4,
+      spacing: 6,
+      runSpacing: 6,
       children: [
         for (final regra in RegraDeSenha.values)
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                regra.cumprida(_senha.text)
-                    ? Icons.check_circle
-                    : Icons.circle_outlined,
-                size: 15,
-                color: regra.cumprida(_senha.text)
-                    ? Colors.greenAccent
-                    : theme.colorScheme.onSurfaceVariant,
+          Builder(builder: (context) {
+            final ok = regra.cumprida(_senha.text);
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              height: 28,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: ok ? c.aoVivoFundo : c.superficieAlta,
+                borderRadius: BorderRadius.circular(14),
               ),
-              const SizedBox(width: 4),
-              Text(
-                regra.rotulo(t),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: regra.cumprida(_senha.text)
-                      ? theme.colorScheme.onSurface
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (ok) ...[
+                    Icon(Icons.check_rounded, size: 14, color: c.aoVivo),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(
+                    regra.rotulo(t),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: ok ? c.aoVivo : c.texto3,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          }),
       ],
     );
   }

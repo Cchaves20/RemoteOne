@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
+
 import '../models/device.dart';
 import '../models/remote_app.dart';
 import '../services/app_state.dart';
@@ -84,7 +86,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                   const CircularProgressIndicator(),
                   const SizedBox(height: 12),
                   Text(t.appsQuerying,
-                      style: const TextStyle(color: Colors.white54)),
+                      style: TextStyle(color: context.cores.texto3)),
                 ],
               ),
             )
@@ -94,7 +96,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                     padding: const EdgeInsets.all(24),
                     child: Text(_erro!,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white54)),
+                        style: TextStyle(color: context.cores.texto3)),
                   ),
                 )
               : Column(
@@ -102,7 +104,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                     Padding(
                       padding: const EdgeInsets.all(12),
                       child: TextField(
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: context.cores.texto),
                         decoration: InputDecoration(
                           prefixIcon: const Icon(Icons.search),
                           hintText: t.appsSearch,
@@ -118,7 +120,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                           return CheckboxListTile(
                             value: _escolhidos.contains(a.id),
                             title: Text(a.name,
-                                style: const TextStyle(color: Colors.white)),
+                                style: TextStyle(color: context.cores.texto)),
                             onChanged: (v) => setState(() {
                               if (v == true) {
                                 _escolhidos.add(a.id);

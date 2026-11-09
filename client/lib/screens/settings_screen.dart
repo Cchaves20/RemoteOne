@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart' show CupertinoPicker;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -11,7 +12,9 @@ import '../models/stream_quality.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/compra.dart';
+import '../theme.dart';
 import '../widgets/brand.dart';
+import '../widgets/identidade.dart';
 import '../widgets/links_legais.dart';
 import '../widgets/segundo_fator.dart';
 import '../widgets/transitions.dart';
@@ -47,46 +50,61 @@ class SettingsScreen extends StatelessWidget {
                 child: child,
               );
           return ListView(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
-              staggered(_card(context, t.appearance, Icons.palette_outlined, [
+              // Quem é, e em que plano: o que se vem conferir aqui com mais
+              // frequência, no topo, e não enterrado no meio da página.
+              staggered(_cabecalhoDaConta(context)),
+              staggered(_card(context, t.voce, [
+                _action(
+                  context,
+                  Icons.cake_outlined,
+                  t.aniversarioTitulo,
+                  () => _escolherAniversario(context),
+                  subtitle: t.aniversarioDica,
+                  valor: _textoDoAniversario(),
+                ),
+              ])),
+              staggered(_card(context, t.appearance, [
                 _themeSelector(context),
                 const SizedBox(height: 16),
                 _label(context, t.language),
                 const SizedBox(height: 8),
                 _languageChips(context),
-              ])),
-              staggered(_card(context, t.screenQuality, Icons.hd_outlined, [
+              ], recuo: true)),
+              staggered(_card(context, t.screenQuality, [
                 SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.bolt_outlined),
                   title: Text(t.webrtcVideo),
                   subtitle: Text(t.webrtcVideoSub),
                   value: state.webrtcVideoEnabled,
                   onChanged: state.setWebrtcVideoEnabled,
                 ),
-                const Divider(height: 20),
                 SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.spellcheck),
                   title: Text(t.suggestions),
                   subtitle: Text(t.suggestionsSub),
                   value: state.suggestionsEnabled,
                   onChanged: state.setSuggestionsEnabled,
                 ),
-                const Divider(height: 20),
-                _qualityChips(context),
-                const SizedBox(height: 10),
-                Text(
-                  t.qualitySubtitle(state.streamQuality),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _qualityChips(context),
+                      const SizedBox(height: 10),
+                      Text(
+                        t.qualitySubtitle(state.streamQuality),
+                        style: TextStyle(
+                            fontSize: 12, color: context.cores.texto3),
                       ),
+                    ],
+                  ),
                 ),
               ])),
-              staggered(_card(context, t.security, Icons.shield_outlined, [
+              staggered(_card(context, t.security, [
                 SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.lock_outline),
                   title: Text(t.faceIdLock),
                   subtitle: Text(t.faceIdLockSub),
@@ -94,7 +112,6 @@ class SettingsScreen extends StatelessWidget {
                   onChanged: state.setAppLockEnabled,
                 ),
                 SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.verified_user_outlined),
                   title: Text(t.twoFactor),
                   subtitle: Text(t.twoFactorSub),
@@ -112,23 +129,21 @@ class SettingsScreen extends StatelessWidget {
                         ConnectedDevicesScreen(state: state))),
                     subtitle: t.connectedDevicesSub),
               ])),
-              staggered(_card(context, t.profilesTitle, Icons.tune, [
-                _action(context, Icons.dashboard_customize, t.profilesTitle,
+              staggered(_card(context, t.atalhos, [
+                _action(
+                    context,
+                    Icons.dashboard_customize_outlined,
+                    t.profilesTitle,
                     () => Navigator.of(context)
                         .push(fadeThroughRoute(ProfilesScreen(state: state))),
-                    subtitle: t.profilesHint),
-              ])),
-              staggered(_card(context, t.widgetsTitulo, Icons.widgets_outlined, [
+                    subtitle: t.profilesHint,
+                    desenho: const IconeDaMarca(IconeDeskside.perfis)),
                 _action(context, Icons.widgets_outlined, t.widgetsTitulo,
                     () => Navigator.of(context)
                         .push(fadeThroughRoute(WidgetsScreen(state: state))),
                     subtitle: t.widgetsDica),
               ])),
-              staggered(_card(
-                  context, t.planoTitulo, Icons.workspace_premium_outlined, [
-                _plano(context, state),
-              ])),
-              staggered(_card(context, t.account, Icons.person_outline, [
+              staggered(_card(context, t.account, [
                 // Só e-mail. A troca de telefone saiu junto com o resto do
                 // caminho por SMS (ver signup_screen.dart): ela manda código
                 // por mensagem, e sem provedor o código ia para o registro do
@@ -138,9 +153,7 @@ class SettingsScreen extends StatelessWidget {
                 // entrada, e precisa ver: é por ela que a conta passa a entrar
                 // por e-mail (o servidor grava o e-mail e apaga o telefone).
                 // O que muda é o título — "Alterar e-mail" oferecia trocar um
-                // e-mail que a conta não tem. Este comentário dizia que não
-                // existia conta de telefone; existia, e foi assim que ela
-                // apareceu com o número embaixo de "Alterar e-mail".
+                // e-mail que a conta não tem.
                 _action(
                     context,
                     Icons.alternate_email,
@@ -159,13 +172,11 @@ class SettingsScreen extends StatelessWidget {
                     () => _showDeleteAccount(context),
                     danger: true),
               ])),
-              staggered(_card(context, t.help, Icons.help_outline, [
-                _action(context, Icons.touch_app, t.howToControl,
+              staggered(_card(context, t.ajudaEPrivacidade, [
+                _action(context, Icons.touch_app_outlined, t.howToControl,
                     () => Navigator.of(context)
                         .push(fadeThroughRoute(GestureTutorialScreen(state: state))),
                     subtitle: t.howToControlSub),
-              ])),
-              staggered(_card(context, t.privacidadeETermos, Icons.privacy_tip_outlined, [
                 _action(context, Icons.description_outlined, t.assinaturaTermos,
                     () => abrirNoSite(context, state, '/termos')),
                 _action(context, Icons.shield_outlined, t.assinaturaPrivacidade,
@@ -173,28 +184,33 @@ class SettingsScreen extends StatelessWidget {
                 _action(context, Icons.download_outlined, t.exportarDados,
                     () => _exportarDados(context),
                     subtitle: t.exportarDadosSub),
+              ])),
+              // O que quase ninguém procura fica junto, no fim.
+              staggered(_card(context, t.avancado, [
                 _action(context, Icons.article_outlined, t.licencasAbertas,
                     () => showLicensePage(
                           context: context,
                           applicationName: 'Deskside',
                           applicationVersion: versaoVisivel(_appVersion),
                         )),
-              ])),
-              staggered(_card(context, t.about, Icons.info_outline, [
-                Row(
-                  children: [
-                    const DesksideMark(size: 44),
-                    const SizedBox(width: 14),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Deskside',
-                            style: Theme.of(context).textTheme.titleMedium),
-                        Text(t.version(versaoVisivel(_appVersion)),
-                            style: Theme.of(context).textTheme.bodySmall),
-                      ],
-                    ),
-                  ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+                  child: Row(
+                    children: [
+                      const DesksideMark(size: 34),
+                      const SizedBox(width: 14),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Deskside',
+                              style: Theme.of(context).textTheme.titleMedium),
+                          Text(t.version(versaoVisivel(_appVersion)),
+                              style: context.numeros.copyWith(
+                                  fontSize: 12, color: context.cores.texto3)),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ])),
             ],
@@ -202,6 +218,177 @@ class SettingsScreen extends StatelessWidget {
         },
       ),
     );
+  }
+
+  /// O topo: as iniciais num anel com o degradê, o nome, o contato e o plano
+  /// (com o "Assinar", quando cabe).
+  Widget _cabecalhoDaConta(BuildContext context) {
+    final c = context.cores;
+    final conta = state.conta;
+    final nome = conta?.nomeCompleto ?? '';
+    final inicial = (conta?.firstName.trim().isNotEmpty ?? false)
+        ? conta!.firstName.trim().characters.first.toUpperCase()
+        : (nome.isEmpty ? '?' : nome.characters.first.toUpperCase());
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: auroraViolet.withAlpha(64)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color.alphaBlend(auroraViolet.withAlpha(30), c.superficie),
+            c.superficie,
+          ],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                padding: const EdgeInsets.all(2.5),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: auroraGradient,
+                ),
+                child: Container(
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: c.superficie),
+                  child: Text(inicial,
+                      style: Theme.of(context).textTheme.titleLarge),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(nome,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600)),
+                    if (conta != null && conta.contato != nome) ...[
+                      const SizedBox(height: 2),
+                      Text(conta.contato,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13, color: c.texto2)),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _plano(context, state),
+        ],
+      ),
+    );
+  }
+
+  String _textoDoAniversario() {
+    final md = state.conta?.mesEDia;
+    if (md == null) return state.t.aniversarioNaoInformado;
+    return state.t.diaEMes(md.$2, md.$1);
+  }
+
+  /// O dia e o mês, em duas rodas, sem o ano: o ano não é guardado, e pedir um
+  /// ano que vai para o lixo seria pedir à toa.
+  Future<void> _escolherAniversario(BuildContext context) async {
+    final t = state.t;
+    final atual = state.conta?.mesEDia;
+    var mes = atual?.$1 ?? 1;
+    var dia = atual?.$2 ?? 1;
+    int diasNoMes(int m) => const [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+    final mensageiro = ScaffoldMessenger.of(context);
+    // `true` = salvar; `false` = tirar; nulo = desistiu.
+    final escolha = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (folha) => StatefulBuilder(
+        builder: (folha, redesenhar) {
+          final c = folha.cores;
+          final estilo = TextStyle(fontSize: 20, color: c.texto);
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(t.aniversarioTitulo,
+                      style: Theme.of(folha).textTheme.headlineSmall),
+                  const SizedBox(height: 4),
+                  Text(t.aniversarioSoDiaEMes,
+                      style: TextStyle(fontSize: 13, color: c.texto3)),
+                  SizedBox(
+                    height: 180,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: CupertinoPicker(
+                            itemExtent: 40,
+                            scrollController:
+                                FixedExtentScrollController(initialItem: dia - 1),
+                            onSelectedItemChanged: (i) => redesenhar(() => dia = i + 1),
+                            children: [
+                              for (var d = 1; d <= 31; d++)
+                                Center(child: Text('$d', style: estilo)),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: CupertinoPicker(
+                            itemExtent: 40,
+                            scrollController:
+                                FixedExtentScrollController(initialItem: mes - 1),
+                            onSelectedItemChanged: (i) => redesenhar(() => mes = i + 1),
+                            children: [
+                              for (var m = 1; m <= 12; m++)
+                                Center(child: Text(t.nomeDoMes(m), style: estilo)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  BotaoDeskside(
+                    rotulo: t.save,
+                    largo: true,
+                    onPressed: () => Navigator.pop(folha, true),
+                  ),
+                  if (atual != null)
+                    TextButton(
+                      style: TextButton.styleFrom(foregroundColor: c.perigo),
+                      onPressed: () => Navigator.pop(folha, false),
+                      child: Text(t.aniversarioTirar),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (escolha == null) return;
+    // 31 de abril não existe: fica o último dia do mês escolhido.
+    dia = dia.clamp(1, diasNoMes(mes));
+    final valor = escolha
+        ? '${mes.toString().padLeft(2, '0')}-${dia.toString().padLeft(2, '0')}'
+        : null;
+    try {
+      await state.setAniversario(valor);
+    } catch (e) {
+      mensageiro.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   /// Baixa tudo o que o servidor guarda sobre a conta e entrega à pessoa pela
@@ -234,35 +421,46 @@ class SettingsScreen extends StatelessWidget {
 
   // --- blocos visuais ---------------------------------------------------------
 
-  /// Card de seção com título, ícone e conteúdo.
-  Widget _card(
-      BuildContext context, String title, IconData icon, List<Widget> children) {
-    final theme = Theme.of(context);
-    return Card(
-      elevation: 0,
-      color: theme.colorScheme.surfaceContainerHighest,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 18, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: theme.textTheme.labelLarge
-                      ?.copyWith(color: theme.colorScheme.primary),
-                ),
-              ],
+  /// Uma seção: o título pequeno em cima e as linhas num cartão. Sem ícone no
+  /// título — cada linha já tem o seu, e dois ícones por linha é ruído.
+  Widget _card(BuildContext context, String title, List<Widget> children,
+      {bool recuo = false}) {
+    final c = context.cores;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+            child: Text(
+              title.toUpperCase(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+                color: c.texto3,
+              ),
             ),
-            const SizedBox(height: 12),
-            ...children,
-          ],
-        ),
+          ),
+          Material(
+            color: c.superficie,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: BorderSide(color: c.linha),
+            ),
+            child: Padding(
+              padding: recuo
+                  ? const EdgeInsets.all(16)
+                  : const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -433,6 +631,10 @@ class SettingsScreen extends StatelessWidget {
       );
 
   /// Linha de ação com ícone, título e (opcional) subtítulo.
+  ///
+  /// [valor] vai à direita, antes da seta ("20 de abril"): a linha diz o que
+  /// está escolhido sem precisar abrir. [desenho] troca o ícone por um dos
+  /// ícones próprios do app.
   Widget _action(
     BuildContext context,
     IconData icon,
@@ -440,14 +642,24 @@ class SettingsScreen extends StatelessWidget {
     VoidCallback onTap, {
     String? subtitle,
     bool danger = false,
+    String? valor,
+    Widget? desenho,
   }) {
-    final color = danger ? Theme.of(context).colorScheme.error : null;
+    final c = context.cores;
+    final color = danger ? c.perigo : null;
     return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: color),
+      leading: desenho ?? Icon(icon, color: color),
       title: Text(title, style: TextStyle(color: color)),
       subtitle: subtitle == null ? null : Text(subtitle),
-      trailing: const Icon(Icons.chevron_right, size: 20),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (valor != null)
+            Text(valor, style: TextStyle(fontSize: 14, color: c.texto2)),
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right, size: 20, color: c.texto3),
+        ],
+      ),
       onTap: onTap,
     );
   }
@@ -554,7 +766,6 @@ class SettingsScreen extends StatelessWidget {
                 : null;
     return [
       ListTile(
-        contentPadding: EdgeInsets.zero,
         leading: const Icon(Icons.key_outlined),
         title: Text(t.recoveryCodesTitle),
         subtitle: restantes == null ? null : Text(t.recoveryCodesLeft(restantes)),

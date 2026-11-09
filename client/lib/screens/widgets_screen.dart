@@ -5,6 +5,8 @@ import '../models/automation.dart';
 import '../models/widget_config.dart';
 import '../services/app_state.dart';
 import '../services/atalhos_do_icone.dart';
+import '../theme.dart';
+import '../widgets/identidade.dart';
 
 /// Configurações › Widgets: o widget da tela inicial e os atalhos do ícone.
 ///
@@ -132,12 +134,15 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
     );
   }
 
-  /// O widget como vai ficar, desenhado com a escolha ainda não salva.
+  /// O widget como vai ficar, desenhado com a escolha ainda não salva: o
+  /// monitor aceso ou apagado e as teclas em relevo, como o widget de verdade.
   Widget _previa(BuildContext context, Strings t) {
     final theme = Theme.of(context);
+    final c = context.cores;
     final computador =
         _state.devices.where((d) => d.deviceId == _computador).firstOrNull ??
             _state.devices.firstOrNull;
+    final online = computador?.online ?? false;
     final botoes = [for (final b in _botoes) if (b != null) b];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -147,22 +152,17 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(22),
+            color: c.superficie,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: c.linha),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(
-                    Icons.circle,
-                    size: 10,
-                    color: (computador?.online ?? false)
-                        ? Colors.green
-                        : theme.colorScheme.outline,
-                  ),
-                  const SizedBox(width: 8),
+                  MonitorDeskside(ligado: online, largura: 40, comPe: false),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       computador?.name ?? t.widgetsSemComputador,
@@ -170,6 +170,8 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  Text(online ? t.online : t.offline,
+                      style: TextStyle(fontSize: 12, color: online ? c.led : c.texto3)),
                 ],
               ),
               const SizedBox(height: 14),
@@ -177,22 +179,28 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                 children: [
                   for (final b in botoes)
                     Expanded(
-                      child: Column(
-                        children: [
-                          CircleAvatar(
-                            radius: 22,
-                            backgroundColor: theme.colorScheme.primary.withAlpha(46),
-                            child: Icon(iconeDoBotao(b.tipo),
-                                color: theme.colorScheme.primary),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            rotuloDoBotao(t, b, _state.automations),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.labelSmall,
-                          ),
-                        ],
+                      child: Container(
+                        height: 74,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: c.tecla,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border(bottom: BorderSide(color: c.teclaSombra, width: 3)),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(iconeDoBotao(b.tipo), color: c.aoVivo, size: 22),
+                            const SizedBox(height: 6),
+                            Text(
+                              rotuloDoBotao(t, b, _state.automations),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 11, color: c.teclaTexto),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                 ],
@@ -204,30 +212,124 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
     );
   }
 
+  /// Uma escolha que abre uma lista numa folha de baixo, com o atual marcado.
+  ///
+  /// No lugar dos menus de seta com sublinhado: eles tinham cara de formulário
+  /// antigo e espremiam o nome da automação num campo estreito.
+  Widget _linhaDeEscolha({
+    required String rotulo,
+    required String valor,
+    IconData? icone,
+    required VoidCallback onTap,
+  }) {
+    final c = context.cores;
+    return ListTile(
+      title: Text(rotulo),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icone != null) ...[
+            Icon(icone, size: 18, color: c.aoVivo),
+            const SizedBox(width: 6),
+          ],
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 180),
+            child: Text(valor,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 14, color: c.texto2)),
+          ),
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right, size: 20, color: c.texto3),
+        ],
+      ),
+      onTap: onTap,
+    );
+  }
+
+  Future<String?> _escolherDaLista(
+    String titulo,
+    List<(String chave, String rotulo, IconData? icone)> opcoes,
+    String? atual,
+  ) {
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (folha) {
+        final c = folha.cores;
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(folha).height * 0.7),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: Text(titulo, style: Theme.of(folha).textTheme.titleLarge),
+                ),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final (chave, rotulo, icone) in opcoes)
+                        ListTile(
+                          leading: icone == null ? null : Icon(icone),
+                          title: Text(rotulo),
+                          trailing: chave == atual
+                              ? Icon(Icons.check_rounded, color: c.aoVivo)
+                              : null,
+                          onTap: () => Navigator.pop(folha, chave),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   List<Widget> _secaoDoWidget(BuildContext context, Strings t) {
-    final theme = Theme.of(context);
+    final c = context.cores;
     final computadores = _state.devices;
     if (computadores.isEmpty) {
       return [Text(t.widgetsSemComputador)];
     }
-    // Um computador que saiu da conta não pode ficar escolhido no menu: o
-    // valor do `DropdownButton` precisa existir na lista.
-    final escolhido = computadores.any((d) => d.deviceId == _computador)
-        ? _computador
-        : computadores.first.deviceId;
+    // Um computador que saiu da conta não pode ficar escolhido: vale o
+    // primeiro da lista.
+    final escolhido = computadores.firstWhere(
+      (d) => d.deviceId == _computador,
+      orElse: () => computadores.first,
+    );
     return [
-      Text(t.widgetsComputador, style: theme.textTheme.titleSmall),
-      DropdownButton<String>(
-        isExpanded: true,
-        value: escolhido,
-        items: [
-          for (final d in computadores)
-            DropdownMenuItem(value: d.deviceId, child: Text(d.name)),
-        ],
-        onChanged: (v) => setState(() => _computador = v),
+      Material(
+        color: c.superficie,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: c.linha),
+        ),
+        child: Column(
+          children: [
+            _linhaDeEscolha(
+              rotulo: t.widgetsComputador,
+              valor: escolhido.name,
+              onTap: () async {
+                final v = await _escolherDaLista(
+                  t.widgetsComputador,
+                  [for (final d in computadores) (d.deviceId, d.name, null)],
+                  escolhido.deviceId,
+                );
+                if (v != null) setState(() => _computador = v);
+              },
+            ),
+            for (var i = 0; i < _botoes.length; i++) _escolhaDeBotao(context, t, i),
+          ],
+        ),
       ),
-      const SizedBox(height: 12),
-      for (var i = 0; i < _botoes.length; i++) _escolhaDeBotao(context, t, i),
     ];
   }
 
@@ -240,53 +342,30 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
         BotaoDoWidget(TipoDeBotao.automacao, automacaoId: a.id),
     ];
     final chaves = {for (final o in opcoes) o.chave};
-    final atual = _botoes[i]?.chave;
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(t.widgetsBotao(i + 1),
-                style: Theme.of(context).textTheme.bodyMedium),
-          ),
-          Expanded(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              // Automação apagada desde a última vez: o menu mostra "Nenhum"
-              // em vez de quebrar com um valor que não está na lista.
-              value: (atual != null && chaves.contains(atual)) ? atual : '',
-              items: [
-                DropdownMenuItem(value: '', child: Text(t.widgetsNenhum)),
-                for (final o in opcoes)
-                  DropdownMenuItem(
-                    value: o.chave,
-                    child: Row(
-                      children: [
-                        Icon(iconeDoBotao(o.tipo), size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            o.tipo == TipoDeBotao.automacao
-                                ? t.botaoAutomacao(
-                                    rotuloDoBotao(t, o, automacoes))
-                                : rotuloDoBotao(t, o, automacoes),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-              onChanged: (v) => setState(
-                () => _botoes[i] = (v == null || v.isEmpty)
-                    ? null
-                    : BotaoDoWidget.daChave(v),
-              ),
-            ),
-          ),
-        ],
-      ),
+    // Automação apagada desde a última vez: mostra "Nenhum" em vez de um
+    // valor que não existe mais.
+    final atualValido = _botoes[i] != null && chaves.contains(_botoes[i]!.chave)
+        ? _botoes[i]
+        : null;
+    String rotulo(BotaoDoWidget o) => o.tipo == TipoDeBotao.automacao
+        ? t.botaoAutomacao(rotuloDoBotao(t, o, automacoes))
+        : rotuloDoBotao(t, o, automacoes);
+    return _linhaDeEscolha(
+      rotulo: t.widgetsBotao(i + 1),
+      valor: atualValido == null ? t.widgetsNenhum : rotuloDoBotao(t, atualValido, automacoes),
+      icone: atualValido == null ? null : iconeDoBotao(atualValido.tipo),
+      onTap: () async {
+        final v = await _escolherDaLista(
+          t.widgetsBotao(i + 1),
+          [
+            ('', t.widgetsNenhum, null),
+            for (final o in opcoes) (o.chave, rotulo(o), iconeDoBotao(o.tipo)),
+          ],
+          atualValido?.chave ?? '',
+        );
+        if (v == null) return;
+        setState(() => _botoes[i] = v.isEmpty ? null : BotaoDoWidget.daChave(v));
+      },
     );
   }
 
@@ -300,7 +379,6 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
       const SizedBox(height: 8),
       for (final a in automacoes)
         CheckboxListTile(
-          contentPadding: EdgeInsets.zero,
           value: _atalhos.contains(a.id),
           title: Text(a.name),
           // A posição na fila: a ordem dos toques é a ordem no menu do ícone.

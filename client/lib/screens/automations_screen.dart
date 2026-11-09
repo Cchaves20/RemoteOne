@@ -145,7 +145,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
     final t = widget.state.t;
     final tipo = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: const Color(0xFF14162C),
+      backgroundColor: context.cores.superficie,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -184,8 +184,8 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
               ),
             ])
               ListTile(
-                leading: Icon(e.$3, color: Colors.white70),
-                title: Text(e.$2, style: const TextStyle(color: Colors.white)),
+                leading: Icon(e.$3, color: context.cores.texto2),
+                title: Text(e.$2, style: TextStyle(color: context.cores.texto)),
                 onTap: () => Navigator.of(sheet).pop(e.$1),
               ),
           ],
@@ -278,7 +278,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             const SizedBox(height: 12),
             Text(
               t.stepCloseGentle,
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
+              style: TextStyle(color: context.cores.texto3, fontSize: 12),
             ),
           ],
         ),
@@ -310,7 +310,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
     final t = widget.state.t;
     final escolhida = await showModalBottomSheet<ProfileAction>(
       context: context,
-      backgroundColor: const Color(0xFF14162C),
+      backgroundColor: context.cores.superficie,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -327,7 +327,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
                   padding: const EdgeInsets.fromLTRB(18, 16, 18, 6),
                   child: Text(
                     perfil.name(t),
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    style: TextStyle(color: context.cores.texto3, fontSize: 12),
                   ),
                 ),
                 for (final a in perfil.actions)
@@ -336,13 +336,13 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
                   if (!a.isBrightness && !a.isLaunch && !a.isOpenAll)
                     ListTile(
                       dense: true,
-                      leading: Icon(a.icon, color: Colors.white70),
+                      leading: Icon(a.icon, color: context.cores.texto2),
                       title: Text(a.label(t),
-                          style: const TextStyle(color: Colors.white)),
+                          style: TextStyle(color: context.cores.texto)),
                       trailing: Text(
                         a.shortcut,
                         style:
-                            const TextStyle(color: Colors.white38, fontSize: 12),
+                            TextStyle(color: context.cores.texto3, fontSize: 12),
                       ),
                       onTap: () => Navigator.of(sheet).pop(a),
                     ),
@@ -366,7 +366,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
     final t = widget.state.t;
     final ok = await showModalBottomSheet<bool>(
       context: context,
-      backgroundColor: const Color(0xFF14162C),
+      backgroundColor: context.cores.superficie,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -378,10 +378,10 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(t.stepKindSaveAll,
-                  style: const TextStyle(color: Colors.white, fontSize: 16)),
+                  style: TextStyle(color: context.cores.texto, fontSize: 16)),
               const SizedBox(height: 8),
               Text(t.stepSaveAllHint,
-                  style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                  style: TextStyle(color: context.cores.texto3, fontSize: 13)),
               const SizedBox(height: 16),
               Align(
                 alignment: Alignment.centerRight,
@@ -433,7 +433,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text('$nivel%',
-                  style: const TextStyle(color: Colors.white, fontSize: 22)),
+                  style: TextStyle(color: context.cores.texto, fontSize: 22)),
               Slider(
                 value: nivel.toDouble(),
                 max: 100,
@@ -467,7 +467,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
   ) {
     return showModalBottomSheet<String>(
       context: context,
-      backgroundColor: const Color(0xFF14162C),
+      backgroundColor: context.cores.superficie,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -478,12 +478,12 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             Padding(
               padding: const EdgeInsets.all(16),
               child: Text(titulo,
-                  style: const TextStyle(color: Colors.white, fontSize: 15)),
+                  style: TextStyle(color: context.cores.texto, fontSize: 15)),
             ),
             for (final o in opcoes)
               ListTile(
                 title: Text(rotulo(o),
-                    style: const TextStyle(color: Colors.white)),
+                    style: TextStyle(color: context.cores.texto)),
                 onTap: () => Navigator.of(sheet).pop(o),
               ),
           ],
@@ -495,7 +495,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
   Future<Device?> _escolherComputador(List<Device> lista, String titulo) {
     return showModalBottomSheet<Device>(
       context: context,
-      backgroundColor: const Color(0xFF14162C),
+      backgroundColor: context.cores.superficie,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -503,12 +503,12 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             Padding(
               padding: const EdgeInsets.all(16),
               child: Text(titulo,
-                  style: const TextStyle(color: Colors.white, fontSize: 15)),
+                  style: TextStyle(color: context.cores.texto, fontSize: 15)),
             ),
             for (final d in lista)
               ListTile(
-                leading: const Icon(Icons.computer, color: Colors.white70),
-                title: Text(d.name, style: const TextStyle(color: Colors.white)),
+                leading: Icon(Icons.computer, color: context.cores.texto2),
+                title: Text(d.name, style: TextStyle(color: context.cores.texto)),
                 onTap: () => Navigator.of(ctx).pop(d),
               ),
           ],
@@ -529,7 +529,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
     final atual = _passos[i].waitMs ?? 0;
     final novo = await showModalBottomSheet<int>(
       context: context,
-      backgroundColor: const Color(0xFF14162C),
+      backgroundColor: context.cores.superficie,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -541,12 +541,12 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 18, 18, 2),
               child: Text(t.stepWait,
-                  style: const TextStyle(color: Colors.white, fontSize: 15)),
+                  style: TextStyle(color: context.cores.texto, fontSize: 15)),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
               child: Text(t.stepWaitHint,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                  style: TextStyle(color: context.cores.texto3, fontSize: 12)),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
@@ -599,7 +599,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
               TextField(
                 controller: _nome,
                 maxLength: 60,
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: context.cores.texto),
                 decoration: InputDecoration(
                   labelText: t.profileName,
                   hintText: t.automationNameHint,
@@ -607,7 +607,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
               ),
               const SizedBox(height: 12),
               Text(t.profileIcon,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  style: TextStyle(color: context.cores.texto3, fontSize: 12)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 10,
@@ -620,7 +620,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
                         width: 46,
                         height: 46,
                         decoration: BoxDecoration(
-                          color: _icone == e.key ? auroraViolet : Colors.white10,
+                          color: _icone == e.key ? auroraViolet : context.cores.superficieAlta,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(e.value, color: Colors.white),
@@ -633,9 +633,9 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
               // é o computador. No fim da tela, depois de uma lista de passos
               // que pode ter vinte itens, o horário simplesmente não era
               // encontrado.
-              const Divider(height: 32, color: Colors.white12),
+              Divider(height: 32, color: context.cores.linha),
               Text(t.automationWhere,
-                  style: const TextStyle(color: Colors.white, fontSize: 15)),
+                  style: TextStyle(color: context.cores.texto, fontSize: 15)),
               // `ListTile` com o desenho do rádio, e não `RadioListTile`: o
               // `groupValue`/`onChanged` dele está a caminho da aposentadoria
               // nas versões novas do Flutter, e o Codemagic compila em
@@ -643,14 +643,14 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
               // Um aviso de API obsoleta pararia o build por um detalhe visual.
               _escolha('', t.automationWhereAsk),
               for (final d in widget.state.devices) _escolha(d.deviceId, d.name),
-              const Divider(height: 32, color: Colors.white12),
+              Divider(height: 32, color: context.cores.linha),
               ..._agenda(t),
-              const Divider(height: 32, color: Colors.white12),
+              Divider(height: 32, color: context.cores.linha),
               Row(
                 children: [
                   Expanded(
                     child: Text(t.automationSteps,
-                        style: const TextStyle(color: Colors.white, fontSize: 15)),
+                        style: TextStyle(color: context.cores.texto, fontSize: 15)),
                   ),
                   TextButton.icon(
                     // O teto é o do servidor e o do agente: passar dele daria um
@@ -666,7 +666,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(t.automationNoSteps,
                       style:
-                          const TextStyle(color: Colors.white38, fontSize: 12)),
+                          TextStyle(color: context.cores.texto3, fontSize: 12)),
                 ),
             ]),
           ),
@@ -715,12 +715,12 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
     final semComputador = _deviceId.isEmpty;
     return [
       Text(t.automationSchedule,
-          style: const TextStyle(color: Colors.white, fontSize: 15)),
+          style: TextStyle(color: context.cores.texto, fontSize: 15)),
       if (semComputador)
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(t.automationScheduleNeedsDevice,
-              style: const TextStyle(color: Colors.white38, fontSize: 12)),
+              style: TextStyle(color: context.cores.texto3, fontSize: 12)),
         )
       else ...[
         _radio(
@@ -742,12 +742,12 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Text(t.automationScheduleHint,
-                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                style: TextStyle(color: context.cores.texto3, fontSize: 12)),
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(t.automationScheduleDays,
-                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                style: TextStyle(color: context.cores.texto3, fontSize: 12)),
           ),
           Wrap(
             spacing: 8,
@@ -774,7 +774,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
               // servidor quanto no agente. Deixar isso implícito faria a pessoa
               // ler a tela como uma automação desligada.
               child: Text(t.automationScheduleEveryDay,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  style: TextStyle(color: context.cores.texto3, fontSize: 12)),
             ),
         ],
       ],
@@ -809,9 +809,9 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
         contentPadding: EdgeInsets.zero,
         leading: Icon(
           marcado ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-          color: marcado ? auroraCyan : Colors.white38,
+          color: marcado ? context.cores.aoVivo : context.cores.texto3,
         ),
-        title: Text(rotulo, style: const TextStyle(color: Colors.white)),
+        title: Text(rotulo, style: TextStyle(color: context.cores.texto)),
         onTap: aoTocar,
       );
 
@@ -834,24 +834,24 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
         children: [
           ReorderableDragStartListener(
             index: i,
-            child: const Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: Icon(Icons.drag_handle, color: Colors.white38),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Icon(Icons.drag_handle, color: context.cores.texto3),
             ),
           ),
-          Icon(p.icon, size: 18, color: Colors.white70),
+          Icon(p.icon, size: 18, color: context.cores.texto2),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(p.describe(t),
-                    style: const TextStyle(color: Colors.white, fontSize: 14)),
+                    style: TextStyle(color: context.cores.texto, fontSize: 14)),
                 if (espera > 0)
                   Text(
                     '${t.stepWait}: ${t.stepSeconds(espera)}',
                     style:
-                        const TextStyle(color: Colors.white38, fontSize: 11),
+                        TextStyle(color: context.cores.texto3, fontSize: 11),
                   ),
               ],
             ),
@@ -867,13 +867,13 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
             ),
           IconButton(
             tooltip: t.stepWait,
-            icon: const Icon(Icons.timer_outlined,
-                size: 20, color: Colors.white38),
+            icon: Icon(Icons.timer_outlined,
+                size: 20, color: context.cores.texto3),
             onPressed: () => _editarEspera(i),
           ),
           IconButton(
             tooltip: MaterialLocalizations.of(context).deleteButtonTooltip,
-            icon: const Icon(Icons.close, size: 20, color: Colors.white38),
+            icon: Icon(Icons.close, size: 20, color: context.cores.texto3),
             onPressed: () => setState(() {
               final nova = [..._passos]..removeAt(i);
               _passos = nova;
@@ -940,7 +940,7 @@ Future<void> runAutomationFlow(
     } else {
       final escolhido = await showModalBottomSheet<Device>(
         context: context,
-        backgroundColor: const Color(0xFF14162C),
+        backgroundColor: context.cores.superficie,
         builder: (ctx) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -948,13 +948,13 @@ Future<void> runAutomationFlow(
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(t.automationPickComputer,
-                    style: const TextStyle(color: Colors.white, fontSize: 15)),
+                    style: TextStyle(color: context.cores.texto, fontSize: 15)),
               ),
               for (final d in lista)
                 ListTile(
-                  leading: const Icon(Icons.computer, color: Colors.white70),
+                  leading: Icon(Icons.computer, color: context.cores.texto2),
                   title:
-                      Text(d.name, style: const TextStyle(color: Colors.white)),
+                      Text(d.name, style: TextStyle(color: context.cores.texto)),
                   onTap: () => Navigator.of(ctx).pop(d),
                 ),
             ],
@@ -1026,7 +1026,7 @@ void _mostrarFalhas(
   final t = state.t;
   showModalBottomSheet<void>(
     context: context,
-    backgroundColor: const Color(0xFF14162C),
+    backgroundColor: context.cores.superficie,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
@@ -1038,7 +1038,7 @@ void _mostrarFalhas(
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
             child: Text(t.automationResult,
-                style: const TextStyle(color: Colors.white, fontSize: 17)),
+                style: TextStyle(color: context.cores.texto, fontSize: 17)),
           ),
           for (final f in falhas)
             ListTile(
@@ -1047,13 +1047,13 @@ void _mostrarFalhas(
                 f.index < automacao.steps.length
                     ? automacao.steps[f.index].describe(t)
                     : '#${f.index + 1}',
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: context.cores.texto),
               ),
               subtitle: f.error == null
                   ? null
                   : Text(f.error!,
-                      style: const TextStyle(
-                          color: Colors.white54, fontSize: 12)),
+                      style: TextStyle(
+                          color: context.cores.texto3, fontSize: 12)),
             ),
         ],
       ),

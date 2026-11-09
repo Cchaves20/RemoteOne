@@ -293,12 +293,17 @@ ThemeData buildTheme(Brightness brightness) {
     brightness: brightness,
   );
   final raio14 = BorderRadius.circular(14);
+  final textos = _textos(base.textTheme, c.texto);
+  // Os botões partem do `labelLarge` do tema, e não de um estilo solto: um
+  // `TextStyle` sem família cai na fonte padrão da plataforma por outro
+  // caminho, e o peso e o espaçamento daqui se perderiam.
+  final rotulo = textos.labelLarge ?? const TextStyle();
 
   return base.copyWith(
     extensions: [c],
     scaffoldBackgroundColor: c.fundo,
     canvasColor: c.fundo,
-    textTheme: _textos(base.textTheme, c.texto),
+    textTheme: textos,
     appBarTheme: AppBarTheme(
       backgroundColor: c.fundo,
       foregroundColor: c.texto,
@@ -330,7 +335,7 @@ ThemeData buildTheme(Brightness brightness) {
         disabledForegroundColor: c.texto3,
         minimumSize: const Size(0, 52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+        textStyle: rotulo.copyWith(fontWeight: FontWeight.w600, fontSize: 16),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -344,7 +349,7 @@ ThemeData buildTheme(Brightness brightness) {
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         foregroundColor: c.aoVivo,
-        textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        textStyle: rotulo.copyWith(fontWeight: FontWeight.w600, fontSize: 15),
       ),
     ),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
@@ -399,12 +404,12 @@ ThemeData buildTheme(Brightness brightness) {
     listTileTheme: ListTileThemeData(
       iconColor: c.texto2,
       textColor: c.texto,
-      subtitleTextStyle: TextStyle(color: c.texto3, fontSize: 13),
+      subtitleTextStyle: textos.bodyMedium?.copyWith(color: c.texto3, fontSize: 13),
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       backgroundColor: escuro ? const Color(0xFF242A52) : const Color(0xFF141830),
-      contentTextStyle: const TextStyle(color: Color(0xFFEEF0FF)),
+      contentTextStyle: textos.bodyMedium?.copyWith(color: const Color(0xFFEEF0FF)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     dividerTheme: DividerThemeData(color: c.linha, space: 24),
@@ -426,7 +431,7 @@ ThemeData buildTheme(Brightness brightness) {
       backgroundColor: c.superficie,
       selectedColor: c.aoVivoFundo,
       side: BorderSide(color: c.linha),
-      labelStyle: TextStyle(color: c.texto, letterSpacing: 0),
+      labelStyle: textos.labelLarge?.copyWith(color: c.texto),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     segmentedButtonTheme: SegmentedButtonThemeData(

@@ -49,7 +49,7 @@ Future<void> _entrar(
 }) async {
   await tester.enterText(find.byType(TextField).at(0), contato);
   await tester.enterText(find.byType(TextField).at(1), senha);
-  final botao = find.widgetWithText(FilledButton, 'Entrar');
+  final botao = find.widgetWithText(BotaoDeskside, 'Entrar');
   await tester.ensureVisible(botao);
   await tester.pumpAndSettle();
   await tester.tap(botao);

@@ -35,7 +35,8 @@ class TextoDeAceite extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = state.t;
-    final cor = Theme.of(context).colorScheme.primary;
+    // A cor de "ao vivo", a dos links do app inteiro.
+    final cor = Theme.of(context).colorScheme.secondary;
     Widget link(String texto, String caminho) => Semantics(
           link: true,
           button: false,

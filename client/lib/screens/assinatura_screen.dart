@@ -360,7 +360,13 @@ class _AssinaturaScreenState extends State<AssinaturaScreen> {
     final oferecer = ofereceAssinar(_situacao);
 
     return Scaffold(
-      appBar: AppBar(title: Text(t.assinaturaTitulo)),
+      // O brilho da marca começa atrás da barra do título, e não abaixo
+      // dela: senão a barra vira uma faixa lisa cortando o brilho.
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text(t.assinaturaTitulo),
+        backgroundColor: Colors.transparent,
+      ),
       body: AuroraBackground(
         child: SafeArea(
           child: SingleChildScrollView(

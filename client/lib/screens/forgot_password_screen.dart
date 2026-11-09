@@ -145,7 +145,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     final t = widget.state.t;
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(t.forgotTitle)),
+      // O brilho da marca começa atrás da barra do título, e não abaixo
+      // dela: senão a barra vira uma faixa lisa cortando o brilho.
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text(t.forgotTitle),
+        backgroundColor: Colors.transparent,
+      ),
       body: AuroraBackground(
         child: SafeArea(
           child: SingleChildScrollView(
