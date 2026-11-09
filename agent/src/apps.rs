@@ -363,6 +363,18 @@ fn parse_desktop(text: &str) -> Vec<AppInfo> {
         .collect()
 }
 
+/// Liga a saída em UTF-8 antes do script.
+///
+/// Sem isso o PowerShell escreve na página de código do console (850 no
+/// Windows em português) e todo acento chega como `�`: "Músicas" e "Vídeos"
+/// nos atalhos de pasta, "Câmera" na lista de apps, o nome do programa em
+/// primeiro plano. Sem BOM, porque um BOM no começo da saída faz o JSON
+/// inteiro falhar ao ler.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn com_saida_utf8(script: &str) -> String {
+    format!("[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false\n{script}")
+}
+
 #[cfg(windows)]
 mod imp {
     use crate::sem_janela::SemJanela;
@@ -378,8 +390,11 @@ mod imp {
     /// O script vai em base64 (UTF-16LE), então aspas, `$`, `{}` e afins
     /// chegam intactos — passar scripts grandes por `-Command` na linha de
     /// comando é frágil, porque o PowerShell reinterpreta as aspas.
+    ///
+    /// A saída sai sempre em UTF-8 (ver [`super::com_saida_utf8`]): quem lê
+    /// faz `from_utf8_lossy`.
     pub(crate) fn run_powershell(script: &str) -> std::io::Result<Output> {
-        let utf16: Vec<u8> = script
+        let utf16: Vec<u8> = super::com_saida_utf8(script)
             .encode_utf16()
             .flat_map(|unit| unit.to_le_bytes())
             .collect();
@@ -561,17 +576,14 @@ ConvertTo-Json -InputObject @($out) -Compress -Depth 3
     /// Os apps da Store, pelo `Get-StartApps` — a mesma lista que o menu
     /// Iniciar usa.
     ///
-    /// **Força UTF-8 na saída.** Sem isso o PowerShell escreve na página de
-    /// código do console (850 no Windows em português), e os nomes dos apps da
-    /// Store — que vêm traduzidos: "Câmera", "Configurações", "Relógio" —
-    /// chegariam como `C�mera`. Sem BOM, porque um BOM no começo da saída faz
-    /// o JSON inteiro falhar ao ler.
+    /// Os nomes vêm traduzidos ("Câmera", "Configurações", "Relógio"): o
+    /// UTF-8 na saída, que `run_powershell` liga para todos, é o que os traz
+    /// inteiros.
     ///
     /// Falhar aqui não pode esvaziar a lista: sem o módulo (edições do
     /// Windows que não o trazem) ou com o PowerShell bloqueado, fica só o que
     /// a varredura de atalhos achou, que é o comportamento de antes.
     const START_APPS: &str = r#"
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 $out = @()
 try {
   foreach ($a in Get-StartApps) {
@@ -1221,7 +1233,16 @@ mod loja {
 
 #[cfg(test)]
 mod tests {
-    use super::{e_ruido, parse_running};
+    use super::{com_saida_utf8, e_ruido, parse_running};
+
+    #[test]
+    fn todo_script_do_powershell_sai_em_utf8_sem_bom() {
+        let s = com_saida_utf8("Get-Date");
+        assert!(s.starts_with(
+            "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false\n"
+        ));
+        assert!(s.ends_with("Get-Date"));
+    }
 
     #[test]
     fn os_hospedeiros_do_shell_nao_sao_programas() {
