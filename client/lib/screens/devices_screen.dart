@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -56,6 +58,11 @@ class _DevicesScreenState extends State<DevicesScreen>
       await widget.state.recarregar();
       if (mounted) setState(() => _loading = false);
     });
+    _relogioDoPrimeiroPlano = Timer.periodic(_validadeDoPrimeiroPlano, (_) {
+      _primeiroPlanoPerguntado.clear();
+      final d = widget.state.computadorEmDestaque;
+      if (mounted && d != null) _talvezBuscarPrimeiroPlano(d);
+    });
   }
 
   @override
@@ -63,6 +70,7 @@ class _DevicesScreenState extends State<DevicesScreen>
     widget.state.removeListener(_talvezRodarAtalho);
     widget.state.removeListener(_talvezPedirTermos);
     WidgetsBinding.instance.removeObserver(this);
+    _relogioDoPrimeiroPlano?.cancel();
     super.dispose();
   }
 
@@ -128,7 +136,10 @@ class _DevicesScreenState extends State<DevicesScreen>
   /// velha por até um minuto na frente de quem acabou de abrir o app.
   @override
   void didChangeAppLifecycleState(AppLifecycleState estado) {
-    if (estado == AppLifecycleState.resumed) widget.state.recarregar();
+    if (estado == AppLifecycleState.resumed) {
+      _primeiroPlanoPerguntado.clear();
+      widget.state.recarregar();
+    }
   }
 
 
@@ -253,7 +264,11 @@ class _DevicesScreenState extends State<DevicesScreen>
         data: temaDaCabine,
         child: RemoteScreen(state: widget.state, device: device),
       )),
-    );
+    ).whenComplete(() {
+      // Na volta, o que estava aberto no computador provavelmente mudou (foi
+      // a pessoa mesma que mexeu).
+      if (mounted) setState(_primeiroPlanoPerguntado.clear);
+    });
   }
 
   Future<void> _runDeviceAction(
@@ -646,17 +661,46 @@ class _DevicesScreenState extends State<DevicesScreen>
     return partes.join(' · ');
   }
 
-  /// O programa em primeiro plano de cada computador em destaque, para a
-  /// tela acesa do monitor grande. Pedido uma vez por abertura do início.
+  /// O programa em primeiro plano do computador em destaque, para a tela
+  /// acesa do monitor grande.
+  ///
+  /// Antes era pedido uma vez só, e o monitor seguia dizendo "Google Chrome"
+  /// depois de o Chrome ser fechado. Agora pergunta de novo a cada
+  /// [_validadeDoPrimeiroPlano] (com o início à vista e o app na frente), na
+  /// volta da tela remota e quando o app volta do segundo plano. Sem
+  /// programa, ou sem resposta, o nome some: melhor nada que um nome velho.
   final Map<String, String?> _primeiroPlano = {};
+  final Set<String> _primeiroPlanoPerguntado = {};
+  final Set<String> _buscandoPrimeiroPlano = {};
+  Timer? _relogioDoPrimeiroPlano;
+
+  /// Cada pergunta abre um PowerShell no computador: a cada 30 s, e só com o
+  /// início à vista, é atual o bastante sem pesar.
+  static const _validadeDoPrimeiroPlano = Duration(seconds: 30);
 
   void _talvezBuscarPrimeiroPlano(Device d) {
-    if (!d.online || _primeiroPlano.containsKey(d.deviceId)) return;
-    _primeiroPlano[d.deviceId] = null;
-    widget.state.foregroundApp(d).then((app) {
-      if (!mounted || app == null || app.hidden || app.name.isEmpty) return;
-      setState(() => _primeiroPlano[d.deviceId] = app.name);
-    }).catchError((_) {});
+    final id = d.deviceId;
+    if (!d.online ||
+        _buscandoPrimeiroPlano.contains(id) ||
+        _primeiroPlanoPerguntado.contains(id)) {
+      return;
+    }
+    final ciclo = WidgetsBinding.instance.lifecycleState;
+    if (ciclo != null && ciclo != AppLifecycleState.resumed) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    _buscandoPrimeiroPlano.add(id);
+    void guardar(String? nome) {
+      _buscandoPrimeiroPlano.remove(id);
+      _primeiroPlanoPerguntado.add(id);
+      if (!mounted || _primeiroPlano[id] == nome) return;
+      setState(() => _primeiroPlano[id] = nome);
+    }
+
+    widget.state.foregroundApp(d).then(
+          (app) => guardar(
+              app == null || app.hidden || app.name.isEmpty ? null : app.name),
+          onError: (_) => guardar(null),
+        );
   }
 
   Widget _destaque(Device d) {

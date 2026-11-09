@@ -345,12 +345,16 @@ class _FilesScreenState extends State<FilesScreen> {
                         Icon(_shortcutIcon(atalho.name),
                             color: auroraCyan, size: 26),
                         const SizedBox(height: 6),
-                        Text(
-                          atalho.name,
-                          maxLines: 2,
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11),
+                        // Uma linha, encolhendo se preciso: com duas, uma
+                        // palavra só ("Documentos") quebrava no meio.
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            atalho.name,
+                            maxLines: 1,
+                            softWrap: false,
+                            style: const TextStyle(fontSize: 11),
+                          ),
                         ),
                       ],
                     ),

@@ -293,9 +293,12 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  String _textoDoAniversario() {
+  /// "20 de abril", ou nada quando não foi informado: a dica embaixo do
+  /// título já diz para que serve, e um "Não informado" à direita espremia a
+  /// dica em quatro linhas nas línguas mais compridas (francês).
+  String? _textoDoAniversario() {
     final md = state.conta?.mesEDia;
-    if (md == null) return state.t.aniversarioNaoInformado;
+    if (md == null) return null;
     return state.t.diaEMes(md.$2, md.$1);
   }
 
@@ -655,7 +658,13 @@ class SettingsScreen extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (valor != null)
-            Text(valor, style: TextStyle(fontSize: 14, color: c.texto2)),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 120),
+              child: Text(valor,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14, color: c.texto2)),
+            ),
           const SizedBox(width: 4),
           Icon(Icons.chevron_right, size: 20, color: c.texto3),
         ],
@@ -665,27 +674,37 @@ class SettingsScreen extends StatelessWidget {
   }
 
   /// Tema em controle segmentado (Auto / Claro / Escuro).
+  ///
+  /// O rótulo nunca quebra: em francês, "Sombre" ao lado do ícone não cabia
+  /// num terço da largura e virava "Sombr / e". Ele encolhe um pouco antes.
   Widget _themeSelector(BuildContext context) {
     final t = state.t;
+    Widget rotulo(String texto) => FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(texto, maxLines: 1, softWrap: false),
+        );
     return SizedBox(
       width: double.infinity,
       child: SegmentedButton<ThemeMode>(
         showSelectedIcon: false,
+        style: const ButtonStyle(
+          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
+        ),
         segments: [
           ButtonSegment(
             value: ThemeMode.system,
             icon: const Icon(Icons.brightness_auto, size: 18),
-            label: Text(t.autoShort),
+            label: rotulo(t.autoShort),
           ),
           ButtonSegment(
             value: ThemeMode.light,
             icon: const Icon(Icons.light_mode_outlined, size: 18),
-            label: Text(t.themeLight),
+            label: rotulo(t.themeLight),
           ),
           ButtonSegment(
             value: ThemeMode.dark,
             icon: const Icon(Icons.dark_mode_outlined, size: 18),
-            label: Text(t.themeDark),
+            label: rotulo(t.themeDark),
           ),
         ],
         selected: {state.themeMode},

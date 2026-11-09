@@ -432,8 +432,6 @@ class Strings {
       'So the app can wish you a happy birthday', '让应用在当天祝你生日快乐',
       "Pour que l'app vous souhaite un joyeux anniversaire",
       'Para que la app te felicite en tu día');
-  String get aniversarioNaoInformado =>
-      _t('Não informado', 'Not set', '未设置', 'Non renseigné', 'Sin indicar');
   String get aniversarioTirar => _t('Tirar o aniversário', 'Remove birthday',
       '移除生日', "Retirer l'anniversaire", 'Quitar el cumpleaños');
   String get aniversarioSoDiaEMes => _t('Só o dia e o mês. O ano não é guardado.',
