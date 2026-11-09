@@ -141,6 +141,37 @@ definir CFBundleDisplayName string Deskside
 # É uma declaração legal, não um detalhe técnico: se algum dia o app passar a
 # cifrar conteúdo por conta própria, esta linha precisa ser revista.
 definir ITSAppUsesNonExemptEncryption bool false
+# A sessão ao vivo na tela bloqueada e na Ilha Dinâmica (Live Activity). Sem
+# esta chave o iOS recusa o pedido em silêncio, e a sessão de controle segue
+# normal — só sem a atividade.
+definir NSSupportsLiveActivities bool true
+
+# O canal da Live Activity (`nativo/ios/Runner/SessaoAoVivoCanal.swift`)
+# precisa ser registrado no AppDelegate, que é gerado pelo `flutter create` e
+# não fica no repositório. Uma linha, logo depois do registro dos plugins, com
+# o mesmo registro que ele usa: `self` no modelo antigo do Flutter,
+# `engineBridge.pluginRegistry` no novo. Falha alto se a âncora sumir, em vez
+# de gerar um app sem a atividade e sem aviso.
+python3 - <<'PY'
+import pathlib, re
+caminho = pathlib.Path("ios/Runner/AppDelegate.swift")
+texto = caminho.read_text(encoding="utf-8")
+if "SessaoAoVivoCanal.registrar" not in texto:
+    novo, n = re.subn(
+        r"^(\s*)GeneratedPluginRegistrant\.register\(with: ([^)]+)\)\s*$",
+        lambda m: f"{m.group(0)}\n{m.group(1)}SessaoAoVivoCanal.registrar(com: {m.group(2)})",
+        texto,
+        count=1,
+        flags=re.M,
+    )
+    if n != 1:
+        raise SystemExit(
+            "FALHOU: não achei 'GeneratedPluginRegistrant.register(with: ...)' "
+            "no AppDelegate — o modelo do Flutter mudou de forma."
+        )
+    caminho.write_text(novo, encoding="utf-8")
+print("canal da Live Activity registrado no AppDelegate")
+PY
 
 # --- 5. Código nativo do Deskside: Siri, app Atalhos e o widget -------------
 # Copia `client/nativo/ios/` para o projeto e o põe na compilação: as ações da
@@ -164,6 +195,10 @@ for f in nativo/ios/Comum/*.swift nativo/ios/Runner/*.swift nativo/ios/DesksideW
     exit 1
   }
 done
+grep -q "SessaoAoVivoCanal.registrar" ios/Runner/AppDelegate.swift || {
+  echo "FALHOU: o canal da Live Activity não entrou no AppDelegate."
+  exit 1
+}
 grep -q "DesksideWidget.appex in Embed Foundation Extensions" "$PBX" || {
   echo "FALHOU: o widget não foi embutido no app."
   exit 1

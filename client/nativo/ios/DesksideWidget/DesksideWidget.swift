@@ -18,6 +18,7 @@
 
 import AppIntents
 import SwiftUI
+import UIKit
 import WidgetKit
 
 // MARK: - Dados
@@ -147,6 +148,85 @@ struct Provedor: TimelineProvider {
 
 // MARK: - Desenho
 
+/// As cores do app (ver `client/lib/theme.dart`), nos dois temas: o widget
+/// segue o claro ou o escuro do sistema, como o resto da tela inicial.
+enum CoresDeskside {
+    static func dinamica(_ escuro: UInt32, _ claro: UInt32) -> Color {
+        Color(uiColor: UIColor { t in
+            UIColor(rgb: t.userInterfaceStyle == .dark ? escuro : claro)
+        })
+    }
+
+    static let superficie = dinamica(0x141830, 0xFFFFFF)
+    static let tecla = dinamica(0x1D2142, 0xFFFFFF)
+    static let teclaSombra = dinamica(0x080A16, 0xC3C7D8)
+    static let texto = dinamica(0xEEF0FF, 0x0E1022)
+    static let texto2 = dinamica(0xA3A9C9, 0x4A5070)
+    static let aoVivo = dinamica(0x22D3EE, 0x0A7C77)
+    static let led = Color(uiColor: UIColor(rgb: 0x34D399))
+    static let marca = [
+        Color(uiColor: UIColor(rgb: 0x7C4DFF)),
+        Color(uiColor: UIColor(rgb: 0x4364F7)),
+        Color(uiColor: UIColor(rgb: 0x22D3EE)),
+    ]
+}
+
+extension UIColor {
+    convenience init(rgb: UInt32) {
+        self.init(
+            red: CGFloat((rgb >> 16) & 0xFF) / 255,
+            green: CGFloat((rgb >> 8) & 0xFF) / 255,
+            blue: CGFloat(rgb & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+}
+
+/// O monitor do app em miniatura: tela acesa (borda no degradê e brilho)
+/// quando o computador está online, apagada quando não.
+struct MonitorPequeno: View {
+    let ligado: Bool
+    var largura: CGFloat = 26
+
+    var body: some View {
+        let forma = RoundedRectangle(cornerRadius: largura * 0.14, style: .continuous)
+        VStack(spacing: 1) {
+            forma
+                .fill(
+                    ligado
+                        ? AnyShapeStyle(
+                            RadialGradient(
+                                colors: [
+                                    CoresDeskside.marca[0].opacity(0.75),
+                                    CoresDeskside.marca[1].opacity(0.35),
+                                    Color(uiColor: UIColor(rgb: 0x0F1330)),
+                                ],
+                                center: UnitPoint(x: 0.25, y: 0.2),
+                                startRadius: 0,
+                                endRadius: largura
+                            ))
+                        : AnyShapeStyle(Color(uiColor: UIColor(rgb: 0x0B0E20)))
+                )
+                .overlay(
+                    forma.strokeBorder(
+                        ligado
+                            ? AnyShapeStyle(
+                                LinearGradient(
+                                    colors: CoresDeskside.marca,
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing))
+                            : AnyShapeStyle(Color(uiColor: UIColor(rgb: 0x2E3458))),
+                        lineWidth: 1.4)
+                )
+                .frame(width: largura, height: largura * 0.62)
+            Capsule()
+                .fill(ligado ? CoresDeskside.led : Color(uiColor: UIColor(rgb: 0x2E3458)))
+                .frame(width: largura * 0.3, height: 2)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 struct VistaDoWidget: View {
     @Environment(\.widgetFamily) var familia
     let entrada: EntradaDoWidget
@@ -154,7 +234,7 @@ struct VistaDoWidget: View {
     var body: some View {
         conteudo
             .containerBackground(for: .widget) {
-                Color(uiColor: .secondarySystemBackground)
+                CoresDeskside.superficie
             }
     }
 
@@ -163,7 +243,7 @@ struct VistaDoWidget: View {
         if let aviso = entrada.aviso {
             Text(aviso)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(CoresDeskside.texto2)
                 .multilineTextAlignment(.center)
         } else {
             switch familia {
@@ -190,32 +270,38 @@ struct VistaDoWidget: View {
     }
 
     private var cabecalho: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(entrada.online ? Color.green : Color.gray)
-                .frame(width: 8, height: 8)
+        HStack(spacing: 8) {
+            MonitorPequeno(ligado: entrada.online)
             Text(entrada.nome)
                 .font(.headline)
+                .foregroundStyle(CoresDeskside.texto)
                 .lineLimit(1)
         }
     }
 
+    /// Uma tecla com relevo: a mesma do teclado do app.
     private func botao(_ b: BotaoNoWidget) -> some View {
         Button(
             intent: AcaoDoWidgetIntent(
                 tipo: b.tipo, computador: entrada.computador, automacao: b.automacao
             )
         ) {
-            VStack(spacing: 4) {
+            VStack(spacing: 5) {
                 Image(systemName: b.simbolo)
                     .font(.title3)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.accentColor.opacity(0.18)))
+                    .foregroundStyle(CoresDeskside.aoVivo)
                 Text(b.rotulo)
                     .font(.caption2)
+                    .foregroundStyle(CoresDeskside.texto)
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 62)
+            .padding(.horizontal, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(CoresDeskside.tecla)
+                    .shadow(color: CoresDeskside.teclaSombra, radius: 0, x: 0, y: 3)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -267,5 +353,9 @@ struct DesksideWidget: Widget {
 struct DesksideWidgets: WidgetBundle {
     var body: some Widget {
         DesksideWidget()
+        // A sessão ao vivo na tela bloqueada e na Ilha Dinâmica (ver
+        // `SessaoAoVivoWidget.swift`). Mora aqui porque o iOS só desenha uma
+        // Live Activity a partir de uma extensão de widget.
+        SessaoAoVivoWidget()
     }
 }

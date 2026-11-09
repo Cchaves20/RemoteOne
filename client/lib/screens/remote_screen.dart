@@ -27,6 +27,7 @@ import '../services/app_state.dart';
 import '../services/diagnostico_video.dart';
 import '../services/imagem_para_o_pc.dart';
 import '../services/retentativa.dart';
+import '../services/sessao_ao_vivo.dart';
 import '../services/teclado_fisico.dart';
 import '../services/video_session.dart';
 import '../theme.dart';
@@ -979,6 +980,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     _fpsTimer?.cancel();
     _medidor?.cancel();
     _esconderBarra?.cancel();
+    SessaoAoVivo.encerrar();
     _reconnectTimer?.cancel();
     _videoRetryTimer?.cancel();
     _sub?.cancel();
@@ -2597,6 +2599,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (medida.direta != _conexao?.direta ||
         medida.idaEVoltaMs != _conexao?.idaEVoltaMs) {
       setState(() => _conexao = medida);
+      SessaoAoVivo.atualizar(direto: medida.direta, ms: medida.idaEVoltaMs);
     }
   }
 
@@ -2604,6 +2607,9 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (_vibrouConectado) return;
     _vibrouConectado = true;
     Vibracao.conectou();
+    // A sessão na tela bloqueada e na Ilha Dinâmica (só no iPhone).
+    SessaoAoVivo.iniciar(widget.device.name,
+        direto: _conexao?.direta ?? true, ms: _conexao?.idaEVoltaMs);
     _agendarEsconderBarra();
     _medirConexao();
   }
@@ -2612,6 +2618,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     if (!_vibrouConectado) return;
     _vibrouConectado = false;
     Vibracao.desconectou();
+    SessaoAoVivo.encerrar();
     _mostrarBarra();
   }
 

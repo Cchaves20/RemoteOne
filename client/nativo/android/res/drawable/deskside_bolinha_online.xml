@@ -1,4 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <solid android:color="#34C759" />
-</shape>
+<!-- O computador online: o monitor de tela acesa, com a borda no degradê da
+     marca e o LED verde na base. O nome continua "bolinha" porque o
+     DesksideWidgetProvider.kt troca entre os dois por ele. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="18dp"
+    android:viewportWidth="24"
+    android:viewportHeight="18">
+    <path android:pathData="M3,1h18a2,2 0,0 1,2 2v9a2,2 0,0 1,-2 2h-18a2,2 0,0 1,-2 -2v-9a2,2 0,0 1,2 -2z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="7"
+                android:centerY="4"
+                android:gradientRadius="16">
+                <item android:color="#B37C4DFF" android:offset="0" />
+                <item android:color="#664364F7" android:offset="0.5" />
+                <item android:color="#FF0F1330" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="1"
+                android:startY="1"
+                android:endX="23"
+                android:endY="14">
+                <item android:color="#FF7C4DFF" android:offset="0" />
+                <item android:color="#FF4364F7" android:offset="0.55" />
+                <item android:color="#FF22D3EE" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+        <aapt:attr name="android:strokeWidth">1.4</aapt:attr>
+    </path>
+    <path android:fillColor="#FF1A1F3D" android:pathData="M9,15h6v1.6h-6z" />
+    <path android:fillColor="#FF34D399" android:pathData="M12,16.8m-0.9,0a0.9,0.9 0,1 1,1.8 0a0.9,0.9 0,1 1,-1.8 0" />
+</vector>

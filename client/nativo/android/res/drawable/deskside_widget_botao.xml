@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#26FFFFFF" />
-    <corners android:radius="16dp" />
-</shape>
+<!-- A tecla com relevo, como a do teclado do app: uma "borda de baixo" mais
+     escura (a primeira camada, deslocada) e a tecla por cima. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:top="3dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#080A16" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+    <item android:bottom="3dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#1D2142" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+</layer-list>

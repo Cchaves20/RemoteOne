@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <solid android:color="#8E8E93" />
-</shape>
+<!-- O computador offline: o mesmo monitor, de tela apagada e sem o LED. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="18dp"
+    android:viewportWidth="24"
+    android:viewportHeight="18">
+    <path
+        android:fillColor="#FF0B0E20"
+        android:strokeColor="#FF2E3458"
+        android:strokeWidth="1.4"
+        android:pathData="M3,1h18a2,2 0,0 1,2 2v9a2,2 0,0 1,-2 2h-18a2,2 0,0 1,-2 -2v-9a2,2 0,0 1,2 -2z" />
+    <path android:fillColor="#FF1A1F3D" android:pathData="M9,15h6v1.6h-6z" />
+</vector>

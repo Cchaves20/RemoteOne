@@ -222,8 +222,28 @@ class _DevicesScreenState extends State<DevicesScreen>
     ));
   }
 
+  /// No iPad (e em qualquer tela larga), a tela remota abre à direita da
+  /// lista, num navegador só dela: a lista continua à vista, e trocar de
+  /// computador é um toque, sem voltar.
+  final _painel = GlobalKey<NavigatorState>();
+
+  static const _larguraDeDuasColunas = 840.0;
+
+  bool get _duasColunas => MediaQuery.sizeOf(context).width >= _larguraDeDuasColunas;
+
   void _openControl(Device device) {
     widget.state.selectDevice(device);
+    final painel = _painel.currentState;
+    if (_duasColunas && painel != null) {
+      painel.pushAndRemoveUntil(
+        fadeThroughRoute(Theme(
+          data: temaDaCabine,
+          child: RemoteScreen(state: widget.state, device: device),
+        )),
+        (rota) => rota.isFirst,
+      );
+      return;
+    }
     Navigator.of(context).push(
       // A tela remota é sempre escura, como uma cabine, qualquer que seja o
       // tema do app. O tema vai na **rota**, e não dentro da tela: as folhas e
@@ -837,10 +857,29 @@ class _DevicesScreenState extends State<DevicesScreen>
     );
   }
 
-  Widget _lista() {
+  Widget _lista({bool compacta = false}) {
     final state = widget.state;
     final t = state.t;
     final c = context.cores;
+    // Na coluna da esquerda do iPad, todos em linha: o monitor grande fica no
+    // painel da direita.
+    if (compacta) {
+      final todos = [...state.devices]..sort((a, b) {
+          if (a.online != b.online) return a.online ? -1 : 1;
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+      return RefreshIndicator(
+        onRefresh: state.recarregar,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+          children: [
+            for (final d in todos) _linha(d),
+            const SizedBox(height: 8),
+            Text(t.segureParaAcoes, style: TextStyle(fontSize: 12, color: c.texto3)),
+          ],
+        ),
+      );
+    }
     final destaque = state.computadorEmDestaque!;
     // Os outros: online primeiro, depois pelo nome.
     final outros = state.devices.where((d) => d.deviceId != destaque.deviceId).toList()
@@ -898,9 +937,9 @@ class _DevicesScreenState extends State<DevicesScreen>
           } else if (devices.isEmpty) {
             corpo = _emptyState(context);
           } else {
-            corpo = _lista();
+            corpo = _lista(compacta: _duasColunas);
           }
-          return Stack(
+          final coluna = Stack(
             children: [
               if (festa) const Positioned.fill(child: IgnorePointer(child: _Confete())),
               SafeArea(
@@ -929,8 +968,59 @@ class _DevicesScreenState extends State<DevicesScreen>
               ),
             ],
           );
+          if (!_duasColunas || devices.isEmpty) return coluna;
+          return Row(
+            children: [
+              SizedBox(width: 400, child: coluna),
+              VerticalDivider(width: 1, color: context.cores.linha),
+              Expanded(child: _painelDaDireita()),
+            ],
+          );
         },
       ),
+    );
+  }
+
+  /// O lado direito no iPad: o computador em destaque, grande, até alguém
+  /// abrir um; então a tela remota, no mesmo lugar.
+  ///
+  /// O `MediaQuery` do painel diz o tamanho **do painel**, e não da tela: a
+  /// tela remota decide em pé ou deitado pela proporção, e o painel de um
+  /// iPad deitado é mais alto que largo.
+  Widget _painelDaDireita() {
+    return LayoutBuilder(
+      builder: (context, limites) {
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(size: Size(limites.maxWidth, limites.maxHeight)),
+          child: ClipRect(
+            child: Navigator(
+              key: _painel,
+              observers: [HeroController()],
+              onGenerateRoute: (_) => MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  body: ListenableBuilder(
+                    listenable: widget.state,
+                    builder: (context, _) {
+                      final d = widget.state.computadorEmDestaque;
+                      if (d == null) return const SizedBox.shrink();
+                      return Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(40),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 640),
+                            child: _destaque(d),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
