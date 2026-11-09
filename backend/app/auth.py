@@ -47,6 +47,7 @@ from app.db import get_db
 from app.models import PasswordReset, PendingContactChange, PendingSignup, Sessao, User
 from app.schemas import (
     AccessToken,
+    AniversarioIn,
     ContactChangeStart,
     ContactChangeVerify,
     CountryOut,
@@ -428,7 +429,9 @@ def signup_start(
         first_name=body.first_name.strip(),
         last_name=body.last_name.strip(),
         # A data de nascimento já cumpriu o papel dela (a idade, acima) e não
-        # é guardada: ver `User.birth_date`.
+        # é guardada: ver `User.birth_date`. Fica só o dia e o mês, sem o ano,
+        # para o app dar parabéns (ver `User.aniversario`).
+        aniversario=body.birth_date.strftime("%m-%d"),
         termos_versao=body.terms_version,
         termos_aceitos_em=agora,
         hashed_code=verificacao.resumo(codigo),
@@ -538,6 +541,7 @@ def signup_verify(
         last_name=pendente.last_name,
         termos_versao=pendente.termos_versao,
         termos_aceitos_em=pendente.termos_aceitos_em,
+        aniversario=pendente.aniversario,
         plano=plano_inicial,
         plano_ate=plano_ate,
     )
@@ -880,6 +884,21 @@ def me(
     saida.plano = cobranca.plano_de(current_user)
     saida.em_teste, saida.renova = cobranca.situacao_de(db, current_user)
     return saida
+
+
+@router.put("/me/birthday", status_code=status.HTTP_204_NO_CONTENT)
+def set_birthday(
+    body: AniversarioIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Define ou apaga (`null`) o dia e o mês do aniversário.
+
+    É a única forma de uma conta de antes ter aniversário (as datas antigas
+    foram apagadas), e a forma de qualquer pessoa tirar o dado se preferir.
+    """
+    current_user.aniversario = body.aniversario
+    db.commit()
 
 
 @router.post("/me/terms", status_code=status.HTTP_204_NO_CONTENT)

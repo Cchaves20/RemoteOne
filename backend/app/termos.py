@@ -11,4 +11,4 @@ e `POST /auth/me/terms`).
 """
 
 #: Ano e mês da publicação. Texto curto e ordenável, que o app mostra como está.
-VERSAO = "2026-11"
+VERSAO = "2026-11.2"

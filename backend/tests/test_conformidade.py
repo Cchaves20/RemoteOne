@@ -90,6 +90,8 @@ def test_o_cadastro_pendente_nao_guarda_a_data_de_nascimento():
     with SessionLocal() as db:
         p = db.scalar(select(PendingSignup).where(PendingSignup.destino == "termos@example.com"))
         assert p.birth_date is None
+        # Só o dia e o mês, para o parabéns: o ano não fica.
+        assert p.aniversario == "04-20"
         assert p.termos_versao == termos.VERSAO
 
 
@@ -307,3 +309,46 @@ def test_derrubar_sessoes_invalida_todo_token_sem_mexer_no_segredo():
     with SessionLocal() as db:
         abertas = db.scalars(select(Sessao).where(Sessao.encerrada_em.is_(None))).all()
     assert abertas == []
+
+
+# --- aniversário (dia e mês) ----------------------------------------------------
+
+
+def test_a_conta_nasce_com_o_dia_e_o_mes_do_cadastro():
+    cab = _cabecalho("aniversario@example.com")
+    eu = client.get("/api/v1/auth/me", headers=cab).json()
+    # `criar_conta` cadastra com 20 de abril de 1998.
+    assert eu["aniversario"] == "04-20"
+    assert eu["birth_date"] is None
+    with SessionLocal() as db:
+        u = db.scalar(select(User).where(User.email == "aniversario@example.com"))
+        assert u.birth_date is None
+
+
+def test_mudar_e_apagar_o_aniversario():
+    cab = _cabecalho("muda-aniversario@example.com")
+    ok = client.put("/api/v1/auth/me/birthday", json={"aniversario": "02-29"}, headers=cab)
+    assert ok.status_code == 204
+    assert client.get("/api/v1/auth/me", headers=cab).json()["aniversario"] == "02-29"
+
+    apaga = client.put("/api/v1/auth/me/birthday", json={"aniversario": None}, headers=cab)
+    assert apaga.status_code == 204
+    assert client.get("/api/v1/auth/me", headers=cab).json()["aniversario"] is None
+
+
+def test_dia_que_nao_existe_e_recusado():
+    cab = _cabecalho("dia-errado@example.com")
+    for errado in ("02-30", "13-01", "00-10", "4-20", "abril"):
+        resp = client.put("/api/v1/auth/me/birthday", json={"aniversario": errado}, headers=cab)
+        assert resp.status_code == 422, errado
+
+
+def test_o_aniversario_entra_na_copia_dos_dados():
+    cab = _cabecalho("copia-aniversario@example.com")
+    dados = client.get("/api/v1/auth/me/export", headers=cab).json()
+    assert dados["conta"]["aniversario"] == "04-20"
+
+
+def test_mudar_o_aniversario_exige_login():
+    resp = client.put("/api/v1/auth/me/birthday", json={"aniversario": "01-01"})
+    assert resp.status_code in (401, 403)

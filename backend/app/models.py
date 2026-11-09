@@ -43,6 +43,11 @@ class User(Base):
     #: porque o SQLite não remove coluna sem refazer a tabela; `db.py` apaga o
     #: que ficou de antes.
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: Só o dia e o mês ("04-20"), sem o ano: é o que o app precisa para dar
+    #: parabéns no dia, e nada além disso. Sai da data digitada no cadastro;
+    #: quem tem conta de antes informa (ou apaga) nas configurações. Nulo =
+    #: sem aniversário, e o app só mostra a saudação do horário.
+    aniversario: Mapped[str | None] = mapped_column(String(5), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     #: Qual versão dos termos e da privacidade a pessoa aceitou, e quando (ver
     #: `app/termos.py`). Vazio = nunca aceitou pelo app: conta de antes do
@@ -222,6 +227,8 @@ class PendingSignup(Base):
     last_name: Mapped[str] = mapped_column(String(80))
     #: Não é mais preenchida: a idade é conferida antes de este registro nascer.
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: Dia e mês do aniversário, que passam para a conta na confirmação.
+    aniversario: Mapped[str | None] = mapped_column(String(5), nullable=True)
     #: O aceite dado no formulário, que passa para a conta na confirmação.
     termos_versao: Mapped[str] = mapped_column(String(20), default="")
     termos_aceitos_em: Mapped[datetime | None] = mapped_column(

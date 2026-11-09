@@ -154,10 +154,14 @@ def _migrate() -> None:
             # aceite registrado, que é a verdade: o app pede na próxima vez.
             "termos_versao": "VARCHAR(20) DEFAULT '' NOT NULL",
             "termos_aceitos_em": "TIMESTAMP",
+            # Dia e mês do aniversário (ver `User.aniversario`). Conta antiga
+            # nasce sem: a data dela foi apagada, e a pessoa informa no app.
+            "aniversario": "VARCHAR(5)",
         },
         "pending_signups": {
             "termos_versao": "VARCHAR(20) DEFAULT '' NOT NULL",
             "termos_aceitos_em": "TIMESTAMP",
+            "aniversario": "VARCHAR(5)",
         },
     }
     with engine.begin() as conn:

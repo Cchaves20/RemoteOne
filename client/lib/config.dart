@@ -44,7 +44,7 @@ const siteDeskside = 'deskside.com.br';
 /// e manda como aceita no cadastro. Tem que ser a mesma de
 /// `backend/app/termos.py`: o servidor recusa o cadastro com outra, e pede o
 /// aceite de novo a quem aceitou uma anterior.
-const versaoDosTermos = '2026-11';
+const versaoDosTermos = '2026-11.2';
 
 /// O nome do pacote na Play Store (ver docs/publicar-na-play-store.md). Usado
 /// para abrir direto a página da assinatura deste app na Play.

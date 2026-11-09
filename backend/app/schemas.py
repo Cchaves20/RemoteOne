@@ -293,6 +293,8 @@ class UserOut(BaseModel):
     first_name: str = ""
     last_name: str = ""
     birth_date: date | None = None
+    #: Dia e mês do aniversário, "MM-DD". Nulo = a pessoa não informou.
+    aniversario: str | None = None
     created_at: datetime
     totp_enabled: bool = False
     #: Quantos códigos de recuperação ainda valem. O app avisa quando acabam:
@@ -337,6 +339,23 @@ class UserOut(BaseModel):
     termos_atual: str = Field(default_factory=lambda: termos.VERSAO)
 
     model_config = {"from_attributes": True}
+
+
+class AniversarioIn(BaseModel):
+    """Dia e mês do aniversário, sem o ano: "04-20". `null` apaga."""
+
+    aniversario: str | None = Field(default=None, pattern=r"^\d{2}-\d{2}$")
+
+    @model_validator(mode="after")
+    def dia_que_existe(self) -> "AniversarioIn":
+        if self.aniversario is not None:
+            mes, dia = (int(x) for x in self.aniversario.split("-"))
+            try:
+                # 2000 é bissexto: 29 de fevereiro vale.
+                date(2000, mes, dia)
+            except ValueError as e:
+                raise ValueError("dia ou mês que não existe") from e
+        return self
 
 
 class TermsAccept(BaseModel):
