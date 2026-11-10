@@ -35,6 +35,10 @@
     document.getElementById("acoes-computador").hidden = true;
     document.getElementById("requisitos-principal").hidden = true;
     document.getElementById("no-celular").hidden = false;
+    // Na seção de baixar também: o aviso no alto, e os botões de download
+    // sem destaque (continuam lá para quem quiser o link).
+    document.getElementById("aviso-celular").hidden = false;
+    document.body.classList.add("no-celular-visitando");
   } else {
     var s = SISTEMAS[meu];
     document.getElementById("rotulo-principal").textContent = s.rotulo;
@@ -48,10 +52,11 @@
     else if (meu === "linux") alvo.append("Também para ", link("windows", "Windows"), " · Mac em breve");
     else alvo.append("Também para ", link("linux", "Linux"), " · Mac em breve");
   }
-  document.getElementById("copiar-endereco").addEventListener("click", function () {
-    var b = this;
-    function ok() { b.textContent = "Endereço copiado"; }
-    if (navigator.clipboard) navigator.clipboard.writeText("https://deskside.com.br").then(ok, function () {});
+  document.querySelectorAll(".copiar-endereco").forEach(function (b) {
+    b.addEventListener("click", function () {
+      function ok() { b.textContent = "Endereço copiado"; }
+      if (navigator.clipboard) navigator.clipboard.writeText("https://deskside.com.br").then(ok, function () {});
+    });
   });
 
   var abas = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));

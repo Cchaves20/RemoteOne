@@ -67,7 +67,7 @@
         <div class="no-celular" id="no-celular" hidden>
           <p>O Deskside se instala no <strong>computador</strong> que você quer controlar. Abra este endereço nele:</p>
           <span class="endereco">deskside.com.br</span>
-          <button type="button" class="botao secundario" id="copiar-endereco">Copiar o endereço</button>
+          <button type="button" class="botao secundario copiar-endereco">Copiar o endereço</button>
         </div>
       </div>
 
@@ -148,6 +148,11 @@
 
     <section id="baixar">
       <h2>Instale no computador que você quer controlar.</h2>
+      <div class="aviso-celular" id="aviso-celular" hidden>
+        <p><strong>Você está no celular.</strong> Estes arquivos são para o computador: abra este endereço nele.</p>
+        <span class="endereco">deskside.com.br</span>
+        <button type="button" class="botao secundario copiar-endereco">Copiar o endereço</button>
+      </div>
       <div class="teclas-de-sistema" role="tablist" aria-label="Sistema do computador">
         <button class="tecla" role="tab" id="tab-windows" aria-controls="p-windows" aria-selected="true" data-sistema="windows">Windows<small>10 ou 11</small></button>
         <button class="tecla" role="tab" id="tab-linux" aria-controls="p-linux" aria-selected="false" data-sistema="linux">Linux<small>x86 e ARM</small></button>

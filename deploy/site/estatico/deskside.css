@@ -103,6 +103,19 @@ p { margin: 0; }
 .no-celular { margin-top: 4px; display: grid; gap: 12px; justify-items: start; }
 .no-celular p { color: var(--texto2); max-width: 26em; }
 .no-celular strong { color: var(--texto); font-family: var(--mono); font-weight: 400; }
+/* Visita pelo celular, na seção de baixar: o aviso no alto e os downloads
+   sem destaque. */
+.aviso-celular {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
+  margin-top: 20px; padding: 16px 18px; border-radius: 16px;
+  background: var(--superficie); border: 1px solid color-mix(in srgb, var(--ao-vivo) 45%, transparent);
+}
+.aviso-celular p { flex: 1 1 100%; color: var(--texto2); }
+.aviso-celular strong { color: var(--texto); }
+.no-celular-visitando .downloads .botao {
+  background: var(--tecla); color: var(--tecla-texto); --sombra: var(--tecla-sombra);
+  border: 1px solid var(--linha); font-size: .95rem; padding: 12px 18px;
+}
 
 /* O botão do app: degradê, relevo embaixo, afunda ao apertar. */
 .botao {
