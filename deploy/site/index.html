@@ -1,8 +1,9 @@
 <!doctype html>
 <!--
   A página do Deskside. O visual (estatico/deskside.css) e as fontes são os
-  do app; o script (estatico/deskside.js) só escolhe o sistema e anima a
-  abertura - sem ele, a página funciona igual.
+  do app; o script (estatico/deskside.js) escolhe o sistema e anima a
+  abertura - sem ele, a página funciona igual. As telas do app são capturas
+  de verdade, com dados de exemplo (Ana, PC-Escritório).
 
   Nada vem de fora do site: a política de segurança do Caddy só libera
   arquivos daqui (ver deploy/caddy/Caddyfile).
@@ -12,11 +13,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Deskside — seu computador na palma da mão</title>
-<meta name="description" content="Controle o seu computador pelo celular: mouse, teclado, a tela ao vivo, automações e modo apresentação. Para Windows e Linux.">
+<meta name="description" content="Controle o seu computador pelo celular: a tela ao vivo, o mouse e o teclado, os arquivos e automações na hora marcada. Para Windows e Linux.">
 <meta name="color-scheme" content="dark light">
+<link rel="icon" href="/estatico/icone.svg" type="image/svg+xml">
+<link rel="canonical" href="https://deskside.com.br/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="pt_BR">
+<meta property="og:url" content="https://deskside.com.br/">
+<meta property="og:title" content="Deskside — seu computador na palma da mão">
+<meta property="og:description" content="Controle o seu computador pelo celular: a tela ao vivo, o mouse e o teclado, os arquivos e automações na hora marcada. Para Windows e Linux.">
+<meta property="og:image" content="https://deskside.com.br/estatico/previa.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Um monitor aceso e, na frente dele, um celular com o Deskside controlando o cursor.">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preload" href="/estatico/SpaceGrotesk-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/estatico/deskside.css">
 <script src="/estatico/deskside.js" defer></script>
+<noscript><style>[role="tabpanel"][hidden] { display: grid !important; margin-top: 16px; } .teclas-de-sistema { display: none; }</style></noscript>
 </head>
 <body>
 <div class="pagina">
@@ -27,14 +41,13 @@
         <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7C4DFF"/><stop offset=".55" stop-color="#4364F7"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs>
         <rect x="1.5" y="1.5" width="27" height="16.5" rx="3.5" fill="#0F1330" stroke="url(#g)" stroke-width="2.4"/>
         <path d="M13 9.2l5.2 1.9-2.2.8-.8 2.2z" fill="#22D3EE"/>
-        <rect x="11" y="20.5" width="8" height="2.2" rx="1.1" fill="var(--led)"/>
+        <rect x="11" y="20.5" width="8" height="2.2" rx="1.1" fill="#34D399"/>
       </svg>
       Deskside
     </a>
     <nav aria-label="Seções">
+      <a href="#o-que-faz">O que faz</a>
       <a href="#baixar">Baixar</a>
-      <a href="#comecar">Como começar</a>
-      <a href="#recursos">O que dá para fazer</a>
     </nav>
   </header>
 
@@ -43,14 +56,19 @@
       <div>
         <h1>Seu computador <span class="luz">na palma da mão.</span></h1>
         <p class="sub">Mouse, teclado e a tela ao vivo pelo celular. E rotinas que rodam sozinhas na hora marcada, com o celular na gaveta.</p>
-        <div class="acoes">
+        <div class="acoes" id="acoes-computador">
           <a class="botao" id="botao-principal" href="/baixar/Deskside.exe">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg>
+            <svg id="seta" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg>
             <span id="rotulo-principal">Baixar para Windows</span>
           </a>
           <span class="outro-sistema" id="outros">Também para <a href="#baixar" data-ir="linux">Linux</a> · Mac em breve</span>
         </div>
         <p class="requisitos mono" id="requisitos-principal">Windows 10 ou 11 · Intel, AMD ou ARM · sem precisar de administrador</p>
+        <div class="no-celular" id="no-celular" hidden>
+          <p>O Deskside se instala no <strong>computador</strong> que você quer controlar. Abra este endereço nele:</p>
+          <span class="endereco">deskside.com.br</span>
+          <button type="button" class="botao secundario" id="copiar-endereco">Copiar o endereço</button>
+        </div>
       </div>
 
       <div class="cena" aria-hidden="true">
@@ -80,33 +98,77 @@
       </div>
     </div>
 
-    <section id="baixar">
-      <p class="rotulo">Baixar</p>
-      <h2>Instale no computador que você quer controlar.</h2>
-      <p class="intro">É um programa pequeno, que fica ao lado do relógio e espera o celular chamar. Escolha o sistema dele.</p>
+    <section id="o-que-faz">
+      <div class="casos">
+        <div class="caso">
+          <div>
+            <h2>O PC do escritório ficou ligado. Desligue daqui.</h2>
+            <p>Segure o computador na lista do app: desligar, reiniciar, suspender, abrir os arquivos dele ou rodar uma das suas automações. Os programas ainda perguntam sobre o que não foi salvo, como no menu do sistema.</p>
+          </div>
+          <div class="imagem">
+            <div class="print"><img src="/estatico/tela-acoes.webp" width="390" height="844" alt="O app do Deskside com o menu do PC-Escritório aberto: automações no alto e, abaixo, Controlar, Aplicativos, Arquivos, Desligar, Reiniciar e Suspender." loading="lazy"></div>
+            <p class="legenda">Tela do app, sem retoque.</p>
+          </div>
+        </div>
 
+        <div class="caso">
+          <div>
+            <h2>Às 18h, o computador se arruma sozinho.</h2>
+            <p>Uma automação é uma lista de passos que um toque executa: salvar tudo, fechar os programas, tirar o som, suspender. Marque um horário e ela roda sozinha, com o celular na gaveta. O computador avisa 5 minutos antes e deixa cancelar.</p>
+          </div>
+          <div class="imagem">
+            <div class="recorte"><img src="/estatico/tela-automacoes.webp" width="780" height="570" alt="Lista de automações do app: Fim do expediente, 4 passos, PC-Escritório, 18:00, de segunda a sexta; Começar o dia, 08:30; Modo cinema." loading="lazy"></div>
+          </div>
+        </div>
+
+        <div class="caso">
+          <div>
+            <h2>O arquivo ficou no outro computador.</h2>
+            <p>Abra as pastas dele pelo celular e baixe o que precisa. Ou mande um arquivo do celular para a pasta que você escolher.</p>
+            <p class="detalhe">Área de Trabalho, Downloads, Documentos e Imagens ficam a um toque.</p>
+          </div>
+          <div class="imagem">
+            <div class="print"><img src="/estatico/tela-arquivos.webp" width="390" height="844" alt="O app do Deskside mostrando a pasta Documentos do computador, com Contratos, Notas fiscais e arquivos de PowerPoint, Excel, PDF e Word." loading="lazy"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tambem">
+        <h3>E mais o que se espera de um controle remoto.</h3>
+        <ul>
+          <li><b>A tela ao vivo</b>, com lupa para ler o que está pequeno.</li>
+          <li><b>Teclado com atalhos</b> do programa aberto, como <span class="tecla-txt">Ctrl</span> <span class="tecla-txt">C</span> e <span class="tecla-txt">Alt</span> <span class="tecla-txt">Tab</span>.</li>
+          <li><b>Modo apresentação</b>: a tela não apaga e nenhuma notificação aparece no meio da reunião.</li>
+          <li><b>Copiar no celular e colar no computador</b>, e o contrário.</li>
+          <li><b>Som e brilho</b> do computador.</li>
+          <li><b>Um widget</b> na tela inicial do celular, com três botões seus.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="baixar">
+      <h2>Instale no computador que você quer controlar.</h2>
       <div class="teclas-de-sistema" role="tablist" aria-label="Sistema do computador">
         <button class="tecla" role="tab" id="tab-windows" aria-controls="p-windows" aria-selected="true" data-sistema="windows">Windows<small>10 ou 11</small></button>
-        <button class="tecla" role="tab" id="tab-mac" aria-controls="p-mac" aria-selected="false" data-sistema="mac">macOS<small>em breve</small></button>
         <button class="tecla" role="tab" id="tab-linux" aria-controls="p-linux" aria-selected="false" data-sistema="linux">Linux<small>x86 e ARM</small></button>
+        <button class="tecla" role="tab" id="tab-mac" aria-controls="p-mac" aria-selected="false" data-sistema="mac">macOS<small>em breve</small></button>
       </div>
 
       <div class="painel" role="tabpanel" id="p-windows" aria-labelledby="tab-windows">
         <div>
           <h3>Deskside para Windows</h3>
-          <p class="fraco" style="margin:0">Instala sozinho, sem perguntar nada e sem precisar de administrador.</p>
+          <p class="fraco">Instala sozinho, sem perguntar nada e sem precisar de administrador.</p>
           <div class="downloads">
             <a class="botao" href="/baixar/Deskside.exe">Deskside.exe</a>
             <span class="mono">Intel ou AMD, a maioria dos computadores. Também roda em ARM.</span>
             <a class="botao secundario" href="/baixar/Deskside-ARM64.exe">Deskside-ARM64.exe</a>
             <span class="mono">Snapdragon e Surface Pro X: mais rápido e gasta menos bateria.</span>
           </div>
-          <p class="fraco" style="margin:0;font-size:.92rem">Na dúvida, o primeiro. Para conferir: Configurações › Sistema › Sobre › Tipo de sistema.</p>
         </div>
         <div>
-          <ol class="passos-curtos">
-            <li><span>Dê dois cliques no arquivo baixado. <strong>O Windows avisa duas vezes no caminho</strong>; está explicado abaixo.</span></li>
-            <li><span>O Deskside mostra um <strong>código de 9 caracteres</strong>, numa janela e no ícone ao lado do relógio.</span></li>
+          <ol class="passos">
+            <li><span>Dê dois cliques no arquivo baixado. <strong>O Windows avisa duas vezes no caminho</strong>; o que clicar está logo abaixo.</span></li>
+            <li><span>O Deskside mostra um código de 9 caracteres, numa janela e no ícone ao lado do relógio.</span></li>
             <li><span>No celular, digite o código. O computador aparece na lista.</span></li>
           </ol>
           <details class="avisos">
@@ -118,24 +180,13 @@
         </div>
       </div>
 
-      <div class="painel" role="tabpanel" id="p-mac" aria-labelledby="tab-mac" hidden>
-        <div>
-          <h3>Deskside para Mac <span class="selo">em breve</span></h3>
-          <p class="fraco" style="margin:0">O Deskside para Mac está pronto, mas ainda não foi testado num Mac de verdade. Assim que for, o download aparece aqui.</p>
-        </div>
-        <div>
-          <p class="fraco" style="margin:0 0 14px">Enquanto isso, o celular já controla computadores com <a href="#baixar" data-ir="windows">Windows</a> e <a href="#baixar" data-ir="linux">Linux</a>. Para saber quando o Mac chegar, escreva para:</p>
-          <span class="endereco">contato@deskside.com.br</span>
-        </div>
-      </div>
-
       <div class="painel" role="tabpanel" id="p-linux" aria-labelledby="tab-linux" hidden>
         <div>
           <h3>Deskside para Linux</h3>
-          <p class="fraco" style="margin:0">Instala na sua conta, sem administrador. Sobe sozinho quando você entra, aparece no menu de aplicativos e ganha um ícone ao lado do relógio.</p>
+          <p class="fraco">Instala na sua conta, sem administrador. Sobe sozinho quando você entra, aparece no menu de aplicativos e ganha um ícone ao lado do relógio.</p>
           <div class="escolha-arq" aria-label="Processador">
-            <button type="button" id="arq-x86" aria-pressed="true" data-arq="x86_64">Intel ou AMD · x86_64</button>
-            <button type="button" id="arq-arm" aria-pressed="false" data-arq="aarch64">ARM · aarch64</button>
+            <button type="button" aria-pressed="true" data-arq="x86_64">Intel ou AMD · x86_64</button>
+            <button type="button" aria-pressed="false" data-arq="aarch64">ARM · aarch64</button>
           </div>
           <div class="downloads">
             <a class="botao" id="baixar-linux" href="/baixar/Deskside-linux-x86_64.tar.gz">Deskside-linux-x86_64.tar.gz</a>
@@ -143,23 +194,34 @@
           </div>
         </div>
         <div>
-          <p style="margin:0" class="fraco">Num terminal, na pasta onde o arquivo foi baixado:</p>
+          <p class="fraco">Num terminal, na pasta onde o arquivo foi baixado:</p>
           <div class="terminal">
             <div class="cabeca"><span>terminal</span><button type="button" class="copiar" id="copiar">copiar</button></div>
             <pre id="comandos"><span>$ </span>tar xzf Deskside-linux-x86_64.tar.gz
 <span>$ </span>cd deskside
 <span>$ </span>./deskside-agent install</pre>
           </div>
-          <ol class="passos-curtos">
-            <li><span>O <strong>código de pareamento</strong> chega numa notificação. Digite-o no celular.</span></li>
+          <ol class="passos">
+            <li><span>O código de pareamento chega numa notificação. Digite-o no celular.</span></li>
             <li><span>Com <strong>Wayland</strong> (Ubuntu, Fedora), na primeira vez o sistema pede para compartilhar a tela e o controle. Aprove: depois ele lembra. Com X11 não há pedido.</span></li>
           </ol>
         </div>
       </div>
+
+      <div class="painel" role="tabpanel" id="p-mac" aria-labelledby="tab-mac" hidden>
+        <div>
+          <h3>Deskside para Mac <span class="selo">em breve</span></h3>
+          <p class="fraco">Está pronto, mas ainda não foi testado num Mac de verdade. Assim que for, o download aparece aqui.</p>
+        </div>
+        <div>
+          <p class="fraco" style="margin-bottom:14px">Para saber quando chegar, escreva para:</p>
+          <span class="endereco">contato@deskside.com.br</span>
+        </div>
+      </div>
+
     </section>
 
     <section id="comecar">
-      <p class="rotulo">Como começar</p>
       <h2>Três passos, e o celular vira o mouse e o teclado.</h2>
       <div class="tres">
         <div>
@@ -179,51 +241,31 @@
       </div>
     </section>
 
-    <section id="recursos">
-      <p class="rotulo">O que dá para fazer</p>
-      <h2>Do sofá, da cama ou do outro lado da cidade.</h2>
-      <div class="recursos">
-        <div class="recurso">
-          <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8"/></svg></span>
-          <div><h3>Touchpad e teclado</h3><p>O celular vira o mouse e o teclado, com Ctrl, Alt e os atalhos do programa que está aberto.</p></div>
+    <section>
+      <div class="quem-fez">
+        <div>
+          <h2>Por que o Deskside existe</h2>
+          <p class="abre">Ele nasceu de dois problemas.</p>
         </div>
-        <div class="recurso">
-          <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="19" height="13" rx="2.5"/><path d="M9 20.5h6M12 16.5v4"/><circle cx="12" cy="10" r="2.6"/></svg></span>
-          <div><h3>A tela ao vivo</h3><p>Com lupa para ler o que está pequeno. Direto entre o celular e o computador quando a rede deixa.</p></div>
+        <div class="problemas">
+          <div>
+            <h3>A ideia que esfria</h3>
+            <p>Muita gente tem uma boa ideia de projeto longe do computador. Até chegar perto dele, a vontade passou e a ideia ficou para depois, que às vezes nunca chega. Com o Deskside, o computador está no bolso, e dá para começar na hora.</p>
+          </div>
+          <div>
+            <h3>O computador que não pode viajar</h3>
+            <p>Muita gente não pode trabalhar a distância porque o computador do trabalho não pode sair do país em que está, por diversos motivos. Com o Deskside, o computador fica onde precisa ficar, e a pessoa trabalha de onde quiser.</p>
+          </div>
         </div>
-        <div class="recurso">
-          <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.8"/><rect x="13" y="3" width="8" height="8" rx="1.8"/><rect x="3" y="13" width="8" height="8" rx="1.8"/><rect x="13" y="13" width="8" height="8" rx="1.8"/></svg></span>
-          <div><h3>Programas no lugar</h3><p>Abra e feche programas, e encaixe as janelas em metades ou quadrantes.</p></div>
-        </div>
-        <div class="recurso">
-          <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 2.5L4.5 13.5H11l-1 8 8.5-11H12z"/></svg></span>
-          <div><h3>Automações</h3><p>Uma sequência que um toque executa: abre o que você usa e ajusta o som e o brilho.</p></div>
-        </div>
-        <div class="recurso">
-          <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></svg></span>
-          <div><h3>Na hora marcada</h3><p>A automação roda sozinha às <span class="hora">18:00</span>. O computador avisa 5 minutos antes e deixa cancelar.</p></div>
-        </div>
-        <div class="recurso">
-          <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3.5" width="18" height="12" rx="2"/><path d="M12 15.5v5M8 20.5h8M10 7.5l4 2.5-4 2.5z"/></svg></span>
-          <div><h3>Modo apresentação</h3><p>A tela não apaga e as notificações não aparecem no meio da reunião.</p></div>
-        </div>
-        <div class="recurso">
-          <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.5v13M4.5 7L8 3.5 11.5 7M16 20.5v-13M12.5 17l3.5 3.5 3.5-3.5"/></svg></span>
-          <div><h3>Arquivos nos dois sentidos</h3><p>Do computador para o celular e de volta, e a área de transferência compartilhada.</p></div>
-        </div>
-        <div class="recurso">
-          <span class="icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9M7.5 5.8a8 8 0 1 0 9 0"/></svg></span>
-          <div><h3>Desligar e reiniciar</h3><p>Pelo celular, como pelo menu do sistema: os programas ainda perguntam sobre o que não foi salvo.</p></div>
-        </div>
+        <p class="fecho">Basta o computador estar ligado e conectado à internet.</p>
       </div>
     </section>
 
-    <section id="celular">
+    <section>
       <div class="convite">
         <div>
-          <p class="rotulo">No celular</p>
-          <h2 style="margin-bottom:12px">iPhone e Android.</h2>
-          <p>O app está em preparação para as lojas. Enquanto isso, o acesso é por convite: escreva para o endereço ao lado.</p>
+          <h2>O app para iPhone e Android.</h2>
+          <p>Está em preparação para as lojas. Enquanto isso, o acesso é por convite: escreva para o endereço ao lado.</p>
         </div>
         <span class="endereco">contato@deskside.com.br</span>
       </div>
