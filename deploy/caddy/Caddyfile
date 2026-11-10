@@ -99,11 +99,13 @@
 	#
 	# Nesta ordem, o pior caso é uma página do site cair no 404 da API: visível,
 	# inofensivo, e conserta-se acrescentando um caminho aqui.
-	@site path / /index.html /termos /privacidade /licencas.txt /baixar/*
+	@site path / /index.html /termos /privacidade /licencas.txt /baixar/* /estatico/*
 	handle @site {
-		# O site é HTML e CSS sem script, imagem ou fonte de fora: a política
-		# mais fechada que ainda o desenha.
-		header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		# O site não carrega nada de fora: o estilo, o script e as fontes moram
+		# em /estatico, no próprio site. A política libera só isso: 'self' para
+		# eles, e o estilo embutido que as páginas ainda usam em atributos.
+		# Script embutido continua proibido - só o arquivo.
+		header Content-Security-Policy "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 		# Compressão. Medido com gzip: o `licencas.txt` cai de 505 KB para
 		# 43 KB, e a página inicial de 8 KB para 3,4 KB. Só aqui, e não na API, de

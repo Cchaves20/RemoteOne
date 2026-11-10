@@ -2,45 +2,31 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Privacidade — Deskside</title>
-<style>
-  :root { --fundo:#0b0c1a; --texto:#f2f3ff; --fraco:#a8abc9; --linha:#262a4a; --ciano:#35d6d0; }
-  @media (prefers-color-scheme: light) {
-    :root { --fundo:#f7f8fc; --texto:#14162c; --fraco:#5a5f80; --linha:#e2e4f0;
-      /* O ciano do modo escuro dava 1,7:1 sobre o fundo claro; este dá 4,75:1. */
-      --ciano:#0a7c77; }
-  }
-  body { margin:0; background:var(--fundo); color:var(--texto);
-    font:16px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  .caixa { max-width:720px; margin:0 auto; padding:48px 20px 72px; }
-  h1 { font-size:1.9rem; margin:0 0 6px; }
-  h2 { font-size:1.15rem; margin:32px 0 8px; }
-  .data { color:var(--fraco); font-size:0.9rem; margin:0 0 8px; }
-  .rascunho { border:1px solid var(--ciano); border-radius:12px; padding:14px 16px;
-    margin:20px 0; font-size:0.9rem; color:var(--fraco); }
-  a { color:var(--ciano); }
-  ul { padding-left:20px; }
-  li { margin-bottom:6px; }
-  table { width:100%; border-collapse:collapse; font-size:0.92rem; margin:12px 0; }
-  th, td { text-align:left; vertical-align:top; padding:8px 10px;
-    border-bottom:1px solid var(--linha); }
-  th { color:var(--fraco); font-weight:600; }
-  /* No celular a tabela vira uma lista: três colunas em 360 px não se leem. */
-  @media (max-width: 600px) {
-    thead { display:none; }
-    tr { display:block; padding:8px 0; border-bottom:1px solid var(--linha); }
-    td { display:block; border:0; padding:2px 0; }
-    td:nth-child(1) { font-weight:600; }
-    td:nth-child(2)::before { content:"Para quê: "; color:var(--fraco); }
-    td:nth-child(3)::before { content:"Base legal: "; color:var(--fraco); }
-  }
-  footer { margin-top:48px; padding-top:20px; border-top:1px solid var(--linha);
-    font-size:0.9rem; color:var(--fraco); }
-</style>
+<meta name="color-scheme" content="dark light">
+<link rel="stylesheet" href="/estatico/deskside.css">
 </head>
 <body>
-<div class="caixa">
+<div class="pagina">
+<div class="caixa estreita">
+  <header class="topo">
+    <a class="marca" href="/">
+        <svg width="30" height="24" viewBox="0 0 30 24" aria-hidden="true">
+          <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7C4DFF"/><stop offset=".55" stop-color="#4364F7"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs>
+          <rect x="1.5" y="1.5" width="27" height="16.5" rx="3.5" fill="#0F1330" stroke="url(#g)" stroke-width="2.4"/>
+          <path d="M13 9.2l5.2 1.9-2.2.8-.8 2.2z" fill="#22D3EE"/>
+          <rect x="11" y="20.5" width="8" height="2.2" rx="1.1" fill="var(--led)"/>
+        </svg>
+        Deskside
+      </a>
+    <nav aria-label="Páginas">
+      <a href="/#baixar">Baixar</a>
+      <a href="/termos">Termos</a>
+      <a href="/privacidade" aria-current="page">Privacidade</a>
+    </nav>
+  </header>
+
   <h1>Política de privacidade</h1>
   <p class="data">Versão 2026-11.2 &middot; atualizada em novembro de 2026.</p>
   <div class="rascunho">
@@ -222,6 +208,7 @@
     <a href="/licencas.txt">Licenças</a> &middot;
     <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>
   </footer>
+</div>
 </div>
 </body>
 </html>
