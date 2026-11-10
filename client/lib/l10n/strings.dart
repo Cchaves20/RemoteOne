@@ -1,4 +1,3 @@
-import '../models/stream_quality.dart';
 
 /// Idioma do app: segue o sistema, ou fixo num dos cinco suportados.
 enum AppLanguage { system, ptBr, en, zh, fr, es }
@@ -516,19 +515,6 @@ class Strings {
       '点按、拖动、长按、滚动', 'Toucher, glisser, maintenir, défiler', 'Tocar, arrastrar, mantener, desplazar');
   String version(String v) =>
       _t('Versão $v', 'Version $v', '版本 $v', 'Version $v', 'Versión $v');
-
-  String qualityLabel(StreamQuality q) => switch (q) {
-        StreamQuality.economico => _t('Econômico', 'Economy', '省流', 'Économique', 'Económica'),
-        StreamQuality.equilibrado =>
-          _t('Equilibrado', 'Balanced', '均衡', 'Équilibré', 'Equilibrada'),
-        StreamQuality.nitido => _t('Nítido', 'Sharp', '清晰', 'Net', 'Nítida'),
-      };
-  String qualitySubtitle(StreamQuality q) => _t(
-      '${q.fps} fps · até ${q.maxWidth}px · qualidade ${q.quality}',
-      '${q.fps} fps · up to ${q.maxWidth}px · quality ${q.quality}',
-      '${q.fps} fps · 最大 ${q.maxWidth}px · 质量 ${q.quality}',
-      "${q.fps} fps · jusqu'à ${q.maxWidth}px · qualité ${q.quality}",
-      '${q.fps} fps · hasta ${q.maxWidth}px · calidad ${q.quality}');
 
   /// Mostrado no lugar do contador quando a tela do computador está parada —
   /// o agente para de enviar frames idênticos, então 0 fps é o esperado.

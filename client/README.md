@@ -58,11 +58,13 @@ Aplicativo usado no celular/tablet para controlar os computadores.
   ajuste nenhum de firmware. Ver [`docs/pc-sempre-pronto.md`](../docs/pc-sempre-pronto.md).
 - **Ações do computador** (menu na lista): controlar, **renomear**, **desligar/
   reiniciar/suspender** (energia) e **remover** da conta.
-- **Qualidade da tela ajustável** (Econômico/Equilibrado/Nítido): define fps,
-  qualidade do JPEG e largura, enviados ao agente ao abrir a tela.
+- **Qualidade da tela fixa** (`models/stream_quality.dart`): 10 fps, JPEG 55,
+  até 1280 px, enviados ao agente ao abrir a tela. Só pesam no modo antigo por
+  imagens; com o vídeo ligado, o agente usa o próprio teto. Os três presets
+  das Configurações saíram por não mudarem nada visível com o vídeo.
 - **Configurações** (`settings_screen.dart`): tema (automático/claro/escuro),
-  **idioma** (automático/PT-BR/Inglês/Chinês/Francês/Espanhol), qualidade da
-  tela, bloqueio biométrico, **alterar e-mail**, **alterar senha**, sair,
+  **idioma** (automático/PT-BR/Inglês/Chinês/Francês/Espanhol), vídeo em alta
+  eficiência, sugestões de palavra, bloqueio biométrico, **alterar e-mail**, **alterar senha**, sair,
   **excluir conta** e "Sobre".
 - **5 idiomas** (`l10n/strings.dart`): a interface segue o idioma do sistema ou
   um escolhido manualmente — Português, English, 中文, Français, Español.

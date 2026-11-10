@@ -8,7 +8,6 @@ import 'package:share_plus/share_plus.dart';
 import '../config.dart';
 import '../l10n/strings.dart';
 import '../models/cadastro.dart';
-import '../models/stream_quality.dart';
 import '../services/api_client.dart';
 import '../services/app_state.dart';
 import '../services/compra.dart';
@@ -86,21 +85,6 @@ class SettingsScreen extends StatelessWidget {
                   subtitle: Text(t.suggestionsSub),
                   value: state.suggestionsEnabled,
                   onChanged: state.setSuggestionsEnabled,
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _qualityChips(context),
-                      const SizedBox(height: 10),
-                      Text(
-                        t.qualitySubtitle(state.streamQuality),
-                        style: TextStyle(
-                            fontSize: 12, color: context.cores.texto3),
-                      ),
-                    ],
-                  ),
                 ),
               ])),
               staggered(_card(context, t.security, [
@@ -737,22 +721,6 @@ class SettingsScreen extends StatelessWidget {
             label: Text(label),
             selected: state.language == lang,
             onSelected: (_) => state.setLanguage(lang),
-          ),
-      ],
-    );
-  }
-
-  /// Qualidade da tela como chips (o detalhe técnico vai abaixo, em texto).
-  Widget _qualityChips(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final q in StreamQuality.values)
-          ChoiceChip(
-            label: Text(state.t.qualityLabel(q)),
-            selected: state.streamQuality == q,
-            onSelected: (_) => state.setStreamQuality(q),
           ),
       ],
     );

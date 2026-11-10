@@ -1,29 +1,13 @@
-/// Presets de qualidade/desempenho da transmissão de tela.
+/// O que o app pede ao computador na transmissão de tela.
 ///
-/// Cada preset combina fps, qualidade do JPEG e largura máxima. "Econômico"
-/// prioriza fluidez em redes fracas; "Nítido" prioriza detalhe. O backend
-/// ainda limita os valores à faixa que aceita.
-enum StreamQuality {
-  economico(label: 'Econômico', fps: 5, quality: 35, maxWidth: 960),
-  equilibrado(label: 'Equilibrado', fps: 10, quality: 55, maxWidth: 1280),
-  nitido(label: 'Nítido', fps: 15, quality: 75, maxWidth: 1600);
-
-  const StreamQuality({
-    required this.label,
-    required this.fps,
-    required this.quality,
-    required this.maxWidth,
-  });
-
-  final String label;
-  final int fps;
-  final int quality;
-  final int maxWidth;
-
-  static StreamQuality fromName(String? name) {
-    return StreamQuality.values.firstWhere(
-      (q) => q.name == name,
-      orElse: () => StreamQuality.equilibrado,
-    );
-  }
+/// Antes eram três presets nas Configurações (Econômico, Equilibrado,
+/// Nítido). Com o vídeo (H.264) ligado, o agente usa o próprio teto de
+/// largura e de quadros (`video_max_width`, `video_fps` em
+/// `agent/src/client.rs`), e na tela os três ficavam iguais. Os valores só
+/// pesam no modo antigo, por imagens (JPEG), e são os do antigo
+/// "Equilibrado", que era o padrão. O backend ainda limita à faixa que aceita.
+abstract final class QualidadeDaTela {
+  static const fps = 10;
+  static const quality = 55;
+  static const maxWidth = 1280;
 }

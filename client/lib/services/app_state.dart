@@ -17,7 +17,6 @@ import '../models/keep_awake.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/sessao.dart';
-import '../models/stream_quality.dart';
 import '../models/system_stats.dart';
 import '../models/widget_config.dart';
 import '../models/window_zone.dart';
@@ -105,7 +104,6 @@ class AppState extends ChangeNotifier {
   /// a conta é de e-mail ou de telefone.
   Conta? conta;
   bool gestureTutorialSeen = false;
-  StreamQuality streamQuality = StreamQuality.equilibrado;
 
   /// Se o app tenta receber a tela por WebRTC (vídeo H.264) antes de cair no
   /// JPEG. Ligado por padrão — é o caminho bom —, mas desligável: se o WebRTC
@@ -185,7 +183,6 @@ class AppState extends ChangeNotifier {
     };
     appLockEnabled = prefs.getBool('appLock') ?? false;
     gestureTutorialSeen = prefs.getBool('gestureTutorialSeen') ?? false;
-    streamQuality = StreamQuality.fromName(prefs.getString('streamQuality'));
     webrtcVideoEnabled = prefs.getBool('webrtcVideo') ?? true;
     suggestionsEnabled = prefs.getBool('suggestions') ?? true;
     profileId = prefs.getString('profileId');
@@ -204,13 +201,6 @@ class AppState extends ChangeNotifier {
       api.baseUrl = _normalizeServerUrl(savedUrl);
     }
     notifyListeners();
-  }
-
-  Future<void> setStreamQuality(StreamQuality quality) async {
-    streamQuality = quality;
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('streamQuality', quality.name);
   }
 
   Future<void> setWebrtcVideoEnabled(bool enabled) async {

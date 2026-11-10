@@ -51,26 +51,33 @@ struct SessaoAoVivoWidget: Widget {
 }
 
 private let cianoClaro = Color(uiColor: UIColor(rgb: 0x67E8F9))
+private let ambar = Color(uiColor: UIColor(rgb: 0xFBBF24))
 
-/// "Controlando · direto · 18 ms" (ou "relay", em âmbar).
+/// "direto · 18 ms" (ou "relay", em âmbar).
+///
+/// Um texto só, numa linha. Em pedaços lado a lado (um `HStack` de `Text`),
+/// cada pedaço encolhia e quebrava por conta própria quando faltava largura,
+/// e a tela bloqueada mostrava "Con-tro-lando · dire-to · 98 ms" em três
+/// linhas. Inteiro, ele encolhe um pouco e, no limite, corta no fim.
 private struct Linha: View {
     let estado: SessaoAtributos.ContentState
 
+    private var texto: Text {
+        let cor = estado.direto ? cianoClaro : ambar
+        let caminho = Text(estado.direto ? "direto" : "relay").foregroundColor(cor)
+        guard let ms = estado.ms else { return caminho }
+        return caminho
+            + Text(" · ").foregroundColor(.secondary)
+            + Text("\(ms) ms")
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundColor(cor)
+    }
+
     var body: some View {
-        let cor = estado.direto
-            ? cianoClaro
-            : Color(uiColor: UIColor(rgb: 0xFBBF24))
-        HStack(spacing: 6) {
-            Text("Controlando").foregroundStyle(.secondary)
-            Text("·").foregroundStyle(.secondary)
-            Text(estado.direto ? "direto" : "relay").foregroundStyle(cor)
-            if let ms = estado.ms {
-                Text("· \(ms) ms")
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(cor)
-            }
-        }
-        .font(.footnote)
+        texto
+            .font(.footnote)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
     }
 }
 
@@ -80,19 +87,31 @@ private struct TelaBloqueada: View {
     var body: some View {
         HStack(spacing: 12) {
             MonitorPequeno(ligado: true, largura: 46)
-            VStack(alignment: .leading, spacing: 3) {
+            // Três linhas curtas, cada uma numa linha só: o que é, de quem,
+            // e como está a conexão.
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Controlando")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Text(contexto.attributes.computador)
                     .font(.headline)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Linha(estado: contexto.state)
             }
+            .layoutPriority(1)
             Spacer(minLength: 8)
+            // O relógio ocupa toda a largura que lhe derem (é assim o
+            // `Text(_:style: .timer)`): largura fixa, para não roubar a do
+            // texto ao lado. Cabe "1:02:33"; encolhe se não couber.
             Text(contexto.attributes.desde, style: .timer)
-                .font(.system(.title2, design: .monospaced))
+                .font(.system(.title3, design: .monospaced))
                 .foregroundStyle(.white)
-                .frame(maxWidth: 96)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .multilineTextAlignment(.trailing)
+                .frame(width: 80, alignment: .trailing)
         }
         .padding(16)
     }

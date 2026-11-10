@@ -20,6 +20,7 @@ import '../models/automation.dart';
 import '../models/control_profile.dart';
 import '../models/device.dart';
 import '../models/foreground_app.dart';
+import '../models/stream_quality.dart';
 import '../models/remote_app.dart';
 import '../models/remote_file.dart';
 import '../models/system_stats.dart';
@@ -638,12 +639,11 @@ class _RemoteScreenState extends State<RemoteScreen>
     // dobro e perdas falsas que faziam o computador baixar a qualidade.
     // Depois do `cancel`, para o fechamento não disparar a reconexão.
     _channel?.sink.close();
-    final q = widget.state.streamQuality;
     final channel = widget.state.api.connectScreen(
       widget.device.deviceId,
-      fps: q.fps,
-      quality: q.quality,
-      maxWidth: q.maxWidth,
+      fps: QualidadeDaTela.fps,
+      quality: QualidadeDaTela.quality,
+      maxWidth: QualidadeDaTela.maxWidth,
     );
     _channel = channel;
 
@@ -1407,13 +1407,12 @@ class _RemoteScreenState extends State<RemoteScreen>
 
   /// Aumenta a resolução/qualidade do vídeo no modo lupa e restaura ao sair.
   Future<void> _setStreamBoost(bool boosted) async {
-    final q = widget.state.streamQuality;
     try {
       await widget.state.api.startScreen(
         widget.device.deviceId,
-        fps: q.fps,
-        quality: boosted ? 85 : q.quality,
-        maxWidth: boosted ? 1920 : q.maxWidth,
+        fps: QualidadeDaTela.fps,
+        quality: boosted ? 85 : QualidadeDaTela.quality,
+        maxWidth: boosted ? 1920 : QualidadeDaTela.maxWidth,
       );
     } catch (_) {
       // Sem rede/agente: mantém o que está; não é crítico.
