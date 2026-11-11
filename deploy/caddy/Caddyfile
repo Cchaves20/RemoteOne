@@ -99,7 +99,7 @@
 	#
 	# Nesta ordem, o pior caso é uma página do site cair no 404 da API: visível,
 	# inofensivo, e conserta-se acrescentando um caminho aqui.
-	@site path / /index.html /termos /privacidade /licencas.txt /baixar/* /estatico/*
+	@site path / /index.html /termos /privacidade /excluir-conta /licencas.txt /baixar/* /estatico/*
 	handle @site {
 		# O site não carrega nada de fora: o estilo, o script e as fontes moram
 		# em /estatico, no próprio site. A política libera só isso: 'self' para

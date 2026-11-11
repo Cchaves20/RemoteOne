@@ -351,7 +351,7 @@ footer a:hover { color: var(--texto); }
 .estreita strong { color: var(--texto); }
 .estreita a { color: var(--ao-vivo); text-underline-offset: 3px; }
 .estreita .marca { color: var(--texto); text-decoration: none; }
-.estreita ul { padding-left: 20px; }
+.estreita ul, .estreita ol { padding-left: 20px; }
 .estreita li { margin-bottom: 6px; }
 .estreita .data { font-family: var(--mono); font-size: .8rem; color: var(--texto3); margin: 0 0 8px; }
 .estreita .rascunho {
