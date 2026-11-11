@@ -20,7 +20,9 @@
 //!
 //! Quem está do outro lado não precisa ver a barra cobrindo o que ele está
 //! olhando. No Windows 10 de 2020 em diante ela fica fora de qualquer captura
-//! de tela; no Mac, o pedido equivalente vale em parte das versões.
+//! de tela. No Mac o pedido equivalente (`setSharingType`) é ignorado pelos
+//! macOS mais novos, e quem tira a barra da imagem é a própria captura, que
+//! exclui as janelas do Deskside (ver `captura_mac.rs`).
 //!
 //! ## O toque do celular passa por baixo
 //!

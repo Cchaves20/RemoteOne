@@ -1317,6 +1317,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-core-media",
+ "objc2-core-video",
  "objc2-foundation 0.3.2",
  "objc2-screen-capture-kit",
  "openh264",
@@ -3994,7 +3995,9 @@ checksum = "74b7c5390f477482f001bc354d6571a70db7e4f8d5288e860c45521fbce11394"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
+ "libc",
  "objc2 0.6.4",
+ "objc2-core-graphics",
  "objc2-core-media",
  "objc2-foundation 0.3.2",
 ]

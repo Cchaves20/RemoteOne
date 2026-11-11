@@ -449,13 +449,21 @@ pub async fn run(
     let saida_de_som = video.saida_de_som();
     let _tarefa_do_som = AbortarAoSair(tokio::spawn(async move {
         let mut contagem = AudioStats::default();
+        let mut primeira = true;
         while let Some(pacote) = audio_rx.recv().await {
             contagem.count(pacote.data.len());
             saida_de_som.escrever(&pacote.data, pacote.duration).await;
             // Um número no console é a diferença entre "não ouvi nada" e
-            // saber de qual lado o som parou.
+            // saber de qual lado o som parou. A primeira contagem vai também
+            // para o diário, que é o que se consegue pedir a quem testa; as
+            // seguintes, a cada 10 s, encheriam o arquivo.
             if let Some(linha) = contagem.report_if_due(saida_de_som.alguem_ouvindo()) {
-                println!("{linha}");
+                if primeira {
+                    primeira = false;
+                    crate::diario(&linha);
+                } else {
+                    println!("{linha}");
+                }
             }
         }
     }));
@@ -1642,10 +1650,10 @@ fn ligar_som(
     match crate::audio::start(tx.clone(), Arc::clone(ganho)) {
         Ok(captura) => {
             *audio = Some(captura);
-            println!("Áudio: ligado");
+            crate::diario("Áudio: ligado");
         }
         Err(e) => {
-            eprintln!("Áudio indisponível: {e}");
+            crate::diario(&format!("Áudio indisponível: {e}"));
             crate::aviso::avisar(&format!("Sem o som do computador: {e}."));
         }
     }

@@ -142,8 +142,11 @@ objc2-core-graphics = { version = "0.3", default-features = false, features = ["
 # é o único jeito de pegar o som do sistema no Mac sem instalar driver. E o
 # Opus em Rust puro (o mesmo libopus, convertido): o `audiopus` do Windows só
 # compila no Mac com autotools, e não para as duas arquiteturas de uma vez.
-objc2-screen-capture-kit = { version = "0.3", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-media", "SCStream", "SCShareableContent", "SCError"] }
-objc2-core-media = { version = "0.3", default-features = false, features = ["std", "CMSampleBuffer", "CMBlockBuffer", "CMFormatDescription", "CMTime", "objc2-core-audio-types"] }
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-media", "objc2-core-graphics", "libc", "SCStream", "SCShareableContent", "SCError"] }
+objc2-core-media = { version = "0.3", default-features = false, features = ["std", "CMSampleBuffer", "CMBlockBuffer", "CMFormatDescription", "CMTime", "objc2-core-audio-types", "objc2-core-video"] }
+# A imagem da tela pelo mesmo ScreenCaptureKit (ver `captura_mac.rs`): os
+# quadros chegam como CVPixelBuffer.
+objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std"] }
 objc2-core-audio-types = { version = "0.3", default-features = false, features = ["std", "CoreAudioBaseTypes"] }
 block2 = "0.6"

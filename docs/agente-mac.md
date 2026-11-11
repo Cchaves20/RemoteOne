@@ -8,7 +8,7 @@ comum (servidor, pareamento, vídeo, automações); o que muda está atrás de
 
 | Peça | Como funciona no Mac | Onde |
 |---|---|---|
-| Ver a tela | `xcap`, a mesma biblioteca do Windows | `capture.rs` |
+| Ver a tela | ScreenCaptureKit (macOS 12.3+), **sem as janelas do Deskside** na imagem: a barra "está controlando" fica na tela do Mac e fora do celular. Num Mac mais antigo, ou se o sistema recusar, volta ao `xcap` | `captura_mac.rs`, `capture.rs` |
 | Mouse e teclado | `enigo`, a mesma do Windows. Ctrl e ⌘ trocam de lugar: o app manda Ctrl+C e o Mac recebe ⌘C | `injector.rs`, `input.rs` (`Modifier::no_mac`) |
 | Área de transferência | `NSPasteboard`: texto, imagem (PNG e TIFF) e arquivos copiados no Finder | `clipboard.rs` |
 | Permissões | Pede Gravação de Tela e Acessibilidade ao abrir, e a janela mostra o que falta com o botão que leva aos Ajustes | `permissoes_mac.rs`, `gui.rs` |
@@ -165,10 +165,13 @@ Ir › Ir para a Pasta…, e colar o caminho).
 
 ## Riscos conhecidos, para olhar primeiro no teste
 
-- **macOS 15 (Sequoia).** A Apple aposentou o `CGWindowListCreateImage`, que
-  o `xcap` usa na captura de um quadro só, e marcou como obsoleta a captura
-  contínua que ele usa (`AVCaptureScreenInput`). Se a tela vier preta ou não
-  vier, o caminho é trocar a captura pelo ScreenCaptureKit.
+- **macOS 15 (Sequoia) e mais novos.** A Apple aposentou o
+  `CGWindowListCreateImage` e marcou como obsoleta a captura contínua do `xcap`
+  (`AVCaptureScreenInput`), que também passou a ignorar o pedido da barra de
+  ficar fora da imagem: no primeiro teste num Mac de verdade, ela aparecia no
+  celular. A captura contínua agora é pelo ScreenCaptureKit (`captura_mac.rs`);
+  o `xcap` ficou só como reserva. O diário diz qual das duas abriu ("Tela do
+  Mac: capturando…" ou "ScreenCaptureKit indisponível").
 - **Retina.** A captura vem em pixels e o mouse anda em pontos (metade, numa
   tela Retina). O mouse usa a fração da tela, então deve bater — mas é o
   primeiro lugar a olhar se o clique cair fora do lugar.

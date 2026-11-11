@@ -352,8 +352,12 @@ impl Screen {
 /// chamada**. Medido no agente, isso custava 70–100 ms por quadro. O
 /// `video_recorder()` abre a sessão uma vez e entrega os quadros por um canal.
 struct ContinuousCapture {
-    #[cfg(any(windows, target_os = "macos"))]
+    #[cfg(windows)]
     recorder: xcap::VideoRecorder,
+    /// No Mac, o ScreenCaptureKit (ver `captura_mac.rs`), ou o `xcap` quando
+    /// ele não está disponível.
+    #[cfg(target_os = "macos")]
+    fonte_mac: FonteMac,
     #[cfg(any(windows, target_os = "macos"))]
     frames: std::sync::mpsc::Receiver<xcap::Frame>,
     /// Quanto esperar por um quadro antes de devolver o controle ao laço.
@@ -362,6 +366,36 @@ struct ContinuousCapture {
     scaler: Scaler,
     #[cfg(not(any(windows, target_os = "macos")))]
     fonte: FonteLinux,
+}
+
+/// De onde vêm os quadros no Mac.
+#[cfg(target_os = "macos")]
+enum FonteMac {
+    /// O caminho normal: sem as janelas do Deskside na imagem.
+    Sck(#[allow(dead_code)] crate::captura_mac::Gravador),
+    /// O de antes, para um Mac em que o ScreenCaptureKit não abre.
+    Xcap(xcap::VideoRecorder),
+}
+
+/// Abre a captura do Mac: o ScreenCaptureKit, ou o `xcap` se ele recusar.
+#[cfg(target_os = "macos")]
+fn abrir_mac(
+    monitor: Option<u32>,
+    interval: std::time::Duration,
+) -> Result<(FonteMac, std::sync::mpsc::Receiver<xcap::Frame>), String> {
+    let escolhido = pick_monitor(monitor)?;
+    let id = escolhido.id().ok();
+    let escala = escolhido.scale_factor().map(f64::from).unwrap_or(2.0);
+    match crate::captura_mac::Gravador::iniciar(id, escala, interval) {
+        Ok((gravador, quadros)) => Ok((FonteMac::Sck(gravador), quadros)),
+        Err(e) => {
+            crate::diario(&format!(
+                "Tela do Mac: ScreenCaptureKit indisponível ({e}); usando a captura antiga"
+            ));
+            let (recorder, quadros) = abrir_gravador(monitor)?;
+            Ok((FonteMac::Xcap(recorder), quadros))
+        }
+    }
 }
 
 /// De onde vêm os quadros no Linux.
@@ -423,9 +457,15 @@ fn ultimo_do_gravador(
 impl ContinuousCapture {
     #[cfg(any(windows, target_os = "macos"))]
     fn start(monitor: Option<u32>, interval: std::time::Duration) -> Result<Self, String> {
+        #[cfg(windows)]
         let (recorder, frames) = abrir_gravador(monitor)?;
+        #[cfg(target_os = "macos")]
+        let (fonte_mac, frames) = abrir_mac(monitor, interval)?;
         Ok(Self {
+            #[cfg(windows)]
             recorder,
+            #[cfg(target_os = "macos")]
+            fonte_mac,
             frames,
             // Generoso de propósito: numa tela parada o WGC não entrega quadro
             // nenhum, e isso é normal, não erro.
@@ -465,7 +505,8 @@ impl ContinuousCapture {
         let Some(frame) = ultimo_do_gravador(&self.frames, self.timeout)? else {
             return Ok(None);
         };
-        // `raw` já vem em RGBA: o xcap converte de BGRA antes de entregar.
+        // `raw` já vem em RGBA: o xcap converte de BGRA antes de entregar, e
+        // o ScreenCaptureKit do Mac é convertido em `captura_mac.rs`.
         Ok(Some(self.scaler.scale(
             frame.raw,
             frame.width,
@@ -518,11 +559,24 @@ impl Drop for ContinuousCapture {
     }
 }
 
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(windows)]
 impl Drop for ContinuousCapture {
     fn drop(&mut self) {
         if let Err(e) = self.recorder.stop() {
             eprintln!("Falha ao encerrar a captura: {e}");
+        }
+    }
+}
+
+/// O ScreenCaptureKit para sozinho quando o gravador sai de escopo; o `xcap`
+/// precisa do pedido.
+#[cfg(target_os = "macos")]
+impl Drop for ContinuousCapture {
+    fn drop(&mut self) {
+        if let FonteMac::Xcap(recorder) = &self.fonte_mac {
+            if let Err(e) = recorder.stop() {
+                eprintln!("Falha ao encerrar a captura: {e}");
+            }
         }
     }
 }

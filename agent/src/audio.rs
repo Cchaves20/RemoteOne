@@ -518,8 +518,8 @@ mod imp {
     };
     use objc2_foundation::{NSArray, NSError, NSObject, NSObjectProtocol};
     use objc2_screen_capture_kit::{
-        SCContentFilter, SCShareableContent, SCStream, SCStreamConfiguration, SCStreamOutput,
-        SCStreamOutputType,
+        SCContentFilter, SCShareableContent, SCStream, SCStreamConfiguration, SCStreamDelegate,
+        SCStreamOutput, SCStreamOutputType,
     };
 
     use super::{Packet, Processador};
@@ -546,6 +546,9 @@ mod imp {
         tx: tokio::sync::mpsc::Sender<Packet>,
         ganho: Arc<super::Gain>,
         intercalado: Vec<f32>,
+        /// Para o diário dizer uma vez só que o formato veio diferente do
+        /// esperado: os blocos chegam dezenas de vezes por segundo.
+        avisou_formato: bool,
     }
 
     define_class!(
@@ -561,12 +564,24 @@ mod imp {
         unsafe impl SCStreamOutput for SaidaDeSom {
             #[unsafe(method(stream:didOutputSampleBuffer:ofType:))]
             fn chegou(&self, _stream: &SCStream, amostra: &CMSampleBuffer, tipo: SCStreamOutputType) {
+                // A imagem pequena que o fluxo exige chega aqui também, e vai
+                // fora (ver `abrir`).
                 if tipo != SCStreamOutputType::Audio {
                     return;
                 }
                 if let Ok(mut estado) = self.ivars().lock() {
                     receber(&mut estado, amostra);
                 }
+            }
+        }
+
+        unsafe impl SCStreamDelegate for SaidaDeSom {
+            #[unsafe(method(stream:didStopWithError:))]
+            fn parou(&self, _stream: &SCStream, erro: &NSError) {
+                crate::diario(&format!(
+                    "Som do Mac: a captura parou: {}",
+                    erro.localizedDescription()
+                ));
             }
         }
     );
@@ -605,6 +620,13 @@ mod imp {
         if asbd.mFormatFlags & EM_FLOAT == 0 || asbd.mBitsPerChannel != 32 {
             // O ScreenCaptureKit entrega float de 32 bits; qualquer outra
             // coisa viraria ruído se lida como float.
+            if !estado.avisou_formato {
+                estado.avisou_formato = true;
+                crate::diario(&format!(
+                    "Som do Mac: formato inesperado (flags {:#x}, {} bits); som descartado",
+                    asbd.mFormatFlags, asbd.mBitsPerChannel
+                ));
+            }
             return;
         }
 
@@ -622,6 +644,12 @@ mod imp {
             )
         };
         if r != 0 {
+            if !estado.avisou_formato {
+                estado.avisou_formato = true;
+                crate::diario(&format!(
+                    "Som do Mac: não consegui ler o bloco de som (erro {r})"
+                ));
+            }
             return;
         }
         // O bloco devolvido é nosso; soltá-lo no fim desta função é o que
@@ -653,11 +681,13 @@ mod imp {
 
         if estado.processador.is_none() {
             let taxa = asbd.mSampleRate.round() as u32;
-            println!("Áudio: capturando a {taxa} Hz, {n_canais} canal(is)");
+            crate::diario(&format!(
+                "Som do Mac: primeiro bloco, {taxa} Hz, {n_canais} canal(is)"
+            ));
             match Processador::novo(taxa, n_canais, estado.tx.clone(), estado.ganho.clone()) {
                 Ok(p) => estado.processador = Some(p),
                 Err(e) => {
-                    eprintln!("Áudio: {e}");
+                    crate::diario(&format!("Som do Mac: {e}"));
                     return;
                 }
             }
@@ -716,35 +746,45 @@ mod imp {
             config.setExcludesCurrentProcessAudio(true);
             config.setSampleRate(super::SAMPLE_RATE as isize);
             config.setChannelCount(super::CHANNELS as isize);
-            config.setWidth(2);
-            config.setHeight(2);
+            // Uma imagem pequena, mas não minúscula: 2x2 era o mínimo
+            // possível, e um tamanho fora do comum é o tipo de coisa que o
+            // sistema pode recusar sem dizer nada.
+            config.setWidth(128);
+            config.setHeight(72);
             config.setMinimumFrameInterval(CMTime::new(1, 1));
         }
-        let fluxo = unsafe {
-            SCStream::initWithFilter_configuration_delegate(
-                SCStream::alloc(),
-                &filtro,
-                &config,
-                None,
-            )
-        };
 
         let saida = SaidaDeSom::nova(Estado {
             processador: None,
             tx,
             ganho,
             intercalado: Vec::new(),
+            avisou_formato: false,
         });
+        // Com delegado: se o Mac encerrar o fluxo, o motivo vai para o diário
+        // em vez de o som simplesmente não chegar.
+        let fluxo = unsafe {
+            SCStream::initWithFilter_configuration_delegate(
+                SCStream::alloc(),
+                &filtro,
+                &config,
+                Some(ProtocolObject::from_ref(&*saida)),
+            )
+        };
         // Uma fila só para o som: os blocos chegam em ordem, um de cada vez.
         let fila = dispatch2::DispatchQueue::new("br.com.deskside.som", None);
-        unsafe {
-            fluxo.addStreamOutput_type_sampleHandlerQueue_error(
-                ProtocolObject::from_ref(&*saida),
-                SCStreamOutputType::Audio,
-                Some(&fila),
-            )
+        // A saída de imagem também, mesmo jogando fora: sem ela o fluxo fica
+        // com quadros sem destino, e não arriscamos que isso trave o som.
+        for tipo in [SCStreamOutputType::Audio, SCStreamOutputType::Screen] {
+            unsafe {
+                fluxo.addStreamOutput_type_sampleHandlerQueue_error(
+                    ProtocolObject::from_ref(&*saida),
+                    tipo,
+                    Some(&fila),
+                )
+            }
+            .map_err(|e| format!("não consegui ligar o som: {}", e.localizedDescription()))?;
         }
-        .map_err(|e| format!("não consegui ligar o som: {}", e.localizedDescription()))?;
 
         // 3. Começa.
         let (inicio_tx, inicio_rx) = mpsc::channel::<Option<String>>();
@@ -755,6 +795,7 @@ mod imp {
         if let Some(e) = esperar(&inicio_rx, "início da captura")? {
             return Err(format!("o Mac não começou a captura do som: {e}"));
         }
+        crate::diario("Som do Mac: captura iniciada; esperando o primeiro bloco");
         Ok((fluxo, saida))
     }
 

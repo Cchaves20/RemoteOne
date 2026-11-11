@@ -17,6 +17,7 @@ pub mod aviso;
 pub mod awake;
 pub mod barra;
 pub mod brightness;
+pub mod captura_mac;
 pub mod capture;
 pub mod client;
 pub mod clipboard;
