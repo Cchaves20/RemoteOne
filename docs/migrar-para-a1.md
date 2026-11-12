@@ -85,7 +85,11 @@ Menu ☰ → **Compute → Instances → Create instance:**
    - **Change shape → Virtual machine → Ampere → VM.Standard.A1.Flex**, com
      **2 OCPU e 12 GB**. O programa roda num processo só, então mais núcleos
      quase não ajudam; memória ajuda. Dá para subir até 4 OCPU e 24 GB depois
-     (*Edit → Edit shape*, com um reinício), sem sair do grátis.
+     (*Edit → Edit shape*, com um reinício), sem sair do grátis. Como a
+     resposta costuma ser "sem vaga", `scripts/aumentar-a1.sh` tenta sozinho
+     até conseguir; rode **antes** de migrar, enquanto a máquina está vazia.
+     Aumentar a mesma máquina, e nunca criar uma segunda: duas somam o
+     tamanho e passam do grátis.
    - Depois de escolher o shape, confira que a imagem continua Ubuntu 24.04
      **aarch64**.
 3. **Networking:** **a mesma VCN e a mesma subnet** da VM de hoje. Assim a
