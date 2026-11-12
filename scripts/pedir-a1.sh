@@ -73,7 +73,9 @@ while :; do
   fi
 
   espera=$INTERVALO
+  acima_do_limite=0; tamanhos=0
   for t in $TAMANHOS; do
+    tamanhos=$((tamanhos + 1))
     ocpu=${t%%:*}; gb=${t##*:}
     saida=$("$OCI" compute instance launch -c "$T" --availability-domain "$AD" \
       --display-name "$NOME" --shape VM.Standard.A1.Flex \
@@ -88,6 +90,13 @@ while :; do
     case "$saida" in
       *[Cc]apacity*)
         log "rodada $rodada: sem vaga para $ocpu OCPU / $gb GB" ;;
+      *LimitExceeded*)
+        # Este tamanho passa do limite da conta, e não da região: vale só para
+        # ele, e o próximo da lista (menor) ainda pode caber. O limite também
+        # muda sozinho, por exemplo quando termina a troca para Pay As You Go,
+        # então as próximas rodadas tentam de novo.
+        log "rodada $rodada: $ocpu OCPU / $gb GB passa do limite da conta (Limites, Cotas e Uso)"
+        acima_do_limite=$((acima_do_limite + 1)) ;;
       *TooManyRequests*)
         log "rodada $rodada: a Oracle pediu calma; a próxima demora o dobro"
         espera=$((INTERVALO * 2)); break ;;
@@ -100,6 +109,12 @@ while :; do
         break ;;
     esac
   done
+
+  # Nenhum tamanho cabe no limite: na primeira rodada é a conta que precisa
+  # de ajuste. Depois, segue tentando, porque o limite pode subir.
+  if [ "$acima_do_limite" -eq "$tamanhos" ] && [ "$rodada" -eq 1 ]; then
+    falha "nenhum tamanho de '$TAMANHOS' cabe no limite de A1 da conta; veja Governança › Limites, Cotas e Uso"
+  fi
 
   [ "$UMA" -eq 1 ] && { log "fim da rodada única: a configuração está certa."; exit 0; }
   sleep "$espera"
