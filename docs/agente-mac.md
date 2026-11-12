@@ -160,8 +160,10 @@ Ir › Ir para a Pasta…, e colar o caminho).
 - **Pôr a janela numa zona da tela** (as zonas dos perfis). O programa abre,
   mas onde o Mac quiser; exige a API de Acessibilidade janela a janela.
 - **Silenciar notificações** no modo apresentação: sem API da Apple para isso.
-- **O link de download na página do site.** Fica para depois do primeiro
-  teste num Mac de verdade; até lá, o `.dmg` sai do pré-lançamento do GitHub.
+- ~~**O link de download na página do site.**~~ **Feito**, depois do
+  primeiro teste num Mac de verdade (chip Apple). O site serve o `.dmg` que
+  `scripts/publicar-mac.sh` copia do pré-lançamento. Num Mac com Intel ainda
+  não foi testado.
 
 ## Riscos conhecidos, para olhar primeiro no teste
 

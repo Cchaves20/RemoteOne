@@ -13,7 +13,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Deskside — seu computador na palma da mão</title>
-<meta name="description" content="Controle o seu computador pelo celular: a tela ao vivo, o mouse e o teclado, os arquivos e automações na hora marcada. Para Windows e Linux.">
+<meta name="description" content="Controle o seu computador pelo celular: a tela ao vivo, o mouse e o teclado, os arquivos e automações na hora marcada. Para Windows, Mac e Linux.">
 <meta name="color-scheme" content="dark light">
 <link rel="icon" href="/estatico/icone.svg" type="image/svg+xml">
 <link rel="canonical" href="https://deskside.com.br/">
@@ -21,7 +21,7 @@
 <meta property="og:locale" content="pt_BR">
 <meta property="og:url" content="https://deskside.com.br/">
 <meta property="og:title" content="Deskside — seu computador na palma da mão">
-<meta property="og:description" content="Controle o seu computador pelo celular: a tela ao vivo, o mouse e o teclado, os arquivos e automações na hora marcada. Para Windows e Linux.">
+<meta property="og:description" content="Controle o seu computador pelo celular: a tela ao vivo, o mouse e o teclado, os arquivos e automações na hora marcada. Para Windows, Mac e Linux.">
 <meta property="og:image" content="https://deskside.com.br/estatico/previa.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -61,7 +61,7 @@
             <svg id="seta" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg>
             <span id="rotulo-principal">Baixar para Windows</span>
           </a>
-          <span class="outro-sistema" id="outros">Também para <a href="#baixar" data-ir="linux">Linux</a> · Mac em breve</span>
+          <span class="outro-sistema" id="outros">Também para <a href="#baixar" data-ir="mac">Mac</a> e <a href="#baixar" data-ir="linux">Linux</a></span>
         </div>
         <p class="requisitos mono" id="requisitos-principal">Windows 10 ou 11 · Intel, AMD ou ARM · sem precisar de administrador</p>
         <div class="no-celular" id="no-celular" hidden>
@@ -156,7 +156,7 @@
       <div class="teclas-de-sistema" role="tablist" aria-label="Sistema do computador">
         <button class="tecla" role="tab" id="tab-windows" aria-controls="p-windows" aria-selected="true" data-sistema="windows">Windows<small>10 ou 11</small></button>
         <button class="tecla" role="tab" id="tab-linux" aria-controls="p-linux" aria-selected="false" data-sistema="linux">Linux<small>x86 e ARM</small></button>
-        <button class="tecla" role="tab" id="tab-mac" aria-controls="p-mac" aria-selected="false" data-sistema="mac">macOS<small>em breve</small></button>
+        <button class="tecla" role="tab" id="tab-mac" aria-controls="p-mac" aria-selected="false" data-sistema="mac">macOS<small>13 ou mais</small></button>
       </div>
 
       <div class="painel" role="tabpanel" id="p-windows" aria-labelledby="tab-windows">
@@ -215,12 +215,20 @@
 
       <div class="painel" role="tabpanel" id="p-mac" aria-labelledby="tab-mac" hidden>
         <div>
-          <h3>Deskside para Mac <span class="selo">em breve</span></h3>
-          <p class="fraco">Está pronto, mas ainda não foi testado num Mac de verdade. Assim que for, o download aparece aqui.</p>
+          <h3>Deskside para Mac</h3>
+          <p class="fraco">Um só arquivo para os Macs com chip Apple (M1 em diante) e com Intel. Sem precisar de administrador.</p>
+          <div class="downloads">
+            <a class="botao" href="/baixar/Deskside.dmg">Deskside.dmg</a>
+            <span class="mono">macOS 13 (Ventura) ou mais novo.</span>
+          </div>
         </div>
         <div>
-          <p class="fraco" style="margin-bottom:14px">Para saber quando chegar, escreva para:</p>
-          <span class="endereco">contato@deskside.com.br</span>
+          <ol class="passos">
+            <li><span>Abra o arquivo e arraste o Deskside para <strong>Aplicativos</strong>.</span></li>
+            <li><span>Abra o Deskside. Na primeira vez, o Mac avisa que não consegue verificar o desenvolvedor: vá em <strong>Ajustes do Sistema › Privacidade e Segurança</strong> e clique em <strong>Abrir mesmo assim</strong>.</span></li>
+            <li><span>Quando o Mac pedir, ligue o Deskside em <strong>Gravação de Tela</strong> e <strong>Acessibilidade</strong>. A janela do Deskside mostra o que falta.</span></li>
+            <li><span>No celular, digite o código de 9 caracteres que aparece.</span></li>
+          </ol>
         </div>
       </div>
 

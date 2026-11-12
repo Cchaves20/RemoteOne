@@ -8,8 +8,7 @@
   var SISTEMAS = {
     windows: { rotulo: "Baixar para Windows", arquivo: "/baixar/Deskside.exe", req: "Windows 10 ou 11 · Intel, AMD ou ARM · sem precisar de administrador" },
     linux: { rotulo: "Baixar para Linux", arquivo: "/baixar/Deskside-linux-x86_64.tar.gz", req: "Intel, AMD ou ARM · Wayland ou X11 · sem precisar de administrador" },
-    // Sem download até o primeiro teste num Mac de verdade (docs/agente-mac.md).
-    mac: { rotulo: "Mac: em breve", arquivo: "#baixar", req: "Por enquanto, Windows e Linux. O Mac está em teste." }
+    mac: { rotulo: "Baixar para Mac", arquivo: "/baixar/Deskside.dmg", req: "macOS 13 ou mais novo · chip Apple ou Intel · sem precisar de administrador" }
   };
   function detectar() {
     var p = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "") + " " + navigator.userAgent;
@@ -44,13 +43,12 @@
     document.getElementById("rotulo-principal").textContent = s.rotulo;
     document.getElementById("botao-principal").href = s.arquivo;
     document.getElementById("requisitos-principal").textContent = s.req;
-    if (meu === "mac") document.getElementById("seta").hidden = true;
     abrirAba(meu);
     var alvo = document.getElementById("outros");
     alvo.textContent = "";
-    if (meu === "mac") alvo.append("Disponível para ", link("windows", "Windows"), " e ", link("linux", "Linux"));
-    else if (meu === "linux") alvo.append("Também para ", link("windows", "Windows"), " · Mac em breve");
-    else alvo.append("Também para ", link("linux", "Linux"), " · Mac em breve");
+    var NOMES = { windows: "Windows", mac: "Mac", linux: "Linux" };
+    var outros = ["windows", "mac", "linux"].filter(function (k) { return k !== meu; });
+    alvo.append("Também para ", link(outros[0], NOMES[outros[0]]), " e ", link(outros[1], NOMES[outros[1]]));
   }
   document.querySelectorAll(".copiar-endereco").forEach(function (b) {
     b.addEventListener("click", function () {

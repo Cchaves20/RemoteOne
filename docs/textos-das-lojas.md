@@ -37,7 +37,7 @@ controle remoto,acesso remoto,pc,computador,mouse,teclado,windows,linux,desligar
 O Deskside transforma o celular no controle do seu computador. Veja a tela dele ao vivo, mexa no mouse, digite pelo teclado e rode automações, na mesma casa ou de longe, pela internet.
 
 COMO FUNCIONA
-Instale o Deskside no computador (Windows 10 ou 11, ou Linux), pelo site deskside.com.br. Ele mostra um código de 9 caracteres. Digite o código no app, e o computador aparece na sua lista. Só controla um computador quem digitou o código que apareceu na tela dele.
+Instale o Deskside no computador (Windows 10 ou 11, Mac ou Linux), pelo site deskside.com.br. Ele mostra um código de 9 caracteres. Digite o código no app, e o computador aparece na sua lista. Só controla um computador quem digitou o código que apareceu na tela dele.
 
 O QUE DÁ PARA FAZER
 • A tela do computador ao vivo, com lupa para ler o que está pequeno
@@ -158,7 +158,7 @@ Controle o computador pelo celular: tela ao vivo, mouse, teclado e automações.
 O Deskside transforma o celular no controle do seu computador. Veja a tela dele ao vivo, mexa no mouse, digite pelo teclado e rode automações, na mesma casa ou de longe, pela internet.
 
 COMO FUNCIONA
-Instale o Deskside no computador (Windows 10 ou 11, ou Linux), pelo site deskside.com.br. Ele mostra um código de 9 caracteres. Digite o código no app, e o computador aparece na sua lista. Só controla um computador quem digitou o código que apareceu na tela dele.
+Instale o Deskside no computador (Windows 10 ou 11, Mac ou Linux), pelo site deskside.com.br. Ele mostra um código de 9 caracteres. Digite o código no app, e o computador aparece na sua lista. Só controla um computador quem digitou o código que apareceu na tela dele.
 
 O QUE DÁ PARA FAZER
 • A tela do computador ao vivo, com lupa para ler o que está pequeno
