@@ -1,7 +1,7 @@
 {
   "url": "https://deskside.com.br",
-  "degraus": "250,500,1000,2000,3000,4000,5000",
+  "degraus": "1000,2500,5000,7500,10000",
   "segundos": 60,
   "teto_ms": 1000,
-  "pedido": "Segunda rodada, pedida pelo Caio em 2026-11-14, depois da migração para a A1 (4 OCPU / 23 GB, limites do contêiner ainda os da E2.1.Micro): só computadores sem parear (prefixo carga-vps), parada automática no p95 de 1 s ou 1% de erros."
+  "pedido": "Terceira rodada, pedida pelo Caio em 2026-11-14, na A1 já com 65.536 arquivos abertos e 2 GB na API (a segunda parou em ~1.000 pelo limite de 1.024): só computadores sem parear (prefixo carga-vps), parada automática no p95 de 1 s, 1% de erros ou 1% de computadores faltando."
 }
