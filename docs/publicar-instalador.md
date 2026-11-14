@@ -107,7 +107,7 @@ já aconteceram neste projeto.
 
 ```powershell
 $chave = (Get-ChildItem "$env:USERPROFILE\Downloads\*.key" | Sort-Object LastWriteTime -Descending)[0].FullName
-$remoto = 'ubuntu@147.15.45.45'
+$remoto = 'ubuntu@137.131.184.239'
 $raiz = (ssh -i $chave $remoto 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; pwd').Trim()
 
 # No Dell:

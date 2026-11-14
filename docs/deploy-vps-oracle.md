@@ -319,7 +319,7 @@ para ver a reclamação dele na tela.
 
 ```bash
 sudo docker compose -f docker-compose.lite.yml run --rm --entrypoint turnserver \
-  coturn --listening-port=3478 --external-ip=147.15.45.45 --log-file=stdout --simple-log
+  coturn --listening-port=3478 --external-ip=137.131.184.239 --log-file=stdout --simple-log
 ```
 Procure `Relay ... initialized` e o IP público em `external-ip`. Se aparecer
 só o IP privado (10.x), o coturn vai anunciar um endereço que ninguém alcança.

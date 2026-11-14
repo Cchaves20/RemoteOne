@@ -286,8 +286,11 @@ A fase 1 termina aqui. O servidor velho seguiu atendendo o tempo todo.
 cd ~/Deskside/deploy 2>/dev/null || cd ~/RemoteOne/deploy
 sudo docker compose -f docker-compose.lite.yml stop
 sudo docker compose -f docker-compose.lite.yml run --rm --no-deps api python -m app.backup /backups
+ULTIMO=$(sudo sh -c 'ls -t backups/deskside-*.db* | head -1'); echo "$ULTIMO"
+case "$ULTIMO" in *.enc) sudo docker compose -f docker-compose.lite.yml run --rm --no-deps api \
+  python -m app.backup --abrir "/backups/$(basename "$ULTIMO")"; ULTIMO=${ULTIMO%.enc} ;; esac
 mkdir -p ~/corte
-sudo sh -c 'cp "$(ls -t backups/deskside-*.db | head -1)" /home/ubuntu/corte/deskside.db'
+sudo cp "$ULTIMO" /home/ubuntu/corte/deskside.db
 sudo docker run --rm -v deploy_caddy_data:/d -v ~/corte:/b alpine tar czf /b/caddy.tgz -C /d .
 sudo chown -R ubuntu: ~/corte && ls -lh ~/corte
 ```
@@ -297,6 +300,9 @@ sudo chown -R ubuntu: ~/corte && ls -lh ~/corte
   guardado recebe recusa e tenta de novo, em vez de cair num servidor
   desatualizado.
 - O `run --rm` tira a cópia num contêiner novo, porque o da API está parado.
+- Com `DESKSIDE_BACKUP_KEY` no `.env`, a cópia sai cifrada (`.db.enc`). O
+  `--abrir` grava ao lado a versão aberta (`.db`), que é a que vai para a A1.
+  Essa cópia sem cifra é apagada no passo 3.1.
 - O `caddy.tgz` leva o certificado HTTPS. Com ele, a A1 responde com cadeado
   no primeiro segundo, sem pedir certificado de novo.
 
@@ -369,17 +375,50 @@ E o teste que vale:
    continuam lá, e se a tela abre.
 2. Repita **no 4G/5G**: isso confere o TURN. Se a tela não abrir só no 4G,
    quase sempre é o `.env` (passo 1.7) ou o firewall (passo 1.5).
-3. Os agentes reconectam sozinhos assim que o DNS deles vencer. Se algum
-   demorar mais que o TTL, use **Procurar atualização** na bandeja.
+3. Os agentes reconectam sozinhos assim que o DNS deles vencer. Mas há DNS
+   de roteador e de operadora que seguem entregando o IP velho por mais tempo
+   que o TTL. Por isso, logo depois do corte, ligue a ponte (2.7).
+
+### 2.7 A ponte no VPS velho
+
+No corte de verdade, o app do celular entrou, mas os computadores ficaram
+offline. O `agent.log` (`%APPDATA%\deskside\agent.log`) mostrava
+`reconectando em 30s` sem parar. E o `Resolve-DnsName deskside.com.br` no
+computador ainda dava `147.15.45.45`, com TTL cheio, enquanto o DNS do Google
+(`-Server 8.8.8.8`) já dava o IP novo.
+
+A ponte resolve isso sem esperar: o VPS velho repassa as portas 80 e 443 para
+a A1. Ela não abre o HTTPS, então o certificado continua sendo o da A1, e não
+há API nem banco no velho.
+
+**VPS velho, qualquer pasta:**
+```bash
+NOVO=137.131.184.239   # o IP reservado da A1
+sudo docker run -d --name ponte-443 --restart unless-stopped -p 443:443 alpine/socat TCP-LISTEN:443,fork,reuseaddr TCP:$NOVO:443
+sudo docker run -d --name ponte-80 --restart unless-stopped -p 80:80 alpine/socat TCP-LISTEN:80,fork,reuseaddr TCP:$NOVO:80
+sudo docker ps --format '{{.Names}}  {{.Status}}'
+```
+Em até 30 segundos, o `agent.log` mostra
+`conectado ao backend em wss://deskside.com.br/ws/agent`.
+
+Para a A1, quem passa pela ponte tem o IP do VPS velho. Isso não muda nada
+para os computadores, mas vale para o limite de tentativas de login por IP.
+Desligue a ponte quando o DNS dos seus computadores já mostrar o IP novo, um ou
+dois dias depois:
+```bash
+sudo docker rm -f ponte-443 ponte-80
+```
 
 ### Se algo der errado: voltar
 
 1. Painel do domínio e DuckDNS: volte o registro para `147.15.45.45`.
 2. **VPS velho**, na pasta `~`:
    ```bash
+   sudo docker rm -f ponte-443 ponte-80 2>/dev/null
    cd ~/Deskside/deploy 2>/dev/null || cd ~/RemoteOne/deploy
    sudo docker compose -f docker-compose.lite.yml start
    ```
+   A ponte sai primeiro: ela ocupa as portas 80 e 443 de que o Caddy precisa.
 
 O banco velho ficou intacto: a cópia foi tirada, nada foi apagado. O que tiver
 sido gravado na A1 nesse meio-tempo (um pareamento novo, por exemplo) fica só
@@ -404,13 +443,9 @@ rm -rf ~/corte
 
 ### 3.2 O endereço do SSH nos scripts
 
-`scripts/atualizar.ps1` (`-Vps`, `-Backup`, `-Publicar`) usa
-`ubuntu@147.15.45.45` como padrão, e `docs/publicar-instalador.md` também.
-Até eles serem trocados para o IP novo, acrescente `-Servidor` nos comandos.
-Exemplo, no PowerShell, na pasta do projeto:
-```powershell
-.\scripts\atualizar.cmd -Backup -Servidor $novo
-```
+`scripts/atualizar.ps1` (`-Vps`, `-Backup`, `-Publicar`) e
+`docs/publicar-instalador.md` já usam o IP da A1 (137.131.184.239). Depois de
+um `git pull`, valem sem `-Servidor`. Antes dele, acrescente `-Servidor $novo`.
 
 Os instaladores de Linux e Mac são baixados de novo na A1. O de Windows já
 veio no `site/baixar/` copiado.

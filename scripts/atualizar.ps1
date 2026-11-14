@@ -88,7 +88,7 @@ param(
 
     # Servidor e chave do SSH. O padrão pega a chave mais recente em Downloads;
     # passe -ChaveSsh se a sua estiver noutro lugar.
-    [string]$Servidor = "ubuntu@147.15.45.45",
+    [string]$Servidor = "ubuntu@137.131.184.239",
     [string]$ChaveSsh = "",
 
     # Uso interno: pula o `git pull`. O script se reinicia sozinho quando o
