@@ -441,6 +441,15 @@ chmod +x deploy/backup.sh
 rm -rf ~/corte
 ```
 
+O cron do VPS velho também roda o aviso de fim do teste grátis (`app.avisos`,
+ver `docs/planos.md`). Ele vem junto para a A1:
+```bash
+( crontab -l 2>/dev/null | grep -v 'app.avisos'; \
+  echo "23 12 * * * sh -c 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; sudo docker compose -f deploy/docker-compose.lite.yml exec -T api python -m app.avisos' >> ~/avisos.log 2>&1" ) | crontab -
+crontab -l
+```
+E sai do velho, onde só falharia: lá, rode `crontab -r`.
+
 ### 3.2 O endereço do SSH nos scripts
 
 `scripts/atualizar.ps1` (`-Vps`, `-Backup`, `-Publicar`) e
