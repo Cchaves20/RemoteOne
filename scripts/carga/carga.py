@@ -124,6 +124,9 @@ class Computador:
         self.segredo = segredo
         self.parar = parar
         self.pronto = asyncio.Event()
+        # De pé agora: entrou, recebeu o welcome e a conexão não caiu. É a
+        # conta que diz se o degrau tem mesmo os computadores que pediu.
+        self.ligado = False
         self._batidas: list[float] = []
 
     async def rodar(self) -> None:
@@ -148,11 +151,13 @@ class Computador:
                 if welcome.get("type") != "welcome":
                     raise RuntimeError(f"esperava welcome, veio {welcome.get('type')}")
                 MEDIDAS.tempo("computador_entra", (time.perf_counter() - inicio) * 1000)
+                self.ligado = True
                 self.pronto.set()
                 batedor = asyncio.create_task(self._bater(ws))
                 try:
                     await self._ouvir(ws)
                 finally:
+                    self.ligado = False
                     batedor.cancel()
         except Exception as e:  # noqa: BLE001
             if not self.parar.is_set():
@@ -405,6 +410,7 @@ async def fatia(args, indice: int, n: int, fila, barreira, parar_tudo) -> None:
     conector = aiohttp.TCPConnector(limit=0)
     prazo = aiohttp.ClientTimeout(total=30)
     computadores: list[asyncio.Task] = []
+    todos_pc: list[Computador] = []
     celulares: list[asyncio.Task] = []
     feitos_pc: set[int] = set()
     feitos_cel: set[int] = set()
@@ -428,6 +434,7 @@ async def fatia(args, indice: int, n: int, fila, barreira, parar_tudo) -> None:
                 else:
                     comp = Computador(args.url, f"{prefixo}-{i:05d}", None, parar)
                 computadores.append(asyncio.create_task(comp.rodar()))
+                todos_pc.append(comp)
                 novos.append(comp)
                 if len(novos) % 25 == 0:
                     await asyncio.sleep(0.5)
@@ -456,7 +463,7 @@ async def fatia(args, indice: int, n: int, fila, barreira, parar_tudo) -> None:
                     await saude(cliente)
                 await asyncio.sleep(1)
             medidas = MEDIDAS.zerar()
-            fila.put((entrada, medidas))
+            fila.put((entrada, medidas, sum(c.ligado for c in todos_pc)))
             await esperar_barreira()
             if parar_tudo.is_set():
                 break
@@ -539,6 +546,7 @@ def principal(args) -> int:
         linha = {
             "degrau": numero,
             "computadores": alvo,
+            "ligados": sum(p[2] for p in partes),
             "celulares": min(alvo_celulares, alvo),
             "entrada": resumo(_juntar([p[0] for p in partes])),
             "medidas": resumo(_juntar([p[1] for p in partes])),
@@ -552,17 +560,25 @@ def principal(args) -> int:
         resultados.append(linha)
         imprimir(linha)
 
-        total = sum(v["n"] + v["erros"] for v in linha["medidas"].values())
-        erros = sum(v["erros"] for v in linha["medidas"].values())
+        # A entrada conta. Antes, um computador que não conseguia entrar não
+        # aparecia em lugar nenhum: na rodada de 14/11 na A1, de 2.000 a 5.000
+        # o servidor segurou só ~1.000 (o limite de arquivos abertos da API) e
+        # o resultado saiu "sem erros".
+        fases = list(linha["entrada"].values()) + list(linha["medidas"].values())
+        total = sum(v["n"] + v["erros"] for v in fases)
+        erros = sum(v["erros"] for v in fases)
+        faltam = alvo - linha["ligados"]
         # O atraso que o próprio computador simulado leva não é do servidor.
         descontar = {"programas_abertos": args.atraso_programas_ms}
         pior_p95 = max(
             (v["p95"] - descontar.get(nome, 0) for nome, v in linha["medidas"].items()),
             default=0,
         )
-        if erros > args.teto_erros * max(1, total) or pior_p95 > args.teto_ms:
+        if (erros > args.teto_erros * max(1, total) or pior_p95 > args.teto_ms
+                or faltam > args.teto_erros * alvo):
             quebrou_em = numero
-            print(f"\nparou no degrau {numero}: p95 {pior_p95} ms, {erros}/{total} erros")
+            print(f"\nparou no degrau {numero}: p95 {pior_p95} ms, {erros}/{total} erros,"
+                  f" {linha['ligados']}/{alvo} computadores ligados")
             parar_tudo.set()
         barreira.wait()  # todos entregaram; seguem juntos ou param
         if quebrou_em:
@@ -582,13 +598,16 @@ def imprimir(linha: dict) -> None:
     servidor = linha.get("servidor")
     extra = (f"  servidor: CPU {servidor['cpu_media']}% (máx {servidor['cpu_max']}%),"
              f" {servidor['memoria_mb']} MB") if servidor else ""
-    print(f"\n== degrau {linha['degrau']}: {linha['computadores']} computadores,"
-          f" {linha['celulares']} celulares{extra}")
+    print(f"\n== degrau {linha['degrau']}: {linha['computadores']} computadores"
+          f" ({linha['ligados']} ligados), {linha['celulares']} celulares{extra}")
     print(f"   {'operação':<20}{'n':>7}{'p50':>9}{'p95':>9}{'p99':>9}{'máx':>9}{'erros':>7}")
     for nome, v in linha.get("entrada", {}).items():
-        if nome in ("celular_login", "celular_tela", "video_negocia", "computador_entra"):
+        if v["erros"] or nome in ("celular_login", "celular_tela", "video_negocia",
+                                  "computador_entra"):
             print(f"   entrada: {nome:<20}{v['n']:>7}{v['p50']:>9}{v['p95']:>9}"
                   f"{v['p99']:>9}{v['max']:>9}{v['erros']:>7}")
+            if v["exemplo_de_erro"]:
+                print(f"      ex.: {v['exemplo_de_erro']}")
     for nome, v in linha["medidas"].items():
         print(f"   {nome:<20}{v['n']:>7}{v['p50']:>9}{v['p95']:>9}{v['p99']:>9}"
               f"{v['max']:>9}{v['erros']:>7}")
