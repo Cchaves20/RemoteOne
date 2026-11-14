@@ -1,7 +1,7 @@
 {
   "url": "https://deskside.com.br",
-  "degraus": "50,100,250,500,1000,1500",
+  "degraus": "250,500,1000,2000,3000,4000,5000",
   "segundos": 60,
   "teto_ms": 1000,
-  "pedido": "Teste combinado com o Caio em 2026-11-03: só computadores sem parear (prefixo carga-vps), parada automática no p95 de 1 s ou 1% de erros."
+  "pedido": "Segunda rodada, pedida pelo Caio em 2026-11-14, depois da migração para a A1 (4 OCPU / 23 GB, limites do contêiner ainda os da E2.1.Micro): só computadores sem parear (prefixo carga-vps), parada automática no p95 de 1 s ou 1% de erros."
 }
