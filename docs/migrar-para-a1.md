@@ -474,11 +474,9 @@ Ela não custa nada enquanto existe: E2.1.Micro e A1 somadas cabem no grátis.
 
 Se quiser, depois disso volte o TTL do domínio para o valor antigo.
 
-## Depois: aproveitar a memória
+## Depois: aproveitar a memória (feito em 14/11)
 
-A API continua com `mem_limit: 512m` em `deploy/docker-compose.lite.yml`.
-Esse teto foi escolhido para uma VM de 1 GB, e é o que limita a parte B em
-cerca de 2.300 pares (ver `docs/teste-de-carga.md`). Na A1, com 4 GB, a
-memória deixaria de limitar, e o teto passaria a ser o processador: cerca de
-15.000 pares num núcleo. Para isso, o teto precisa sair do arquivo para o
-`.env`. É uma mudança pequena, a fazer depois que a migração estiver estável.
+Na A1, a API passou de `mem_limit: 512m` para `2g`, o Caddy de `192m` para
+`512m`, e a API ganhou `ulimits: nofile: 65536`. O limite de arquivos abertos
+era o primeiro teto de verdade: com o padrão de 1.024, a API parava perto de
+1.000 computadores ligados (ver `docs/teste-de-carga.md`).

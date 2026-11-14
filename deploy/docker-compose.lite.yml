@@ -30,7 +30,10 @@ services:
     # Sem `cap_drop: ALL` aqui, ao contrário da API: o Caddy escuta nas portas
     # 80 e 443, e ligar-se a porta abaixo de 1024 exige `NET_BIND_SERVICE`.
     # Tirar todas as capacidades derrubaria o site inteiro.
-    mem_limit: 192m
+    #
+    # 512 MB: o Caddy segura uma conexão por computador ligado e por celular,
+    # e os 192 MB da VM de 1 GB apertariam antes da API.
+    mem_limit: 512m
     ports:
       - "80:80"
       - "443:443"
@@ -114,14 +117,26 @@ services:
       # nenhuma do kernel. Tirar todas custa zero e fecha uma família inteira
       # de escapadas de contêiner.
       - ALL
-    # Teto de memória, e este é sobre **disponibilidade**, não invasão. A VM tem
-    # 1 GB; a API usa 66 MB em operação. Sem teto, um vazamento de memória ou um
-    # pedido malicioso grande consome tudo e o kernel mata processos a esmo —
-    # inclusive o sshd, o que deixa a máquina sem ninguém para consertá-la.
+    # Teto de memória, e este é sobre **disponibilidade**, não invasão. Sem
+    # teto, um vazamento de memória ou um pedido malicioso grande consome tudo
+    # e o kernel mata processos a esmo — inclusive o sshd, o que deixa a
+    # máquina sem ninguém para consertá-la.
     #
-    # 512 MB é oito vezes o uso real: aperta o suficiente para o contêiner
-    # morrer sozinho antes de levar a máquina junto.
-    mem_limit: 512m
+    # 2 GB na A1 (23 GB). Era 512 MB na VM de 1 GB, e isso era também o teto
+    # de capacidade: ~80 KB por computador ligado e ~180 KB por par celular +
+    # computador (docs/teste-de-carga.md). Com 2 GB, cerca de 10.000 pares, e
+    # ainda sobra máquina de sobra para o contêiner morrer sozinho.
+    mem_limit: 2g
+    # Cada computador ligado é uma conexão, e cada conexão um arquivo aberto.
+    # O padrão do contêiner é 1.024 (o Python não sobe o próprio limite, ao
+    # contrário do Caddy, que é Go), e com ~1.000 computadores a API parava de
+    # aceitar conexões e de abrir o próprio banco ("unable to open database
+    # file"): login e tudo o mais falhavam juntos. Achado no teste de carga de
+    # 14/11 na A1.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     # **Todo** o `.env` entra no contêiner, e não só as variáveis listadas
     # abaixo. A lista explícita era o caminho anterior, e ela tem um modo de
     # falhar que não deixa rastro: uma variável nova no `.env` — as de SMTP
