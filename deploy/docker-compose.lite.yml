@@ -31,9 +31,11 @@ services:
     # 80 e 443, e ligar-se a porta abaixo de 1024 exige `NET_BIND_SERVICE`.
     # Tirar todas as capacidades derrubaria o site inteiro.
     #
-    # 512 MB: o Caddy segura uma conexão por computador ligado e por celular,
-    # e os 192 MB da VM de 1 GB apertariam antes da API.
-    mem_limit: 512m
+    # O Caddy segura uma conexão criptografada por computador ligado e por
+    # celular, mais a dele até a API: ~120 KB cada. Com 512 MB ele foi morto
+    # por falta de memória perto de 4.000 computadores (teste de carga de
+    # 15/11 na A1), e todos caíram juntos. 2 GB dão perto de 16.000.
+    mem_limit: 2g
     ports:
       - "80:80"
       - "443:443"
@@ -47,6 +49,10 @@ services:
       # o TURN, logo abaixo; uma lista ali faria o coturn anunciar a lista inteira
       # como endereço de relay.
       CADDY_DOMAINS: ${CADDY_DOMAINS:-${DOMAIN}}
+      # Diz ao Go onde fica o teto: perto dele, o coletor de lixo trabalha
+      # mais, em vez de deixar a memória crescer até o kernel matar o
+      # processo. Abaixo do `mem_limit`, com folga para o que não é heap.
+      GOMEMLIMIT: 1800MiB
     volumes:
       # A **pasta**, não o arquivo. Montar um arquivo solto prende o contêiner
       # ao inode: o `git reset --hard` substitui o arquivo (inode novo) e o
