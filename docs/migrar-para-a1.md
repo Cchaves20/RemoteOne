@@ -1,5 +1,10 @@
 # Migrar o servidor para a Ampere A1 (grátis, até 4 núcleos e 24 GB)
 
+> **Feita.** Corte em 14/11/2026: o Deskside roda na A1 (4 OCPU, 23 GB,
+> IP reservado 137.131.184.239). A VM velha (147.15.45.45) foi encerrada em
+> 15/11, então a seção "Se algo der errado: voltar" e a ponte (2.7) não valem
+> mais. O guia fica como registro e para uma próxima migração.
+
 O servidor de hoje é uma **VM.Standard.E2.1.Micro**: 1 GB de RAM e um oitavo
 de núcleo garantido. No teste de carga, o processador dela saturou com cerca
 de 1.000 computadores ligados, e a estimativa é de 200 a 300 celulares de tela
