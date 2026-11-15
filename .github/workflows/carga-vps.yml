@@ -20,6 +20,16 @@ concurrency:
 
 jobs:
   carga:
+    # Várias máquinas ao mesmo tempo, cada uma com os seus computadores. Uma só
+    # não passa de ~4.096 conexões abertas para o mesmo destino: na rodada de
+    # 14/11 a A1 seguia folgada (tabela de conexões da Oracle em 5%, /health
+    # interno respondendo) e as conexões novas morriam do lado do GitHub.
+    # `maquinas` no vps.json diz quantas trabalham; as outras saem na hora.
+    # Os `degraus` são **por máquina**: o servidor recebe a soma.
+    strategy:
+      fail-fast: false
+      matrix:
+        maquina: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -36,17 +46,23 @@ jobs:
         working-directory: scripts/carga
         run: |
           set -eu
+          MAQUINAS=$(python -c "import json;print(json.load(open('vps.json')).get('maquinas', 1))")
+          if [ "${{ matrix.maquina }}" -gt "$MAQUINAS" ]; then
+            echo "máquina ${{ matrix.maquina }} de $MAQUINAS: não participa desta rodada"
+            echo '{}' > resultado-vps.json
+            exit 0
+          fi
           ulimit -n 20000 || true
           URL=$(python -c "import json;print(json.load(open('vps.json'))['url'])")
           DEGRAUS=$(python -c "import json;print(json.load(open('vps.json'))['degraus'])")
           SEGUNDOS=$(python -c "import json;print(json.load(open('vps.json'))['segundos'])")
           TETO=$(python -c "import json;print(json.load(open('vps.json'))['teto_ms'])")
           python carga.py --url "$URL" --degraus "$DEGRAUS" --segundos "$SEGUNDOS" \
-            --teto-ms "$TETO" --prefixo carga-vps --processos 3 --saida resultado-vps.json
+            --teto-ms "$TETO" --prefixo "carga-vps-m${{ matrix.maquina }}" --processos 3 --saida resultado-vps.json
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: carga-vps
+          name: carga-vps-m${{ matrix.maquina }}
           path: scripts/carga/resultado-vps.json
           retention-days: 30

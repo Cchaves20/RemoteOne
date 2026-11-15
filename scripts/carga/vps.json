@@ -1,7 +1,8 @@
 {
   "url": "https://deskside.com.br",
-  "degraus": "1000,2500,5000,7500,10000",
+  "maquinas": 4,
+  "degraus": "500,1250,2000",
   "segundos": 60,
   "teto_ms": 1000,
-  "pedido": "Terceira rodada, pedida pelo Caio em 2026-11-14, na A1 já com 65.536 arquivos abertos e 2 GB na API (a segunda parou em ~1.000 pelo limite de 1.024): só computadores sem parear (prefixo carga-vps), parada automática no p95 de 1 s, 1% de erros ou 1% de computadores faltando."
+  "pedido": "Quarta rodada, pedida pelo Caio em 2026-11-14, na A1 com 65.536 arquivos abertos e 2 GB na API. Quatro máquinas do GitHub, porque uma só para em ~4.096 conexões: degraus por máquina, no servidor 2.000, 5.000 e 8.000 computadores sem parear (prefixo carga-vps-mN). Cada máquina para sozinha no p95 de 1 s, 1% de erros ou 1% de computadores faltando."
 }
