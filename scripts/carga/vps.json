@@ -4,5 +4,5 @@
   "degraus": "500,1250,2000",
   "segundos": 60,
   "teto_ms": 1000,
-  "pedido": "Quarta rodada, pedida pelo Caio em 2026-11-14, na A1 com 65.536 arquivos abertos e 2 GB na API. Quatro máquinas do GitHub, porque uma só para em ~4.096 conexões: degraus por máquina, no servidor 2.000, 5.000 e 8.000 computadores sem parear (prefixo carga-vps-mN). Cada máquina para sozinha no p95 de 1 s, 1% de erros ou 1% de computadores faltando."
+  "pedido": "Quinta rodada, pedida pelo Caio em 2026-11-15: a quarta de novo, agora com o Caddy em 2 GB e GOMEMLIMIT (na quarta ele morreu por falta de memória perto de 4.000). Quatro máquinas, degraus por máquina; no servidor 2.000, 5.000 e 8.000 computadores sem parear (prefixo carga-vps-mN)."
 }
