@@ -213,15 +213,77 @@ e esses 145 ms aparecem em toda medida.
   servidor, 1.000 agentes levam perto de um minuto para voltar todos.
 - **No degrau de 1.500 o servidor começou a ceder**: só 63 dos 500 novos
   entraram, o `/health` deu um 502 e duas conexões caíram.
-- **O limite foi o processador, não a memória.** Pelo `docker stats`, a API
-  chegou a 202 MB dos 512 MB, com o processador no máximo (o `docker stats`
-  chegou a mostrar 394%, número distorcido pela VM de núcleo emprestado). Ela
-  não reiniciou durante o teste e não houve falta de memória. O 502 foi o
-  Caddy sem resposta de uma API sobrecarregada.
+- **~~O limite foi o processador.~~ Errado.** Os "~1.060 que entraram" eram o
+  limite de **1.024 arquivos abertos** da API: cada conexão é um arquivo
+  aberto, e o padrão do contêiner é 1.024. Descoberto em 14/11, na A1 (abaixo).
+  O processador apertado era real, mas não era ele que barrava.
 
 Celulares não foram medidos no VPS. Para eles continua valendo a estimativa
 pela proporção com o teste local: 200 a 300 de tela aberta hoje, e 1.500 a
 2.000 com a parte B.
+
+## Resultados na A1 (14 e 15/11)
+
+A A1 (VM.Standard.A1.Flex, 4 OCPU ARM, 23 GB) substituiu a E2.1.Micro em
+14/11. A API continua um processo só, então usa **um** núcleo; o Caddy, que é
+Go, usa os quatro. Cinco rodadas, só computadores sem parear, do GitHub nos
+EUA (~115 a 145 ms de rede).
+
+**Rodada 2 (um gerador, até 5.000 pedidos).** Saiu "sem erros", mas a batida
+parou em ~6.000 por minuto de 1.000 em diante: o servidor nunca segurou mais
+de ~1.000. O simulador não contava quem falhava na entrada. Agora conta: cada
+degrau mostra os **ligados** e para se faltar mais de 1%. Reproduzido aqui:
+com 1.024 arquivos abertos, a API para em 1.006 computadores e, nesse ponto,
+**nem o próprio banco ela consegue abrir** (`unable to open database file`):
+login e o resto falham juntos. Correção: `ulimits: nofile: 65536` na API.
+
+**Rodada 3 (um gerador, limites novos):**
+
+| Pedidos | Ligados | Entrada p50 / p95 | Batida p50 / p95 | `/health` p95 | Erros |
+|---:|---:|---:|---:|---:|---:|
+| 1.000 | 1.000 | 4,2 / 5,5 s | 143 / 144 ms | 145 ms | 0 |
+| 2.500 | 2.500 | 5,7 / 8,3 s | 143 / 152 ms | 149 ms | 0 |
+| 5.000 | 4.094 | 8,4 / 13,4 s | 144 / 160 ms | sem resposta | 908 |
+
+Os 4.094 ficaram bem (batida 160 ms); as conexões **novas** é que morriam.
+Não era a A1: a tabela de conexões da Oracle (métrica "Connection Tracking
+Table Utilization" da VNIC) chegou a 5% e nunca encheu, e o `/health` interno
+seguiu respondendo. Era o gerador: uma máquina do GitHub não abre muito mais
+de 4.096 conexões para o mesmo destino. O workflow passou a usar até quatro
+máquinas (`maquinas` no `vps.json`; os degraus são por máquina).
+
+**Rodada 4 (quatro geradores, 2.000 / 5.000 / 8.000):** em ~4.000 ligados o
+**Caddy foi morto por falta de memória** (512 MB; o `dmesg` mostra 484 MB em
+uso) e todos os computadores caíram de uma vez. Voltaram sozinhos em
+segundos. ~120 KB por conexão no Caddy. Correção: 2 GB e `GOMEMLIMIT`.
+
+**Rodada 5 (quatro geradores, Caddy com 2 GB):** nada caiu.
+
+| Pedidos (soma) | Ligados | Entrada p50 / p95 (pior máquina) | Batida p95 | Erros |
+|---:|---:|---:|---:|---:|
+| 2.000 | 2.000 | 14,7 / 19,5 s | 150 a 650 ms | 0 |
+| 5.000 | ~4.340 | 19,5 / 21,0 s | 770 a 990 ms | ~660 (tempo esgotado na entrada) |
+| 2.000 (uma máquina seguiu sozinha) | 2.000 | 4,3 / 7,1 s | 165 ms | 0 |
+
+### O que as rodadas dizem
+
+- **Ligados e parados, a A1 segura pelo menos 4.000 computadores** com a
+  batida no tempo da rede. O limite de computadores parados não foi
+  alcançado.
+- **O limite agora é a velocidade de entrada.** Com quatro geradores entrando
+  juntos (~200 por segundo), a fila na API passa de 20 s e conexões novas
+  desistem. Com um gerador (~50 por segundo), a entrada fica em 4 a 8 s.
+- **Por quê:** o `hello` do `/ws/agent` (`backend/app/main.py`, `agent_ws`)
+  faz quatro a cinco consultas **síncronas** ao banco dentro do laço de
+  eventos — `_autorizar_agente`, `_paired_email` (duas vezes) e, para quem
+  não é pareado, um `create_pairing_request` que **grava**. O SQLite está no
+  diário padrão (sem WAL), então cada gravação espera o disco da Oracle. Com
+  o laço parado nisso, as batidas dos já ligados também atrasam (p95 de
+  ~800 ms durante a entrada).
+- **O teste exagera esse custo**: os computadores dele não são pareados e
+  gravam um código de pareamento a cada entrada. Um computador de verdade
+  reconectando só lê. Mas o momento em que todos entram juntos existe:
+  depois de um reinício do servidor.
 
 ## O que mudaria a capacidade, se um dia precisar
 
@@ -236,3 +298,7 @@ pela proporção com o teste local: 200 a 300 de tela aberta hoje, e 1.500 a
   conectado, que hoje vive na memória do processo — dois processos não se
   enxergariam.
 - **Mais portas no coturn**, se a retransmissão encher.
+- **Entrada mais barata** (o limite medido em 15/11): o `hello` fora do laço
+  de eventos (`asyncio.to_thread`), sem a consulta repetida, e o SQLite em
+  WAL com `synchronous=NORMAL` (uma espera de disco por checkpoint, e não
+  por gravação).
