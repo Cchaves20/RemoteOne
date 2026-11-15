@@ -149,8 +149,14 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      // Sem isto a folha para em 9/16 da tela, e com oito tipos de passo o
+      // último ("Energia") ficava cortado embaixo, sem como chegar nele. Com
+      // a rolagem, cabe em qualquer tela; onde sobra espaço, nada muda.
+      isScrollControlled: true,
+      useSafeArea: true,
       builder: (sheet) => SafeArea(
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 8),
@@ -189,6 +195,7 @@ class _AutomationEditorScreenState extends State<AutomationEditorScreen> {
                 onTap: () => Navigator.of(sheet).pop(e.$1),
               ),
           ],
+          ),
         ),
       ),
     );
@@ -1030,8 +1037,13 @@ void _mostrarFalhas(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
+    // Rolável pelo mesmo motivo da lista de tipos de passo: uma automação com
+    // muitos passos falhando passava da altura da folha.
+    isScrollControlled: true,
+    useSafeArea: true,
     builder: (sheet) => SafeArea(
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1056,6 +1068,7 @@ void _mostrarFalhas(
                           color: context.cores.texto3, fontSize: 12)),
             ),
         ],
+        ),
       ),
     ),
   );
