@@ -262,7 +262,7 @@ segundos. ~120 KB por conexão no Caddy. Correção: 2 GB e `GOMEMLIMIT`.
 | Pedidos (soma) | Ligados | Entrada p50 / p95 (pior máquina) | Batida p95 | Erros |
 |---:|---:|---:|---:|---:|
 | 2.000 | 2.000 | 14,7 / 19,5 s | 150 a 650 ms | 0 |
-| 5.000 | ~4.340 | 19,5 / 21,0 s | 770 a 990 ms | ~660 (tempo esgotado na entrada) |
+| 5.000 | 4.274 | 19,5 / 21,0 s | 770 a 990 ms | 726 (tempo esgotado na entrada) |
 | 2.000 (uma máquina seguiu sozinha) | 2.000 | 4,3 / 7,1 s | 165 ms | 0 |
 
 ### O que as rodadas dizem
