@@ -7,7 +7,7 @@ quando o esquema evoluir, migramos para Alembic.
 
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -39,6 +39,33 @@ engine = create_engine(
     settings.database_url, connect_args=_connect_args, future=True, **_estoque
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+if settings.database_url.startswith("sqlite"):
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_em_wal(conexao, _registro) -> None:
+        """WAL e `synchronous=NORMAL` em toda conexão nova.
+
+        No diário padrão, cada gravação espera o disco duas vezes (o diário e o
+        banco). No disco de rede da Oracle isso é lento, e no teste de carga de
+        15/11 a fila de entrada dos computadores passou de 20 s. Com WAL, a
+        gravação vai para o fim do `-wal` e espera o disco só no checkpoint; e
+        quem lê não espera quem grava.
+
+        O que se troca: com `NORMAL`, uma queda de **energia** pode perder as
+        últimas gravações confirmadas, de alguns instantes. Não corrompe o
+        banco, e queda do processo não perde nada.
+
+        O backup (`app.backup`) usa a API de cópia do SQLite, que lê o `-wal`
+        junto: a cópia sai completa. Quem copiar o arquivo `.db` sozinho, à
+        mão, leva um banco sem as gravações mais recentes, por isso o guia de
+        restauração apaga `-wal` e `-shm` ao trocar o arquivo.
+        """
+        cursor = conexao.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
 
 
 class Base(DeclarativeBase):

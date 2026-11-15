@@ -401,14 +401,22 @@ o teste: os dados são idênticos, então não há o que perder.
 
 ```bash
 cd ~/Deskside/deploy 2>/dev/null || cd ~/RemoteOne/deploy
+COPIA=deskside-AAAAMMDD-HHMMSS.db
 sudo docker compose -f docker-compose.lite.yml stop api
+# Cópia cifrada (.db.enc, com DESKSIDE_BACKUP_KEY): abre ao lado, como .db.
+[ -f "backups/$COPIA.enc" ] && sudo docker compose -f docker-compose.lite.yml \
+  run --rm --no-deps api python -m app.backup --abrir "/backups/$COPIA.enc"
 # O banco fica num volume do Docker; o `cp` entra por um contêiner de uma vez só.
-sudo docker run --rm -v deploy_apidata:/data -v ~/Deskside/deploy/backups:/b \
-  alpine cp /b/deskside-AAAAMMDD-HHMMSS.db /data/deskside.db
+# O `-wal` e o `-shm` saem antes: são do banco que está sendo substituído, e o
+# SQLite (em WAL desde 15/11) os aplicaria por cima da cópia.
+sudo docker run --rm -v deploy_apidata:/data -v "$PWD/backups":/b alpine \
+  sh -c "rm -f /data/deskside.db-wal /data/deskside.db-shm && cp /b/$COPIA /data/deskside.db"
+# A versão aberta, sem cifra, não fica no disco: a cifrada continua lá.
+[ -f "backups/$COPIA.enc" ] && sudo rm -f "backups/$COPIA"
 sudo docker compose -f docker-compose.lite.yml start api
 ```
 
-Troque o nome do arquivo pelo da cópia que você quer.
+Troque o nome em `COPIA` pelo da cópia que você quer, **sem** o `.enc`.
 
 Confira **do seu computador**, e não da VM:
 

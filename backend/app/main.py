@@ -321,9 +321,11 @@ def _segredo_do_aparelho(device_id: str) -> str | None:
         return None if pairing.e_resumo(device.agent_secret) else device.agent_secret
 
 
-def _pairing_intro(hello: Hello) -> dict:
-    """Mensagem enviada logo após o welcome: `paired` se já vinculado, senão `pair_code`."""
-    email = _paired_email(hello.device_id)
+def _pairing_intro(hello: Hello, email: str | None) -> dict:
+    """Mensagem enviada logo após o welcome: `paired` se já vinculado, senão `pair_code`.
+
+    `email` é o de `_paired_email`, já consultado por quem chama.
+    """
     if email is not None:
         return Paired(user_email=email).model_dump()
     with SessionLocal() as db:
@@ -340,6 +342,24 @@ def _pairing_intro(hello: Hello) -> dict:
 
 class SegredoRecusado(Exception):
     """O agente não provou ser este computador."""
+
+
+def _entrada_do_agente(hello: Hello) -> tuple[str | None, bool, bool, dict]:
+    """Tudo o que a entrada de um agente pergunta ao banco, numa ida só.
+
+    Devolve `(segredo_a_entregar, autenticado, pareado, intro)`, e levanta
+    `SegredoRecusado` como `_autorizar_agente`.
+
+    Existe para rodar **fora do laço de eventos** (`asyncio.to_thread`). As
+    consultas eram feitas direto no laço, e enquanto o SQLite esperava o disco
+    a API inteira parava: no teste de carga de 15/11, com muitos computadores
+    entrando ao mesmo tempo, a fila de entrada passou de 20 s e as batidas de
+    quem já estava ligado foram de ~150 ms para ~900 ms. O dono também era
+    consultado duas vezes (aqui e de novo no `_pairing_intro`).
+    """
+    segredo, autenticado = _autorizar_agente(hello.device_id, hello.secret)
+    email = _paired_email(hello.device_id)
+    return segredo, autenticado, email is not None, _pairing_intro(hello, email)
 
 
 def _autorizar_agente(device_id: str, apresentado: str | None) -> tuple[str | None, bool]:
@@ -496,14 +516,15 @@ async def agent_ws(websocket: WebSocket) -> None:
         # arma pela culatra: bastaria um hello inválido para derrubar o agente
         # de verdade, mesmo sendo recusado logo em seguida.
         try:
-            segredo_emitido, autenticado = _autorizar_agente(device_id, message.secret)
+            segredo_emitido, autenticado, pareado, intro = await asyncio.to_thread(
+                _entrada_do_agente, message
+            )
         except SegredoRecusado as recusa:
             logger.warning("agente recusado (%s): %s", recusa, device_id)
             await websocket.send_json(Error(message=str(recusa)).model_dump())
             await websocket.close(code=4401)
             return
 
-        pareado = _paired_email(device_id) is not None
         registry.register(message)
         manager.register(device_id, websocket)
         logger.info("agente conectado: %s (%s)", device_id, message.hostname)
@@ -525,7 +546,6 @@ async def agent_ws(websocket: WebSocket) -> None:
         # vencer (ver `ice.precisa_renovar`).
         ice_entregue_em = time.monotonic() if pareado else None
 
-        intro = _pairing_intro(message)
         paired_notified = intro["type"] == "paired"
         await websocket.send_json(intro)
 
