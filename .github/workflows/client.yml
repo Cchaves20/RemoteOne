@@ -24,6 +24,11 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Fixa: a "última estável" mudou sozinha para a 3.50, que marca
+          # `package:flutter/material.dart` como obsoleto e reprovou a análise
+          # em todos os arquivos, sem nada ter mudado no app. Subir de versão
+          # é uma decisão, com a migração junto (material_ui).
+          flutter-version: 3.47.9
           cache: true
 
       - name: Dependências
@@ -52,6 +57,11 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Fixa: a "última estável" mudou sozinha para a 3.50, que marca
+          # `package:flutter/material.dart` como obsoleto e reprovou a análise
+          # em todos os arquivos, sem nada ter mudado no app. Subir de versão
+          # é uma decisão, com a migração junto (material_ui).
+          flutter-version: 3.47.9
           cache: true
 
       - name: Gerar pasta android/ se ainda não versionada

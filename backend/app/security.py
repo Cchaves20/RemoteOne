@@ -128,5 +128,14 @@ def totp_uri(secret: str, email: str) -> str:
 
 
 def verify_totp(secret: str, code: str) -> bool:
-    """Confere um código TOTP (aceita ±1 janela para tolerar relógio defasado)."""
-    return pyotp.TOTP(secret).verify(code.strip(), valid_window=1)
+    """Confere um código TOTP (aceita ±1 janela para tolerar relógio defasado).
+
+    Um segredo vazio ou curto (a chave do cofre perdida, por exemplo) reprova,
+    e não estoura. O `pyotp` 2.10 reprovava; versões mais novas levantam
+    `ValueError` ("Secrets must be at least 80 bits"), o que viraria um erro
+    500 no meio do login em vez de "código inválido".
+    """
+    try:
+        return pyotp.TOTP(secret).verify(code.strip(), valid_window=1)
+    except ValueError:
+        return False
