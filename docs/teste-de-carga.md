@@ -265,12 +265,27 @@ segundos. ~120 KB por conexão no Caddy. Correção: 2 GB e `GOMEMLIMIT`.
 | 5.000 | 4.274 | 19,5 / 21,0 s | 770 a 990 ms | 726 (tempo esgotado na entrada) |
 | 2.000 (uma máquina seguiu sozinha) | 2.000 | 4,3 / 7,1 s | 165 ms | 0 |
 
+**Rodada 6 (quatro geradores, depois da correção abaixo: entrada em thread
+e SQLite em WAL):**
+
+| Pedidos (soma) | Ligados | Entrada p95 (por máquina) | Batida p95 (por máquina) | Erros |
+|---:|---:|---:|---:|---:|
+| 2.000 | 2.000 | 7,6 a 9,8 s | 118 a 182 ms | 0 |
+| 5.000 | **5.000** | 11,5 a 18,9 s | 259 a 340 ms | 0 |
+| 8.000 | **8.000** | 7,4 a 17,0 s | 197 a 332 ms | 0 |
+
+As máquinas do GitHub estavam a 115, 145 e 180 ms da A1; a batida p50 de cada
+uma ficou nesse valor, ou seja, o servidor respondeu quase na hora. Contra a
+rodada 5, nenhuma conexão desistiu (eram 726 em 5.000) e a batida dos já
+ligados caiu de ~900 para ~300 ms durante as entradas. A entrada continua
+lenta (até ~19 s no p95), mas abaixo do prazo do simulador, e o teste não
+achou o limite: parou em 8.000 porque era o último degrau pedido.
+
 ### O que as rodadas dizem
 
-- **Ligados e parados, a A1 segura pelo menos 4.000 computadores** com a
-  batida no tempo da rede. O limite de computadores parados não foi
-  alcançado.
-- **O limite agora é a velocidade de entrada.** Com quatro geradores entrando
+- **Ligados e parados, a A1 segura pelo menos 8.000 computadores** (rodada
+  6) com a batida perto do tempo da rede. O limite não foi alcançado.
+- **O que mais aperta é a velocidade de entrada.** Com quatro geradores entrando
   juntos (~200 por segundo), a fila na API passa de 20 s e conexões novas
   desistem. Com um gerador (~50 por segundo), a entrada fica em 4 a 8 s.
 - **Por quê:** o `hello` do `/ws/agent` (`backend/app/main.py`, `agent_ws`)
@@ -298,7 +313,12 @@ segundos. ~120 KB por conexão no Caddy. Correção: 2 GB e `GOMEMLIMIT`.
   conectado, que hoje vive na memória do processo — dois processos não se
   enxergariam.
 - **Mais portas no coturn**, se a retransmissão encher.
-- **Entrada mais barata** (o limite medido em 15/11): o `hello` fora do laço
-  de eventos (`asyncio.to_thread`), sem a consulta repetida, e o SQLite em
-  WAL com `synchronous=NORMAL` (uma espera de disco por checkpoint, e não
-  por gravação).
+- **Entrada mais barata: feita em 15/11** (`_entrada_do_agente` em
+  `backend/app/main.py`, `_sqlite_em_wal` em `backend/app/db.py`). Medido
+  aqui, com a API presa a um núcleo e 1.500 entrando juntos: p50 de 1,4 s
+  para 0,3 s, p95 de 2,5 s para 0,7 s. Na A1, ver a rodada 6.
+- **A entrada ainda é o próximo limite.** O que sobra nela é o aperto de mão
+  TLS no Caddy e o trabalho da API num núcleo só. Se um dia milhares
+  precisarem voltar juntos depois de um reinício, o próximo passo seria mais
+  de um processo (que exige antes o registro de conectados fora da memória do
+  processo, como dito acima).
