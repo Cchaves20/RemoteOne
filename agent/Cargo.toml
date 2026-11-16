@@ -110,7 +110,7 @@ mslnk = "0.1"
 # `native_adapter_selector`, que deixa escolher a placa de video. Sem ele o
 # `egui-wgpu` pede o adaptador com `force_fallback_adapter: false` cravado no
 # codigo, e o renderizador por software do Windows nunca e considerado.
-eframe = { version = "0.36", default-features = false, features = ["wgpu", "default_fonts"] }
+eframe = { version = "0.37", default-features = false, features = ["wgpu", "default_fonts"] }
 tray-icon = "0.26"
 # O codificador H.264 da placa de vídeo, pelo Media Foundation (ver
 # `h264_placa.rs`), e a digitação de emoji (ver `injector.rs`). A mesma versão
@@ -137,7 +137,7 @@ enigo = "0.6"
 xcap = "0.9"
 # A mesma janela e o mesmo ícone do Windows (ver `gui.rs`). No Mac o `wgpu`
 # desenha pelo Metal, que todo Mac tem.
-eframe = { version = "0.36", default-features = false, features = ["wgpu", "default_fonts"] }
+eframe = { version = "0.37", default-features = false, features = ["wgpu", "default_fonts"] }
 tray-icon = "0.26"
 # Trazer a janela para a frente a partir de outra thread: a AppKit só aceita
 # ser chamada na principal, e é pela fila dela que o pedido chega lá.
