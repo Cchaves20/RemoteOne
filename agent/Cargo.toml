@@ -122,6 +122,8 @@ windows = { version = "0.62", features = [
     "Win32_System_Ole",
     "Win32_System_Variant",
     "Win32_UI_Input_KeyboardAndMouse",
+    # SHGetKnownFolderPath: onde fica a área de trabalho (ver setup.rs).
+    "Win32_UI_Shell",
 ] }
 
 # O Mac. As mesmas bibliotecas do Windows onde elas cobrem os dois sistemas

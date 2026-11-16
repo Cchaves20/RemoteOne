@@ -629,30 +629,32 @@ mod imp {
     ///
     /// `%USERPROFILE%\\Desktop` erra quando a pasta foi redirecionada para o
     /// OneDrive - e isso é o padrão em máquina nova com conta Microsoft, que é
-    /// justamente o caso do usuário comum. O caminho certo está no registro,
-    /// em Shell Folders, que o Windows mantém atualizado.
+    /// justamente o caso do usuário comum. Quem sabe o caminho certo é o
+    /// próprio Windows, pela pasta conhecida (`FOLDERID_Desktop`).
+    ///
+    /// Antes este caminho vinha da saída do `reg query`, lida como UTF-8. Só
+    /// que o `reg` escreve na página de código do console, e no Windows em
+    /// português a pasta do OneDrive se chama "Área de Trabalho": o "Á" virava
+    /// "�", e o atalho ia para uma pasta "�rea de Trabalho" criada ao lado,
+    /// que ninguém vê. A instalação dizia "Atalho na área de trabalho" e o
+    /// atalho não estava lá.
     fn desktop_dir() -> Result<PathBuf, String> {
-        let saida = Command::new("reg")
-            .sem_janela()
-            .args([
-                "query",
-                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
-                "/v",
-                "Desktop",
-            ])
-            .output()
-            .map_err(|e| format!("não consegui perguntar onde fica a área de trabalho: {e}"))?;
-        let texto = String::from_utf8_lossy(&saida.stdout);
-        // A saída é "    Desktop    REG_SZ    C:\Users\eu\OneDrive\Desktop".
-        let caminho = texto
-            .lines()
-            .find_map(|l| l.split("REG_SZ").nth(1))
-            .map(str::trim)
-            .filter(|s| !s.is_empty());
-        match caminho {
-            Some(c) => Ok(PathBuf::from(c)),
-            // Sem registro, o palpite antigo ainda é melhor que desistir.
-            None => Ok(pasta("USERPROFILE")?.join("Desktop")),
+        use windows::Win32::System::Com::CoTaskMemFree;
+        use windows::Win32::UI::Shell::{FOLDERID_Desktop, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
+
+        // SAFETY: a função devolve um texto alocado pelo sistema, terminado
+        // em zero, que é lido uma vez e devolvido com `CoTaskMemFree`.
+        let lido = unsafe {
+            SHGetKnownFolderPath(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None).map(|p| {
+                let texto = p.to_string();
+                CoTaskMemFree(Some(p.0 as *const _));
+                texto
+            })
+        };
+        match lido {
+            Ok(Ok(c)) if !c.is_empty() => Ok(PathBuf::from(c)),
+            // Sem resposta, o palpite antigo ainda é melhor que desistir.
+            _ => Ok(pasta("USERPROFILE")?.join("Desktop")),
         }
     }
 
