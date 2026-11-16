@@ -52,7 +52,9 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          # 21, como no Codemagic: o lint do Android do Flutter 3.50 usa
+          # uma API do Java 21 e quebrava o build de release com o 17.
+          java-version: "21"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -70,10 +72,14 @@ jobs:
             flutter create --org com.deskside --project-name deskside_client --platforms=android .
           fi
 
-      - name: Build APK (debug)
-        run: flutter build apk --debug
+      # Release, e não debug: só o release roda o `lintVital`, que foi onde o
+      # build do Codemagic quebrou com o Flutter 3.50 e o Java 17. O debug
+      # passava e escondia o problema. Sem chave de loja aqui: o modelo do
+      # `flutter create` assina o release com a chave de depuração.
+      - name: Build APK (release)
+        run: flutter build apk --release --no-shrink
 
       - uses: actions/upload-artifact@v4
         with:
-          name: deskside-android-debug
-          path: client/build/app/outputs/flutter-apk/app-debug.apk
+          name: deskside-android-release
+          path: client/build/app/outputs/flutter-apk/app-release.apk

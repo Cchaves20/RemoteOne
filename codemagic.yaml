@@ -16,7 +16,8 @@ workflows:
     max_build_duration: 90
     working_directory: client
     environment:
-      flutter: stable
+      # Fixo, e o mesmo do pubspec e do CI (ver .github/workflows/client.yml).
+      flutter: 3.50.0
       xcode: latest
     triggering:
       events:
@@ -139,7 +140,8 @@ workflows:
     max_build_duration: 90
     working_directory: client
     environment:
-      flutter: stable
+      # Fixo, e o mesmo do pubspec e do CI (ver .github/workflows/client.yml).
+      flutter: 3.50.0
       xcode: latest
       # A assinatura é feita à mão, num passo, e não pelo bloco `ios_signing`
       # daqui. O motivo é concreto: com `ios_signing`, o Codemagic busca
@@ -392,9 +394,12 @@ workflows:
     max_build_duration: 60
     working_directory: client
     environment:
-      flutter: stable
-      # O Flutter estável exige JDK 17; a imagem traz várias versões.
-      java: 17
+      flutter: 3.50.0
+      # JDK 21: o lint do Android que vem com o Flutter 3.50 usa
+      # `List.removeLast()`, que só existe do Java 21 em diante. Com o 17, o
+      # `assembleRelease` morria no `lintVitalAnalyzeRelease` do
+      # in_app_purchase_android com NoSuchMethodError (16/11/2026).
+      java: 21
     triggering:
       events:
         - push
@@ -752,8 +757,8 @@ workflows:
     max_build_duration: 60
     working_directory: client
     environment:
-      flutter: stable
-      java: 17
+      flutter: 3.50.0
+      java: 21
       android_signing:
         - deskside_envio
     scripts:
