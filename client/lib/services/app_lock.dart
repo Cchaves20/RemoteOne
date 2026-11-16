@@ -2,11 +2,17 @@ import 'package:local_auth/local_auth.dart';
 
 /// Autenticação biométrica (Face ID / Touch ID) para desbloquear o app.
 ///
-/// Design **fail-open**: se a biometria não estiver disponível, não houver
-/// nada cadastrado, ou ocorrer um erro, consideramos desbloqueado — assim um
-/// problema no dispositivo nunca deixa o usuário trancado do lado de fora.
+/// Só libera sem verificar quando o aparelho não tem como verificar: sem
+/// biometria, sem nada cadastrado, sem senha. Assim um aparelho sem Face ID
+/// nunca deixa o dono trancado do lado de fora.
+///
+/// Rosto não reconhecido, "Cancelar", tempo esgotado ou qualquer outro erro
+/// mantêm o app trancado; o botão "Desbloquear" tenta de novo. No local_auth 3
+/// esses casos chegam como [LocalAuthException], não mais como `false`.
 class AppLock {
-  final LocalAuthentication _auth = LocalAuthentication();
+  AppLock({LocalAuthentication? auth}) : _auth = auth ?? LocalAuthentication();
+
+  final LocalAuthentication _auth;
 
   Future<bool> authenticate() async {
     try {
@@ -20,8 +26,20 @@ class AppLock {
         // a verificação continua de onde parou em vez de falhar.
         persistAcrossBackgrounding: true,
       );
+    } on LocalAuthException catch (e) {
+      return aparelhoNaoTemComoVerificar(e.code);
     } catch (_) {
-      return true; // qualquer erro → não tranca o usuário
+      return false;
     }
   }
 }
+
+/// Os únicos erros que liberam o app: o aparelho não tem com o que verificar.
+bool aparelhoNaoTemComoVerificar(LocalAuthExceptionCode codigo) =>
+    switch (codigo) {
+      LocalAuthExceptionCode.noBiometricHardware ||
+      LocalAuthExceptionCode.noBiometricsEnrolled ||
+      LocalAuthExceptionCode.noCredentialsSet =>
+        true,
+      _ => false,
+    };
