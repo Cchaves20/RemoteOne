@@ -260,7 +260,7 @@ async def webhook(loja: regras.Loja, request: Request, db: Session = Depends(get
     tamanho = request.headers.get("content-length")
     if tamanho and tamanho.isdigit() and int(tamanho) > MAX_CORPO_WEBHOOK:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="corpo grande demais para uma notificação de loja",
         )
 
@@ -270,7 +270,7 @@ async def webhook(loja: regras.Loja, request: Request, db: Session = Depends(get
         # Conferir de novo depois de ler é o que fecha o buraco de verdade — o
         # `if` acima só evita ler à toa quando o remetente é honesto.
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="corpo grande demais para uma notificação de loja",
         )
 

@@ -8,6 +8,10 @@ accepted = [
     # Fontes embutidas pelo egui (a janela do agente): redistribuição livre,
     # com o texto da licença junto - que é o que este arquivo faz.
     "OFL-1.1", "Ubuntu-font-1.0",
+    # O descompressor do codec da Cisco (crate `bzip2`, via libbz2-rs-sys):
+    # licença no estilo BSD, que pede o aviso junto - que é o que este
+    # arquivo faz.
+    "bzip2-1.0.6",
 ]
 targets = [
     "x86_64-pc-windows-msvc",
