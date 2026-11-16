@@ -629,30 +629,32 @@ mod imp {
     ///
     /// `%USERPROFILE%\\Desktop` erra quando a pasta foi redirecionada para o
     /// OneDrive - e isso é o padrão em máquina nova com conta Microsoft, que é
-    /// justamente o caso do usuário comum. O caminho certo está no registro,
-    /// em Shell Folders, que o Windows mantém atualizado.
+    /// justamente o caso do usuário comum. Quem sabe o caminho certo é o
+    /// próprio Windows, pela pasta conhecida (`FOLDERID_Desktop`).
+    ///
+    /// Antes este caminho vinha da saída do `reg query`, lida como UTF-8. Só
+    /// que o `reg` escreve na página de código do console, e no Windows em
+    /// português a pasta do OneDrive se chama "Área de Trabalho": o "Á" virava
+    /// "�", e o atalho ia para uma pasta "�rea de Trabalho" criada ao lado,
+    /// que ninguém vê. A instalação dizia "Atalho na área de trabalho" e o
+    /// atalho não estava lá.
     fn desktop_dir() -> Result<PathBuf, String> {
-        let saida = Command::new("reg")
-            .sem_janela()
-            .args([
-                "query",
-                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
-                "/v",
-                "Desktop",
-            ])
-            .output()
-            .map_err(|e| format!("não consegui perguntar onde fica a área de trabalho: {e}"))?;
-        let texto = String::from_utf8_lossy(&saida.stdout);
-        // A saída é "    Desktop    REG_SZ    C:\Users\eu\OneDrive\Desktop".
-        let caminho = texto
-            .lines()
-            .find_map(|l| l.split("REG_SZ").nth(1))
-            .map(str::trim)
-            .filter(|s| !s.is_empty());
-        match caminho {
-            Some(c) => Ok(PathBuf::from(c)),
-            // Sem registro, o palpite antigo ainda é melhor que desistir.
-            None => Ok(pasta("USERPROFILE")?.join("Desktop")),
+        use windows::Win32::System::Com::CoTaskMemFree;
+        use windows::Win32::UI::Shell::{FOLDERID_Desktop, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
+
+        // SAFETY: a função devolve um texto alocado pelo sistema, terminado
+        // em zero, que é lido uma vez e devolvido com `CoTaskMemFree`.
+        let lido = unsafe {
+            SHGetKnownFolderPath(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None).map(|p| {
+                let texto = p.to_string();
+                CoTaskMemFree(Some(p.0 as *const _));
+                texto
+            })
+        };
+        match lido {
+            Ok(Ok(c)) if !c.is_empty() => Ok(PathBuf::from(c)),
+            // Sem resposta, o palpite antigo ainda é melhor que desistir.
+            _ => Ok(pasta("USERPROFILE")?.join("Desktop")),
         }
     }
 
@@ -678,6 +680,8 @@ mod imp {
         let mut link =
             mslnk::ShellLink::new(exe).map_err(|e| format!("não montei o atalho: {e}"))?;
         link.set_name(Some(format!("{APP_NAME} - controle remoto")));
+        // Quem clica no atalho quer ver o programa (ver `Cmd::Run` em main.rs).
+        link.set_arguments(Some("abrir".into()));
         // O ícone vem do próprio executável (embutido pelo build.rs).
         link.create_lnk(destino)
             .map_err(|e| format!("não gravei {}: {e}", destino.display()))
@@ -685,6 +689,47 @@ mod imp {
 
     fn current_exe() -> Result<PathBuf, String> {
         std::env::current_exe().map_err(|e| format!("não descobri o próprio caminho: {e}"))
+    }
+
+    /// Copia insistindo por alguns segundos.
+    ///
+    /// O agente que `stop_running` acabou de encerrar ainda segura o `.exe`
+    /// até terminar de sair, e um antivírus examinando o arquivo também. A
+    /// cópia nesse instante falha com "seção mapeada pelo usuário aberta"
+    /// (erro 1224) - visto no Dell -, e esperar um pouco resolve.
+    fn copiar_com_paciencia(de: &Path, para: &Path) -> std::io::Result<u64> {
+        let mut tentativas = 0;
+        loop {
+            match std::fs::copy(de, para) {
+                Ok(n) => return Ok(n),
+                Err(e) if tentativas >= 40 => return Err(e),
+                Err(_) => {
+                    tentativas += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+            }
+        }
+    }
+
+    /// Regrava os atalhos que já existem, para o jeito de agora.
+    ///
+    /// A atualização automática troca só o executável, e os atalhos ficariam
+    /// os da instalação: sem o `abrir`, clicar neles com o agente parado o
+    /// subiria escondido. Só os que existem - um atalho que a pessoa apagou
+    /// não volta - e só na cópia instalada.
+    pub fn renovar_atalhos() {
+        let (Ok(exe), Ok(lugares)) = (current_exe(), lugares()) else {
+            return;
+        };
+        let plano = plan(&exe, &lugares);
+        if plano.copy {
+            return;
+        }
+        for destino in [&plano.start_menu, &plano.desktop] {
+            if destino.exists() {
+                let _ = criar_atalho(&plano.exe, destino);
+            }
+        }
     }
 
     /// Encerra qualquer agente que já esteja rodando, **menos este processo**.
@@ -825,7 +870,7 @@ mod imp {
         std::fs::create_dir_all(&plano.dir)
             .map_err(|e| format!("não consegui criar {}: {e}", plano.dir.display()))?;
         if plano.copy {
-            std::fs::copy(&exe_atual, &plano.exe)
+            copiar_com_paciencia(&exe_atual, &plano.exe)
                 .map_err(|e| format!("não consegui copiar para {}: {e}", plano.exe.display()))?;
             // Tira a marca de "veio da internet" que o `CopyFile` trouxe junto.
             // Ver `caminho_da_marca`. Falha ignorada de propósito: o caso comum é
@@ -1125,6 +1170,9 @@ mod imp {
         uninstall()
     }
 
+    /// Só o Windows tem atalhos `.lnk` para regravar.
+    pub fn renovar_atalhos() {}
+
     pub fn status() -> Status {
         let cfg = crate::load_config();
         let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
@@ -1327,6 +1375,9 @@ mod imp {
         uninstall()
     }
 
+    /// Só o Windows tem atalhos `.lnk` para regravar.
+    pub fn renovar_atalhos() {}
+
     pub fn status() -> Status {
         let cfg = crate::load_config();
         let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
@@ -1353,7 +1404,7 @@ mod imp {
     }
 }
 
-pub use imp::{install, status, uninstall, uninstall_completo};
+pub use imp::{install, renovar_atalhos, status, uninstall, uninstall_completo};
 
 #[cfg(test)]
 mod tests {

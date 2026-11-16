@@ -68,8 +68,13 @@ const HEARTBEAT_SECS: u64 = 10;
 enum Cmd {
     /// `atualizado`: quem chamou foi o ajudante da atualização, que espera a
     /// prova de que esta versão conecta (ver `atualizacao.rs`).
+    ///
+    /// `abrir`: veio de um atalho (Menu Iniciar, área de trabalho), e quem
+    /// clicou quer ver a janela. Sem isto o agente subia escondido, como no
+    /// login, e clicar no atalho com ele parado parecia não fazer nada.
     Run {
         atualizado: bool,
+        abrir: bool,
     },
     /// Este processo **é** o ajudante: troca o executável do agente que
     /// acabou de sair (`pid`) e confere se o novo funciona.
@@ -88,7 +93,10 @@ enum Cmd {
 
 fn parse_args(args: &[String]) -> Cmd {
     match args.first().map(String::as_str) {
-        None => Cmd::Run { atualizado: false },
+        None => Cmd::Run {
+            atualizado: false,
+            abrir: false,
+        },
         Some("install") => {
             // `install --backend URL` ou `install URL`: as duas formas, porque
             // quem digita isto uma vez na vida não vai lembrar da flag.
@@ -107,10 +115,18 @@ fn parse_args(args: &[String]) -> Cmd {
         Some("uninstall") | Some("remove") => Cmd::Uninstall,
         Some("status") => Cmd::Status,
         Some("licencas") | Some("licenses") => Cmd::Licencas,
-        Some("run") => Cmd::Run { atualizado: false },
-        Some(a) if a == deskside_agent::atualizacao::ARG_ATUALIZADO => {
-            Cmd::Run { atualizado: true }
-        }
+        Some("run") => Cmd::Run {
+            atualizado: false,
+            abrir: false,
+        },
+        Some("abrir") => Cmd::Run {
+            atualizado: false,
+            abrir: true,
+        },
+        Some(a) if a == deskside_agent::atualizacao::ARG_ATUALIZADO => Cmd::Run {
+            atualizado: true,
+            abrir: false,
+        },
         Some(a) if a == deskside_agent::atualizacao::ARG_APLICAR => {
             match args.get(1).and_then(|p| p.parse().ok()) {
                 Some(pid) => Cmd::AplicarAtualizacao { pid },
@@ -126,6 +142,9 @@ Deskside Agent — controla este computador pelo celular.
 
   deskside-agent                    roda o agente (o que acontece ao dar
                                      dois cliques no executável)
+  deskside-agent abrir              roda o agente mostrando a janela (o
+                                     que os atalhos fazem); se ele já está
+                                     rodando, só mostra a janela
   deskside-agent install [URL]      instala: passa a subir junto com o
                                      sistema (no Windows, oculto e em
                                      \"Aplicativos instalados\"; no Linux,
@@ -350,7 +369,12 @@ fn main() {
             deskside_agent::atualizacao::executar_ajudante(pid);
             return;
         }
-        Cmd::Run { atualizado } => atualizado,
+        Cmd::Run { atualizado, abrir } => {
+            if abrir {
+                deskside_agent::gui::abrir_ao_iniciar();
+            }
+            atualizado
+        }
     };
 
     // A **primeira** linha do diário, antes de qualquer outra coisa. Ela é a
@@ -392,6 +416,12 @@ fn main() {
         }
         deskside_agent::instance::Start::Primeira(g) => g,
     };
+
+    // A atualização automática troca só o executável: os atalhos antigos,
+    // sem o pedido de abrir a janela, ficariam para sempre. Numa thread
+    // porque perguntar ao Windows onde fica a área de trabalho não pode
+    // atrasar a conexão.
+    std::thread::spawn(setup::renovar_atalhos);
 
     // Antes de ler qualquer configuração: quem vem da versão RemoteOne tem
     // tudo na pasta antiga, incluindo o `device_id`. Sem isto o computador
@@ -576,11 +606,28 @@ mod tests {
         // comum: quem instalou não digita nada nunca mais.
         assert!(matches!(
             parse_args(&args(&[])),
-            Cmd::Run { atualizado: false }
+            Cmd::Run {
+                atualizado: false,
+                abrir: false
+            }
         ));
         assert!(matches!(
             parse_args(&args(&["run"])),
-            Cmd::Run { atualizado: false }
+            Cmd::Run {
+                atualizado: false,
+                abrir: false
+            }
+        ));
+    }
+
+    #[test]
+    fn o_atalho_pede_a_janela() {
+        assert!(matches!(
+            parse_args(&args(&["abrir"])),
+            Cmd::Run {
+                atualizado: false,
+                abrir: true
+            }
         ));
     }
 
@@ -592,7 +639,10 @@ mod tests {
         ));
         assert!(matches!(
             parse_args(&args(&["--atualizado"])),
-            Cmd::Run { atualizado: true }
+            Cmd::Run {
+                atualizado: true,
+                abrir: false
+            }
         ));
         // Sem PID de verdade não há o que esperar, e trocar o executável
         // debaixo de um agente em uso seria pior que não atualizar.
