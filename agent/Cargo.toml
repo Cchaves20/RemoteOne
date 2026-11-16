@@ -19,7 +19,7 @@ tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 native-tls = "0.2"
 futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
-gethostname = "0.5"
+gethostname = "1.1"
 # Resumo do identificador da máquina (ver `identity::resumo_da_maquina`). Já
 # vinha na árvore por baixo de outra dependência; aqui só passa a ser usado
 # direto. Rust puro, sem C: não pesa no build do ARM64.
