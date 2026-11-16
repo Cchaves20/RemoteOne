@@ -61,16 +61,18 @@ pub struct SystemSnapshot {
 /// anterior — que com o app pesquisando a cada 2 s dá uma média mais honesta que
 /// uma amostra instantânea.
 pub struct Monitor {
-    system: sysinfo::System,
-    disks: sysinfo::Disks,
+    // Em `Option` desde o sysinfo 0.40, em que criar cada um pode falhar: o
+    // que não abrir vira zero/vazio no painel, em vez de derrubar o agente.
+    system: Option<sysinfo::System>,
+    disks: Option<sysinfo::Disks>,
     /// Quando a CPU foi lida pela última vez, para respeitar o intervalo mínimo.
     last_cpu: std::time::Instant,
-    networks: sysinfo::Networks,
+    networks: Option<sysinfo::Networks>,
     /// Quando a rede foi lida pela última vez. O `sysinfo` entrega **bytes
     /// desde a última leitura**, não uma taxa; sem o intervalo não dá para
     /// dividir, e o número viraria "quanto passou desde sabe-se lá quando".
     last_net: std::time::Instant,
-    components: sysinfo::Components,
+    components: Option<sysinfo::Components>,
     /// GPU e temperatura no Windows, medidas fora do caminho crítico.
     sonda: sonda::Sonda,
 }
@@ -83,17 +85,25 @@ impl Monitor {
     /// monitor ao conectar e o usuário abre o painel bem depois disso.
     pub fn new() -> Self {
         let refresh = sysinfo::RefreshKind::nothing()
-            .with_cpu(sysinfo::CpuRefreshKind::nothing().with_cpu_usage())
+            .with_cpu(sysinfo::CpuRefreshKind::nothing().with_usage())
             .with_memory(sysinfo::MemoryRefreshKind::nothing().with_ram());
-        let mut system = sysinfo::System::new_with_specifics(refresh);
-        system.refresh_cpu_usage();
+        let mut system = aberto(
+            "CPU e memória",
+            sysinfo::System::new_with_specifics(refresh),
+        );
+        if let Some(system) = system.as_mut() {
+            system.refresh_cpu_usage();
+        }
         Self {
             system,
-            disks: sysinfo::Disks::new_with_refreshed_list(),
+            disks: aberto("discos", sysinfo::Disks::new_with_refreshed_list()),
             last_cpu: std::time::Instant::now(),
-            networks: sysinfo::Networks::new_with_refreshed_list(),
+            networks: aberto("rede", sysinfo::Networks::new_with_refreshed_list()),
             last_net: std::time::Instant::now(),
-            components: sysinfo::Components::new_with_refreshed_list(),
+            components: aberto(
+                "temperatura",
+                sysinfo::Components::new_with_refreshed_list(),
+            ),
             sonda: sonda::Sonda::new(),
         }
     }
@@ -108,14 +118,18 @@ impl Monitor {
         if elapsed < sysinfo::MINIMUM_CPU_UPDATE_INTERVAL {
             std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL - elapsed);
         }
-        self.system.refresh_cpu_usage();
-        self.system.refresh_memory();
+        if let Some(system) = self.system.as_mut() {
+            system.refresh_cpu_usage();
+            system.refresh_memory();
+        }
         self.last_cpu = std::time::Instant::now();
         // `false`: mantém na lista os discos que sumiram (pendrive removido) em
         // vez de recriar a enumeração, que é a parte cara.
-        self.disks.refresh(false);
+        if let Some(disks) = self.disks.as_mut() {
+            disks.refresh(false);
+        }
 
-        let (disk_name, disk_total, disk_used) = match main_disk(&self.disks) {
+        let (disk_name, disk_total, disk_used) = match self.disks.as_ref().and_then(main_disk) {
             Some(disk) => (
                 disk_label(disk),
                 disk.total_space(),
@@ -129,14 +143,21 @@ impl Monitor {
         // pelos 2 s que o app costuma usar) é o que mantém o número honesto
         // quando o pedido atrasa.
         let intervalo = self.last_net.elapsed();
-        self.networks.refresh(false);
         self.last_net = std::time::Instant::now();
-        let (rx, tx) = taxa_de_rede(&self.networks, intervalo);
+        let (rx, tx) = match self.networks.as_mut() {
+            Some(networks) => {
+                networks.refresh(false);
+                taxa_de_rede(networks, intervalo)
+            }
+            None => (0, 0),
+        };
 
         // Temperatura pelo caminho multiplataforma. No Linux funciona; no
         // Windows costuma vir vazia, e aí quem responde é a sonda.
-        self.components.refresh(false);
-        let temperatura = temperatura_mais_alta(&self.components);
+        let temperatura = self.components.as_mut().and_then(|components| {
+            components.refresh(false);
+            temperatura_mais_alta(components)
+        });
 
         let extras = self.sonda.ler();
         let energia = crate::awake::power_source();
@@ -144,13 +165,16 @@ impl Monitor {
         SystemSnapshot {
             // Uma casa decimal: o resto é ruído de amostragem, e a diferença
             // entre 37,4% e 37,42% não muda decisão nenhuma.
-            cpu_percent: (self.system.global_cpu_usage() * 10.0).round() / 10.0,
-            memory_used: self.system.used_memory(),
-            memory_total: self.system.total_memory(),
+            cpu_percent: self
+                .system
+                .as_ref()
+                .map_or(0.0, |s| (s.global_cpu_usage() * 10.0).round() / 10.0),
+            memory_used: self.system.as_ref().map_or(0, |s| s.used_memory()),
+            memory_total: self.system.as_ref().map_or(0, |s| s.total_memory()),
             disk_used,
             disk_total,
             disk_name,
-            uptime_seconds: sysinfo::System::uptime(),
+            uptime_seconds: sysinfo::System::uptime().unwrap_or(0),
             gpu_percent: extras.gpu_percent,
             gpu_name: extras.gpu_name,
             temperature_celsius: temperatura.or(extras.temperature_celsius),
@@ -175,6 +199,14 @@ impl Monitor {
 ///
 /// Intervalo zero devolve zero, e não infinito: acontece quando duas leituras
 /// caem no mesmo instante do relógio.
+/// O que o `sysinfo` abriu, ou `None` com o motivo no diário (uma vez, ao
+/// criar o monitor).
+fn aberto<T>(oque: &str, resultado: Result<T, sysinfo::Error>) -> Option<T> {
+    resultado
+        .map_err(|e| crate::diario(&format!("Métricas: sem {oque} ({e})")))
+        .ok()
+}
+
 fn taxa_de_rede(networks: &sysinfo::Networks, intervalo: std::time::Duration) -> (u64, u64) {
     let segundos = intervalo.as_secs_f64();
     if segundos <= 0.0 {
@@ -227,12 +259,10 @@ impl Default for Monitor {
 fn main_disk(disks: &sysinfo::Disks) -> Option<&sysinfo::Disk> {
     let system_mount = if cfg!(windows) { "C:\\" } else { "/" };
     disks
-        .list()
         .iter()
         .find(|d| d.mount_point().to_string_lossy() == system_mount)
         .or_else(|| {
             disks
-                .list()
                 .iter()
                 .filter(|d| !d.is_removable())
                 .max_by_key(|d| d.total_space())
@@ -540,7 +570,7 @@ mod tests {
     fn intervalo_zero_nao_vira_taxa_infinita() {
         // Duas leituras no mesmo instante do relógio: dividir por zero daria
         // infinito, que no JSON vira `null` e some da tela sem explicação.
-        let redes = sysinfo::Networks::new_with_refreshed_list();
+        let redes = sysinfo::Networks::new_with_refreshed_list().expect("rede");
         assert_eq!(
             taxa_de_rede(&redes, std::time::Duration::ZERO),
             (0, 0),
@@ -553,7 +583,7 @@ mod tests {
         // Não dá para forçar tráfego num teste, mas dá para garantir que a
         // divisão pelo intervalo acontece: com o dobro do tempo, a taxa não
         // pode ser maior.
-        let redes = sysinfo::Networks::new_with_refreshed_list();
+        let redes = sysinfo::Networks::new_with_refreshed_list().expect("rede");
         let um = taxa_de_rede(&redes, std::time::Duration::from_secs(1));
         let dois = taxa_de_rede(&redes, std::time::Duration::from_secs(2));
         assert!(dois.0 <= um.0 && dois.1 <= um.1);
@@ -564,7 +594,7 @@ mod tests {
         // Aqui não há como saber se a máquina tem sensor; o que se garante é
         // que, havendo, o número não é absurdo - um sensor quebrado que
         // responde 0 °C ou 200 °C não pode chegar à tela.
-        let comps = sysinfo::Components::new_with_refreshed_list();
+        let comps = sysinfo::Components::new_with_refreshed_list().expect("temperatura");
         if let Some(t) = temperatura_mais_alta(&comps) {
             assert!(t > 1.0 && t < 150.0, "temperatura implausível: {t}");
         }
@@ -611,8 +641,8 @@ mod tests {
     #[test]
     fn rotulo_do_disco_perde_a_barra_final() {
         // `C:\` é o ponto de montagem que o Windows reporta; na tela cabe `C:`.
-        let disks = sysinfo::Disks::new_with_refreshed_list();
-        for disk in disks.list() {
+        let disks = sysinfo::Disks::new_with_refreshed_list().expect("discos");
+        for disk in disks.iter() {
             let label = disk_label(disk);
             assert!(!label.ends_with('\\'), "rótulo com barra: {label}");
         }

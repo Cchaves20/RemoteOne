@@ -15,7 +15,10 @@ class AppLock {
       if (!supported) return true; // sem biometria → não bloqueia
       return await _auth.authenticate(
         localizedReason: 'Desbloqueie o Deskside',
-        options: const AuthenticationOptions(stickyAuth: true),
+        // O antigo `stickyAuth` do local_auth 2: se o app for para segundo
+        // plano no meio (uma ligação, o Face ID pedindo a senha do aparelho),
+        // a verificação continua de onde parou em vez de falhar.
+        persistAcrossBackgrounding: true,
       );
     } catch (_) {
       return true; // qualquer erro → não tranca o usuário
