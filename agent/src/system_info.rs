@@ -114,9 +114,9 @@ impl Monitor {
     /// mínimo que o `sysinfo` exige para a CPU. Sem ele o valor viria 0%, que o
     /// usuário leria como "meu PC está livre": pior que esperar.
     pub fn snapshot(&mut self) -> SystemSnapshot {
-        let elapsed = self.last_cpu.elapsed();
-        if elapsed < sysinfo::MINIMUM_CPU_UPDATE_INTERVAL {
-            std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL - elapsed);
+        let espera = espera_da_cpu(self.last_cpu.elapsed());
+        if !espera.is_zero() {
+            std::thread::sleep(espera);
         }
         if let Some(system) = self.system.as_mut() {
             system.refresh_cpu_usage();
@@ -199,6 +199,12 @@ impl Monitor {
 ///
 /// Intervalo zero devolve zero, e não infinito: acontece quando duas leituras
 /// caem no mesmo instante do relógio.
+/// Quanto falta esperar antes de ler a CPU, dado o tempo desde a última
+/// leitura: zero se já passou o intervalo mínimo do `sysinfo`.
+fn espera_da_cpu(desde_a_ultima: std::time::Duration) -> std::time::Duration {
+    sysinfo::MINIMUM_CPU_UPDATE_INTERVAL.saturating_sub(desde_a_ultima)
+}
+
 /// O que o `sysinfo` abriu, ou `None` com o motivo no diário (uma vez, ao
 /// criar o monitor).
 fn aberto<T>(oque: &str, resultado: Result<T, sysinfo::Error>) -> Option<T> {
@@ -476,15 +482,15 @@ mod tests {
     fn leitura_espacada_nao_espera_o_intervalo_minimo() {
         // O painel do app atualiza a cada 2 s. Se cada leitura pagasse os 200 ms
         // de intervalo mínimo, seria 10% do tempo do agente parado à toa.
-        let mut monitor = Monitor::new();
-        std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-        let started = std::time::Instant::now();
-        monitor.snapshot();
-        assert!(
-            started.elapsed() < sysinfo::MINIMUM_CPU_UPDATE_INTERVAL,
-            "a leitura demorou {:?}",
-            started.elapsed()
-        );
+        //
+        // Testa a conta, e não o relógio: medir a leitura inteira incluía
+        // discos, rede e sensores, e na CI do Linux isso passou de 800 ms três
+        // vezes sem a espera da CPU ter nada a ver com isso.
+        let minimo = sysinfo::MINIMUM_CPU_UPDATE_INTERVAL;
+        assert_eq!(espera_da_cpu(minimo), std::time::Duration::ZERO);
+        assert_eq!(espera_da_cpu(minimo * 10), std::time::Duration::ZERO);
+        assert_eq!(espera_da_cpu(minimo / 2), minimo - minimo / 2);
+        assert_eq!(espera_da_cpu(std::time::Duration::ZERO), minimo);
     }
 
     #[test]
