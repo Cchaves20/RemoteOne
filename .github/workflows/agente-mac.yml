@@ -31,7 +31,7 @@ jobs:
       TEM_CERTIFICADO: ${{ secrets.MAC_CERTIFICADO_P12 != '' }}
       TEM_CHAVE_DA_APPLE: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
