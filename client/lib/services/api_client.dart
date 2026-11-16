@@ -1,0 +1,1397 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
+
+import '../models/automation.dart';
+import '../models/cadastro.dart';
+import '../models/conta.dart';
+import '../models/control_profile.dart';
+import '../models/device.dart';
+import '../models/foreground_app.dart';
+import '../models/keep_awake.dart';
+import '../models/presentation.dart';
+import '../models/remote_app.dart';
+import '../models/remote_file.dart';
+import '../models/sessao.dart';
+import '../models/system_stats.dart';
+import '../models/widget_config.dart';
+import '../models/window_zone.dart';
+import '../config.dart';
+import '../l10n/strings.dart';
+import 'erros.dart';
+import 'token_store.dart';
+
+/// Erro de API com o código HTTP e uma mensagem amigável.
+class ApiException implements Exception {
+  ApiException(this.statusCode, this.message);
+  final int statusCode;
+  final String message;
+
+  /// O servidor pede o segundo fator (a conta tem a verificação ligada e o
+  /// código não veio). Ver `widgets/segundo_fator.dart`.
+  bool get pedeSegundoFator =>
+      statusCode == 401 && message == 'two_factor_required';
+
+  /// O código do segundo fator veio, e não vale.
+  bool get segundoFatorErrado =>
+      statusCode == 401 && message == 'two_factor_invalid';
+
+  @override
+  String toString() => message;
+}
+
+/// Cliente REST do backend do Deskside.
+///
+/// Os tokens são guardados em disco (armazenamento seguro) para manter o login
+/// entre aberturas do app; nos testes, um `TokenStore` em memória é injetado.
+///
+/// **Toda requisição passa pelo `_ClienteComSessao`**, no fim deste arquivo, que
+/// trata o 401 de token. A explicação está lá: é onde moram as duas situações
+/// que se parecem e pedem respostas opostas — token vencido (renova e refaz) e
+/// sessão encerrada (desloga).
+class ApiClient {
+  ApiClient({required this.baseUrl, http.Client? httpClient, TokenStore? tokenStore})
+      : _store = tokenStore ?? SecureTokenStore() {
+    _http = _ClienteComSessao(httpClient ?? http.Client(), this);
+  }
+
+  /// URL base do backend (ex.: http://192.168.0.10:8000). Editável para
+  /// apontar o celular ao computador na mesma rede.
+  String baseUrl;
+  late final http.Client _http;
+  final TokenStore _store;
+
+  /// Avisado quando a sessão acabou de verdade e os tokens foram descartados.
+  /// O `AppState` usa isto para limpar a conta e voltar à tela de login.
+  void Function()? aoEncerrarSessao;
+
+  /// De onde sai o idioma das mensagens de erro.
+  ///
+  /// Uma função e não um valor: o idioma pode mudar durante a sessão, e um
+  /// `Strings` guardado aqui ficaria no idioma de quando o app abriu.
+  ///
+  /// Nulo nos testes que não olham a mensagem — aí valem os textos em
+  /// português, que é o idioma do código.
+  Strings Function()? textos;
+
+  Strings get _t => textos?.call() ?? const Strings(AppLanguage.ptBr);
+
+  String? _accessToken;
+  String? _refreshToken;
+
+  /// A renovação em curso, se houver.
+  ///
+  /// Uma só, compartilhada: a tela de controle dispara várias requisições quase
+  /// ao mesmo tempo, e sem isto um token vencido produziria uma renovação por
+  /// requisição — várias trocas simultâneas do mesmo refresh token, disputando
+  /// quem grava por último.
+  Future<bool>? _renovacao;
+
+  /// Tempo máximo de espera por resposta do servidor (evita travas longas
+  /// quando o backend está inacessível).
+  static const _timeout = Duration(seconds: 15);
+
+  bool get isAuthenticated => _accessToken != null;
+
+  /// Como este aparelho aparece em "Aparelhos conectados" (ver
+  /// `services/aparelho.dart`). Vai em todo pedido, e o servidor o lê ao abrir
+  /// a sessão — no login, no cadastro e na recuperação de senha.
+  String aparelho = '';
+
+  Map<String, String> get _jsonHeaders => {
+        'Content-Type': 'application/json',
+        // Codificado como em URL: cabeçalho HTTP só leva ASCII, e o nome tem
+        // "·" e pode ter acento.
+        if (aparelho.isNotEmpty)
+          'X-Deskside-Aparelho': Uri.encodeComponent(aparelho),
+      };
+
+  Map<String, String> get _authHeaders => {
+        ..._jsonHeaders,
+        if (_accessToken != null) 'Authorization': 'Bearer $_accessToken',
+      };
+
+  Uri _uri(String path) => Uri.parse('$baseUrl$path');
+
+  /// Primeira etapa do cadastro: valida o formulário e manda o código.
+  ///
+  /// **Não cria conta.** Devolve para onde o código foi (normalizado pelo
+  /// servidor — telefone em E.164, e-mail em minúsculas), que é o que a tela de
+  /// verificação manda de volta. Usar o valor do servidor, e não o que foi
+  /// digitado, evita que o app repita a normalização e erre de outro jeito.
+  Future<SignupPending> signupStart({
+    required String firstName,
+    required String lastName,
+    required DateTime birthDate,
+    String? email,
+    String? phone,
+    String? country,
+    required String password,
+    required String passwordConfirm,
+  }) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/signup/start'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'first_name': firstName,
+            'last_name': lastName,
+            // Só a data, sem hora: `toIso8601String()` traria um horário que o
+            // servidor recusaria, e um fuso que faria a data mudar de dia.
+            'birth_date':
+                birthDate.toIso8601String().split('T').first,
+            if (email != null) 'email': email,
+            if (phone != null) 'phone': phone,
+            if (country != null) 'country': country,
+            'password': password,
+            'password_confirm': passwordConfirm,
+            // A caixa de aceite é obrigatória para chegar aqui: a versão
+            // aceita é a que este app mostra (ver `config.versaoDosTermos`).
+            'terms_version': versaoDosTermos,
+          }),
+        )
+        .timeout(_timeout);
+    return SignupPending.fromJson(
+        _decode(res, expected: 201) as Map<String, dynamic>);
+  }
+
+  /// Segunda etapa: confere o código e cria a conta, guardando os tokens.
+  Future<void> signupVerify(String destination, String code) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/signup/verify'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'destination': destination, 'code': code}),
+        )
+        .timeout(_timeout);
+    _storeTokens(_decode(res, expected: 201));
+    await _persist();
+  }
+
+  Future<SignupPending> signupResend(String destination) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/signup/resend'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'destination': destination}),
+        )
+        .timeout(_timeout);
+    return SignupPending.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Pede o código de recuperação de senha.
+  ///
+  /// **Responde igual exista a conta ou não** — é o servidor que garante isso,
+  /// e o app não tem como (nem deve) saber a diferença: descobrir quais
+  /// endereços têm conta é justamente o que a resposta uniforme impede.
+  Future<SignupPending> forgotPassword({
+    String? email,
+    String? phone,
+    String? country,
+  }) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/password/forgot'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            if (email != null) 'email': email,
+            if (phone != null) 'phone': phone,
+            if (country != null) 'country': country,
+          }),
+        )
+        .timeout(_timeout);
+    return SignupPending.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Troca a senha com o código recebido e **já abre a sessão**.
+  ///
+  /// Com a verificação em duas etapas ligada, o código do e-mail não basta: o
+  /// servidor responde [ApiException.pedeSegundoFator] e o pedido continua de
+  /// pé até chegar o [totpCode].
+  Future<void> resetPassword(
+    String destination,
+    String code,
+    String password,
+    String passwordConfirm, {
+    String? totpCode,
+  }) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/password/reset'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'destination': destination,
+            'code': code,
+            'password': password,
+            'password_confirm': passwordConfirm,
+            if (totpCode != null) 'totp_code': totpCode,
+          }),
+        )
+        .timeout(_timeout);
+    _storeTokens(_decode(res));
+    await _persist();
+  }
+
+  /// Entra com e-mail **ou** telefone. O telefone vai com o país junto:
+  /// `987654321` não identifica ninguém sem saber de onde é.
+  Future<void> login(
+    String password, {
+    String? email,
+    String? phone,
+    String? country,
+    String? totpCode,
+  }) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/login'),
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            if (email != null) 'email': email,
+            if (phone != null) 'phone': phone,
+            if (country != null) 'country': country,
+            'password': password,
+            if (totpCode != null && totpCode.isNotEmpty) 'totp_code': totpCode,
+          }),
+        )
+        .timeout(_timeout);
+    _storeTokens(_decode(res));
+    await _persist();
+  }
+
+  // --- verificação em duas etapas (2FA) --------------------------------------
+
+  /// Inicia a configuração do 2FA: retorna o segredo e o URI (para QR Code).
+  Future<Map<String, String>> setupTwoFactor() async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/2fa/setup'),
+      headers: _authHeaders,
+    );
+    final body = _decode(res) as Map<String, dynamic>;
+    return {
+      'secret': body['secret'] as String,
+      'otpauth_uri': body['otpauth_uri'] as String,
+    };
+  }
+
+  /// Confirma a ativação do 2FA com um código do autenticador e devolve os
+  /// códigos de recuperação.
+  ///
+  /// Lista vazia quando o servidor ainda não os gera (responde 204, como
+  /// antes): o app novo pode chegar ao celular antes de o servidor ser
+  /// atualizado, e a ativação não pode quebrar por isso.
+  Future<List<String>> enableTwoFactor(String code) async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/2fa/enable'),
+      headers: _authHeaders,
+      body: jsonEncode({'code': code, 'recovery_codes': true}),
+    );
+    if (res.statusCode == 204) return const [];
+    return _codigos(_decode(res));
+  }
+
+  /// Gera códigos de recuperação novos; os anteriores param de valer.
+  Future<List<String>> regenerateRecoveryCodes(String totpCode) async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/2fa/recovery-codes'),
+      headers: _authHeaders,
+      body: jsonEncode({'totp_code': totpCode}),
+    );
+    return _codigos(_decode(res));
+  }
+
+  List<String> _codigos(dynamic body) =>
+      ((body as Map<String, dynamic>)['codes'] as List<dynamic>)
+          .cast<String>()
+          .toList();
+
+  /// Desativa o 2FA (exige a senha atual e o código).
+  Future<void> disableTwoFactor(String password, {String? totpCode}) async {
+    final res = await _http.post(
+      _uri('/api/v1/auth/2fa/disable'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        'password': password,
+        if (totpCode != null) 'totp_code': totpCode,
+      }),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Traz a janela de um aplicativo para frente (id = PID).
+  ///
+  /// O Windows pode recusar — só um processo que já está em primeiro plano tem
+  /// direito de dar foco a outro. Quando recusa, a janela pisca na barra de
+  /// tarefas em vez de subir, e o agente registra o motivo. Daqui não dá para
+  /// distinguir os dois casos: a resposta é 204 nos dois, porque o pedido
+  /// chegou.
+  Future<void> focusApp(String deviceId, String id) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/apps/focus'),
+      headers: _authHeaders,
+      body: jsonEncode({'id': id}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// A conta de quem está logado.
+  ///
+  /// Substituiu o antigo `fetchTwoFactorEnabled`, que lia o `/me` inteiro para
+  /// devolver um `bool`: agora a tela de conta também precisa saber se a conta
+  /// se identifica por e-mail ou por telefone, e uma segunda chamada à mesma
+  /// rota para pegar outro campo dela seria duas viagens pelo mesmo dado.
+  Future<Conta> fetchAccount() async {
+    final res = await _http.get(_uri('/api/v1/auth/me'), headers: _authHeaders);
+    return Conta.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Restaura a sessão a partir dos tokens salvos. Renova o access token com o
+  /// refresh; retorna false (e limpa) se não houver sessão válida.
+  Future<bool> restore() async {
+    final (access, refresh) = await _store.load();
+    if (refresh == null) return false;
+    _accessToken = access;
+    _refreshToken = refresh;
+    try {
+      await refreshAccess();
+      return true;
+    } on ApiException catch (e) {
+      // Só desloga se o servidor rejeitou o refresh (token inválido/expirado).
+      // Erros de rede não devem forçar novo login: mantém a sessão e o app
+      // revalida quando o servidor voltar a responder.
+      if (e.statusCode == 401) {
+        await logout();
+        return false;
+      }
+      return true;
+    } catch (_) {
+      // Falha de rede (servidor fora do ar, Wi-Fi caiu): segue autenticado.
+      return true;
+    }
+  }
+
+  /// Troca o refresh token por um novo access token **e um refresh novo**.
+  ///
+  /// O servidor invalida o refresh usado assim que entrega o novo, e um usado
+  /// de novo fora de uma folga curta derruba a sessão (é como ele percebe uma
+  /// cópia). Por isso o refresh é relido do armazenamento antes: o widget da
+  /// tela inicial renova num processo próprio, com o mesmo armazenamento, e o
+  /// que este objeto tem na memória pode já ter sido trocado por ele.
+  Future<void> refreshAccess() async {
+    final (_, guardado) = await _store.load();
+    if (guardado != null) _refreshToken = guardado;
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/refresh'),
+          headers: _jsonHeaders,
+          body: jsonEncode({'refresh_token': _refreshToken, 'rotacao': true}),
+        )
+        .timeout(_timeout);
+    final body = _decode(res) as Map<String, dynamic>;
+    _accessToken = body['access_token'] as String?;
+    // Ausente num servidor de antes das sessões: segue com o mesmo.
+    _refreshToken = body['refresh_token'] as String? ?? _refreshToken;
+    await _persist();
+  }
+
+  /// Sai: encerra a sessão deste aparelho no servidor e esquece os tokens.
+  ///
+  /// O servidor primeiro, e sem deixar uma falha de rede impedir a saída: o
+  /// pior caso é a sessão ficar na lista até vencer, o que é melhor do que
+  /// prender a pessoa dentro do app por causa do Wi-Fi.
+  Future<void> sair() async {
+    if (_accessToken != null) {
+      try {
+        await _http
+            .post(_uri('/api/v1/auth/logout'), headers: _authHeaders)
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {}
+    }
+    await logout();
+  }
+
+  /// Os aparelhos com a conta aberta.
+  Future<List<Sessao>> listSessions() async {
+    final res = await _http
+        .get(_uri('/api/v1/auth/sessions'), headers: _authHeaders)
+        .timeout(_timeout);
+    return (_decode(res) as List<dynamic>)
+        .map((e) => Sessao.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Encerra a sessão de outro aparelho.
+  Future<void> endSession(String id) async {
+    final res = await _http
+        .delete(_uri('/api/v1/auth/sessions/$id'), headers: _authHeaders)
+        .timeout(_timeout);
+    if (res.statusCode != 204) throw _error(res);
+  }
+
+  /// Encerra todas as outras sessões. Guarda os tokens novos que vêm na
+  /// resposta: o servidor troca a chave da conta, e os deste aparelho também
+  /// mudam.
+  Future<void> endOtherSessions() async {
+    final res = await _http
+        .post(_uri('/api/v1/auth/sessions/revoke-others'), headers: _authHeaders)
+        .timeout(_timeout);
+    _storeTokens(_decode(res));
+    await _persist();
+  }
+
+  /// Esquece os tokens deste aparelho, sem falar com o servidor.
+  Future<void> logout() async {
+    _accessToken = null;
+    _refreshToken = null;
+    await _store.clear();
+  }
+
+  /// Troca o access token vencido por um novo. Devolve se conseguiu.
+  ///
+  /// Distingue três desfechos, e a distinção é o recurso inteiro:
+  ///
+  /// - **Deu certo** — o token estava só vencido (15 minutos), o que acontece o
+  ///   tempo todo. Quem chamou refaz a requisição e a pessoa não vê nada.
+  /// - **O servidor recusou o refresh (401)** — a sessão acabou de verdade:
+  ///   alguém trocou a senha noutro aparelho, ou a conta foi excluída. Aí sim
+  ///   desloga.
+  /// - **Não deu para perguntar** (rede fora, servidor caído) — **não** desloga.
+  ///   Deslogar por Wi-Fi instável faria a pessoa digitar a senha de novo por
+  ///   causa de um elevador.
+  Future<bool> _renovarSessao() =>
+      _renovacao ??= _renovar().whenComplete(() => _renovacao = null);
+
+  Future<bool> _renovar() async {
+    if (_refreshToken == null) {
+      await _encerrarSessao();
+      return false;
+    }
+    try {
+      await refreshAccess();
+      return true;
+    } on ApiException catch (e) {
+      if (e.statusCode == 401) await _encerrarSessao();
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _encerrarSessao() async {
+    await logout();
+    aoEncerrarSessao?.call();
+  }
+
+  // --- conta -----------------------------------------------------------------
+
+  /// Primeira etapa da troca de contato: manda o código para o contato **novo**.
+  ///
+  /// **Nada muda na conta ainda** — quem fecha o app aqui continua com o
+  /// contato de antes. Substituiu os antigos `updateEmail`/`updatePhone`, que
+  /// trocavam na hora: bastava a senha para apontar a conta a um endereço que
+  /// não é seu, e de quebra ocupar aquele endereço para o dono real.
+  ///
+  /// Um método só para e-mail e telefone, como no servidor: são o mesmo fluxo,
+  /// e dois caminhos quase iguais seriam dois lugares para esquecer a mesma
+  /// conferência.
+  Future<SignupPending> contactChangeStart({
+    required String currentPassword,
+    String? email,
+    String? phone,
+    String? country,
+    String? totpCode,
+  }) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/me/contact/start'),
+          headers: _authHeaders,
+          body: jsonEncode({
+            'current_password': currentPassword,
+            if (email != null) 'email': email,
+            if (phone != null) 'phone': phone,
+            if (country != null) 'country': country,
+            if (totpCode != null) 'totp_code': totpCode,
+          }),
+        )
+        .timeout(_timeout);
+    return SignupPending.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Outro código para a mesma troca. Sem corpo: qual troca é sai do token.
+  Future<SignupPending> contactChangeResend() async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/me/contact/resend'),
+          headers: _authHeaders,
+        )
+        .timeout(_timeout);
+    return SignupPending.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Segunda etapa: confere o código e **aí sim** troca o contato.
+  Future<Conta> contactChangeVerify(String code) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/me/contact/verify'),
+          headers: _authHeaders,
+          body: jsonEncode({'code': code}),
+        )
+        .timeout(_timeout);
+    return Conta.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Troca a senha da conta (exige a senha atual).
+  ///
+  /// Guarda o par de tokens que vem na resposta, e isso não é detalhe: trocar a
+  /// senha **cancela no servidor todos os tokens da conta**, para derrubar
+  /// sessões abertas em outros aparelhos. O que este aparelho tem em mãos morre
+  /// junto, e sem trocar pelo par novo o app seria deslogado na requisição
+  /// seguinte — a pessoa trocaria a senha e cairia na tela de login sem
+  /// entender por quê.
+  Future<void> updatePassword(String currentPassword, String newPassword,
+      {String? totpCode}) async {
+    final res = await _http.patch(
+      _uri('/api/v1/auth/me/password'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        'current_password': currentPassword,
+        'new_password': newPassword,
+        if (totpCode != null) 'totp_code': totpCode,
+      }),
+    );
+    _storeTokens(_decode(res));
+    await _persist();
+  }
+
+  /// Manda o comprovante da loja para o servidor conferir.
+  ///
+  /// **O app nunca decide se pagou.** Ele entrega um comprovante opaco; quem
+  /// diz o que aquilo vale é o servidor, que confere a assinatura da Apple.
+  /// Um `POST {"pago": true}` seria trivial de forjar a partir do aparelho de
+  /// qualquer pessoa, e um servidor que acreditasse nisso não teria plano
+  /// pago — teria plano opcional.
+  ///
+  /// Devolve o plano resultante. O 402 que o servidor usa para "comprovante
+  /// não vale" chega aqui como [ApiException], com a explicação dele.
+  Future<Map<String, dynamic>> validarCompra({
+    required String loja,
+    required String comprovante,
+  }) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/assinatura/validar'),
+          headers: _authHeaders,
+          body: jsonEncode({'loja': loja, 'comprovante': comprovante}),
+        )
+        .timeout(_timeout);
+    return _decode(res) as Map<String, dynamic>;
+  }
+
+  /// O estado da assinatura desta conta, como o servidor o vê.
+  Future<Map<String, dynamic>> minhaAssinatura() async {
+    final res = await _http
+        .get(_uri('/api/v1/assinatura'), headers: _authHeaders)
+        .timeout(_timeout);
+    return _decode(res) as Map<String, dynamic>;
+  }
+
+  /// Registra o aceite da versão dos termos em vigor.
+  /// Define (`"MM-DD"`) ou apaga (`null`) o dia e o mês do aniversário.
+  Future<void> setBirthday(String? mesDia) async {
+    final res = await _http
+        .put(
+          _uri('/api/v1/auth/me/birthday'),
+          headers: _authHeaders,
+          body: jsonEncode({'aniversario': mesDia}),
+        )
+        .timeout(_timeout);
+    if (res.statusCode != 204) throw _error(res);
+  }
+
+  Future<void> acceptTerms() async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/auth/me/terms'),
+          headers: _authHeaders,
+          body: jsonEncode({'version': versaoDosTermos}),
+        )
+        .timeout(_timeout);
+    if (res.statusCode != 204) throw _error(res);
+  }
+
+  /// Tudo o que o servidor guarda sobre a conta, em JSON (LGPD, art. 18).
+  ///
+  /// Devolve o texto como veio, sem decodificar: ele vai direto para um
+  /// arquivo que a pessoa guarda ou compartilha.
+  Future<String> exportMyData() async {
+    final res = await _http
+        .get(_uri('/api/v1/auth/me/export'), headers: _authHeaders)
+        .timeout(_timeout);
+    if (res.statusCode != 200) throw _error(res);
+    return utf8.decode(res.bodyBytes);
+  }
+
+  /// Exclui a conta (exige a senha e, se ligada, a verificação em duas
+  /// etapas). Ao concluir, limpa a sessão local.
+  Future<void> deleteAccount(String password, {String? totpCode}) async {
+    final res = await _http.delete(
+      _uri('/api/v1/auth/me'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        'password': password,
+        if (totpCode != null) 'totp_code': totpCode,
+      }),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+    await logout();
+  }
+
+  Future<void> _persist() => _store.save(_accessToken, _refreshToken);
+
+  Future<List<Device>> listDevices() async {
+    final res = await _http.get(_uri('/api/v1/devices'), headers: _authHeaders);
+    final data = _decode(res) as List<dynamic>;
+    return data
+        .map((e) => Device.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Device> claim(String code) async {
+    final res = await _http.post(
+      _uri('/api/v1/pairing/claim'),
+      headers: _authHeaders,
+      body: jsonEncode({'code': code}),
+    );
+    return Device.fromJson(_decode(res, expected: 201) as Map<String, dynamic>);
+  }
+
+  /// Renomeia (apelido) um computador da conta.
+  Future<Device> renameDevice(String deviceId, String name) async {
+    final res = await _http.patch(
+      _uri('/api/v1/devices/$deviceId'),
+      headers: _authHeaders,
+      body: jsonEncode({'name': name}),
+    );
+    return Device.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Desvincula um computador da conta.
+  Future<void> removeDevice(String deviceId) async {
+    final res = await _http.delete(
+      _uri('/api/v1/devices/$deviceId'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  // --- aplicativos do computador ---------------------------------------------
+
+  /// Lista os aplicativos: `kind` = 'installed' (instalados) ou 'running'
+  /// (abertos agora). Pode demorar alguns segundos — o computador é consultado
+  /// na hora.
+  Future<List<RemoteApp>> listApps(String deviceId, {String kind = 'installed'}) async {
+    final res = await _http
+        .get(
+          _uri('/api/v1/devices/$deviceId/apps?kind=$kind'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(seconds: 25));
+    final data = _decode(res) as List<dynamic>;
+    return data
+        .map((e) => RemoteApp.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Abre um aplicativo no computador (id = caminho do atalho).
+  Future<void> launchApp(String deviceId, String id) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/apps/launch'),
+      headers: _authHeaders,
+      body: jsonEncode({'id': id}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Encerra um aplicativo em execução (id = PID).
+  Future<void> closeApp(String deviceId, String id) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/apps/close'),
+      headers: _authHeaders,
+      body: jsonEncode({'id': id}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  // --- métricas e mídia -------------------------------------------------------
+
+  /// Mede CPU, memória e disco do computador. O agente responde na hora.
+  Future<SystemStats> systemStats(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/system'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return SystemStats.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Qual programa está em primeiro plano no computador, com o ícone dele.
+  ///
+  /// `null` quando não há nenhum em foco — resposta normal, não erro.
+  Future<ForegroundApp?> foregroundApp(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/foreground'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return ForegroundApp.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Se o computador está sendo mantido pronto para ser alcançado.
+  ///
+  /// Pergunta ao agente a cada vez em vez de guardar: o estado depende de o
+  /// notebook estar ou não na tomada, o que muda sem passar pelo servidor.
+  Future<KeepAwakeState> keepAwake(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/keep-awake'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return KeepAwakeState.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Como está o modo apresentação naquele computador.
+  ///
+  /// Perguntado a cada vez, como o "manter pronto": a detecção automática liga
+  /// e desliga o modo sozinha a cada três segundos, e um valor guardado aqui
+  /// estaria errado justamente quando alguém abre a tela para conferir.
+  Future<PresentationState> presentation(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/presentation'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return PresentationState.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Mexe no modo apresentação: a escolha, o automático, ou os dois.
+  ///
+  /// Os dois são opcionais e **é para mandar só o que mudou**. O botão da barra
+  /// de perfis manda `on`; a área de perfis manda `auto`. Mandar os dois
+  /// sempre faria um lado sobrescrever, com um valor lido há dez minutos, a
+  /// escolha que o outro acabou de fazer.
+  Future<void> setPresentation(String deviceId, {bool? on, bool? auto}) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/presentation'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        if (on != null) 'on': on,
+        if (auto != null) 'auto': auto,
+      }),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Liga ou desliga o "manter pronto". O agente grava a escolha em disco.
+  Future<void> setKeepAwake(String deviceId, bool enabled) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/keep-awake'),
+      headers: _authHeaders,
+      body: jsonEncode({'enabled': enabled}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// O que está na área de transferência do computador: o texto e os
+  /// **arquivos copiados** (que no Windows são caminhos, não bytes).
+  Future<RemoteClipboard> clipboard(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/clipboard'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return RemoteClipboard.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Os perfis que o usuário criou e a ordem escolhida para a barra.
+  ///
+  /// Ficam no servidor, e não no aparelho: a mesma conta é usada em mais de um
+  /// aparelho, e o app instalado por sideload é reinstalado com frequência.
+  Future<({List<ControlProfile> profiles, List<String> order})> profiles() async {
+    final res = await _http
+        .get(_uri('/api/v1/profiles'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    final json = _decode(res) as Map<String, dynamic>;
+    return (
+      profiles: ((json['profiles'] as List?) ?? [])
+          .map((e) => ControlProfile.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      order: ((json['order'] as List?) ?? []).map((e) => e as String).toList(),
+    );
+  }
+
+  Future<ControlProfile> createProfile(ControlProfile profile) async {
+    final res = await _http.post(
+      _uri('/api/v1/profiles'),
+      headers: _authHeaders,
+      body: jsonEncode(profile.toJson()),
+    );
+    return ControlProfile.fromJson(
+        _decode(res, expected: 201) as Map<String, dynamic>);
+  }
+
+  Future<ControlProfile> updateProfile(ControlProfile profile) async {
+    final res = await _http.put(
+      _uri('/api/v1/profiles/${profile.id}'),
+      headers: _authHeaders,
+      body: jsonEncode(profile.toJson()),
+    );
+    return ControlProfile.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteProfile(String id) async {
+    final res = await _http.delete(
+      _uri('/api/v1/profiles/$id'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode != 204) throw _error(res);
+  }
+
+  /// Guarda a ordem da barra. A lista vai inteira, de fábrica e criados
+  /// juntos: a barra é uma só.
+  Future<void> setProfileOrder(List<String> ids) async {
+    final res = await _http.put(
+      _uri('/api/v1/profiles/order'),
+      headers: _authHeaders,
+      body: jsonEncode({'ids': ids}),
+    );
+    if (res.statusCode != 204) throw _error(res);
+  }
+
+  /// As automações da conta.
+  Future<List<Automation>> automations() async {
+    final res = await _http
+        .get(_uri('/api/v1/automations'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    final json = _decode(res) as Map<String, dynamic>;
+    return ((json['automations'] as List?) ?? [])
+        .map((e) => Automation.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Automation> createAutomation(Automation a) async {
+    final res = await _http.post(
+      _uri('/api/v1/automations'),
+      headers: _authHeaders,
+      body: jsonEncode(a.toJson()),
+    );
+    return Automation.fromJson(_decode(res, expected: 201) as Map<String, dynamic>);
+  }
+
+  Future<Automation> updateAutomation(Automation a) async {
+    final res = await _http.put(
+      _uri('/api/v1/automations/${a.id}'),
+      headers: _authHeaders,
+      body: jsonEncode(a.toJson()),
+    );
+    return Automation.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteAutomation(String id) async {
+    final res = await _http.delete(
+      _uri('/api/v1/automations/$id'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode != 204) throw _error(res);
+  }
+
+  /// Roda a automação e devolve o que aconteceu com cada passo.
+  ///
+  /// A espera é longa de propósito: a sequência inteira roda **no computador**,
+  /// numa mensagem só, e pode incluir esperas entre os passos. É esse desenho
+  /// que faz a automação sobreviver ao iOS suspender o app assim que a tela
+  /// apaga — se o telefone conduzisse passo a passo, bloquear o aparelho pararia
+  /// a rotina no meio.
+  ///
+  /// `deviceId` só é usado quando a automação não fixou um computador.
+  Future<List<StepResult>> runAutomation(String id, {String? deviceId}) async {
+    final onde = (deviceId == null || deviceId.isEmpty)
+        ? ''
+        : '?device_id=${Uri.encodeQueryComponent(deviceId)}';
+    final res = await _http
+        .post(_uri('/api/v1/automations/$id/run$onde'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 160));
+    final json = _decode(res) as Map<String, dynamic>;
+    return ((json['results'] as List?) ?? [])
+        .map((e) => StepResult.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// As telas do computador, e qual delas está sendo capturada.
+  Future<RemoteMonitors> monitors(String deviceId) async {
+    final res = await _http
+        .get(_uri('/api/v1/devices/$deviceId/monitors'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return RemoteMonitors.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Escolhe qual tela capturar. `null` volta ao monitor principal.
+  Future<void> setMonitor(String deviceId, int? monitor) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/monitors'),
+      headers: _authHeaders,
+      body: jsonEncode({'monitor': monitor}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// O widget do celular, pronto para desenhar. Ver `models/widget_config.dart`.
+  Future<ConfigDoWidget> widget() async {
+    final res = await _http
+        .get(_uri('/api/v1/widget'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 10));
+    return ConfigDoWidget.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Guarda a escolha da tela de widgets e devolve o widget resolvido.
+  Future<ConfigDoWidget> salvarWidget(ConfigDoWidget config) async {
+    final res = await _http
+        .put(
+          _uri('/api/v1/widget'),
+          headers: _authHeaders,
+          body: jsonEncode(config.toJson()),
+        )
+        .timeout(const Duration(seconds: 10));
+    return ConfigDoWidget.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Coloca um texto na área de transferência do computador.
+  Future<void> setClipboard(String deviceId, String text) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/clipboard'),
+      headers: _authHeaders,
+      body: jsonEncode({'text': text}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Coloca uma imagem (PNG ou JPEG) na área de transferência do computador.
+  ///
+  /// Lança `ApiException(400)` com o motivo quando o computador não consegue
+  /// ler a imagem, e 413 quando ela passa do teto do servidor.
+  Future<void> setClipboardImage(String deviceId, Uint8List imagem) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/devices/$deviceId/clipboard/image'),
+          headers: {
+            ..._authHeaders,
+            'Content-Type': 'application/octet-stream',
+          },
+          body: imagem,
+        )
+        // Mais que os 30 s que o servidor espera pelo computador, somados
+        // ao tempo de subir alguns megabytes pelo 4G.
+        .timeout(const Duration(seconds: 90));
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Liga ou desliga o aviso automático de cópia nova no computador.
+  Future<void> setClipboardSync(String deviceId, bool enabled) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/clipboard/sync'),
+      headers: _authHeaders,
+      body: jsonEncode({'enabled': enabled}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Servidores ICE para negociar o vídeo direto (STUN e, quando o servidor
+  /// tem, TURN com credencial temporária).
+  Future<List<Map<String, dynamic>>> iceServers() async {
+    final res = await _http
+        .get(_uri('/api/v1/ice-servers'), headers: _authHeaders)
+        .timeout(const Duration(seconds: 8));
+    final body = _decode(res) as Map<String, dynamic>;
+    return (body['ice_servers'] as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  /// Liga ou desliga o som do computador no telefone. O som viaja pela mesma
+  /// conexão direta que leva a tela, numa faixa Opus.
+  Future<void> setAudio(String deviceId, bool enabled, {double gain = 1}) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/audio'),
+      headers: _authHeaders,
+      body: jsonEncode({'enabled': enabled, 'gain': gain}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Aciona uma tecla de mídia: `play_pause`, `next`, `previous`, `volume_up`,
+  /// `volume_down` ou `mute`.
+  Future<void> mediaKey(String deviceId, String action) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/media'),
+      headers: _authHeaders,
+      body: jsonEncode({'action': action}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Abre vários programas de uma vez e devolve o resultado de cada um.
+  ///
+  /// Uma chamada, e não uma por programa, por causa do iOS: quem aperta o botão
+  /// e bloqueia a tela teria a lista interrompida no meio, com o primeiro
+  /// programa aberto e o resto não. O computador recebe a lista inteira e o
+  /// telefone pode sair da frente no instante seguinte.
+  ///
+  /// A resposta vem na mesma ordem do pedido, com o identificador de cada um —
+  /// é o que permite dizer *qual* não abriu.
+  ///
+  /// `zones` é **paralelo** a `apps`, e a escolha é deliberada: um agente que
+  /// ainda não atualizou não conhece o campo, ignora e abre os programas como
+  /// sempre. A degradação certa — "abriu sem posicionar" é exatamente o
+  /// comportamento anterior. Vai só quando alguém escolheu alguma zona.
+  Future<List<LaunchResult>> launchMany(
+    String deviceId,
+    List<String> apps, {
+    List<WindowZone?>? zones,
+  }) async {
+    final temZona = zones != null && zones.any((z) => z != null);
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/apps/launch-many'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        'apps': apps,
+        if (temZona) 'zones': [for (final z in zones) z?.toJson()],
+      }),
+    );
+    if (res.statusCode != 200) {
+      throw _error(res);
+    }
+    final corpo = jsonDecode(res.body) as Map<String, dynamic>;
+    return ((corpo['results'] as List?) ?? [])
+        .map((e) => LaunchResult.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Ajusta o brilho da tela do computador e devolve o nível resultante.
+  ///
+  /// `delta` é um passo relativo (+10, −10) e `level` um valor absoluto; manda-se
+  /// um ou outro, nunca os dois. O passo é somado **no computador**: fazer o
+  /// telefone ler, somar e escrever custaria duas idas e voltas por toque, e
+  /// dois toques rápidos se atropelariam — os dois leriam o mesmo valor antigo e
+  /// o segundo desfaria o primeiro.
+  ///
+  /// Lança `ApiException(409)` com o motivo quando o computador não permite
+  /// (monitor externo, por exemplo). Isso é resposta, não falha de rede: o
+  /// motivo é a única informação útil que existe aqui.
+  Future<int> setBrightness(String deviceId, {int? level, int? delta}) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/brightness'),
+      headers: _authHeaders,
+      body: jsonEncode(level != null ? {'level': level} : {'delta': delta}),
+    );
+    if (res.statusCode != 200) {
+      throw _error(res);
+    }
+    return (jsonDecode(res.body) as Map<String, dynamic>)['level'] as int;
+  }
+
+  // --- arquivos ---------------------------------------------------------------
+
+  /// Lista uma pasta do computador. Caminho vazio = a pasta do usuário.
+  Future<RemoteListing> listFiles(
+    String deviceId, {
+    String path = '',
+    int offset = 0,
+  }) async {
+    // `offset` só quando é a página seguinte: a primeira fica no endereço de
+    // sempre, que é o que um servidor antigo entende.
+    final pagina = offset > 0 ? '&offset=$offset' : '';
+    final res = await _http
+        .get(
+          _uri('/api/v1/devices/$deviceId/files'
+              '?path=${Uri.encodeQueryComponent(path)}$pagina'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(seconds: 30));
+    return RemoteListing.fromJson(_decode(res) as Map<String, dynamic>);
+  }
+
+  /// Baixa um arquivo do computador.
+  ///
+  /// O tempo limite é largo porque quem manda é o tamanho do arquivo, não a
+  /// pressa de quem espera.
+  Future<Uint8List> downloadFile(String deviceId, String path) async {
+    final res = await _http
+        .get(
+          _uri('/api/v1/devices/$deviceId/files/download'
+              '?path=${Uri.encodeQueryComponent(path)}'),
+          headers: _authHeaders,
+        )
+        .timeout(const Duration(minutes: 10));
+    if (res.statusCode != 200) {
+      throw _error(res);
+    }
+    return res.bodyBytes;
+  }
+
+  /// Envia um arquivo ao computador. Devolve onde ele foi salvo.
+  Future<String> uploadFile(
+    String deviceId,
+    String name,
+    Uint8List bytes,
+  ) async {
+    final res = await _http
+        .post(
+          _uri('/api/v1/devices/$deviceId/files/upload'
+              '?name=${Uri.encodeQueryComponent(name)}'),
+          headers: {
+            ..._authHeaders,
+            'Content-Type': 'application/octet-stream',
+          },
+          body: bytes,
+        )
+        .timeout(const Duration(minutes: 10));
+    final corpo = _decode(res) as Map<String, dynamic>;
+    return corpo['path'] as String? ?? '';
+  }
+
+  /// Envia um comando de energia (shutdown/restart/suspend) ao computador.
+  Future<void> powerDevice(String deviceId, String action) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/power'),
+      headers: _authHeaders,
+      body: jsonEncode({'action': action}),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Envia uma ação de entrada (mouse/teclado) ao computador pareado.
+  Future<void> sendInput(String deviceId, Map<String, dynamic> action) async {
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/input'),
+      headers: _authHeaders,
+      body: jsonEncode(action),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Pede ao computador para começar a transmitir a tela. `fps`, `quality` e
+  /// `maxWidth` ajustam desempenho/qualidade (o backend limita à faixa aceita).
+  Future<void> startScreen(
+    String deviceId, {
+    int? fps,
+    int? quality,
+    int? maxWidth,
+  }) async {
+    final body = <String, dynamic>{};
+    if (fps != null) body['fps'] = fps;
+    if (quality != null) body['quality'] = quality;
+    if (maxWidth != null) body['max_width'] = maxWidth;
+    final res = await _http.post(
+      _uri('/api/v1/devices/$deviceId/screen/start'),
+      headers: _authHeaders,
+      body: jsonEncode(body),
+    );
+    if (res.statusCode != 204) {
+      throw _error(res);
+    }
+  }
+
+  /// Pede para parar a transmissão da tela (best-effort).
+  Future<void> stopScreen(String deviceId) async {
+    await _http.post(
+      _uri('/api/v1/devices/$deviceId/screen/stop'),
+      headers: _authHeaders,
+    );
+  }
+
+  /// Busca o último frame da tela. Retorna null enquanto ainda não há frame
+  /// (HTTP 503), o que é normal logo após iniciar a transmissão.
+  Future<Uint8List?> fetchFrame(String deviceId) async {
+    final res = await _http.get(
+      _uri('/api/v1/devices/$deviceId/screen'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode == 200) {
+      return res.bodyBytes;
+    }
+    if (res.statusCode == 503) {
+      return null;
+    }
+    throw _error(res);
+  }
+
+  /// Abre o canal de tela em tempo real. O backend passa a empurrar os frames
+  /// JPEG (binários) assim que o autenticamos com o token. O chamador escuta
+  /// `channel.stream` (eventos `List<int>`) e fecha `channel.sink` ao sair.
+  WebSocketChannel connectScreen(
+    String deviceId, {
+    int? fps,
+    int? quality,
+    int? maxWidth,
+  }) {
+    final wsBase = baseUrl.replaceFirst(RegExp(r'^http'), 'ws');
+    final channel = WebSocketChannel.connect(
+      Uri.parse('$wsBase/ws/viewer/$deviceId'),
+    );
+    // A qualidade escolhida vale no cold start (quando este é o 1º viewer).
+    channel.sink.add(jsonEncode({
+      'token': _accessToken,
+      if (fps != null) 'fps': fps,
+      if (quality != null) 'quality': quality,
+      if (maxWidth != null) 'max_width': maxWidth,
+    }));
+    return channel;
+  }
+
+  // --- helpers ---------------------------------------------------------------
+
+  void _storeTokens(dynamic body) {
+    final map = body as Map<String, dynamic>;
+    _accessToken = map['access_token'] as String?;
+    _refreshToken = map['refresh_token'] as String? ?? _refreshToken;
+  }
+
+  dynamic _decode(http.Response res, {int expected = 200}) {
+    if (res.statusCode != expected) {
+      throw _error(res);
+    }
+    if (res.body.isEmpty) return null;
+    return jsonDecode(res.body);
+  }
+
+  ApiException _error(http.Response res) {
+    String message;
+    try {
+      final decoded = jsonDecode(res.body);
+      // O `detail` de um 422 do FastAPI é uma **lista de objetos**, e era isso
+      // que ia cru para a tela. Ver `erros.dart`.
+      message = traduzirErro(
+        res.statusCode,
+        decoded is Map ? decoded['detail'] : null,
+        _t,
+      );
+    } catch (_) {
+      // Corpo que não é JSON: um 502 do Caddy, uma página de erro do proxy.
+      message = _t.erroGenerico(res.statusCode);
+    }
+    return ApiException(res.statusCode, message);
+  }
+}
+
+/// O `http.Client` por onde tudo passa: renova o token vencido e encerra a
+/// sessão quando ela realmente acabou.
+///
+/// Existe por causa de dois defeitos que parecem um só e pedem respostas
+/// opostas.
+///
+/// **Token vencido.** O access token dura 15 minutos, e nada o renovava durante
+/// o uso — só na abertura do app. Depois de um quarto de hora, toda ação
+/// respondia "credenciais inválidas" até o app ser reaberto. Era o "parou de
+/// funcionar, fechei e abri e voltou".
+///
+/// **Sessão encerrada.** Desde que trocar a senha cancela os tokens da conta, o
+/// aparelho derrubado precisa cair na tela de login. Sem isso ele fica na tela
+/// de dentro dando erro em cada toque — o recurso funcionando, com cara de
+/// defeito.
+///
+/// Tratar os dois igual dá o pior dos dois lados: deslogar no primeiro pediria a
+/// senha a cada 15 minutos; insistir no segundo prenderia o aparelho numa sessão
+/// morta. A diferença sai do **refresh token**: se ele ainda vale, era
+/// vencimento; se o servidor o recusa, a sessão acabou.
+class _ClienteComSessao extends http.BaseClient {
+  _ClienteComSessao(this._interno, this._dono);
+
+  final http.Client _interno;
+  final ApiClient _dono;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest pedido) async {
+    final resposta = await _interno.send(pedido);
+    if (!_tokenRecusado(pedido, resposta)) return resposta;
+
+    // A cópia precisa existir **antes** de renovar: o corpo do pedido é um
+    // fluxo de leitura única, e reenviar o original não funciona.
+    final copia = _copiar(pedido);
+    if (copia == null) return resposta;
+
+    if (!await _dono._renovarSessao()) return resposta;
+
+    // Só agora dá para descartar a resposta antiga. Se a renovação tivesse
+    // falhado, é ela que o chamador receberia.
+    await resposta.stream.drain<void>();
+    copia.headers['Authorization'] = 'Bearer ${_dono._accessToken}';
+    final segunda = await _interno.send(copia);
+
+    // Recusado **com** token novo em folha não é vencimento: é sessão morta.
+    // Sem esta linha o aparelho derrubado ficaria renovando e falhando para
+    // sempre, sem nunca chegar ao login.
+    if (_tokenRecusado(copia, segunda)) await _dono._encerrarSessao();
+    return segunda;
+  }
+
+  /// O 401 foi sobre o token, e não sobre o que a requisição pedia?
+  ///
+  /// Três 401 convivem nesta API e só um é sobre a sessão: senha atual errada ao
+  /// trocar a senha, código de verificação errado, e token inválido. Deslogar
+  /// nos dois primeiros expulsaria quem só errou a digitação.
+  ///
+  /// Quem separa é o cabeçalho `WWW-Authenticate`, que só o `get_current_user`
+  /// do servidor manda — é o que ele significa em HTTP: "suas credenciais estão
+  /// ausentes ou não valem". O contrato tem teste do lado de lá, em
+  /// `backend/tests/test_sessoes.py`.
+  ///
+  /// Exigir que o **pedido** leve `Authorization` fecha o laço: o próprio
+  /// `/auth/refresh` não leva, então um refresh recusado não dispara outra
+  /// renovação.
+  bool _tokenRecusado(http.BaseRequest pedido, http.StreamedResponse resposta) {
+    if (resposta.statusCode != 401) return false;
+    final temToken = pedido.headers.keys
+        .any((chave) => chave.toLowerCase() == 'authorization');
+    return temToken && resposta.headers.containsKey('www-authenticate');
+  }
+
+  /// Um pedido igual, pronto para reenvio. `null` quando não dá.
+  ///
+  /// Hoje toda chamada vira `http.Request` (corpo em memória). Envio de arquivo
+  /// em fluxo, se um dia existir, cai aqui e **não** é refeito: o fluxo já foi
+  /// consumido, e reenviar meio arquivo seria pior do que falhar.
+  http.Request? _copiar(http.BaseRequest pedido) {
+    if (pedido is! http.Request) return null;
+    return http.Request(pedido.method, pedido.url)
+      ..headers.addAll(pedido.headers)
+      ..bodyBytes = pedido.bodyBytes
+      ..followRedirects = pedido.followRedirects
+      ..maxRedirects = pedido.maxRedirects
+      ..persistentConnection = pedido.persistentConnection;
+  }
+
+  @override
+  void close() => _interno.close();
+}

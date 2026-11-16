@@ -1,0 +1,86 @@
+import 'package:flutter/foundation.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
+
+import 'config.dart';
+import 'screens/devices_screen.dart';
+import 'screens/lock_gate.dart';
+import 'screens/login_screen.dart';
+import 'services/aparelho.dart';
+import 'services/api_client.dart';
+import 'services/app_state.dart';
+import 'services/atalhos_do_icone.dart';
+import 'services/widget_da_tela.dart';
+import 'theme.dart';
+import 'widgets/barra_do_sistema.dart';
+
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  registrarLicencasDasFontes();
+  final state = AppState(
+      ApiClient(baseUrl: backendPadrao)..aparelho = nomeDoAparelho());
+  // Só o carregamento local (rápido) roda antes de desenhar a tela.
+  await state.loadPreferences();
+  // Mostra a UI imediatamente; a restauração da sessão (rede) roda depois,
+  // sem travar a abertura. Assim, um servidor fora do ar nunca causa tela
+  // branca — a UI reage via ChangeNotifier quando a sessão resolve.
+  runApp(DesksideApp(state: state));
+  state.restoreSession();
+
+  // Os atalhos do ícone: o toque vira um pedido guardado no estado, e o menu
+  // acompanha as automações da conta. Ver `services/atalhos_do_icone.dart`.
+  final atalhos = AtalhosDoIcone();
+  atalhos.iniciar(state.receberAtalho);
+  state.addListener(() => atalhos.sincronizar(state.automacoesDoIcone));
+
+  // O widget da tela inicial acompanha a escolha salva em Configurações ›
+  // Widgets. Ver `services/widget_da_tela.dart`.
+  registrarToquesDoWidget();
+  final widgetDaTela = SincronizadorDoWidget();
+  state.addListener(() => widgetDaTela.sincronizar(
+      state.widget, state.isAuthenticated, state.t, state.language));
+}
+
+/// As duas fontes do app são OFL, e a licença pede que vá junto com elas. A
+/// tela de licenças do Flutter só mostra o que foi registrado.
+void registrarLicencasDasFontes() {
+  LicenseRegistry.addLicense(() async* {
+    for (final (nome, arquivo) in const [
+      ('Space Grotesk', 'assets/fonts/OFL-SpaceGrotesk.txt'),
+      ('JetBrains Mono', 'assets/fonts/OFL-JetBrainsMono.txt'),
+    ]) {
+      yield LicenseEntryWithLineBreaks([nome], await rootBundle.loadString(arquivo));
+    }
+  });
+}
+
+class DesksideApp extends StatelessWidget {
+  const DesksideApp({super.key, required this.state});
+
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: state,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'Deskside',
+          theme: buildTheme(Brightness.light),
+          darkTheme: buildTheme(Brightness.dark),
+          themeMode: state.themeMode,
+          // Deixa o app acima da barra de navegação do Android. Ver o
+          // arquivo: em 8 das 17 telas, o fim da lista ficava por baixo dela.
+          builder: respeitarBarraDoSistema,
+          home: LockGate(
+            state: state,
+            child: state.isAuthenticated
+                ? DevicesScreen(state: state)
+                : LoginScreen(state: state),
+          ),
+        );
+      },
+    );
+  }
+}

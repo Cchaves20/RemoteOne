@@ -1,0 +1,49 @@
+# Como o agente é ligado no Windows.
+#
+# ## O defeito que isto conserta
+#
+# Uma pessoa baixou o `.exe` do site, deu dois cliques, e o Windows respondeu:
+#
+#     Deskside.exe - Erro do sistema
+#     A execução de código não pode continuar porque VCRUNTIME140.dll não foi
+#     encontrado. Reinstalando o programa para corrigir o problema.
+#
+# O programa nem chega a rodar: quem recusa é o carregador do Windows, antes da
+# primeira linha de código. Então **não há como o app avisar melhor** — nenhuma
+# mensagem nossa pode aparecer, porque nada nosso executou.
+#
+# A causa é que o Rust, no alvo MSVC, liga por padrão ao runtime C++ da
+# Microsoft de forma **dinâmica**: o `.exe` espera encontrar `VCRUNTIME140.dll`
+# já instalada na máquina. Quem programa tem essa DLL sem perceber — ela vem
+# com o Visual Studio, com o SDK, e de carona em dezenas de programas. Um
+# Windows recém-instalado não tem.
+#
+# É o defeito clássico de "funciona na minha máquina", e o pior tipo: invisível
+# para quem desenvolve e fatal para quem instala, porque acontece **antes** de
+# qualquer diagnóstico nosso.
+#
+# ## Por que estático, e não mandar instalar o redistribuível
+#
+# A alternativa seria pedir que cada pessoa instale o Visual C++
+# Redistributable antes. Isso contraria o que o produto promete na página de
+# download — um arquivo só, dois cliques — e some com metade das pessoas no
+# caminho. Ligar estático embute o runtime no próprio `.exe`: ele cresce
+# algumas centenas de KB e passa a rodar em qualquer Windows.
+#
+# ## O que pode dar errado
+#
+# Alguns crates trazem código C (`audiopus` compila o libopus, `cpal`, o wgpu
+# do `eframe`). Com o runtime estático, esse código C também precisa ser
+# compilado no mesmo modo, senão o ligador acusa símbolo duplicado. O crate
+# `cc` lê `crt-static` e troca `/MD` por `/MT` sozinho, então costuma funcionar
+# — mas se falhar, falha **no ligador, na hora de compilar**, com mensagem, e
+# não no computador de alguém. É o lado certo para esse risco cair.
+#
+# Os dois alvos estão aqui porque o agente é compilado nas duas máquinas: o
+# Dell é x86_64, o MateBook é ARM64.
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

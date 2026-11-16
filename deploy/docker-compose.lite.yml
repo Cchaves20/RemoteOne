@@ -1,0 +1,251 @@
+# Deploy LEVE do backend (para VMs de 1 GB, ex.: Oracle AMD E2.1.Micro).
+#
+# Usa SQLite e dispensa Postgres/Redis, cabendo com folga em 1 GB de RAM.
+# Só Caddy (HTTPS) + API. Ideal quando a capacidade ARM (A1.Flex) está esgotada.
+#
+# Uso (na pasta deploy/, com .env preenchido — DOMAIN e DESKSIDE_JWT_SECRET):
+#   docker compose -f docker-compose.lite.yml up -d --build
+#
+# (POSTGRES_PASSWORD não é usado aqui.)
+
+# Logs do Docker com teto. Sem isto o driver padrão (json-file) cresce para
+# sempre: numa VM de 45 GB, um laço de erro enche o disco e derruba o servidor
+# inteiro. 5 arquivos de 10 MB por contêiner.
+#
+# (Os registros de acesso que o Marco Civil pede guardar por 6 meses não são
+# estes: ficam no log próprio do Caddy, ver deploy/caddy/Caddyfile.)
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    logging: *logs
+    security_opt:
+      - no-new-privileges:true
+    # Sem `cap_drop: ALL` aqui, ao contrário da API: o Caddy escuta nas portas
+    # 80 e 443, e ligar-se a porta abaixo de 1024 exige `NET_BIND_SERVICE`.
+    # Tirar todas as capacidades derrubaria o site inteiro.
+    #
+    # O Caddy segura uma conexão criptografada por computador ligado e por
+    # celular, mais a dele até a API: ~120 KB cada. Com 512 MB ele foi morto
+    # por falta de memória perto de 4.000 computadores (teste de carga de
+    # 15/11 na A1), e todos caíram juntos. 2 GB dão perto de 16.000.
+    mem_limit: 2g
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Os nomes que o Caddy atende. Aceita vários, separados por vírgula — é
+      # assim que o domínio novo entra sem o antigo parar de responder (ver o
+      # Caddyfile). Ausente, vale o `DOMAIN`, que é o caso de quem ainda não
+      # mexeu no `.env`.
+      #
+      # **Separado do `DOMAIN` de propósito.** O `DOMAIN` é um nome só e alimenta
+      # o TURN, logo abaixo; uma lista ali faria o coturn anunciar a lista inteira
+      # como endereço de relay.
+      CADDY_DOMAINS: ${CADDY_DOMAINS:-${DOMAIN}}
+      # Diz ao Go onde fica o teto: perto dele, o coletor de lixo trabalha
+      # mais, em vez de deixar a memória crescer até o kernel matar o
+      # processo. Abaixo do `mem_limit`, com folga para o que não é heap.
+      GOMEMLIMIT: 1800MiB
+    volumes:
+      # A **pasta**, não o arquivo. Montar um arquivo solto prende o contêiner
+      # ao inode: o `git reset --hard` substitui o arquivo (inode novo) e o
+      # contêiner continua vendo o antigo para sempre. Foi assim que uma
+      # correção de roteamento ficou no disco do VPS enquanto o proxy quebrado
+      # seguia no ar - e o `caddy reload`, lendo de dentro do contêiner,
+      # recarregava a versão velha com sucesso.
+      - ./caddy:/etc/caddy:ro
+      # A página do produto e o instalador para baixar. Somente leitura: o
+      # Caddy nunca precisa escrever aqui, e um proxy que pode escrever no que
+      # ele serve é uma porta que não precisa existir.
+      - ./site:/srv/site:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  # Acerta o dono do volume **antes** de a API subir.
+  #
+  # Existe porque a API deixou de rodar como root, e o volume `apidata` já foi
+  # criado quando ela rodava — os arquivos lá dentro são de root, e um processo
+  # sem privilégio não escreve neles. O sintoma seria o pior tipo: o contêiner
+  # sobe, o SQLite recusa a escrita, e o servidor entra em laço de reinício
+  # depois de um `git pull` comum.
+  #
+  # A alternativa era um `chown` à mão no servidor, uma vez, na ordem certa. Um
+  # passo manual que só é necessário uma vez é exatamente o que se esquece — e
+  # o preço de esquecer é o serviço fora do ar. Aqui não há o que lembrar: roda
+  # a cada subida, custa um segundo e é idempotente.
+  #
+  # Sai do ar assim que termina; ver `deploy-init-permissoes-1` como `Exited
+  # (0)` no `docker compose ps` é o esperado, não um defeito.
+  init-permissoes:
+    image: alpine:3
+    user: "0:0"
+    command: ["chown", "-R", "10001:10001", "/data", "/backups"]
+    volumes:
+      - apidata:/data
+      - ./backups:/backups
+    restart: "no"
+
+  api:
+    build: ../backend
+    restart: unless-stopped
+    logging: *logs
+    # O servidor responde? Sem isto o Docker só sabe se o processo existe, e
+    # um uvicorn travado aparece como "Up" para sempre. Com isto, `docker
+    # compose ps` mostra "unhealthy" e o `restart` tem o que fazer. Python
+    # puro, porque a imagem não tem curl.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      init-permissoes:
+        condition: service_completed_successfully
+    # Endurecimento do contêiner. Nenhum destes conserta um buraco que existe
+    # hoje — os três reduzem o que um buraco futuro renderia.
+    security_opt:
+      # Bloqueia ganhar privilégio por binário setuid dentro do contêiner. É a
+      # trava que transforma "consegui executar código" em "consegui executar
+      # código como um usuário sem poder nenhum".
+      - no-new-privileges:true
+    cap_drop:
+      # A API é um processo Python numa porta alta: não precisa de capacidade
+      # nenhuma do kernel. Tirar todas custa zero e fecha uma família inteira
+      # de escapadas de contêiner.
+      - ALL
+    # Teto de memória, e este é sobre **disponibilidade**, não invasão. Sem
+    # teto, um vazamento de memória ou um pedido malicioso grande consome tudo
+    # e o kernel mata processos a esmo — inclusive o sshd, o que deixa a
+    # máquina sem ninguém para consertá-la.
+    #
+    # 2 GB na A1 (23 GB). Era 512 MB na VM de 1 GB, e isso era também o teto
+    # de capacidade: ~80 KB por computador ligado e ~180 KB por par celular +
+    # computador (docs/teste-de-carga.md). Com 2 GB, cerca de 10.000 pares, e
+    # ainda sobra máquina de sobra para o contêiner morrer sozinho.
+    mem_limit: 2g
+    # Cada computador ligado é uma conexão, e cada conexão um arquivo aberto.
+    # O padrão do contêiner é 1.024 (o Python não sobe o próprio limite, ao
+    # contrário do Caddy, que é Go), e com ~1.000 computadores a API parava de
+    # aceitar conexões e de abrir o próprio banco ("unable to open database
+    # file"): login e tudo o mais falhavam juntos. Achado no teste de carga de
+    # 14/11 na A1.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    # **Todo** o `.env` entra no contêiner, e não só as variáveis listadas
+    # abaixo. A lista explícita era o caminho anterior, e ela tem um modo de
+    # falhar que não deixa rastro: uma variável nova no `.env` — as de SMTP
+    # foram o caso — é lida pelo compose para substituir `${...}` aqui, mas
+    # nunca chega à aplicação. O servidor sobe, o `/health` responde "ok", e o
+    # recurso fica desligado sem ninguém errar nada.
+    #
+    # Com `env_file`, acrescentar uma variável ao `.env` basta. O que fica
+    # abaixo em `environment:` é o que **não** vem de lá: o caminho do banco
+    # (fixo), e os dois segredos com guarda de nome antigo — `environment`
+    # vence `env_file`, então as guardas continuam valendo.
+    env_file:
+      - .env
+    environment:
+      # SQLite num volume persistente (4 barras = caminho absoluto /data/...).
+      DESKSIDE_DATABASE_URL: sqlite:////data/deskside.db
+      DESKSIDE_JWT_SECRET: ${DESKSIDE_JWT_SECRET:?renomeie REMOTEONE_JWT_SECRET para DESKSIDE_JWT_SECRET no deploy/.env}
+      # TURN: o backend entrega o endereço e gera as credenciais temporárias.
+      # Vazio = só STUN (é o comportamento de antes).
+      DESKSIDE_TURN_HOST: ${DOMAIN}
+      DESKSIDE_TURN_SECRET: ${DESKSIDE_TURN_SECRET:?renomeie REMOTEONE_TURN_SECRET para DESKSIDE_TURN_SECRET no deploy/.env}
+    volumes:
+      - apidata:/data
+      # As cópias de segurança saem num **bind mount**, e não num volume do
+      # Docker, de propósito: elas precisam estar num caminho que dê para
+      # copiar por `scp` de fora. Um volume nomeado fica escondido em
+      # /var/lib/docker e só sai de lá com mais um comando.
+      #
+      # Fica dentro do clone do Git, e isso é seguro: a pasta está no
+      # .gitignore, e `git reset --hard` não apaga arquivo não versionado.
+      - ./backups:/backups
+      # O certificado **raiz** da Apple, que ancora a verificação do
+      # comprovante de compra (`DESKSIDE_APPLE_ROOT_CA=/certs/...`).
+      #
+      # Somente leitura, e por um motivo específico deste arquivo: ele é a
+      # âncora de confiança inteira. Se a API pudesse escrever aqui, uma falha
+      # que desse escrita no contêiner bastaria para trocar a raiz por outra —
+      # e a partir daí qualquer comprovante forjado passaria na verificação,
+      # sem erro nenhum no log.
+      #
+      # Sem o arquivo, o servidor **não** libera plano pago de graça: ele cai
+      # no modo `DeMentira`, que só emite compra de sandbox, e sandbox não
+      # vale como pago. O `/health` denuncia o modo.
+      - ./certs:/certs:ro
+    # Sem `ports:` — só o Caddy alcança a API (rede interna).
+
+  # Servidor de relay (TURN). Sem ele, celular no 5G + computador atrás do
+  # roteador de casa **não** fecham conexão direta: os dois lados estão atrás
+  # de NAT que não deixa nada entrar, e nenhum par de candidatos funciona. O
+  # relay é a última opção do ICE, então não custa nada quando o P2P dá certo.
+  #
+  # `network_mode: host` não é preguiça: o TURN abre uma porta por sessão na
+  # faixa de relay, e mapear faixa por faixa no Docker é frágil e lento. Em
+  # host, o coturn vê a rede como ela é.
+  coturn:
+    image: coturn/coturn:4.6
+    restart: unless-stopped
+    logging: *logs
+    network_mode: host
+    security_opt:
+      - no-new-privileges:true
+    # Idem Caddy: escuta na 3478 e usa a rede do host, então as capacidades
+    # ficam. O teto de memória vale do mesmo jeito.
+    mem_limit: 192m
+    # Sem shell e sem entrypoint próprio: quem substitui as variáveis é o
+    # compose, aqui, antes de o contêiner existir. A versão anterior passava
+    # por `sh -c` para descobrir o IP público sozinha, e quando algo ali
+    # falhava o contêiner saía calado - sem log nenhum para dizer o quê.
+    command:
+      - --no-cli
+      # Escutar e relayar **só** na placa de verdade. Sem isto o coturn se
+      # espalha por tudo o que existe na máquina - incluindo as pontes
+      # internas do Docker (172.17.x) e o loopback -, e pode alocar o relay
+      # num endereço onde os pacotes que chegam de fora nunca aparecem. A
+      # falha seria a pior possível: o TURN responde, o candidato chega ao
+      # celular, e a conexão não fecha.
+      - --listening-ip=${TURN_LISTEN_IP}
+      - --relay-ip=${TURN_LISTEN_IP}
+      - --listening-port=3478
+      - --fingerprint
+      # Sem TLS: quem carrega certificado aqui é o Caddy, na porta 443. Sem
+      # estas duas, o coturn procura um certificado que não existe e enche o
+      # log de avisos que parecem erro.
+      - --no-tls
+      - --no-dtls
+      # Sem banco de usuários: o coturn confere um HMAC do próprio nome de
+      # usuário, que carrega a hora de expiração. É o mesmo segredo que o
+      # backend usa para gerar (app/ice.py).
+      - --use-auth-secret
+      - --static-auth-secret=${DESKSIDE_TURN_SECRET:?renomeie REMOTEONE_TURN_SECRET para DESKSIDE_TURN_SECRET no deploy/.env}
+      - --realm=${DOMAIN}
+      # Faixa curta de propósito: são 40 portas, o suficiente para dezenas de
+      # sessões, e é o que se precisa liberar no firewall da nuvem.
+      - --min-port=49160
+      - --max-port=49200
+      - --no-multicast-peers
+      # Na Oracle (e em quase toda nuvem) a VM só enxerga o IP privado; sem
+      # isto o coturn anuncia o endereço errado e ninguém o alcança.
+      - --external-ip=${TURN_EXTERNAL_IP}
+      - --log-file=stdout
+      - --simple-log
+
+volumes:
+  caddy_data:
+  caddy_config:
+  apidata:

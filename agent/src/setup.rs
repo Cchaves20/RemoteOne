@@ -1,0 +1,1813 @@
+//! Instalação do agente no Windows, sem terminal e sem administrador (e, mais
+//! abaixo, no Mac e no Linux).
+//!
+//! O que existia antes era um script de PowerShell que compilava o projeto e
+//! punha um atalho na pasta Inicializar apontando para `target\release`. Isso
+//! serve a quem tem o código-fonte; não serve a quem só quer usar o programa:
+//!
+//! - Exigia o Rust instalado e a árvore do projeto no disco.
+//! - O atalho apontava para dentro do repositório: mover ou apagar a pasta
+//!   quebrava a inicialização, sem aviso.
+//! - Não aparecia em "Aplicativos instalados", então desinstalar era procurar
+//!   um script.
+//!
+//! Agora quem instala é o **próprio executável** (`deskside-agent.exe
+//! install`). A razão de estar aqui, em Rust, e não num script: este código
+//! entra na verificação cruzada de tipos para Windows e tem as partes puras
+//! cobertas por teste. Um `.ps1` não tem nem uma coisa nem outra — e o histórico
+//! deste projeto mostra que o que não é verificado quebra na máquina do usuário.
+//!
+//! ## Por que a pasta Inicializar, e não um serviço
+//!
+//! Um serviço do Windows roda antes do login, na sessão 0, **sem área de
+//! trabalho**. Ele não conseguiria capturar a tela nem mover o mouse — que é
+//! tudo o que este agente faz. Ele precisa da sessão interativa, e por isso
+//! inicia no login. Também é o que dispensa administrador.
+
+use std::path::{Path, PathBuf};
+
+/// Nome da pasta e da entrada em "Aplicativos instalados".
+pub const APP_NAME: &str = "Deskside";
+
+/// Nome do atalho na pasta Inicializar.
+pub const STARTUP_FILE: &str = "DesksideAgent.vbs";
+
+/// Os arquivos que **são** a identidade deste computador para o Deskside.
+///
+/// Separados do resto porque a decisão de apagá-los depende de quem pediu:
+///
+/// - `deskside-agent.exe uninstall`, na linha de comando, **preserva**. Ali
+///   desinstalar costuma ser etapa de reinstalar (o `atualizar.cmd` faz isso a
+///   cada build), e obrigar a parear de novo a cada atualização seria absurdo.
+/// - O botão da janela **apaga**. Quem clica ali quer sair, e deixar a
+///   identidade para trás mantém o computador na lista do celular para sempre,
+///   aparecendo offline — sem nada que explique por quê.
+///
+/// Pura de propósito: recebe a pasta em vez de descobri-la, para poder ser
+/// testada em qualquer sistema.
+pub fn arquivos_da_identidade(config: &Path) -> Vec<PathBuf> {
+    vec![config.join("device_id"), config.join("agent_secret")]
+}
+
+/// Chave de desinstalação, sob `HKCU`. Fica no usuário e não na máquina porque
+/// a instalação é por usuário — e escrever em `HKLM` exigiria administrador.
+pub const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Deskside";
+
+/// O launcher que roda o agente **oculto**.
+///
+/// Um `.vbs` com `WScript.Shell.Run(..., 0, False)` é o jeito de iniciar sem
+/// janela nenhuma. Chamar o `.exe` direto pela pasta Inicializar faria piscar um
+/// console preto a cada login — pequeno, mas é a diferença entre um programa e
+/// uma gambiarra.
+///
+/// As aspas duplas dentro do VBScript são dobradas: é assim que a linguagem as
+/// escapa, e sem isso um caminho com espaço (`C:\Program Files\...`, ou
+/// qualquer usuário chamado "Ana Maria") quebraria o comando.
+pub fn launcher_script(exe: &Path) -> String {
+    let caminho = exe.display().to_string().replace('"', "\"\"");
+    format!(
+        "' Inicia o agente do Deskside oculto, sem janela de console.\r\n\
+         Set sh = CreateObject(\"WScript.Shell\")\r\n\
+         sh.Run \"\"\"{caminho}\"\"\", 0, False\r\n"
+    )
+}
+
+/// Se vale oferecer a instalação a quem acabou de abrir este executável.
+///
+/// Verdadeiro quando **este** executável não é a cópia instalada — ou seja,
+/// quando alguém deu dois cliques no arquivo que baixou.
+///
+/// ## Por que o agente passou a se instalar sozinho
+///
+/// O download era um `.zip` com o executável e um `INSTALAR.cmd`, porque dois
+/// cliques no `.exe` apenas **rodam** o agente, sem instalá-lo. Esse script
+/// custava caro:
+///
+/// - O Windows marca todo arquivo baixado, e a marca passa para o que sai do
+///   `.zip`. Executar um `.cmd` marcado abre "o fornecedor não pôde ser
+///   verificado" — sobre um **script**, que é o formato que todo mundo aprendeu
+///   a temer. E **certificado de assinatura não resolve**: o Authenticode assina
+///   `.exe`, não `.cmd`. Era o único dos avisos que dinheiro nenhum apagaria.
+/// - Extrair é um passo a mais, e era ponto de falha próprio: o Explorer abre
+///   `.zip` como se fosse pasta, o `.cmd` rodava de dentro dele e não achava o
+///   `.exe` ao lado. O `INSTALAR.cmd` precisou de uma mensagem de erro só para
+///   esse caso — precisar dela já era o sinal de que o desenho tinha uma quina.
+///
+/// Com um `.exe` só: um arquivo, sem extrair, um aviso — e esse aviso é
+/// exatamente o que o certificado remove.
+pub fn deve_oferecer_instalacao() -> bool {
+    imp::deve_oferecer_instalacao()
+}
+
+/// O caminho do fluxo alternativo que marca um arquivo como vindo da internet.
+///
+/// ## O defeito que isto conserta
+///
+/// No Windows, todo arquivo baixado ganha um fluxo alternativo chamado
+/// `Zone.Identifier` — a "marca da web". É ele que faz o sistema perguntar "o
+/// fornecedor não pôde ser verificado, tem certeza?" ao executar.
+///
+/// E o `CopyFile` do Windows **copia os fluxos alternativos junto**. Então o
+/// `install`, ao copiar o executável baixado para a pasta de instalação, levava
+/// a marca junto — e a cópia instalada passava a perguntar isso para sempre.
+///
+/// O susto seria o menor dos problemas. O agente instalado sobe **oculto**, pela
+/// tarefa agendada do logon: um diálogo modal esperando um clique numa sessão
+/// onde nada é visível é um agente que **nunca sobe**, sem nada na tela
+/// explicando. O computador simplesmente não apareceria no aplicativo.
+///
+/// Um instalador de verdade não deixa marca: quem escreveu o arquivo no destino
+/// foi ele, não o navegador. É o mesmo que o botão "Desbloquear" das
+/// propriedades do arquivo faz, e é o que se faz aqui — só que sem depender de
+/// alguém saber que precisa fazê-lo.
+///
+/// Separado da chamada ao sistema para poder ser testado: montar o caminho errado
+/// falharia em silêncio (não há fluxo com aquele nome, "apagar" não faz nada) e
+/// a marca continuaria lá.
+pub fn caminho_da_marca(exe: &Path) -> String {
+    format!("{}:Zone.Identifier", exe.display())
+}
+
+/// Nome da tarefa agendada que inicia o agente no logon.
+pub const TASK_NAME: &str = "Deskside";
+
+/// O comando do PowerShell que cria a tarefa agendada do logon.
+///
+/// ## Por que uma tarefa, e não a pasta Inicializar
+///
+/// A pasta Inicializar é a forma mais lenta que existe de subir no logon, e não
+/// por acaso: quem a processa é o Explorer, **depois** de terminar de carregar,
+/// e o Windows 10/11 ainda aplica um retardo próprio ao que está nela. O
+/// resultado, num notebook, são dezenas de segundos entre entrar na conta e o
+/// computador ficar alcançável — e nesse intervalo o app mostra o computador
+/// offline, que é indistinguível de defeito.
+///
+/// Uma tarefa com disparo "ao fazer logon" não espera o Explorer. É o mesmo
+/// mecanismo que os programas que sobem rápido usam.
+///
+/// ## Os quatro ajustes que não são enfeite
+///
+/// Os padrões do Agendador de Tarefas foram pensados para tarefas de manutenção,
+/// e três deles quebrariam este agente em silêncio:
+///
+/// - **`AllowStartIfOnBatteries`**: o padrão é *não iniciar* na bateria. Num
+///   notebook fora da tomada — o caso mais comum — o agente simplesmente não
+///   subiria, e nada diria por quê.
+/// - **`DontStopIfGoingOnBatteries`**: sem isto, tirar o notebook da tomada
+///   **encerra** o agente no meio do uso.
+/// - **`ExecutionTimeLimit = PT0S`** (sem limite): o padrão é três dias, e ao
+///   fim deles a tarefa é morta. Um computador que fica ligado a semana toda
+///   perderia o agente sem motivo aparente.
+/// - **`Priority = 5`**: o padrão é 7, que o Windows traduz em prioridade
+///   *abaixo do normal* para o processo. Justamente no logon, quando há disputa
+///   por disco e CPU, isso é o oposto do que se quer.
+///
+/// ## O escape
+///
+/// O caminho entra num literal de aspas simples do PowerShell, onde a aspa
+/// simples se escapa **dobrando**. Sem isso, um usuário chamado `O'Brien` (ou
+/// qualquer pasta com apóstrofo) quebraria o comando — e o sintoma seria "a
+/// tarefa não foi criada nesta máquina", sem ninguém ligar à causa.
+pub fn script_da_tarefa(launcher: &Path, usuario: &str) -> String {
+    let ps = |t: String| t.replace('\'', "''");
+    let vbs = ps(launcher.display().to_string());
+    let quem = ps(usuario.to_string());
+    format!(
+        "$ErrorActionPreference='Stop'; \
+         $acao = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument '\"{vbs}\"'; \
+         $disparo = New-ScheduledTaskTrigger -AtLogOn -User '{quem}'; \
+         $ajustes = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries \
+         -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew; \
+         $ajustes.ExecutionTimeLimit = 'PT0S'; \
+         $ajustes.Priority = 5; \
+         Register-ScheduledTask -TaskName '{TASK_NAME}' -Action $acao -Trigger $disparo \
+         -Settings $ajustes -Force | Out-Null"
+    )
+}
+
+/// Onde o agente passa a morar.
+///
+/// `%LOCALAPPDATA%\Programs` é o lugar que o Windows reserva para instalação
+/// **por usuário**, que é a que dispensa administrador. `Program Files` exigiria
+/// elevação para gravar, e elevação é um passo a mais que assusta.
+pub fn install_dir(local_app_data: &Path) -> PathBuf {
+    local_app_data.join("Programs").join(APP_NAME)
+}
+
+/// Se este executável já é o instalado.
+///
+/// Importa porque copiar um arquivo sobre ele mesmo falha no Windows, e o erro
+/// que aparece ("acesso negado") manda o diagnóstico para o lado errado. Quem
+/// roda `install` de dentro da pasta instalada está reconfigurando, não
+/// copiando.
+pub fn already_installed(exe: &Path, destino: &Path) -> bool {
+    // Comparação sem diferenciar maiúsculas: caminhos no Windows não as
+    // distinguem, e `C:\Users\Eu` e `c:\users\eu` são o mesmo lugar.
+    exe.display().to_string().to_lowercase() == destino.display().to_string().to_lowercase()
+}
+
+/// O que uma instalação precisa saber. Separado do ato de instalar para que a
+/// decisão — o que vai onde — possa ser conferida sem tocar em disco algum.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Plan {
+    /// Pasta de destino.
+    pub dir: PathBuf,
+    /// Executável instalado.
+    pub exe: PathBuf,
+    /// O `.vbs` que inicia o agente oculto, ao lado do executável.
+    ///
+    /// Mora na pasta de instalação, e não na Inicializar, porque agora ele é
+    /// **alvo da tarefa agendada**. A cópia na pasta Inicializar continua
+    /// existindo, mas só como reserva — ver `install`.
+    pub launcher: PathBuf,
+    /// Atalho na pasta Inicializar. A **reserva**, quando a tarefa não pode ser
+    /// criada.
+    pub startup: PathBuf,
+    /// Atalho no Menu Iniciar.
+    pub start_menu: PathBuf,
+    /// Atalho na área de trabalho.
+    pub desktop: PathBuf,
+    /// Se o executável precisa ser copiado (falso ao reconfigurar no lugar).
+    pub copy: bool,
+}
+
+/// Onde o Windows guarda cada coisa. Agrupadas porque são quatro caminhos que
+/// andam juntos, e quatro parâmetros soltos do mesmo tipo `Path` são um convite
+/// a trocar dois de lugar sem o compilador notar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Places {
+    pub local_app_data: PathBuf,
+    pub startup: PathBuf,
+    pub start_menu: PathBuf,
+    pub desktop: PathBuf,
+}
+
+/// Monta o plano a partir dos caminhos do sistema.
+pub fn plan(exe_atual: &Path, lugares: &Places) -> Plan {
+    let dir = install_dir(&lugares.local_app_data);
+    let exe = dir.join("deskside-agent.exe");
+    let copy = !already_installed(exe_atual, &exe);
+    Plan {
+        launcher: dir.join(STARTUP_FILE),
+        dir,
+        exe,
+        startup: lugares.startup.join(STARTUP_FILE),
+        // O `.lnk` leva o nome que aparece embaixo do ícone.
+        start_menu: lugares.start_menu.join(format!("{APP_NAME}.lnk")),
+        desktop: lugares.desktop.join(format!("{APP_NAME}.lnk")),
+        copy,
+    }
+}
+
+/// Resumo do que está instalado, para o `status`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Status {
+    pub installed: bool,
+    pub autostart: bool,
+    /// Por qual mecanismo ele sobe no logon.
+    ///
+    /// Vale dizer porque os dois funcionam e **um é muito mais rápido**. Quando
+    /// alguém reclamar que o agente demora a ficar disponível depois de ligar o
+    /// computador, esta linha é a primeira coisa a olhar — e sem ela a resposta
+    /// começaria por dedução.
+    pub autostart_por_tarefa: bool,
+    pub exe: PathBuf,
+    pub backend: String,
+    /// Se o backend veio de uma variável de ambiente em vez do arquivo.
+    ///
+    /// Vale dizer porque a variável **vence** o arquivo: sem isso, alguém que
+    /// trocou o servidor no `agent.conf` veria aqui o valor antigo e não teria
+    /// como saber por quê.
+    pub backend_from_env: bool,
+    pub device_id: Option<String>,
+}
+
+/// O texto do `status`, em linhas.
+///
+/// Puro para poder ser testado: o valor deste comando está em dizer a verdade
+/// quando algo não está no lugar, e é justamente esse caso que não dá para
+/// exercitar à mão sem quebrar a instalação de propósito.
+pub fn status_lines(s: &Status) -> Vec<String> {
+    let mut linhas = Vec::new();
+    if s.installed {
+        linhas.push(format!("Instalado em: {}", s.exe.display()));
+    } else {
+        linhas.push("Não instalado (rodando de onde está).".to_string());
+    }
+    linhas.push(match (s.autostart, s.autostart_por_tarefa) {
+        _ if cfg!(target_os = "macos") => format!(
+            "Inicia com o Mac: {}",
+            if s.autostart {
+                "sim (LaunchAgent)"
+            } else {
+                "não"
+            }
+        ),
+        _ if cfg!(target_os = "linux") => format!(
+            "Inicia com o login: {}",
+            if s.autostart {
+                "sim (~/.config/autostart/deskside.desktop)"
+            } else {
+                "não"
+            }
+        ),
+        (false, _) => "Inicia com o Windows: não".to_string(),
+        (true, true) => "Inicia com o Windows: sim (tarefa agendada — a forma rápida)".to_string(),
+        // A reserva. Funciona, e é a razão de o agente demorar a subir: a pasta
+        // Inicializar é processada pelo Explorer depois de ele carregar, e o
+        // Windows ainda atrasa de propósito o que está nela.
+        (true, false) => {
+            "Inicia com o Windows: sim (pasta Inicializar — sobe mais devagar)".to_string()
+        }
+    });
+    if s.backend_from_env {
+        linhas.push(format!(
+            "Backend: {} (da variável de ambiente, que vence o arquivo)",
+            s.backend
+        ));
+    } else {
+        linhas.push(format!("Backend: {}", s.backend));
+    }
+    match &s.device_id {
+        Some(id) => linhas.push(format!("device_id: {id}")),
+        // Sem device_id é o estado de quem nunca rodou: dizer isso evita que a
+        // pessoa procure o código de pareamento que ainda não existe.
+        None => linhas.push("device_id: ainda não gerado (o agente nunca rodou)".to_string()),
+    }
+    linhas
+}
+
+/// Os valores da chave de desinstalação, como o Windows os espera.
+///
+/// É esta chave que faz o Deskside aparecer em "Aplicativos instalados" com um
+/// botão de desinstalar. Sem ela o programa fica invisível para o sistema, e a
+/// única forma de removê-lo seria saber de cor onde ele se escondeu.
+pub fn uninstall_entries(exe: &Path, versao: &str) -> Vec<(String, String)> {
+    vec![
+        ("DisplayName".into(), APP_NAME.into()),
+        ("DisplayVersion".into(), versao.into()),
+        ("Publisher".into(), APP_NAME.into()),
+        (
+            "UninstallString".into(),
+            format!("\"{}\" uninstall", exe.display()),
+        ),
+        ("DisplayIcon".into(), exe.display().to_string()),
+        (
+            "InstallLocation".into(),
+            exe.parent().unwrap_or(exe).display().to_string(),
+        ),
+        // Instalação por usuário: sem isto o Windows a listaria como se fosse
+        // da máquina inteira, e um segundo usuário veria um programa que não
+        // consegue remover.
+        ("NoModify".into(), "1".into()),
+        ("NoRepair".into(), "1".into()),
+    ]
+}
+
+/// Se a cópia instalada **assume o lugar** de quem a instalou.
+///
+/// No Windows, sim: o `install` copia o executável para a pasta do usuário e
+/// sobe a cópia, e quem foi clicado sai. No Mac, não: o `.app` arrastado para
+/// Aplicativos já **é** a instalação, o `install` só registra o início junto
+/// com o Mac, e o processo que está rodando continua.
+pub const A_COPIA_INSTALADA_ASSUME: bool = cfg!(windows);
+
+/// O nome do agente para o `launchd`, no formato de domínio invertido que ele
+/// usa. É também o nome do arquivo em `~/Library/LaunchAgents`.
+pub const ROTULO_DO_MAC: &str = "com.deskside.agente";
+
+/// O arquivo que faz o Mac subir o agente no login.
+///
+/// - `RunAtLoad`: sobe ao entrar na conta.
+/// - `KeepAlive` só para saída **com erro**: se o agente travar, o Mac o sobe
+///   de novo; se a pessoa escolher Sair no menu (saída normal), fica parado.
+///   Sem essa distinção, Sair não sairia.
+/// - `LimitLoadToSessionType` = `Aqua`: só na sessão com tela. Numa entrada
+///   por SSH o agente não teria o que capturar.
+///
+/// Os caminhos vão escapados para XML: um usuário chamado "Ana & Bia" não pode
+/// produzir um arquivo que o `launchd` recusa calado.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn plist_do_mac(exe: &Path) -> String {
+    let caminho = exe
+        .display()
+        .to_string()
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{ROTULO_DO_MAC}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{caminho}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>
+"#
+    )
+}
+
+/// Se este executável está num lugar de onde **não** dá para instalar.
+///
+/// Dois casos, ambos comuns:
+///
+/// - Aberto direto do `.dmg` (`/Volumes/...`): o disco some quando a pessoa o
+///   ejeta, e o início automático passaria a apontar para o nada.
+/// - Aberto pela "translocação" do Gatekeeper (`.../AppTranslocation/...`): o
+///   Mac roda um app baixado de uma cópia temporária até ele ser movido para
+///   Aplicativos. O caminho muda a cada abertura.
+///
+/// Nos dois, o agente roda normalmente nesta sessão; só não se registra para
+/// subir com o Mac, e a janela pede para arrastar o Deskside para Aplicativos.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn lugar_provisorio(exe: &Path) -> bool {
+    let texto = exe.to_string_lossy();
+    texto.starts_with("/Volumes/") || texto.contains("/AppTranslocation/")
+}
+
+/// Os lugares da instalação no Linux, todos na conta do usuário (padrão XDG).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LugaresLinux {
+    /// `~/.local/share/deskside`: o executável e o ícone.
+    pub pasta: PathBuf,
+    pub exe: PathBuf,
+    pub icone: PathBuf,
+    /// `~/.config/autostart/deskside.desktop`: o que faz subir no login.
+    pub inicio: PathBuf,
+    /// `~/.local/share/applications/deskside.desktop`: a entrada no menu de
+    /// aplicativos. O nome casa com o `desktop-entry` das notificações, que
+    /// pegam dali o ícone.
+    pub menu: PathBuf,
+}
+
+/// Onde cada coisa vai, a partir da pasta pessoal e das variáveis XDG.
+///
+/// Pura para ser testada em qualquer sistema. Variável vazia ou relativa não
+/// vale, como manda o padrão XDG.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn lugares_linux(
+    casa: &Path,
+    xdg_dados: Option<&Path>,
+    xdg_config: Option<&Path>,
+) -> LugaresLinux {
+    let valida = |p: Option<&Path>| p.filter(|p| p.is_absolute()).map(Path::to_path_buf);
+    let dados = valida(xdg_dados).unwrap_or_else(|| casa.join(".local/share"));
+    let config = valida(xdg_config).unwrap_or_else(|| casa.join(".config"));
+    let pasta = dados.join("deskside");
+    LugaresLinux {
+        exe: pasta.join("deskside-agent"),
+        icone: pasta.join("deskside.png"),
+        pasta,
+        inicio: config.join("autostart/deskside.desktop"),
+        menu: dados.join("applications/deskside.desktop"),
+    }
+}
+
+/// Um caminho escrito como argumento da linha `Exec=` de um `.desktop`.
+///
+/// Duas camadas de escape, nesta ordem: as aspas da linha de comando (`"`,
+/// `` ` ``, `$` e `\` ganham uma barra) e depois a do próprio arquivo, em que
+/// toda barra vira duas. `%` vira `%%`, senão seria lido como `%f`, `%u`...
+fn argumento_do_exec(caminho: &Path) -> String {
+    let mut s = String::from("\"");
+    for c in caminho.to_string_lossy().chars() {
+        match c {
+            '"' | '`' | '$' => {
+                s.push_str("\\\\");
+                s.push(c);
+            }
+            '\\' => s.push_str("\\\\\\\\"),
+            '%' => s.push_str("%%"),
+            _ => s.push(c),
+        }
+    }
+    s.push('"');
+    s
+}
+
+/// O `.desktop` do Deskside. O mesmo texto serve ao menu e ao início no
+/// login; só o do login leva a linha que o GNOME consulta para saber se está
+/// ligado.
+///
+/// `StartupNotify=false`: o agente não abre janela, e sem isto o cursor ficaria
+/// girando à espera de uma.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn desktop_do_linux(exe: &Path, icone: &Path, no_login: bool) -> String {
+    let icone = icone.to_string_lossy().replace('\\', "\\\\");
+    let mut texto = format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name={APP_NAME}\n\
+         Comment=Controle este computador pelo celular\n\
+         Exec={} run\n\
+         Icon={icone}\n\
+         Terminal=false\n\
+         StartupNotify=false\n\
+         Categories=Network;RemoteAccess;\n",
+        argumento_do_exec(exe)
+    );
+    if no_login {
+        texto.push_str("X-GNOME-Autostart-enabled=true\n");
+    }
+    texto
+}
+
+/// Os outros agentes do Deskside rodando nesta conta, pela pasta `/proc`.
+///
+/// Pelo nome do processo e pelo dono: um agente de outra conta da mesma
+/// máquina não é deste usuário para fechar. Fora o próprio processo, que é o
+/// `install` em curso.
+///
+/// Recebe a pasta para ser testada com uma `/proc` de mentira.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn outros_agentes(proc: &Path, eu: u32, uid: u32) -> Vec<u32> {
+    #[cfg(unix)]
+    use std::os::unix::fs::MetadataExt;
+    let Ok(pastas) = std::fs::read_dir(proc) else {
+        return Vec::new();
+    };
+    let mut pids: Vec<u32> = pastas
+        .flatten()
+        .filter_map(|p| {
+            let pid: u32 = p.file_name().to_str()?.parse().ok()?;
+            if pid == eu {
+                return None;
+            }
+            #[cfg(unix)]
+            if p.metadata().ok()?.uid() != uid {
+                return None;
+            }
+            #[cfg(not(unix))]
+            let _ = uid;
+            let nome = std::fs::read_to_string(p.path().join("comm")).ok()?;
+            (nome.trim() == "deskside-agent").then_some(pid)
+        })
+        .collect();
+    pids.sort_unstable();
+    pids
+}
+
+/// O que o `install` explica no fim, no Linux.
+///
+/// O login automático vai **explicado**, e não ligado: é decisão de quem usa o
+/// computador (qualquer um que o ligue entra na conta), e mexer nele pediria
+/// a senha de administrador.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn explicacao_do_linux(l: &LugaresLinux) -> Vec<String> {
+    vec![
+        format!("Deskside instalado em {}", l.pasta.display()),
+        "- Sobe sozinho quando você entra na sua conta.".into(),
+        "- Aparece no menu de aplicativos como \"Deskside\".".into(),
+        "- Já está rodando: o código de pareamento chega numa notificação.".into(),
+        "- Com Wayland, na primeira vez o sistema pede permissão para compartilhar \
+         a tela e o controle. Aprove e marque para lembrar."
+            .into(),
+        String::new(),
+        "Depois de ligar o computador, o Deskside só fica disponível quando alguém \
+         entra na conta. Para não depender disso, ligue o login automático:"
+            .into(),
+        "  Configurações › Usuários › Login automático".into(),
+        "  (no Ubuntu 24.04 em diante: Configurações › Sistema › Usuários)".into(),
+        String::new(),
+        "Para desfazer: Desinstalar, no ícone ao lado do relógio, ou".into(),
+        format!("  \"{}\" uninstall", l.exe.display()),
+    ]
+}
+
+#[cfg(windows)]
+mod imp {
+    use super::*;
+    use crate::sem_janela::SemJanela;
+    use std::process::Command;
+
+    fn pasta(var: &str) -> Result<PathBuf, String> {
+        std::env::var_os(var)
+            .map(PathBuf::from)
+            .ok_or_else(|| format!("a variável {var} não existe neste Windows"))
+    }
+
+    /// A pasta Inicializar do usuário.
+    ///
+    /// Montada a partir de `%APPDATA%` em vez de perguntada ao sistema: é um
+    /// caminho fixo desde o Windows 7, e evita uma chamada de API só para isto.
+    fn startup_dir() -> Result<PathBuf, String> {
+        Ok(pasta("APPDATA")?
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+            .join("Startup"))
+    }
+
+    /// O Menu Iniciar do usuário: a mesma raiz da pasta Inicializar, um nível
+    /// acima. Fica em Aplicativos, achável pelo nome na busca do Windows.
+    fn start_menu_dir() -> Result<PathBuf, String> {
+        Ok(pasta("APPDATA")?
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs"))
+    }
+
+    /// A área de trabalho.
+    ///
+    /// `%USERPROFILE%\\Desktop` erra quando a pasta foi redirecionada para o
+    /// OneDrive - e isso é o padrão em máquina nova com conta Microsoft, que é
+    /// justamente o caso do usuário comum. O caminho certo está no registro,
+    /// em Shell Folders, que o Windows mantém atualizado.
+    fn desktop_dir() -> Result<PathBuf, String> {
+        let saida = Command::new("reg")
+            .sem_janela()
+            .args([
+                "query",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+                "/v",
+                "Desktop",
+            ])
+            .output()
+            .map_err(|e| format!("não consegui perguntar onde fica a área de trabalho: {e}"))?;
+        let texto = String::from_utf8_lossy(&saida.stdout);
+        // A saída é "    Desktop    REG_SZ    C:\Users\eu\OneDrive\Desktop".
+        let caminho = texto
+            .lines()
+            .find_map(|l| l.split("REG_SZ").nth(1))
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        match caminho {
+            Some(c) => Ok(PathBuf::from(c)),
+            // Sem registro, o palpite antigo ainda é melhor que desistir.
+            None => Ok(pasta("USERPROFILE")?.join("Desktop")),
+        }
+    }
+
+    fn lugares() -> Result<Places, String> {
+        Ok(Places {
+            local_app_data: pasta("LOCALAPPDATA")?,
+            startup: startup_dir()?,
+            start_menu: start_menu_dir()?,
+            desktop: desktop_dir()?,
+        })
+    }
+
+    /// Cria um atalho `.lnk` apontando para o executável instalado.
+    ///
+    /// Escrito direto, sem COM e sem PowerShell. O instalador já é o momento
+    /// em que mais coisa pode dar errado numa máquina alheia, e cada processo
+    /// externo é mais uma forma de falhar - incluindo antivírus que barram um
+    /// `powershell.exe` disparado por um instalador.
+    fn criar_atalho(exe: &Path, destino: &Path) -> Result<(), String> {
+        if let Some(pai) = destino.parent() {
+            let _ = std::fs::create_dir_all(pai);
+        }
+        let mut link =
+            mslnk::ShellLink::new(exe).map_err(|e| format!("não montei o atalho: {e}"))?;
+        link.set_name(Some(format!("{APP_NAME} - controle remoto")));
+        // O ícone vem do próprio executável (embutido pelo build.rs).
+        link.create_lnk(destino)
+            .map_err(|e| format!("não gravei {}: {e}", destino.display()))
+    }
+
+    fn current_exe() -> Result<PathBuf, String> {
+        std::env::current_exe().map_err(|e| format!("não descobri o próprio caminho: {e}"))
+    }
+
+    /// Encerra qualquer agente que já esteja rodando, **menos este processo**.
+    ///
+    /// Sem parar os outros, instalar por cima deixaria dois agentes conectados
+    /// com o mesmo `device_id`, e o backend entregaria os comandos a um deles
+    /// por sorteio.
+    ///
+    /// A exclusão do próprio PID não é detalhe: quem instala **é** o
+    /// `deskside-agent.exe`, e um `taskkill /IM deskside-agent.exe` mata
+    /// todos os processos com esse nome — inclusive o instalador, no meio da
+    /// instalação. O sintoma foi um `install` que não imprimiu uma linha
+    /// sequer e não copiou nada, deixando para trás a impressão de que não
+    /// tinha feito nada por escolha.
+    fn stop_running() {
+        let eu = std::process::id();
+        let _ = Command::new("taskkill")
+            .sem_janela()
+            .args([
+                "/IM",
+                "deskside-agent.exe",
+                "/F",
+                "/FI",
+                &format!("PID ne {eu}"),
+            ])
+            .output();
+    }
+
+    fn reg_add(key: &str, nome: &str, valor: &str) -> Result<(), String> {
+        let saida = Command::new("reg")
+            .sem_janela()
+            .args([
+                "add",
+                &format!("HKCU\\{key}"),
+                "/v",
+                nome,
+                "/t",
+                "REG_SZ",
+                "/d",
+                valor,
+                "/f",
+            ])
+            .output()
+            .map_err(|e| format!("não consegui escrever no registro: {e}"))?;
+        if !saida.status.success() {
+            return Err(format!(
+                "o registro recusou {nome}: {}",
+                String::from_utf8_lossy(&saida.stderr).trim()
+            ));
+        }
+        Ok(())
+    }
+
+    /// Roda um comando do PowerShell sem perfil e sem interação.
+    ///
+    /// `-ExecutionPolicy Bypass` porque a política de execução da máquina não
+    /// tem nada a dizer sobre isto: é um comando na linha, não um arquivo, e
+    /// numa máquina com política restritiva a instalação falharia por um motivo
+    /// que não é dela.
+    fn powershell(comando: &str) -> Result<std::process::Output, String> {
+        Command::new("powershell")
+            .sem_janela()
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                comando,
+            ])
+            .output()
+            .map_err(|e| format!("não consegui chamar o PowerShell: {e}"))
+    }
+
+    /// Cria a tarefa agendada que inicia o agente no logon.
+    fn criar_tarefa(launcher: &Path) -> Result<(), String> {
+        // `USERDOMAIN` é o nome da máquina em conta local e em conta Microsoft;
+        // só num domínio corporativo ele é outra coisa. Nos dois casos é o que
+        // o Agendador espera.
+        let dominio = std::env::var("USERDOMAIN").unwrap_or_default();
+        let nome = std::env::var("USERNAME")
+            .map_err(|_| "não descobri o nome do usuário do Windows".to_string())?;
+        let usuario = if dominio.is_empty() {
+            nome
+        } else {
+            format!("{dominio}\\{nome}")
+        };
+
+        let saida = powershell(&script_da_tarefa(launcher, &usuario))?;
+        if saida.status.success() {
+            return Ok(());
+        }
+        // A mensagem do PowerShell vai junto: "a tarefa não foi criada" sozinho
+        // não diz se foi política de grupo, serviço desligado ou nome de
+        // usuário estranho — e são consertos diferentes.
+        let motivo = String::from_utf8_lossy(&saida.stderr)
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("o PowerShell recusou sem dizer o motivo")
+            .trim()
+            .to_string();
+        Err(motivo)
+    }
+
+    fn remover_tarefa() {
+        let _ = powershell(&format!(
+            "Unregister-ScheduledTask -TaskName '{TASK_NAME}' \
+             -Confirm:$false -ErrorAction SilentlyContinue"
+        ));
+    }
+
+    pub fn deve_oferecer_instalacao() -> bool {
+        let Ok(atual) = current_exe() else {
+            return false;
+        };
+        let Ok(local) = pasta("LOCALAPPDATA") else {
+            return false;
+        };
+        !already_installed(&atual, &install_dir(&local).join("deskside-agent.exe"))
+    }
+
+    /// Se a tarefa agendada existe. Usado pelo `status`.
+    pub fn tem_tarefa() -> bool {
+        powershell(&format!(
+            "if (Get-ScheduledTask -TaskName '{TASK_NAME}' \
+             -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}"
+        ))
+        .map(|s| s.status.success())
+        .unwrap_or(false)
+    }
+
+    pub fn install(backend: Option<&str>) -> Result<(), String> {
+        let exe_atual = current_exe()?;
+        let plano = plan(&exe_atual, &lugares()?);
+
+        stop_running();
+
+        std::fs::create_dir_all(&plano.dir)
+            .map_err(|e| format!("não consegui criar {}: {e}", plano.dir.display()))?;
+        if plano.copy {
+            std::fs::copy(&exe_atual, &plano.exe)
+                .map_err(|e| format!("não consegui copiar para {}: {e}", plano.exe.display()))?;
+            // Tira a marca de "veio da internet" que o `CopyFile` trouxe junto.
+            // Ver `caminho_da_marca`. Falha ignorada de propósito: o caso comum é
+            // não haver marca nenhuma (executável compilado na própria máquina),
+            // e aí "apagar" devolve um erro que não é erro.
+            let _ = std::fs::remove_file(caminho_da_marca(&plano.exe));
+            println!("Copiado para {}", plano.exe.display());
+        } else {
+            println!("Já estava em {} — só reconfigurando.", plano.exe.display());
+        }
+
+        // A URL do backend vai para o arquivo de configuração, e não para uma
+        // variável de ambiente do usuário: variável não acompanha o programa,
+        // e desinstalar deixaria o rastro para trás.
+        if let Some(url) = backend {
+            let caminho = crate::config_path();
+            let mut cfg = crate::load_config();
+            cfg.set("DESKSIDE_BACKEND_URL", url);
+            if let Some(pai) = caminho.parent() {
+                let _ = std::fs::create_dir_all(pai);
+            }
+            std::fs::write(&caminho, cfg.to_text())
+                .map_err(|e| format!("não consegui gravar {}: {e}", caminho.display()))?;
+            println!("Backend: {url}");
+            // O instalador antigo guardava a URL numa variável de ambiente do
+            // usuário, e variável vence arquivo. Sem este aviso, alguém
+            // trocaria de servidor aqui e continuaria conectando no antigo,
+            // com o arquivo na tela dizendo o contrário.
+            if let Ok(v) = std::env::var("DESKSIDE_BACKEND_URL") {
+                if !v.trim().is_empty() && v != url {
+                    println!();
+                    println!("AVISO: a variável de ambiente DESKSIDE_BACKEND_URL vale {v}");
+                    println!("e ela vence o arquivo. Provavelmente sobrou do instalador antigo.");
+                    // `setx VAR ""` **não** apaga: o setx recusa valor vazio.
+                    // Quem apaga uma variável de usuário é o registro.
+                    println!(
+                        "Para remover:  reg delete \"HKCU\\Environment\" \
+                         /v DESKSIDE_BACKEND_URL /f"
+                    );
+                    println!("e abra um terminal novo.");
+                }
+            }
+        }
+
+        // O `.vbs` fica ao lado do executável: é ele que a tarefa agendada
+        // chama, e é dele que sai a cópia de reserva.
+        std::fs::write(&plano.launcher, launcher_script(&plano.exe))
+            .map_err(|e| format!("não consegui criar o iniciador oculto: {e}"))?;
+
+        // Tarefa agendada primeiro; pasta Inicializar só se ela falhar.
+        //
+        // **Uma das duas, nunca as duas.** Com as duas ativas, dois agentes
+        // subiriam a cada logon; a guarda de instância única faria o segundo
+        // sair, mas ela também pede que o primeiro **mostre a janela** — e uma
+        // janela abrindo sozinha a cada vez que se liga o computador seria uma
+        // troca terrível por alguns segundos de partida.
+        match criar_tarefa(&plano.launcher) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(&plano.startup);
+                println!("Início automático: tarefa agendada no logon (a forma rápida).");
+            }
+            Err(motivo) => {
+                std::fs::write(&plano.startup, launcher_script(&plano.exe))
+                    .map_err(|e| format!("não consegui criar o atalho de início: {e}"))?;
+                println!("Início automático: pasta Inicializar.");
+                println!("  (não deu para criar a tarefa agendada: {motivo})");
+                println!("  Funciona igual, só demora mais para subir ao ligar o computador.");
+            }
+        }
+
+        // Atalhos são conveniência, não requisito: sem eles o agente roda
+        // igual. Uma área de trabalho redirecionada para uma pasta de rede
+        // fora do ar não pode derrubar uma instalação que já funciona.
+        for (onde, destino) in [
+            ("Menu Iniciar", &plano.start_menu),
+            ("área de trabalho", &plano.desktop),
+        ] {
+            match criar_atalho(&plano.exe, destino) {
+                Ok(()) => println!("Atalho no {onde}."),
+                Err(e) => eprintln!("Aviso: sem atalho no {onde} ({e})"),
+            }
+        }
+
+        for (nome, valor) in uninstall_entries(&plano.exe, env!("CARGO_PKG_VERSION")) {
+            // O registro é conveniência, não requisito: sem ele o agente roda
+            // igual, só não aparece em "Aplicativos instalados". Falhar aqui
+            // não pode desfazer uma instalação que já funciona.
+            if let Err(e) = reg_add(UNINSTALL_KEY, &nome, &valor) {
+                eprintln!("Aviso: {e}");
+                break;
+            }
+        }
+
+        // Sobe agora, sem esperar o próximo login.
+        Command::new("wscript.exe")
+            .sem_janela()
+            .arg(&plano.launcher)
+            .spawn()
+            .map_err(|e| format!("instalei, mas não consegui iniciar: {e}"))?;
+
+        println!();
+        println!("Pronto. O agente roda oculto e sobe junto com o Windows.");
+        println!("Os atalhos abrem o programa que já está rodando, não um segundo.");
+        println!("O código de pareamento aparece numa janelinha e também em:");
+        println!("  %APPDATA%\\deskside\\pairing-code.txt");
+        println!();
+        println!("Para remover: deskside-agent.exe uninstall");
+        Ok(())
+    }
+
+    pub fn uninstall() -> Result<(), String> {
+        let exe_atual = current_exe()?;
+        let plano = plan(&exe_atual, &lugares()?);
+
+        stop_running();
+        remover_tarefa();
+        let _ = std::fs::remove_file(&plano.startup);
+        let _ = std::fs::remove_file(&plano.launcher);
+        let _ = std::fs::remove_file(&plano.start_menu);
+        let _ = std::fs::remove_file(&plano.desktop);
+        let _ = Command::new("reg")
+            .sem_janela()
+            .args(["delete", &format!("HKCU\\{UNINSTALL_KEY}"), "/f"])
+            .output();
+
+        // O que uma atualização deixou na pasta. Sem isto o `rmdir` abaixo,
+        // que só remove pasta vazia, deixaria a pasta do Deskside para trás.
+        for sobra in crate::atualizacao::SOBRAS {
+            let _ = std::fs::remove_file(plano.dir.join(sobra));
+        }
+
+        // O executável que está rodando **agora** não pode se apagar. Quem
+        // apaga é um `cmd` que espera um instante e some junto — sem isso a
+        // desinstalação deixaria o próprio programa para trás, que é a única
+        // parte que a pessoa realmente queria ver sumir.
+        let alvo = plano.exe.display().to_string();
+        let _ = Command::new("cmd")
+            .sem_janela()
+            .args([
+                "/C",
+                &format!(
+                    "timeout /t 2 /nobreak >nul & del /f /q \"{alvo}\" & rmdir \"{}\"",
+                    plano.dir.display()
+                ),
+            ])
+            .spawn();
+
+        println!("Removido do início automático e de \"Aplicativos instalados\".");
+        println!("A configuração e o device_id ficam em %APPDATA%\\deskside");
+        println!("(assim, reinstalar não obriga a parear de novo).");
+        Ok(())
+    }
+
+    /// A desinstalação do botão da janela: tira tudo, inclusive a identidade.
+    ///
+    /// Diferente do `uninstall` da linha de comando, e a diferença é de
+    /// intenção. Na linha de comando, desinstalar costuma ser etapa de
+    /// reinstalar. No botão, é despedida.
+    pub fn uninstall_completo() -> Result<(), String> {
+        for arquivo in super::arquivos_da_identidade(&crate::config_dir()) {
+            let _ = std::fs::remove_file(&arquivo);
+        }
+        uninstall()
+    }
+
+    pub fn status() -> Status {
+        let exe = pasta("LOCALAPPDATA")
+            .map(|p| install_dir(&p).join("deskside-agent.exe"))
+            .unwrap_or_default();
+        let startup = startup_dir()
+            .map(|p| p.join(STARTUP_FILE))
+            .unwrap_or_default();
+        let cfg = crate::load_config();
+        let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
+        // A tarefa é o caminho preferido; a pasta Inicializar é a reserva. Os
+        // dois entram no cálculo porque uma instalação antiga tem só o segundo.
+        let tarefa = tem_tarefa();
+        Status {
+            installed: exe.is_file(),
+            autostart: tarefa || startup.is_file(),
+            autostart_por_tarefa: tarefa,
+            exe,
+            backend: crate::config::resolve(&cfg, "DESKSIDE_BACKEND_URL")
+                .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
+            backend_from_env: do_ambiente,
+            device_id: std::fs::read_to_string(crate::device_id_path())
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::*;
+
+    extern "C" {
+        fn getuid() -> u32;
+    }
+
+    fn caminho_do_plist() -> Result<PathBuf, String> {
+        let casa = std::env::var_os("HOME").ok_or("sem a variável HOME")?;
+        Ok(PathBuf::from(casa)
+            .join("Library/LaunchAgents")
+            .join(format!("{ROTULO_DO_MAC}.plist")))
+    }
+
+    fn exe_atual() -> Result<PathBuf, String> {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+    }
+
+    /// Tira o agente do `launchd` desta sessão.
+    ///
+    /// Se quem pede é o próprio agente rodando pelo `launchd`, o sistema o
+    /// encerra aqui mesmo — por isso é sempre o **último** passo.
+    fn tirar_do_launchd() {
+        let alvo = format!("gui/{}/{ROTULO_DO_MAC}", unsafe { getuid() });
+        match std::process::Command::new("/bin/launchctl")
+            .args(["bootout", &alvo])
+            .output()
+        {
+            // Não estar carregado é o caso comum (instalado e ainda sem novo
+            // login), e não erro.
+            Ok(_) => {}
+            Err(e) => crate::diario(&format!("launchctl não rodou: {e}")),
+        }
+    }
+
+    /// Registra o agente para subir no login.
+    ///
+    /// Só grava o arquivo, sem carregá-lo agora: o agente já está rodando
+    /// (é ele quem instala), e carregar subiria uma segunda cópia que a guarda
+    /// de instância mandaria embora. No próximo login o Mac o lê sozinho.
+    pub fn install(backend: Option<&str>) -> Result<(), String> {
+        let exe = exe_atual()?;
+        if lugar_provisorio(&exe) {
+            return Err(
+                "o Deskside está rodando de dentro do arquivo baixado; arraste-o para \
+                 a pasta Aplicativos e abra de lá"
+                    .to_string(),
+            );
+        }
+        if let Some(url) = backend {
+            let mut cfg = crate::load_config();
+            cfg.set("DESKSIDE_BACKEND_URL", url);
+            crate::save_config(&cfg)?;
+        }
+        let plist = caminho_do_plist()?;
+        if let Some(pai) = plist.parent() {
+            std::fs::create_dir_all(pai)
+                .map_err(|e| format!("não consegui criar {}: {e}", pai.display()))?;
+        }
+        std::fs::write(&plist, plist_do_mac(&exe))
+            .map_err(|e| format!("não consegui gravar {}: {e}", plist.display()))?;
+        crate::diario(&format!(
+            "início com o Mac registrado em {}",
+            plist.display()
+        ));
+        Ok(())
+    }
+
+    pub fn deve_oferecer_instalacao() -> bool {
+        let (Ok(exe), Ok(plist)) = (exe_atual(), caminho_do_plist()) else {
+            return false;
+        };
+        if lugar_provisorio(&exe) {
+            return false;
+        }
+        // Instalar de novo quando o arquivo aponta para outro lugar: o `.app`
+        // foi movido, ou é uma versão nova num caminho diferente.
+        std::fs::read_to_string(plist).ok().as_deref() != Some(plist_do_mac(&exe).as_str())
+    }
+
+    /// Para de subir com o Mac. Não apaga a identidade (ver
+    /// `arquivos_da_identidade`).
+    pub fn uninstall() -> Result<(), String> {
+        let plist = caminho_do_plist()?;
+        let r = match std::fs::remove_file(&plist) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("não consegui apagar {}: {e}", plist.display())),
+        };
+        tirar_do_launchd();
+        r
+    }
+
+    /// O botão da janela: sai da conta, para de subir com o Mac e apaga a
+    /// configuração. O `.app` fica — um programa não deve se apagar de
+    /// Aplicativos, e a janela diz para arrastá-lo para o Lixo.
+    pub fn uninstall_completo() -> Result<(), String> {
+        // A configuração antes: `uninstall` pode encerrar este processo.
+        let _ = std::fs::remove_dir_all(crate::config_dir());
+        uninstall()
+    }
+
+    pub fn status() -> Status {
+        let cfg = crate::load_config();
+        let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
+        let registrado = caminho_do_plist().map(|p| p.exists()).unwrap_or(false);
+        Status {
+            installed: registrado,
+            autostart: registrado,
+            autostart_por_tarefa: false,
+            exe: exe_atual().unwrap_or_default(),
+            backend: crate::config::resolve(&cfg, "DESKSIDE_BACKEND_URL")
+                .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
+            backend_from_env: do_ambiente,
+            device_id: std::fs::read_to_string(crate::device_id_path())
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+mod imp {
+    use super::*;
+
+    fn lugares() -> Result<LugaresLinux, String> {
+        let casa = std::env::var_os("HOME").ok_or("sem a variável HOME")?;
+        let dados = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+        let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+        Ok(lugares_linux(
+            Path::new(&casa),
+            dados.as_deref(),
+            config.as_deref(),
+        ))
+    }
+
+    fn exe_atual() -> Result<PathBuf, String> {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+    }
+
+    fn gravar(caminho: &Path, conteudo: &[u8]) -> Result<(), String> {
+        if let Some(pai) = caminho.parent() {
+            std::fs::create_dir_all(pai)
+                .map_err(|e| format!("não consegui criar {}: {e}", pai.display()))?;
+        }
+        std::fs::write(caminho, conteudo)
+            .map_err(|e| format!("não consegui gravar {}: {e}", caminho.display()))
+    }
+
+    /// Copia o executável para a pasta do Deskside.
+    ///
+    /// Por um arquivo ao lado e uma troca de nome: gravar por cima de um
+    /// executável que está rodando (reinstalar com o agente aberto) dá "text
+    /// file busy"; trocar o nome não, e quem está rodando segue com o antigo.
+    fn copiar_executavel(de: &Path, para: &Path) -> Result<(), String> {
+        use std::os::unix::fs::PermissionsExt;
+        let provisorio = para.with_extension("novo");
+        if let Some(pai) = para.parent() {
+            std::fs::create_dir_all(pai)
+                .map_err(|e| format!("não consegui criar {}: {e}", pai.display()))?;
+        }
+        std::fs::copy(de, &provisorio)
+            .map_err(|e| format!("não consegui copiar o executável: {e}"))?;
+        std::fs::set_permissions(&provisorio, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| format!("não consegui marcar o executável: {e}"))?;
+        std::fs::rename(&provisorio, para)
+            .map_err(|e| format!("não consegui pôr o executável no lugar: {e}"))
+    }
+
+    extern "C" {
+        fn kill(pid: i32, sinal: i32) -> i32;
+    }
+    const SIGTERM: i32 = 15;
+    const SIGKILL: i32 = 9;
+
+    /// Fecha os outros agentes desta conta e espera saírem. Devolve quantos.
+    ///
+    /// Primeiro o pedido educado (SIGTERM), que solta a tela compartilhada e o
+    /// arquivo trancado como uma saída normal; quem não sair em 5 s é
+    /// encerrado à força.
+    fn encerrar_outros_agentes() -> usize {
+        let Ok(eu) = std::fs::metadata("/proc/self") else {
+            return 0;
+        };
+        use std::os::unix::fs::MetadataExt;
+        let outros = super::outros_agentes(Path::new("/proc"), std::process::id(), eu.uid());
+        for pid in &outros {
+            unsafe { kill(*pid as i32, SIGTERM) };
+        }
+        let vivo = |pid: &u32| Path::new(&format!("/proc/{pid}")).exists();
+        let prazo = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while outros.iter().any(vivo) && std::time::Instant::now() < prazo {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        for pid in outros.iter().filter(|p| vivo(p)) {
+            unsafe { kill(*pid as i32, SIGKILL) };
+        }
+        if !outros.is_empty() {
+            crate::diario(&format!(
+                "instalar: {} agente(s) antigo(s) fechado(s)",
+                outros.len()
+            ));
+        }
+        outros.len()
+    }
+
+    /// Sobe a cópia instalada, solta deste terminal: fechá-lo não a derruba.
+    fn subir(exe: &Path) {
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command, Stdio};
+        let r = Command::new(exe)
+            .arg("run")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            // Fora do grupo do terminal: o Ctrl+C e o fechar da janela não
+            // chegam a ela.
+            .process_group(0)
+            .spawn();
+        if let Err(e) = r {
+            eprintln!("Não consegui abrir o Deskside instalado ({e}); ele sobe no próximo login.");
+        }
+    }
+
+    /// Copia para `~/.local/share/deskside`, registra no login e no menu, e
+    /// sobe a cópia instalada.
+    pub fn install(backend: Option<&str>) -> Result<(), String> {
+        let l = lugares()?;
+        if let Some(url) = backend {
+            let mut cfg = crate::load_config();
+            cfg.set("DESKSIDE_BACKEND_URL", url);
+            crate::save_config(&cfg)?;
+        }
+        let exe = exe_atual()?;
+        if exe != l.exe {
+            copiar_executavel(&exe, &l.exe)?;
+        }
+        gravar(&l.icone, include_bytes!("../assets/tray.png"))?;
+        gravar(
+            &l.inicio,
+            desktop_do_linux(&l.exe, &l.icone, true).as_bytes(),
+        )?;
+        gravar(
+            &l.menu,
+            desktop_do_linux(&l.exe, &l.icone, false).as_bytes(),
+        )?;
+        crate::diario(&format!("instalado em {}", l.pasta.display()));
+        // Com um Deskside já rodando, o novo veria "já está rodando" e sairia
+        // (uma instância só), e a versão antiga seguiria no ar sem ninguém
+        // perceber. Por isso o antigo sai primeiro.
+        let fechados = encerrar_outros_agentes();
+        if fechados > 0 {
+            println!("O Deskside que estava rodando foi fechado; o novo assume agora.");
+        }
+        subir(&l.exe);
+        for linha in explicacao_do_linux(&l) {
+            println!("{linha}");
+        }
+        Ok(())
+    }
+
+    pub fn deve_oferecer_instalacao() -> bool {
+        // No Linux instalar é pedido explícito (`install`): dois cliques num
+        // executável quase nunca chegam a rodá-lo, e quem usa o terminal
+        // escolhe.
+        false
+    }
+
+    /// Para de subir no login e tira do menu. Não apaga a identidade (ver
+    /// `arquivos_da_identidade`). O agente que estiver rodando segue até o
+    /// fim da sessão ou até alguém escolher Sair.
+    pub fn uninstall() -> Result<(), String> {
+        let l = lugares()?;
+        let mut erros = Vec::new();
+        for arquivo in [&l.inicio, &l.menu] {
+            match std::fs::remove_file(arquivo) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => erros.push(format!("{}: {e}", arquivo.display())),
+            }
+        }
+        match std::fs::remove_dir_all(&l.pasta) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => erros.push(format!("{}: {e}", l.pasta.display())),
+        }
+        if erros.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("não consegui apagar {}", erros.join("; ")))
+        }
+    }
+
+    /// O Desinstalar do ícone: sai da conta, para de subir no login e apaga a
+    /// configuração — como no Windows e no Mac.
+    pub fn uninstall_completo() -> Result<(), String> {
+        let _ = std::fs::remove_dir_all(crate::config_dir());
+        uninstall()
+    }
+
+    pub fn status() -> Status {
+        let cfg = crate::load_config();
+        let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
+        let l = lugares().ok();
+        let instalado = l.as_ref().is_some_and(|l| l.exe.exists());
+        Status {
+            installed: instalado,
+            autostart: l.as_ref().is_some_and(|l| l.inicio.exists()),
+            autostart_por_tarefa: false,
+            exe: match (&l, instalado) {
+                (Some(l), true) => l.exe.clone(),
+                _ => exe_atual().unwrap_or_default(),
+            },
+            backend: crate::config::resolve(&cfg, "DESKSIDE_BACKEND_URL")
+                .unwrap_or_else(|| crate::DEFAULT_BACKEND_URL.to_string()),
+            backend_from_env: do_ambiente,
+            device_id: std::fs::read_to_string(crate::device_id_path())
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+        }
+    }
+}
+
+pub use imp::{install, status, uninstall, uninstall_completo};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn o_plist_do_mac_aponta_para_o_executavel() {
+        let p = plist_do_mac(Path::new(
+            "/Applications/Deskside.app/Contents/MacOS/deskside-agent",
+        ));
+        assert!(p.contains("<string>com.deskside.agente</string>"));
+        assert!(
+            p.contains("<string>/Applications/Deskside.app/Contents/MacOS/deskside-agent</string>")
+        );
+        assert!(p.contains("<key>RunAtLoad</key>\n    <true/>"));
+        // Sair pelo menu é saída normal, e não pode fazer o Mac subir de novo.
+        assert!(p.contains("<key>SuccessfulExit</key>\n        <false/>"));
+    }
+
+    #[test]
+    fn o_plist_do_mac_escapa_o_caminho() {
+        let p = plist_do_mac(Path::new("/Users/Ana & Bia/Deskside.app/x"));
+        assert!(p.contains("/Users/Ana &amp; Bia/"));
+        assert!(!p.contains("Ana & Bia"));
+    }
+
+    #[test]
+    fn do_dmg_ou_da_translocacao_nao_se_instala() {
+        assert!(lugar_provisorio(Path::new(
+            "/Volumes/Deskside/Deskside.app/Contents/MacOS/deskside-agent"
+        )));
+        assert!(lugar_provisorio(Path::new(
+            "/private/var/folders/x/AppTranslocation/ABC/d/Deskside.app/Contents/MacOS/a"
+        )));
+        assert!(!lugar_provisorio(Path::new(
+            "/Applications/Deskside.app/Contents/MacOS/deskside-agent"
+        )));
+    }
+
+    fn p(s: &str) -> PathBuf {
+        PathBuf::from(s)
+    }
+
+    /// Caminhos montados com `join`, e não escritos com barra invertida.
+    ///
+    /// Estes testes rodam no Linux, onde `\` é um caractere comum de nome de
+    /// arquivo e não um separador — um literal `C:\a\b` viraria **um** nome só.
+    /// Montando com `join`, o que se confere é a estrutura (que pasta dentro de
+    /// qual), que é o que o código de fato decide.
+    fn caminho(partes: &[&str]) -> PathBuf {
+        partes.iter().fold(PathBuf::new(), |acc, p| acc.join(p))
+    }
+
+    #[test]
+    fn o_launcher_escapa_caminho_com_espaco() {
+        // "Ana Maria" no nome de usuário é comum, e um caminho com espaço sem
+        // aspas faria o VBScript tentar rodar "C:\Users\Ana" — que não existe.
+        let vbs = launcher_script(&p(r"C:\Users\Ana Maria\App\agente.exe"));
+        assert!(
+            vbs.contains(r#"sh.Run """C:\Users\Ana Maria\App\agente.exe""", 0, False"#),
+            "VBScript gerado:\n{vbs}"
+        );
+    }
+
+    #[test]
+    fn o_launcher_esconde_a_janela() {
+        // O `0` é o que impede o console preto de piscar a cada login, e o
+        // `False` é o que faz o script não ficar esperando o agente terminar.
+        let vbs = launcher_script(&p(r"C:\x\a.exe"));
+        assert!(vbs.contains(", 0, False"));
+    }
+
+    #[test]
+    fn o_launcher_dobra_aspas_do_caminho() {
+        // Aspas em nome de arquivo são raras, mas uma aspas solta fecharia a
+        // string do VBScript e o resto do caminho viraria código.
+        let vbs = launcher_script(&p(r#"C:\a"b\x.exe"#));
+        assert!(!vbs.contains(r#"a"b"#), "aspas não foram dobradas:\n{vbs}");
+        assert!(vbs.contains(r#"a""b"#));
+    }
+
+    #[test]
+    fn a_marca_da_web_e_apagada_no_lugar_certo() {
+        // Montar o caminho errado falharia **em silêncio**: não existe fluxo com
+        // aquele nome, "apagar" não faz nada, e a marca continuaria no
+        // executável instalado. O sintoma seria o pior possível — o agente sobe
+        // oculto pela tarefa do logon, e um diálogo modal invisível esperando um
+        // clique é um computador que nunca aparece no aplicativo.
+        assert_eq!(
+            caminho_da_marca(&p(r"C:\App\deskside-agent.exe")),
+            r"C:\App\deskside-agent.exe:Zone.Identifier"
+        );
+        // O nome do fluxo vai **depois** do caminho inteiro, e não antes da
+        // extensão: `...\deskside-agent:Zone.Identifier.exe` seria um arquivo
+        // comum com nome esquisito, e apagá-lo não tiraria marca nenhuma.
+        let caminho = caminho_da_marca(&p(r"C:\Users\Ana Maria\App\a.exe"));
+        assert!(caminho.ends_with(":Zone.Identifier"), "{caminho}");
+        assert!(caminho.contains("Ana Maria"), "{caminho}");
+    }
+
+    #[test]
+    fn a_tarefa_aponta_para_o_iniciador_oculto_e_dispara_no_logon() {
+        let script = script_da_tarefa(&p(r"C:\App\DesksideAgent.vbs"), r"PC\eu");
+        // `wscript` e não o `.exe` direto: é o que evita um console preto
+        // piscando a cada logon.
+        assert!(script.contains("-Execute 'wscript.exe'"), "{script}");
+        assert!(script.contains(r"C:\App\DesksideAgent.vbs"), "{script}");
+        assert!(script.contains("-AtLogOn"), "{script}");
+        assert!(script.contains(r"-User 'PC\eu'"), "{script}");
+    }
+
+    #[test]
+    fn a_tarefa_desliga_os_padroes_que_matariam_o_agente() {
+        // Os padrões do Agendador foram feitos para tarefas de manutenção, e
+        // três deles quebrariam este agente **em silêncio**: não iniciar na
+        // bateria, encerrar ao sair da tomada, e matar a tarefa depois de três
+        // dias. Num notebook, o primeiro sozinho já significa "nunca sobe".
+        let script = script_da_tarefa(&p(r"C:\App\x.vbs"), "PC\\eu");
+        assert!(script.contains("-AllowStartIfOnBatteries"), "{script}");
+        assert!(script.contains("-DontStopIfGoingOnBatteries"), "{script}");
+        assert!(script.contains("ExecutionTimeLimit = 'PT0S'"), "{script}");
+        // E a prioridade: o padrão 7 vira "abaixo do normal" para o processo,
+        // justamente no logon, quando há disputa por disco e CPU.
+        assert!(script.contains("Priority = 5"), "{script}");
+    }
+
+    #[test]
+    fn o_caminho_com_apostrofo_nao_quebra_o_comando() {
+        // `C:\Users\O'Brien\...` é um caminho legítimo, e no PowerShell a aspa
+        // simples se escapa dobrando. Sem isto o comando terminaria no meio do
+        // caminho e a tarefa não seria criada - com o sintoma "não funciona
+        // nesta máquina" e nada ligando à causa.
+        let script = script_da_tarefa(&p(r"C:\Users\O'Brien\x.vbs"), "PC\\O'Brien");
+        assert!(script.contains("O''Brien"), "{script}");
+        assert!(
+            !script.contains("O'Brien"),
+            "sobrou uma aspa solta: {script}"
+        );
+    }
+
+    #[test]
+    fn instala_na_pasta_por_usuario() {
+        // `Program Files` exigiria elevação, e elevação é um passo a mais que
+        // assusta — sem ganho nenhum, porque o agente roda no usuário.
+        let local = caminho(&["C:", "Users", "eu", "AppData", "Local"]);
+        assert_eq!(
+            install_dir(&local),
+            caminho(&["C:", "Users", "eu", "AppData", "Local", "Programs", "Deskside"])
+        );
+    }
+
+    fn lugares_de_teste() -> Places {
+        Places {
+            local_app_data: caminho(&["C:", "Users", "eu", "AppData", "Local"]),
+            startup: caminho(&["C:", "Users", "eu", "Startup"]),
+            start_menu: caminho(&["C:", "Users", "eu", "Menu"]),
+            desktop: caminho(&["C:", "Users", "eu", "Desktop"]),
+        }
+    }
+
+    #[test]
+    fn rodar_de_fora_copia_o_executavel() {
+        let lugares = lugares_de_teste();
+        let plano = plan(
+            &caminho(&["C:", "repo", "target", "release", "deskside-agent.exe"]),
+            &lugares,
+        );
+        assert!(plano.copy);
+        assert_eq!(
+            plano.exe,
+            install_dir(&lugares.local_app_data).join("deskside-agent.exe")
+        );
+        assert_eq!(plano.startup, lugares.startup.join(STARTUP_FILE));
+    }
+
+    #[test]
+    fn os_atalhos_apontam_para_o_executavel_instalado() {
+        // O atalho tem que apontar para a cópia em Programs, e não para onde
+        // o instalador foi executado. Apontar para a pasta de downloads faria
+        // o atalho quebrar no dia em que alguém a limpasse - sem aviso, e sem
+        // ninguém associar uma coisa à outra.
+        let lugares = lugares_de_teste();
+        let plano = plan(
+            &caminho(&["C:", "Downloads", "deskside-agent.exe"]),
+            &lugares,
+        );
+        assert_eq!(plano.start_menu, lugares.start_menu.join("Deskside.lnk"));
+        assert_eq!(plano.desktop, lugares.desktop.join("Deskside.lnk"));
+        assert!(plano.exe.starts_with(&plano.dir));
+    }
+
+    #[test]
+    fn rodar_de_dentro_nao_copia_sobre_si_mesmo() {
+        // Copiar um arquivo sobre ele mesmo falha no Windows com "acesso
+        // negado" - um erro que manda o diagnóstico para o lado errado. Quem
+        // roda `install` já instalado está reconfigurando.
+        let local = caminho(&["C:", "Users", "eu", "AppData", "Local"]);
+        let instalado = install_dir(&local).join("deskside-agent.exe");
+        let plano = plan(
+            &instalado,
+            &Places {
+                local_app_data: local,
+                ..lugares_de_teste()
+            },
+        );
+        assert!(!plano.copy);
+    }
+
+    #[test]
+    fn caminho_do_windows_nao_diferencia_maiusculas() {
+        assert!(already_installed(
+            &p(r"C:\Users\Eu\App\Agente.exe"),
+            &p(r"c:\users\eu\app\agente.exe")
+        ));
+        assert!(!already_installed(&p(r"C:\a\x.exe"), &p(r"C:\b\x.exe")));
+    }
+
+    #[test]
+    fn a_desinstalacao_aponta_para_o_proprio_executavel() {
+        // Se a `UninstallString` apontasse para o script do repositório, quem
+        // recebeu só o .exe não teria como desinstalar pelo Windows.
+        let exe = install_dir(&caminho(&["C:", "Users", "eu", "AppData", "Local"]))
+            .join("deskside-agent.exe");
+        let entradas = uninstall_entries(&exe, "0.9.0");
+        let mapa: std::collections::HashMap<_, _> = entradas.into_iter().collect();
+        assert_eq!(
+            mapa["UninstallString"],
+            format!("\"{}\" uninstall", exe.display())
+        );
+        assert_eq!(mapa["DisplayName"], "Deskside");
+        assert_eq!(mapa["DisplayVersion"], "0.9.0");
+        assert!(mapa["InstallLocation"].ends_with("Deskside"));
+    }
+
+    #[test]
+    fn o_status_diz_quando_nao_esta_instalado() {
+        let linhas = status_lines(&Status {
+            installed: false,
+            autostart: false,
+            autostart_por_tarefa: false,
+            exe: p(r"C:\x\a.exe"),
+            backend: "ws://127.0.0.1:8000/ws/agent".into(),
+            backend_from_env: false,
+            device_id: None,
+        });
+        assert!(linhas[0].contains("Não instalado"));
+        assert!(linhas[1].contains("não"));
+        assert!(linhas[3].contains("nunca rodou"));
+    }
+
+    #[test]
+    fn o_status_mostra_onde_esta_e_para_onde_aponta() {
+        let linhas = status_lines(&Status {
+            installed: true,
+            autostart: true,
+            autostart_por_tarefa: true,
+            exe: install_dir(&caminho(&["C:", "Users", "eu", "AppData", "Local"]))
+                .join("deskside-agent.exe"),
+            backend: "wss://deskside.com.br/ws/agent".into(),
+            backend_from_env: false,
+            device_id: Some("abc123".into()),
+        });
+        assert!(linhas[0].contains("Deskside"));
+        // A linha agora diz **por qual mecanismo**, porque um deles é
+        // muito mais rápido e é a primeira coisa a olhar numa queixa de demora.
+        #[cfg(windows)]
+        assert!(linhas[1].contains("sim") && linhas[1].contains("tarefa agendada"));
+        #[cfg(target_os = "linux")]
+        assert!(linhas[1].starts_with("Inicia com o login: sim"));
+        // No Mac não há tarefa agendada: o mecanismo é um só.
+        #[cfg(target_os = "macos")]
+        assert_eq!(linhas[1], "Inicia com o Mac: sim (LaunchAgent)");
+        assert!(linhas[2].contains("deskside.com.br"));
+        assert!(linhas[3].contains("abc123"));
+    }
+
+    #[test]
+    fn o_status_avisa_quando_o_ambiente_mascara_o_arquivo() {
+        // O instalador antigo guardava a URL numa variável de ambiente do
+        // usuário, e variável vence arquivo. Sem este aviso, quem trocasse de
+        // servidor no `agent.conf` veria aqui o valor antigo, com o arquivo na
+        // tela dizendo o contrário e nada explicando a diferença.
+        let linhas = status_lines(&Status {
+            installed: true,
+            autostart: true,
+            autostart_por_tarefa: true,
+            exe: p("x"),
+            backend: "wss://antigo/ws/agent".into(),
+            backend_from_env: true,
+            device_id: Some("id".into()),
+        });
+        assert!(linhas[2].contains("wss://antigo/ws/agent"));
+        assert!(
+            linhas[2].contains("variável de ambiente"),
+            "precisa dizer de onde veio: {}",
+            linhas[2]
+        );
+    }
+
+    #[test]
+    fn sem_variavel_o_status_nao_polui_a_linha() {
+        let linhas = status_lines(&Status {
+            installed: true,
+            autostart: true,
+            autostart_por_tarefa: true,
+            exe: p("x"),
+            backend: "wss://novo/ws/agent".into(),
+            backend_from_env: false,
+            device_id: Some("id".into()),
+        });
+        assert_eq!(linhas[2], "Backend: wss://novo/ws/agent");
+    }
+
+    #[test]
+    fn instalado_sem_inicio_automatico_e_um_estado_visivel() {
+        // Acontece de verdade: alguém tira o atalho da pasta Inicializar e
+        // depois não entende por que o computador some do app. O `status`
+        // precisa dizer isso em vez de mostrar tudo verde.
+        let linhas = status_lines(&Status {
+            installed: true,
+            autostart: false,
+            autostart_por_tarefa: false,
+            exe: p(r"C:\x\a.exe"),
+            backend: "x".into(),
+            backend_from_env: false,
+            device_id: Some("id".into()),
+        });
+        assert!(linhas[0].starts_with("Instalado em:"));
+        assert!(linhas[1].ends_with("não"));
+    }
+}
+
+#[cfg(test)]
+mod testes_da_identidade {
+    use super::*;
+
+    #[test]
+    fn a_identidade_e_o_par_que_prova_quem_este_computador_e() {
+        let caminhos = arquivos_da_identidade(Path::new("C:\\cfg\\deskside"));
+        let nomes: Vec<_> = caminhos
+            .iter()
+            .filter_map(|p| p.file_name().and_then(|n| n.to_str()))
+            .collect();
+        // Os dois, e não só o device_id: o segredo sozinho no disco depois de
+        // um "removi tudo" contradiz o que o botão promete, e o device_id
+        // sozinho mantém o computador na conta.
+        assert_eq!(nomes, vec!["device_id", "agent_secret"]);
+        assert!(caminhos.iter().all(|p| p.starts_with("C:\\cfg\\deskside")));
+    }
+}
+
+#[cfg(test)]
+mod testes_do_linux {
+    use super::*;
+
+    #[test]
+    fn os_lugares_seguem_o_padrao_xdg() {
+        let l = lugares_linux(Path::new("/home/ana"), None, None);
+        assert_eq!(
+            l.exe,
+            Path::new("/home/ana/.local/share/deskside/deskside-agent")
+        );
+        assert_eq!(
+            l.icone,
+            Path::new("/home/ana/.local/share/deskside/deskside.png")
+        );
+        assert_eq!(
+            l.inicio,
+            Path::new("/home/ana/.config/autostart/deskside.desktop")
+        );
+        assert_eq!(
+            l.menu,
+            Path::new("/home/ana/.local/share/applications/deskside.desktop")
+        );
+    }
+
+    // Caminhos do Linux: no Windows, "/etc/xdg-ana" não é absoluto (falta a
+    // unidade) e o separador vira "\", então o teste só vale num Unix.
+    #[cfg(unix)]
+    #[test]
+    fn variavel_xdg_relativa_nao_vale() {
+        // O padrão manda ignorar: um caminho relativo dependeria da pasta de
+        // onde o agente foi aberto.
+        let l = lugares_linux(
+            Path::new("/home/ana"),
+            Some(Path::new("dados")),
+            Some(Path::new("/etc/xdg-ana")),
+        );
+        assert!(l.exe.starts_with("/home/ana/.local/share"));
+        assert_eq!(
+            l.inicio,
+            Path::new("/etc/xdg-ana/autostart/deskside.desktop")
+        );
+    }
+
+    #[test]
+    fn o_desktop_roda_o_agente_instalado() {
+        let t = desktop_do_linux(
+            Path::new("/home/ana/.local/share/deskside/deskside-agent"),
+            Path::new("/home/ana/.local/share/deskside/deskside.png"),
+            true,
+        );
+        assert!(t.starts_with("[Desktop Entry]\n"));
+        assert!(t.contains("\nExec=\"/home/ana/.local/share/deskside/deskside-agent\" run\n"));
+        assert!(t.contains("\nIcon=/home/ana/.local/share/deskside/deskside.png\n"));
+        assert!(t.contains("\nTerminal=false\n"));
+        assert!(t.contains("\nX-GNOME-Autostart-enabled=true\n"));
+        // O do menu não leva a linha do login.
+        let menu = desktop_do_linux(Path::new("/x"), Path::new("/i.png"), false);
+        assert!(!menu.contains("Autostart"));
+    }
+
+    #[test]
+    fn caminho_com_espaco_e_simbolos_vai_escapado() {
+        // Espaço fica entre aspas; `$` e `"` levam barra (que o arquivo
+        // dobra), e `%` vira `%%` para não ser lido como `%f`.
+        assert_eq!(
+            argumento_do_exec(Path::new("/home/Ana Bia/$x\"%y")),
+            "\"/home/Ana Bia/\\\\$x\\\\\"%%y\""
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn acha_os_outros_agentes_pelo_nome_e_fora_o_proprio() {
+        use std::os::unix::fs::MetadataExt;
+        let proc = std::env::temp_dir().join(format!("deskside-proc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&proc);
+        for (pid, nome) in [
+            ("10", "deskside-agent"),
+            ("11", "bash"),
+            ("12", "deskside-agent"),
+            ("self", "x"),
+        ] {
+            std::fs::create_dir_all(proc.join(pid)).unwrap();
+            std::fs::write(proc.join(pid).join("comm"), format!("{nome}\n")).unwrap();
+        }
+        let uid = std::fs::metadata(&proc).unwrap().uid();
+        // O 12 é o próprio `install`: fica.
+        assert_eq!(outros_agentes(&proc, 12, uid), vec![10]);
+        // Outro dono: nenhum é deste usuário para fechar.
+        assert!(outros_agentes(&proc, 12, uid + 1).is_empty());
+        std::fs::remove_dir_all(&proc).unwrap();
+    }
+
+    // Caminhos do Linux: no Windows, "/etc/xdg-ana" não é absoluto (falta a
+    // unidade) e o separador vira "\", então o teste só vale num Unix.
+    #[cfg(unix)]
+    #[test]
+    fn a_explicacao_fala_do_login_automatico_sem_liga_lo() {
+        let l = lugares_linux(Path::new("/home/ana"), None, None);
+        let texto = explicacao_do_linux(&l).join("\n");
+        assert!(texto.contains("Login automático"));
+        assert!(texto.contains("/home/ana/.local/share/deskside"));
+        assert!(texto.contains("uninstall"));
+    }
+}

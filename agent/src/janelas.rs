@@ -1,0 +1,1097 @@
+//! Pôr as janelas nos seus lugares.
+//!
+//! Abrir quatro programas empilhados um sobre o outro não é um ambiente
+//! montado — é a mesma bagunça em três toques a menos. O que falta é cada um
+//! abrir **no lugar certo**, como nos layouts de encaixe do Windows 11.
+//!
+//! ## O que o Windows deixa fazer, e o que não
+//!
+//! Não há API pública para *invocar* aquele menu de layouts. Há o que está por
+//! trás dele: `SetWindowPos`, que põe uma janela em qualquer retângulo. É o
+//! mesmo caminho do FancyZones, do PowerToys.
+//!
+//! Os atalhos de encaixe (`Win+Esquerda`) seriam mais fáceis — o agente já sabe
+//! mandá-los — e são o caminho errado: só fazem metades e quartos, agem sobre a
+//! **janela em foco**, e logo depois de abrir um programa o foco é a coisa mais
+//! imprevisível que existe. Meio segundo de atraso e o atalho encaixa a janela
+//! de outro programa.
+//!
+//! ## A parte difícil não é posicionar
+//!
+//! Posicionar é uma chamada. Descobrir **qual** janela pertence ao programa que
+//! acabou de ser aberto é onde mora o trabalho:
+//!
+//! - o programa mostra uma tela de carregamento antes da janela de verdade;
+//! - o processo lançado termina e quem abre a janela é outro — navegadores,
+//!   Office, qualquer coisa em Electron;
+//! - a janela pode aparecer três segundos depois, e até lá não há o que mover.
+//!
+//! A saída é não depender do processo: o agente fotografa quais janelas existem
+//! **antes** de abrir e espera aparecer uma nova. Funciona igual para os três
+//! casos acima, porque a pergunta deixa de ser "de quem é esta janela" e passa
+//! a ser "qual janela não existia agora há pouco".
+//!
+//! A geometria é portável e está testada; a caça à janela é do Windows.
+
+use serde::{Deserialize, Serialize};
+
+/// Uma zona: o retângulo de células que uma janela ocupa numa grade.
+///
+/// **Células, e não frações.** Um layout de três colunas em frações seria
+/// 0,333 cada, e três vezes 0,333 não fecha 1 — sobraria uma fresta de um ou
+/// dois pixels entre as janelas, ou elas se sobreporiam. Com a grade, a borda
+/// direita de uma zona é calculada pela mesma conta que a borda esquerda da
+/// seguinte, e o encaixe é exato por construção.
+///
+/// A grade vem junto porque o agente **não conhece os layouts**: quem tem o
+/// catálogo (metades, três colunas, 2×2, 2/3+1/3) é o app, que precisa dele
+/// para desenhar o seletor. Aqui só chega "coluna 0 de 3, largura 2".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Zona {
+    /// Quantas colunas e linhas a grade tem.
+    pub cols: u32,
+    pub rows: u32,
+    /// Onde a zona começa, em células.
+    pub col: u32,
+    pub row: u32,
+    /// Quantas células ela ocupa.
+    #[serde(default = "uma")]
+    pub colspan: u32,
+    #[serde(default = "uma")]
+    pub rowspan: u32,
+}
+
+fn uma() -> u32 {
+    1
+}
+
+impl Zona {
+    /// Se a zona cabe na grade que ela mesma declara.
+    ///
+    /// A zona chega pela rede. Uma coluna 5 numa grade de 2 colunas não é um
+    /// erro de digitação a corrigir em silêncio — é um pedido que não faz
+    /// sentido, e posicionar "o mais perto possível" poria a janela num lugar
+    /// que ninguém escolheu.
+    pub fn valida(&self) -> bool {
+        self.cols > 0
+            && self.rows > 0
+            && self.colspan > 0
+            && self.rowspan > 0
+            && self.col + self.colspan <= self.cols
+            && self.row + self.rowspan <= self.rows
+    }
+}
+
+/// Um retângulo em pixels da tela.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Retangulo {
+    pub x: i32,
+    pub y: i32,
+    pub largura: i32,
+    pub altura: i32,
+}
+
+impl Retangulo {
+    pub fn direita(&self) -> i32 {
+        self.x + self.largura
+    }
+    pub fn base(&self) -> i32 {
+        self.y + self.altura
+    }
+}
+
+/// Converte uma zona no retângulo em pixels dentro da área útil.
+///
+/// `area` é a **área de trabalho**, não a resolução: é ela que exclui a barra
+/// de tarefas. Usar a resolução deixaria a janela de baixo escondida atrás da
+/// barra em todo layout com duas linhas.
+///
+/// As bordas saem de multiplicação e divisão inteiras sobre o índice da célula,
+/// e não de somar larguras arredondadas. É isso que garante que a borda direita
+/// de uma zona seja exatamente a esquerda da seguinte — somar `largura/3` três
+/// vezes deixaria uma fresta.
+pub fn retangulo(zona: &Zona, area: Retangulo) -> Option<Retangulo> {
+    if !zona.valida() {
+        return None;
+    }
+    let borda = |indice: u32, total: u32, tamanho: i32, inicio: i32| -> i32 {
+        inicio + (tamanho as i64 * indice as i64 / total as i64) as i32
+    };
+    let esquerda = borda(zona.col, zona.cols, area.largura, area.x);
+    let direita = borda(zona.col + zona.colspan, zona.cols, area.largura, area.x);
+    let topo = borda(zona.row, zona.rows, area.altura, area.y);
+    let base = borda(zona.row + zona.rowspan, zona.rows, area.altura, area.y);
+    Some(Retangulo {
+        x: esquerda,
+        y: topo,
+        largura: direita - esquerda,
+        altura: base - topo,
+    })
+}
+
+/// Quanto tempo esperar a janela de um programa aparecer.
+///
+/// Cinco segundos porque o pior caso comum é um Office ou um Electron em disco
+/// mecânico. Passar disso não ajudaria: se a janela não veio até aqui, ou o
+/// programa não abriu, ou ele não tem janela — e continuar esperando só
+/// atrasaria os programas seguintes da lista. A exceção é o programa que
+/// mostrou uma tela de carregamento: ele é esperado mais, em segundo plano
+/// (ver `ESPERA_COM_CARREGAMENTO`).
+pub const ESPERA_JANELA: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// De quanto em quanto tempo perguntar se a janela já apareceu.
+pub const INTERVALO_BUSCA: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// Quanto esperar a janela de verdade quando o programa abriu antes uma tela
+/// de carregamento. O PyCharm, o Android Studio e o Photoshop levam de 10 a 40
+/// segundos atrás dela. Essa espera corre **em segundo plano** (ver
+/// `Decisao::Adiar`): os programas seguintes da lista abrem enquanto isso.
+pub const ESPERA_COM_CARREGAMENTO: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Que tipo de janela nova apareceu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tipo {
+    /// Uma janela de programa: tem barra de título, ou pode mudar de tamanho.
+    Janela,
+    /// Uma tela de carregamento: sem barra de título **e** sem borda de
+    /// redimensionar. As duas juntas, e não só a falta de título: programas
+    /// de janela "sem moldura" (vários feitos em Electron) desenham a própria
+    /// barra, mas continuam redimensionáveis — e são a janela de verdade.
+    Carregamento,
+}
+
+/// O que fazer, a cada olhada, com as janelas novas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decisao<H> {
+    Posicionar(H),
+    Esperar,
+    /// Só apareceu tela de carregamento no tempo normal: a janela de verdade
+    /// vai ser esperada em segundo plano, e a lista segue.
+    Adiar,
+    Desistir,
+}
+
+/// Decide qual janela nova posicionar, ou se ainda vale esperar.
+///
+/// A regra que resolve a tela de carregamento: **ela não conta como a janela
+/// do programa**. Antes, a primeira janela nova era posicionada — e no
+/// PyCharm a primeira é a de carregamento, que some em seguida, enquanto a de
+/// verdade abria depois onde o Windows quisesse.
+///
+/// - Uma janela de programa nova: é ela.
+/// - Esgotado o tempo normal (`ESPERA_JANELA`) tendo visto só tela de
+///   carregamento: adia para o segundo plano. Esperar aqui seguraria a lista
+///   inteira, e o servidor desiste de esperar a resposta em 60 s.
+/// - Nada novo no tempo normal: desiste, como sempre.
+///
+/// Pura para ser testada em qualquer sistema.
+pub fn decidir<H: Copy>(
+    novas: &[(H, Tipo)],
+    viu_carregamento: bool,
+    passou: std::time::Duration,
+) -> Decisao<H> {
+    if let Some((h, _)) = novas.iter().find(|(_, t)| *t == Tipo::Janela) {
+        return Decisao::Posicionar(*h);
+    }
+    if passou < ESPERA_JANELA {
+        return Decisao::Esperar;
+    }
+    if viu_carregamento || !novas.is_empty() {
+        Decisao::Adiar
+    } else {
+        Decisao::Desistir
+    }
+}
+
+/// Quanto tempo vigiar a janela depois de posicioná-la.
+///
+/// Programas da JetBrains (o PyCharm) mostram a janela e, um instante depois,
+/// reaplicam o estado que guardaram — "maximizada" —, desfazendo o
+/// posicionamento. Visto no Windows: a tela de carregamento, e em seguida a
+/// janela maximizada, sem erro nenhum.
+pub const VIGIA: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Quantas vezes devolver a janela à zona, no máximo. Um programa que insiste
+/// mais que isso não vai desistir, e brigar com ele seria a janela piscando.
+pub const DEVOLUCOES: u32 = 5;
+
+/// Quanto tempo uma janela posicionada fica reservada ao programa dela.
+///
+/// Sem a reserva, o programa seguinte do perfil tomava a janela que tinha
+/// acabado de ser posicionada como "a janela nova" dele: no MateBook, a do
+/// PyCharm chegou da espera em segundo plano enquanto o programa seguinte
+/// procurava a sua, e as duas zonas disputaram a mesma janela. Cobre a vigia
+/// e os programas que abrem logo depois.
+pub const RESERVA: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// As janelas ainda reservadas, já tirando da lista as vencidas.
+pub fn reservadas<H: Copy>(lista: &mut Vec<(H, std::time::Instant)>) -> Vec<H> {
+    lista.retain(|(_, quando)| quando.elapsed() < RESERVA);
+    lista.iter().map(|(h, _)| *h).collect()
+}
+
+/// Se a janela saiu da zona. Uma folga de 2 px: há programa que arredonda o
+/// tamanho pedido, e isso não é sair do lugar.
+pub fn saiu_da_zona(maximizada: bool, atual: Retangulo, alvo: Retangulo) -> bool {
+    let perto = |a: i32, b: i32| (a - b).abs() <= 2;
+    maximizada
+        || !perto(atual.x, alvo.x)
+        || !perto(atual.y, alvo.y)
+        || !perto(atual.largura, alvo.largura)
+        || !perto(atual.altura, alvo.altura)
+}
+
+#[cfg(windows)]
+pub use imp::{area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela};
+
+#[cfg(windows)]
+mod imp {
+    use super::{Decisao, Retangulo, Tipo, Zona, INTERVALO_BUSCA};
+    use std::collections::HashSet;
+
+    type Hwnd = isize;
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    struct Rect {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+
+    const SPI_GETWORKAREA: u32 = 0x0030;
+    const GWL_STYLE: i32 = -16;
+    const GWL_EXSTYLE: i32 = -20;
+    const WS_CAPTION: u32 = 0x00C0_0000;
+    const WS_THICKFRAME: u32 = 0x0004_0000;
+    const WS_EX_TOOLWINDOW: u32 = 0x0000_0080;
+    const SW_RESTORE: i32 = 9;
+    // Não mexer na ordem de empilhamento nem roubar o foco: quem decide quem
+    // fica por cima é a ordem de abertura, e ativar aqui faria a última janela
+    // posicionada roubar o foco de quem o usuário já estava usando.
+    const SWP_NOZORDER: u32 = 0x0004;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn EnumWindows(callback: extern "system" fn(Hwnd, isize) -> i32, param: isize) -> i32;
+        fn IsWindowVisible(hwnd: Hwnd) -> i32;
+        fn IsIconic(hwnd: Hwnd) -> i32;
+        fn IsZoomed(hwnd: Hwnd) -> i32;
+        fn GetWindowTextLengthW(hwnd: Hwnd) -> i32;
+        fn GetWindowLongW(hwnd: Hwnd, index: i32) -> i32;
+        fn ShowWindow(hwnd: Hwnd, cmd: i32) -> i32;
+        fn SetWindowPos(
+            hwnd: Hwnd,
+            insert_after: Hwnd,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> i32;
+        fn SystemParametersInfoW(action: u32, param: u32, data: *mut Rect, ini: u32) -> i32;
+        fn GetWindowThreadProcessId(hwnd: Hwnd, pid: *mut u32) -> u32;
+        fn SetForegroundWindow(hwnd: Hwnd) -> i32;
+        fn GetForegroundWindow() -> Hwnd;
+        fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+        fn IsWindow(hwnd: Hwnd) -> i32;
+        fn GetWindowTextW(hwnd: Hwnd, texto: *mut u16, tamanho: i32) -> i32;
+        fn GetClassNameW(hwnd: Hwnd, texto: *mut u16, tamanho: i32) -> i32;
+        fn MonitorFromWindow(hwnd: Hwnd, flags: u32) -> isize;
+        fn GetMonitorInfoW(monitor: isize, info: *mut MonitorInfo) -> i32;
+    }
+
+    /// O que o `GetMonitorInfoW` devolve. Só os campos importam, na ordem certa.
+    #[repr(C)]
+    #[derive(Default)]
+    struct MonitorInfo {
+        tamanho: u32,
+        monitor: Rect,
+        trabalho: Rect,
+        flags: u32,
+    }
+
+    const MONITOR_DEFAULTTONEAREST: u32 = 0x0000_0002;
+
+    /// As classes de janela que **são** a área de trabalho, e não um programa.
+    ///
+    /// Sem este filtro a detecção acusaria apresentação o tempo todo: a janela
+    /// do Explorer que desenha o papel de parede cobre a tela inteira, tem
+    /// título ("Program Manager") e às vezes está em primeiro plano — basta
+    /// clicar no fundo da área de trabalho.
+    const CASCA_DO_SISTEMA: &[&str] = &["Progman", "WorkerW", "Shell_TrayWnd"];
+
+    fn texto(hwnd: Hwnd, ler: unsafe extern "system" fn(Hwnd, *mut u16, i32) -> i32) -> String {
+        let mut buffer = [0u16; 256];
+        let n = unsafe { ler(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+        if n <= 0 {
+            return String::new();
+        }
+        String::from_utf16_lossy(&buffer[..n as usize])
+    }
+
+    /// O título da janela em primeiro plano, se ela cobre o monitor inteiro.
+    ///
+    /// **Em primeiro plano, e não "existe alguma".** Uma janela em tela cheia
+    /// atrás de outras não é uma apresentação — é um vídeo esquecido noutra
+    /// área de trabalho. É a mesma pergunta que o próprio Windows faz para
+    /// decidir se você está num jogo.
+    ///
+    /// **O monitor da janela, e não o principal.** Apresentar quase sempre
+    /// significa um projetor ligado, e comparar com o monitor principal daria
+    /// "não é tela cheia" justamente no caso que o recurso existe para atender.
+    pub fn em_tela_cheia() -> Option<String> {
+        let hwnd = unsafe { GetForegroundWindow() };
+        if hwnd == 0 {
+            return None;
+        }
+        let classe = texto(hwnd, GetClassNameW);
+        if CASCA_DO_SISTEMA.iter().any(|c| *c == classe) {
+            return None;
+        }
+
+        let mut janela = Rect::default();
+        if unsafe { GetWindowRect(hwnd, &mut janela) } == 0 {
+            return None;
+        }
+        let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+        let mut info = MonitorInfo {
+            tamanho: std::mem::size_of::<MonitorInfo>() as u32,
+            ..Default::default()
+        };
+        if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+            return None;
+        }
+
+        // Cobrir **pelo menos** o monitor, e não exatamente: alguns programas
+        // pedem um pixel a mais para fora em tela cheia, e a igualdade exata
+        // perderia esses. Uma janela maximizada continua de fora, porque ela
+        // para na área de trabalho e deixa a barra de tarefas à mostra.
+        let cobre = janela.left <= info.monitor.left
+            && janela.top <= info.monitor.top
+            && janela.right >= info.monitor.right
+            && janela.bottom >= info.monitor.bottom;
+        if !cobre {
+            return None;
+        }
+        Some(texto(hwnd, GetWindowTextW))
+    }
+
+    thread_local! {
+        /// Onde o `EnumWindows` deposita o que encontrou.
+        ///
+        /// A chamada do Windows leva uma função solta, não um fechamento, então
+        /// não há como passar um `Vec` por captura. `thread_local` em vez de
+        /// estático global porque duas listas sendo abertas ao mesmo tempo em
+        /// threads diferentes não podem escrever no mesmo balde.
+        static ENCONTRADAS: std::cell::RefCell<Vec<Hwnd>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    extern "system" fn coletar(hwnd: Hwnd, _: isize) -> i32 {
+        if candidata(hwnd) {
+            ENCONTRADAS.with(|v| v.borrow_mut().push(hwnd));
+        }
+        1 // continuar enumerando
+    }
+
+    /// Se esta janela pode ser a janela principal de um programa.
+    ///
+    /// Três filtros, e cada um tira uma classe inteira de falso positivo:
+    /// invisível (janela de mensagem que todo processo tem), sem título (a
+    /// janela oculta que muitos frameworks criam) e "tool window" (paletas,
+    /// dicas, bandeja). Sem eles, "a janela nova" seria quase sempre uma janela
+    /// interna que ninguém vê.
+    fn candidata(hwnd: Hwnd) -> bool {
+        unsafe {
+            IsWindowVisible(hwnd) != 0
+                && GetWindowTextLengthW(hwnd) > 0
+                && (GetWindowLongW(hwnd, GWL_EXSTYLE) as u32) & WS_EX_TOOLWINDOW == 0
+        }
+    }
+
+    /// Tela de carregamento ou janela de programa (ver `Tipo`).
+    fn tipo(hwnd: Hwnd) -> Tipo {
+        let estilo = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+        let titulo = estilo & WS_CAPTION == WS_CAPTION;
+        let redimensiona = estilo & WS_THICKFRAME != 0;
+        if titulo || redimensiona {
+            Tipo::Janela
+        } else {
+            Tipo::Carregamento
+        }
+    }
+
+    /// As janelas de nível superior que existem agora.
+    pub fn janelas_visiveis() -> HashSet<Hwnd> {
+        ENCONTRADAS.with(|v| v.borrow_mut().clear());
+        unsafe {
+            EnumWindows(coletar, 0);
+        }
+        ENCONTRADAS.with(|v| v.borrow().iter().copied().collect())
+    }
+
+    /// De qual processo é esta janela.
+    fn dono(hwnd: Hwnd) -> u32 {
+        let mut pid = 0u32;
+        unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
+        pid
+    }
+
+    /// Traz para frente a janela principal de um processo.
+    ///
+    /// Restaura antes de ativar: programa minimizado ativado sem restaurar
+    /// continua minimizado, e a pessoa veria "deu certo" sem nada acontecer.
+    ///
+    /// **O Windows pode recusar**, e isso não é defeito daqui. Só um processo
+    /// que já está em primeiro plano tem direito de dar foco a outro; o agente
+    /// roda em segundo plano, então o sistema costuma piscar o botão na barra
+    /// de tarefas em vez de trazer a janela. Existem truques para contornar
+    /// (grudar filas de entrada, minimizar e restaurar), e todos são frágeis e
+    /// mexem no foco de quem estiver usando a máquina. Aqui se pede
+    /// direitamente e se relata o que aconteceu.
+    pub fn focar(pid: u32) -> Result<(), String> {
+        let alvo = janelas_visiveis().into_iter().find(|h| dono(*h) == pid);
+        let Some(hwnd) = alvo else {
+            return Err("o programa não tem janela visível".to_string());
+        };
+        unsafe {
+            if IsIconic(hwnd) != 0 {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
+            if SetForegroundWindow(hwnd) == 0 {
+                return Err(
+                    "o Windows não deixou trazer a janela para frente (ela deve \
+                     estar piscando na barra de tarefas)"
+                        .to_string(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// A área útil da tela principal: a resolução menos a barra de tarefas.
+    pub fn area_de_trabalho() -> Option<Retangulo> {
+        let mut r = Rect::default();
+        let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut r, 0) };
+        if ok == 0 {
+            return None;
+        }
+        Some(Retangulo {
+            x: r.left,
+            y: r.top,
+            largura: r.right - r.left,
+            altura: r.bottom - r.top,
+        })
+    }
+
+    /// Espera aparecer uma janela que não existia antes e a põe na zona.
+    ///
+    /// `antes` é a fotografia tirada **antes** de abrir o programa. Comparar com
+    /// ela é o que dispensa saber de qual processo a janela é — e é por isso que
+    /// funciona com navegador, Office e Electron, em que quem abre a janela não
+    /// é o processo que foi lançado.
+    ///
+    /// Devolve o motivo quando não deu, e nunca em silêncio: "abriu, mas não
+    /// consegui posicionar" é uma informação que a pessoa precisa ter para
+    /// entender por que a tela não ficou como ela montou.
+    pub fn posicionar_nova_janela(antes: &HashSet<Hwnd>, zona: &Zona) -> Result<(), String> {
+        let area = area_de_trabalho().ok_or("não descobri a área de trabalho da tela")?;
+        let alvo = super::retangulo(zona, area).ok_or("zona fora da grade")?;
+
+        let inicio = std::time::Instant::now();
+        // De que processos eram as telas de carregamento vistas: é por eles
+        // que a janela de verdade vai ser reconhecida em segundo plano.
+        let mut carregando: HashSet<u32> = HashSet::new();
+        let hwnd = loop {
+            let novas = novas_de_quem_nao_espera(antes);
+            for (h, t) in &novas {
+                if *t == Tipo::Carregamento {
+                    carregando.insert(dono(*h));
+                }
+            }
+            match super::decidir(&novas, !carregando.is_empty(), inicio.elapsed()) {
+                Decisao::Posicionar(h) => break h,
+                Decisao::Esperar => std::thread::sleep(INTERVALO_BUSCA),
+                Decisao::Adiar => {
+                    crate::diario(&format!(
+                        "janelas: só tela de carregamento em {:.1}s (processos {carregando:?}); \
+                         esperando a janela em segundo plano",
+                        inicio.elapsed().as_secs_f32()
+                    ));
+                    esperar_em_segundo_plano(antes.clone(), carregando, alvo, inicio);
+                    return Ok(());
+                }
+                Decisao::Desistir => {
+                    crate::diario("janelas: nenhuma janela nova em 5 s; desisti");
+                    return Err("o programa abriu, mas a janela dele não apareceu a tempo".into());
+                }
+            }
+        };
+        posicionar(hwnd, alvo, inicio)
+    }
+
+    /// Como a janela aparece no diário: título, processo e se é de programa
+    /// ou de carregamento.
+    fn descrever(hwnd: Hwnd) -> String {
+        format!(
+            "\"{}\" (processo {}, {:?})",
+            texto(hwnd, GetWindowTextW),
+            dono(hwnd),
+            tipo(hwnd)
+        )
+    }
+
+    /// Move para a zona, registra e vigia (ver `VIGIA`).
+    fn posicionar(hwnd: Hwnd, alvo: Retangulo, inicio: std::time::Instant) -> Result<(), String> {
+        // Reservada antes de mover: a partir daqui ela não é "a janela nova"
+        // de mais ninguém.
+        if let Ok(mut p) = POSICIONADAS.lock() {
+            p.push((hwnd, std::time::Instant::now()));
+        }
+        let resultado = mover(hwnd, alvo);
+        crate::diario(&format!(
+            "janelas: {} em {:.1}s -> {},{} {}x{}: {}",
+            descrever(hwnd),
+            inicio.elapsed().as_secs_f32(),
+            alvo.x,
+            alvo.y,
+            alvo.largura,
+            alvo.altura,
+            match &resultado {
+                Ok(()) => "posicionada".to_string(),
+                Err(e) => e.clone(),
+            }
+        ));
+        if resultado.is_ok() {
+            vigiar(hwnd, alvo);
+        }
+        resultado
+    }
+
+    /// Onde a janela está agora, e se está maximizada. `None` se ela fechou.
+    fn onde_esta(hwnd: Hwnd) -> Option<(bool, Retangulo)> {
+        let mut r = Rect::default();
+        unsafe {
+            if IsWindow(hwnd) == 0 || GetWindowRect(hwnd, &mut r) == 0 {
+                return None;
+            }
+            Some((
+                IsZoomed(hwnd) != 0,
+                Retangulo {
+                    x: r.left,
+                    y: r.top,
+                    largura: r.right - r.left,
+                    altura: r.bottom - r.top,
+                },
+            ))
+        }
+    }
+
+    /// Por `VIGIA`, devolve à zona a janela que o próprio programa maximizou
+    /// ou moveu logo depois de posicionada (ver `saiu_da_zona`). Minimizada
+    /// fica como está: isso é a pessoa, não o programa.
+    fn vigiar(hwnd: Hwnd, alvo: Retangulo) {
+        let _ = std::thread::Builder::new()
+            .name("deskside-vigia-janela".into())
+            .spawn(move || {
+                let inicio = std::time::Instant::now();
+                let mut devolvidas = 0;
+                while inicio.elapsed() < super::VIGIA && devolvidas < super::DEVOLUCOES {
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    let Some((maximizada, atual)) = onde_esta(hwnd) else {
+                        return;
+                    };
+                    if unsafe { IsIconic(hwnd) } != 0
+                        || !super::saiu_da_zona(maximizada, atual, alvo)
+                    {
+                        continue;
+                    }
+                    devolvidas += 1;
+                    let r = mover(hwnd, alvo);
+                    crate::diario(&format!(
+                        "janelas: {} saiu da zona em {:.1}s ({}em {},{} {}x{}); devolvida: {:?}",
+                        descrever(hwnd),
+                        inicio.elapsed().as_secs_f32(),
+                        if maximizada { "maximizada, " } else { "" },
+                        atual.x,
+                        atual.y,
+                        atual.largura,
+                        atual.altura,
+                        r
+                    ));
+                }
+            });
+    }
+
+    /// Processos cuja janela de verdade está sendo esperada em segundo plano.
+    /// As janelas deles não são "a janela nova" do programa seguinte da lista.
+    static ESPERANDO: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
+
+    /// Janelas já posicionadas, com quando (ver `RESERVA`).
+    static POSICIONADAS: std::sync::Mutex<Vec<(Hwnd, std::time::Instant)>> =
+        std::sync::Mutex::new(Vec::new());
+
+    fn novas_de_quem_nao_espera(antes: &HashSet<Hwnd>) -> Vec<(Hwnd, Tipo)> {
+        let esperando = ESPERANDO.lock().map(|e| e.clone()).unwrap_or_default();
+        let posicionadas = POSICIONADAS
+            .lock()
+            .map(|mut p| super::reservadas(&mut p))
+            .unwrap_or_default();
+        janelas_visiveis()
+            .difference(antes)
+            .filter(|h| !esperando.contains(&dono(**h)) && !posicionadas.contains(h))
+            .map(|h| (*h, tipo(*h)))
+            .collect()
+    }
+
+    /// Espera, numa thread, a janela de verdade de um programa que abriu com
+    /// tela de carregamento, e a põe na zona quando ela aparece.
+    ///
+    /// Reconhecida por ser **do mesmo processo** da tela de carregamento, e não
+    /// por ser nova: enquanto isso, os programas seguintes da lista estão
+    /// abrindo as janelas deles. Se o prazo acabar com a tela de carregamento
+    /// ainda ali, é ela a janela do programa (um lançador), e vai para a zona.
+    fn esperar_em_segundo_plano(
+        antes: HashSet<Hwnd>,
+        processos: HashSet<u32>,
+        alvo: Retangulo,
+        inicio: std::time::Instant,
+    ) {
+        if let Ok(mut e) = ESPERANDO.lock() {
+            e.extend(processos.iter().copied());
+        }
+        let _ = std::thread::Builder::new()
+            .name("deskside-carregamento".into())
+            .spawn(move || {
+                let resultado = loop {
+                    let dele: Vec<(Hwnd, Tipo)> = janelas_visiveis()
+                        .difference(&antes)
+                        .filter(|h| processos.contains(&dono(**h)))
+                        .map(|h| (*h, tipo(*h)))
+                        .collect();
+                    if let Some((h, _)) = dele.iter().find(|(_, t)| *t == Tipo::Janela) {
+                        break posicionar(*h, alvo, inicio);
+                    }
+                    if inicio.elapsed() >= super::ESPERA_COM_CARREGAMENTO {
+                        crate::diario(&format!(
+                            "janelas: a janela de verdade não veio em {} s",
+                            super::ESPERA_COM_CARREGAMENTO.as_secs()
+                        ));
+                        break match dele.first() {
+                            Some((h, _)) => posicionar(*h, alvo, inicio),
+                            None => Err("a tela de carregamento fechou, mas a janela do \
+                                         programa não apareceu a tempo"
+                                .to_string()),
+                        };
+                    }
+                    std::thread::sleep(INTERVALO_BUSCA);
+                };
+                if let Ok(mut e) = ESPERANDO.lock() {
+                    e.retain(|p| !processos.contains(p));
+                }
+                if let Err(motivo) = resultado {
+                    crate::aviso::avisar(&format!(
+                        "Não consegui pôr o programa no lugar: {motivo}."
+                    ));
+                }
+            });
+    }
+
+    fn mover(hwnd: Hwnd, alvo: Retangulo) -> Result<(), String> {
+        unsafe {
+            // Janela maximizada ignora o tamanho pedido: ela volta a ocupar a
+            // tela inteira no próximo desenho. Restaurar antes é o que faz o
+            // encaixe pegar - e é a diferença entre "não funcionou" e
+            // "funcionou em alguns programas".
+            if IsZoomed(hwnd) != 0 || IsIconic(hwnd) != 0 {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
+            let ok = SetWindowPos(
+                hwnd,
+                0,
+                alvo.x,
+                alvo.y,
+                alvo.largura,
+                alvo.altura,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+            if ok == 0 {
+                return Err("o Windows recusou mover a janela".into());
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Se a janela cobre o monitor inteiro — a definição de tela cheia nos dois
+/// sistemas. "Pelo menos", e não exatamente: há programa que pede um pixel a
+/// mais para fora. Uma janela só maximizada fica de fora: no Mac ela para
+/// abaixo da barra de menus, no Windows acima da barra de tarefas.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn cobre(janela: (i32, i32, u32, u32), monitor: (i32, i32, u32, u32)) -> bool {
+    let fim = |(x, y, l, a): (i32, i32, u32, u32)| (x as i64 + l as i64, y as i64 + a as i64);
+    let (jx, jy) = fim(janela);
+    let (mx, my) = fim(monitor);
+    janela.0 <= monitor.0 && janela.1 <= monitor.1 && jx >= mx && jy >= my
+}
+
+#[cfg(target_os = "macos")]
+pub use imp::{area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela};
+
+/// No Mac: trazer para a frente e reconhecer a tela cheia. Pôr a janela nova
+/// numa zona da tela (as zonas dos perfis) ainda não existe aqui — exige a API
+/// de Acessibilidade janela a janela, e fica para depois. O programa abre; só
+/// não vai para o lugar.
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::{Retangulo, Zona};
+    use std::collections::HashSet;
+
+    pub fn janelas_visiveis() -> HashSet<isize> {
+        HashSet::new()
+    }
+
+    pub fn area_de_trabalho() -> Option<Retangulo> {
+        None
+    }
+
+    pub fn posicionar_nova_janela(_antes: &HashSet<isize>, _zona: &Zona) -> Result<(), String> {
+        Err(
+            "no Mac o Deskside ainda não posiciona a janela; o programa abriu onde o Mac quis"
+                .into(),
+        )
+    }
+
+    pub fn focar(pid: u32) -> Result<(), String> {
+        crate::mac::trazer_para_frente(pid as i32)
+    }
+
+    /// A janela em foco, se ela cobre o monitor dela. No Mac é assim que um
+    /// programa em tela cheia (ou o Keynote apresentando) aparece.
+    pub fn em_tela_cheia() -> Option<String> {
+        let janela = xcap::Window::all()
+            .ok()?
+            .into_iter()
+            .find(|j| j.is_focused().unwrap_or(false))?;
+        // O Finder "em foco" é a mesa, que cobre a tela sem ser apresentação.
+        if janela.app_name().ok()?.eq_ignore_ascii_case("finder") {
+            return None;
+        }
+        let monitor = janela.current_monitor().ok()?;
+        let r = |x: xcap::XCapResult<i32>| x.ok();
+        let u = |x: xcap::XCapResult<u32>| x.ok();
+        let dela = (
+            r(janela.x())?,
+            r(janela.y())?,
+            u(janela.width())?,
+            u(janela.height())?,
+        );
+        let dele = (
+            r(monitor.x())?,
+            r(monitor.y())?,
+            u(monitor.width())?,
+            u(monitor.height())?,
+        );
+        if !super::cobre(dela, dele) {
+            return None;
+        }
+        // O título só vem com a Gravação de Tela liberada; sem ele, o nome do
+        // programa ainda explica quem ligou o modo.
+        Some(
+            janela
+                .title()
+                .ok()
+                .filter(|t| !t.is_empty())
+                .or_else(|| janela.app_name().ok())
+                .unwrap_or_default(),
+        )
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub use imp::{area_de_trabalho, em_tela_cheia, focar, janelas_visiveis, posicionar_nova_janela};
+
+#[cfg(not(any(windows, target_os = "macos")))]
+mod imp {
+    use super::{Retangulo, Zona};
+    use std::collections::HashSet;
+
+    pub fn janelas_visiveis() -> HashSet<isize> {
+        HashSet::new()
+    }
+
+    pub fn area_de_trabalho() -> Option<Retangulo> {
+        None
+    }
+
+    pub fn posicionar_nova_janela(_antes: &HashSet<isize>, _zona: &Zona) -> Result<(), String> {
+        Err("posicionar janela só no Windows".into())
+    }
+
+    pub fn focar(_pid: u32) -> Result<(), String> {
+        Err("trazer janela para frente só no Windows".into())
+    }
+
+    pub fn em_tela_cheia() -> Option<String> {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn janela_posicionada_fica_reservada_ate_vencer() {
+        let agora = std::time::Instant::now();
+        let mut lista = vec![(1, agora)];
+        if let Some(antiga) = agora.checked_sub(RESERVA + std::time::Duration::from_secs(1)) {
+            lista.push((2, antiga));
+        }
+        assert_eq!(reservadas(&mut lista), vec![1]);
+        // A vencida saiu da lista, não só da resposta.
+        assert_eq!(lista.len(), 1);
+    }
+
+    #[test]
+    fn janela_maximizada_ou_movida_saiu_da_zona() {
+        let alvo = Retangulo {
+            x: 0,
+            y: 0,
+            largura: 960,
+            altura: 1040,
+        };
+        assert!(!saiu_da_zona(false, alvo, alvo));
+        // O PyCharm maximizando sozinho depois de posicionado.
+        assert!(saiu_da_zona(true, alvo, alvo));
+        // Reaplicando o tamanho guardado.
+        let guardado = Retangulo {
+            x: 200,
+            y: 100,
+            largura: 1400,
+            altura: 900,
+        };
+        assert!(saiu_da_zona(false, guardado, alvo));
+        // Arredondamento de 1 px não é sair do lugar.
+        let quase = Retangulo {
+            largura: 961,
+            ..alvo
+        };
+        assert!(!saiu_da_zona(false, quase, alvo));
+    }
+
+    fn s(seg: u64) -> std::time::Duration {
+        std::time::Duration::from_secs(seg)
+    }
+
+    #[test]
+    fn programa_sem_carregamento_e_posicionado_na_hora() {
+        assert_eq!(
+            decidir(&[(7, Tipo::Janela)], false, s(1)),
+            Decisao::Posicionar(7)
+        );
+        assert_eq!(decidir::<i32>(&[], false, s(1)), Decisao::Esperar);
+        assert_eq!(decidir::<i32>(&[], false, s(6)), Decisao::Desistir);
+    }
+
+    #[test]
+    fn a_tela_de_carregamento_nao_e_a_janela_do_programa() {
+        // PyCharm: a de carregamento aparece primeiro e não é posicionada.
+        assert_eq!(
+            decidir(&[(1, Tipo::Carregamento)], true, s(2)),
+            Decisao::Esperar
+        );
+        // Se a de verdade chega no tempo normal, é ela.
+        assert_eq!(
+            decidir(&[(1, Tipo::Carregamento), (2, Tipo::Janela)], true, s(3)),
+            Decisao::Posicionar(2)
+        );
+    }
+
+    #[test]
+    fn so_carregamento_no_tempo_normal_vai_para_o_segundo_plano() {
+        // Ainda carregando aos 5 s: a lista segue, e a janela de verdade é
+        // esperada à parte — em vez de desistir, como antes.
+        assert_eq!(
+            decidir(&[(1, Tipo::Carregamento)], true, s(5)),
+            Decisao::Adiar
+        );
+        // A de carregamento já fechou e a de verdade não veio: idem.
+        assert_eq!(decidir::<i32>(&[], true, s(6)), Decisao::Adiar);
+    }
+
+    #[test]
+    fn tela_cheia_e_cobrir_o_monitor_inteiro() {
+        let monitor = (0, 0, 1512, 982);
+        assert!(cobre((0, 0, 1512, 982), monitor));
+        // Um pixel a mais para fora ainda é tela cheia.
+        assert!(cobre((-1, -1, 1514, 984), monitor));
+        // Maximizada no Mac: começa abaixo da barra de menus.
+        assert!(!cobre((0, 33, 1512, 949), monitor));
+        // Segundo monitor, à direita do primeiro.
+        assert!(cobre((1512, 0, 1920, 1080), (1512, 0, 1920, 1080)));
+        assert!(!cobre((0, 0, 1920, 1080), (1512, 0, 1920, 1080)));
+    }
+
+    /// Uma tela de 1920×1080 com a barra de tarefas embaixo.
+    fn tela() -> Retangulo {
+        Retangulo {
+            x: 0,
+            y: 0,
+            largura: 1920,
+            altura: 1032,
+        }
+    }
+
+    fn zona(cols: u32, rows: u32, col: u32, row: u32, colspan: u32, rowspan: u32) -> Zona {
+        Zona {
+            cols,
+            rows,
+            col,
+            row,
+            colspan,
+            rowspan,
+        }
+    }
+
+    #[test]
+    fn metades_dividem_a_tela_ao_meio() {
+        let esq = retangulo(&zona(2, 1, 0, 0, 1, 1), tela()).unwrap();
+        let dir = retangulo(&zona(2, 1, 1, 0, 1, 1), tela()).unwrap();
+        assert_eq!(esq.x, 0);
+        assert_eq!(esq.largura, 960);
+        assert_eq!(dir.x, 960);
+        assert_eq!(dir.largura, 960);
+        // Altura inteira nas duas: a barra de tarefas já saiu da conta.
+        assert_eq!(esq.altura, 1032);
+    }
+
+    #[test]
+    fn tres_colunas_nao_deixam_fresta_nem_sobra() {
+        // 1920/3 é exato, mas 1032/1 e larguras ímpares não são. O que se fixa
+        // aqui é a regra que vale para qualquer largura: a borda direita de uma
+        // é exatamente a esquerda da seguinte, e a última fecha na tela.
+        let area = Retangulo {
+            x: 0,
+            y: 0,
+            largura: 1001,
+            altura: 700,
+        };
+        let a = retangulo(&zona(3, 1, 0, 0, 1, 1), area).unwrap();
+        let b = retangulo(&zona(3, 1, 1, 0, 1, 1), area).unwrap();
+        let c = retangulo(&zona(3, 1, 2, 0, 1, 1), area).unwrap();
+        assert_eq!(a.direita(), b.x, "fresta entre a primeira e a segunda");
+        assert_eq!(b.direita(), c.x, "fresta entre a segunda e a terceira");
+        assert_eq!(c.direita(), 1001, "a última não fecha na borda da tela");
+        assert_eq!(a.largura + b.largura + c.largura, 1001);
+    }
+
+    #[test]
+    fn quadrantes_cobrem_a_tela_inteira() {
+        let g = |col, row| retangulo(&zona(2, 2, col, row, 1, 1), tela()).unwrap();
+        let (se, sd, ie, id) = (g(0, 0), g(1, 0), g(0, 1), g(1, 1));
+        assert_eq!(se.direita(), sd.x);
+        assert_eq!(se.base(), ie.y);
+        assert_eq!(sd.base(), id.y);
+        assert_eq!(id.direita(), 1920);
+        assert_eq!(id.base(), 1032);
+        let soma: i64 = [se, sd, ie, id]
+            .iter()
+            .map(|r| r.largura as i64 * r.altura as i64)
+            .sum();
+        assert_eq!(soma, 1920 * 1032);
+    }
+
+    #[test]
+    fn dois_tercos_e_um_terco() {
+        // O layout 2/3 + 1/3 do Windows: uma zona ocupa duas células de três.
+        let grande = retangulo(&zona(3, 1, 0, 0, 2, 1), tela()).unwrap();
+        let pequena = retangulo(&zona(3, 1, 2, 0, 1, 1), tela()).unwrap();
+        assert_eq!(grande.largura, 1280);
+        assert_eq!(pequena.largura, 640);
+        assert_eq!(grande.direita(), pequena.x);
+    }
+
+    #[test]
+    fn uma_principal_e_duas_empilhadas() {
+        // Esquerda inteira, direita dividida em cima e embaixo.
+        let esq = retangulo(&zona(2, 2, 0, 0, 1, 2), tela()).unwrap();
+        let cima = retangulo(&zona(2, 2, 1, 0, 1, 1), tela()).unwrap();
+        let baixo = retangulo(&zona(2, 2, 1, 1, 1, 1), tela()).unwrap();
+        assert_eq!(esq.altura, 1032);
+        assert_eq!(cima.base(), baixo.y);
+        assert_eq!(baixo.base(), 1032);
+        assert_eq!(esq.direita(), cima.x);
+    }
+
+    #[test]
+    fn a_area_de_trabalho_desloca_tudo() {
+        // Barra de tarefas em cima (ou na esquerda): a área não começa em 0,0 e
+        // as janelas não podem começar em 0,0 tampouco.
+        let area = Retangulo {
+            x: 0,
+            y: 48,
+            largura: 1920,
+            altura: 1032,
+        };
+        let r = retangulo(&zona(2, 1, 0, 0, 1, 1), area).unwrap();
+        assert_eq!(r.y, 48);
+        assert_eq!(r.base(), 1080);
+    }
+
+    #[test]
+    fn zona_fora_da_grade_e_recusada() {
+        // Chega pela rede. Posicionar "o mais perto possível" poria a janela num
+        // lugar que ninguém escolheu - melhor recusar e dizer.
+        assert!(retangulo(&zona(2, 1, 2, 0, 1, 1), tela()).is_none());
+        assert!(retangulo(&zona(2, 2, 0, 0, 3, 1), tela()).is_none());
+        assert!(retangulo(&zona(2, 2, 1, 1, 1, 2), tela()).is_none());
+    }
+
+    #[test]
+    fn grade_de_tamanho_zero_nao_divide_por_zero() {
+        assert!(retangulo(&zona(0, 1, 0, 0, 1, 1), tela()).is_none());
+        assert!(retangulo(&zona(2, 0, 0, 0, 1, 1), tela()).is_none());
+        assert!(retangulo(&zona(2, 1, 0, 0, 0, 1), tela()).is_none());
+    }
+
+    #[test]
+    fn a_zona_atravessa_o_json_sem_perder_o_tamanho() {
+        // O app manda isto pela rede; um campo perdido viraria uma janela no
+        // lugar errado, que é mais confuso que uma que não se moveu.
+        let z = zona(3, 2, 1, 0, 2, 1);
+        let json = serde_json::to_string(&z).unwrap();
+        assert_eq!(serde_json::from_str::<Zona>(&json).unwrap(), z);
+    }
+
+    #[test]
+    fn sem_colspan_no_json_vale_uma_celula() {
+        // O caso comum é ocupar uma célula só, e obrigar o app a escrever
+        // `"colspan":1` em todo item seria peso sem informação.
+        let z: Zona = serde_json::from_str(r#"{"cols":2,"rows":1,"col":1,"row":0}"#).unwrap();
+        assert_eq!(z.colspan, 1);
+        assert_eq!(z.rowspan, 1);
+        assert!(z.valida());
+    }
+
+    #[test]
+    fn tela_estreita_ainda_da_retangulos_positivos() {
+        // Uma tela de tablet em pé com quatro zonas: cada uma fica pequena, mas
+        // nenhuma pode ficar com largura negativa ou zero.
+        let area = Retangulo {
+            x: 0,
+            y: 0,
+            largura: 800,
+            altura: 1280,
+        };
+        for col in 0..2 {
+            for row in 0..2 {
+                let r = retangulo(&zona(2, 2, col, row, 1, 1), area).unwrap();
+                assert!(r.largura > 0 && r.altura > 0, "{r:?}");
+            }
+        }
+    }
+}

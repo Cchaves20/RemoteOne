@@ -1,0 +1,1093 @@
+import 'dart:io';
+
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoPicker;
+import 'package:material_ui/material_ui.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../config.dart';
+import '../l10n/strings.dart';
+import '../models/cadastro.dart';
+import '../services/api_client.dart';
+import '../services/app_state.dart';
+import '../services/compra.dart';
+import '../theme.dart';
+import '../widgets/brand.dart';
+import '../widgets/identidade.dart';
+import '../widgets/links_legais.dart';
+import '../widgets/segundo_fator.dart';
+import '../widgets/transitions.dart';
+import 'assinatura_screen.dart';
+import 'connected_devices_screen.dart';
+import 'gesture_tutorial_screen.dart';
+import 'profiles_screen.dart';
+import 'recovery_codes_screen.dart';
+import 'two_factor_screen.dart';
+import 'verify_screen.dart';
+import 'widgets_screen.dart';
+
+/// Configurações do app e da conta: tema, qualidade da tela, segurança,
+/// gerenciamento de conta (e-mail, senha, excluir) e "Sobre".
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key, required this.state});
+
+  final AppState state;
+
+  static const _appVersion = '0.1.0';
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(state.t.settings)),
+      body: ListenableBuilder(
+        listenable: state,
+        builder: (context, _) {
+          final t = state.t;
+          var i = 0;
+          Widget staggered(Widget child) => FadeSlideIn(
+                delay: Duration(milliseconds: 40 * i++),
+                child: child,
+              );
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            children: [
+              // Quem é, e em que plano: o que se vem conferir aqui com mais
+              // frequência, no topo, e não enterrado no meio da página.
+              staggered(_cabecalhoDaConta(context)),
+              staggered(_card(context, t.voce, [
+                _action(
+                  context,
+                  Icons.cake_outlined,
+                  t.aniversarioTitulo,
+                  () => _escolherAniversario(context),
+                  subtitle: t.aniversarioDica,
+                  valor: _textoDoAniversario(),
+                ),
+              ])),
+              staggered(_card(context, t.appearance, [
+                _themeSelector(context),
+                const SizedBox(height: 16),
+                _label(context, t.language),
+                const SizedBox(height: 8),
+                _languageChips(context),
+              ], recuo: true)),
+              staggered(_card(context, t.screenQuality, [
+                SwitchListTile(
+                  secondary: const Icon(Icons.bolt_outlined),
+                  title: Text(t.webrtcVideo),
+                  subtitle: Text(t.webrtcVideoSub),
+                  value: state.webrtcVideoEnabled,
+                  onChanged: state.setWebrtcVideoEnabled,
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.spellcheck),
+                  title: Text(t.suggestions),
+                  subtitle: Text(t.suggestionsSub),
+                  value: state.suggestionsEnabled,
+                  onChanged: state.setSuggestionsEnabled,
+                ),
+              ])),
+              staggered(_card(context, t.security, [
+                SwitchListTile(
+                  secondary: const Icon(Icons.lock_outline),
+                  title: Text(t.faceIdLock),
+                  subtitle: Text(t.faceIdLockSub),
+                  value: state.appLockEnabled,
+                  onChanged: state.setAppLockEnabled,
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.verified_user_outlined),
+                  title: Text(t.twoFactor),
+                  subtitle: Text(t.twoFactorSub),
+                  value: state.twoFactorEnabled,
+                  onChanged: (value) => value
+                      ? _startTwoFactor(context)
+                      : _disableTwoFactor(context),
+                ),
+                if (state.twoFactorEnabled) ..._codigosDeRecuperacao(context),
+                _action(
+                    context,
+                    Icons.devices_outlined,
+                    t.connectedDevices,
+                    () => Navigator.of(context).push(fadeThroughRoute(
+                        ConnectedDevicesScreen(state: state))),
+                    subtitle: t.connectedDevicesSub),
+              ])),
+              staggered(_card(context, t.atalhos, [
+                _action(
+                    context,
+                    Icons.dashboard_customize_outlined,
+                    t.profilesTitle,
+                    () => Navigator.of(context)
+                        .push(fadeThroughRoute(ProfilesScreen(state: state))),
+                    subtitle: t.profilesHint,
+                    desenho: const IconeDaMarca(IconeDeskside.perfis)),
+                _action(context, Icons.widgets_outlined, t.widgetsTitulo,
+                    () => Navigator.of(context)
+                        .push(fadeThroughRoute(WidgetsScreen(state: state))),
+                    subtitle: t.widgetsDica),
+              ])),
+              staggered(_card(context, t.account, [
+                // Só e-mail. A troca de telefone saiu junto com o resto do
+                // caminho por SMS (ver signup_screen.dart): ela manda código
+                // por mensagem, e sem provedor o código ia para o registro do
+                // servidor.
+                //
+                // Uma conta que entra pelo **telefone** também vê esta
+                // entrada, e precisa ver: é por ela que a conta passa a entrar
+                // por e-mail (o servidor grava o e-mail e apaga o telefone).
+                // O que muda é o título — "Alterar e-mail" oferecia trocar um
+                // e-mail que a conta não tem.
+                _action(
+                    context,
+                    Icons.alternate_email,
+                    (state.conta?.porTelefone ?? false)
+                        ? t.usarEmailParaEntrar
+                        : t.changeEmail,
+                    () => _showChangeEmail(context),
+                    subtitle: state.conta?.contato),
+                _action(context, Icons.password, t.changePassword,
+                    () => _showChangePassword(context)),
+                _action(context, Icons.logout, t.signOut, () {
+                  state.logout();
+                  Navigator.of(context).pop();
+                }),
+                _action(context, Icons.delete_forever, t.deleteAccount,
+                    () => _showDeleteAccount(context),
+                    danger: true),
+              ])),
+              staggered(_card(context, t.ajudaEPrivacidade, [
+                _action(context, Icons.touch_app_outlined, t.howToControl,
+                    () => Navigator.of(context)
+                        .push(fadeThroughRoute(GestureTutorialScreen(state: state))),
+                    subtitle: t.howToControlSub),
+                _action(context, Icons.description_outlined, t.assinaturaTermos,
+                    () => abrirNoSite(context, state, '/termos')),
+                _action(context, Icons.shield_outlined, t.assinaturaPrivacidade,
+                    () => abrirNoSite(context, state, '/privacidade')),
+                _action(context, Icons.download_outlined, t.exportarDados,
+                    () => _exportarDados(context),
+                    subtitle: t.exportarDadosSub),
+              ])),
+              // O que quase ninguém procura fica junto, no fim.
+              staggered(_card(context, t.avancado, [
+                _action(context, Icons.article_outlined, t.licencasAbertas,
+                    () => showLicensePage(
+                          context: context,
+                          applicationName: 'Deskside',
+                          applicationVersion: versaoVisivel(_appVersion),
+                        )),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+                  child: Row(
+                    children: [
+                      const DesksideMark(size: 34),
+                      const SizedBox(width: 14),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Deskside',
+                              style: Theme.of(context).textTheme.titleMedium),
+                          Text(t.version(versaoVisivel(_appVersion)),
+                              style: context.numeros.copyWith(
+                                  fontSize: 12, color: context.cores.texto3)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ])),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// O topo: as iniciais num anel com o degradê, o nome, o contato e o plano
+  /// (com o "Assinar", quando cabe).
+  Widget _cabecalhoDaConta(BuildContext context) {
+    final c = context.cores;
+    final conta = state.conta;
+    final nome = conta?.nomeCompleto ?? '';
+    final inicial = (conta?.firstName.trim().isNotEmpty ?? false)
+        ? conta!.firstName.trim().characters.first.toUpperCase()
+        : (nome.isEmpty ? '?' : nome.characters.first.toUpperCase());
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: auroraViolet.withAlpha(64)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color.alphaBlend(auroraViolet.withAlpha(30), c.superficie),
+            c.superficie,
+          ],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                padding: const EdgeInsets.all(2.5),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: auroraGradient,
+                ),
+                child: Container(
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: c.superficie),
+                  child: Text(inicial,
+                      style: Theme.of(context).textTheme.titleLarge),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(nome,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w600)),
+                    if (conta != null && conta.contato != nome) ...[
+                      const SizedBox(height: 2),
+                      Text(conta.contato,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13, color: c.texto2)),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _plano(context, state),
+        ],
+      ),
+    );
+  }
+
+  /// "20 de abril", ou nada quando não foi informado: a dica embaixo do
+  /// título já diz para que serve, e um "Não informado" à direita espremia a
+  /// dica em quatro linhas nas línguas mais compridas (francês).
+  String? _textoDoAniversario() {
+    final md = state.conta?.mesEDia;
+    if (md == null) return null;
+    return state.t.diaEMes(md.$2, md.$1);
+  }
+
+  /// O dia e o mês, em duas rodas, sem o ano: o ano não é guardado, e pedir um
+  /// ano que vai para o lixo seria pedir à toa.
+  Future<void> _escolherAniversario(BuildContext context) async {
+    final t = state.t;
+    final atual = state.conta?.mesEDia;
+    var mes = atual?.$1 ?? 1;
+    var dia = atual?.$2 ?? 1;
+    int diasNoMes(int m) => const [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+    final mensageiro = ScaffoldMessenger.of(context);
+    // `true` = salvar; `false` = tirar; nulo = desistiu.
+    final escolha = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (folha) => StatefulBuilder(
+        builder: (folha, redesenhar) {
+          final c = folha.cores;
+          final estilo = TextStyle(fontSize: 20, color: c.texto);
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(t.aniversarioTitulo,
+                      style: Theme.of(folha).textTheme.headlineSmall),
+                  const SizedBox(height: 4),
+                  Text(t.aniversarioSoDiaEMes,
+                      style: TextStyle(fontSize: 13, color: c.texto3)),
+                  SizedBox(
+                    height: 180,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: CupertinoPicker(
+                            itemExtent: 40,
+                            scrollController:
+                                FixedExtentScrollController(initialItem: dia - 1),
+                            onSelectedItemChanged: (i) => redesenhar(() => dia = i + 1),
+                            children: [
+                              for (var d = 1; d <= 31; d++)
+                                Center(child: Text('$d', style: estilo)),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: CupertinoPicker(
+                            itemExtent: 40,
+                            scrollController:
+                                FixedExtentScrollController(initialItem: mes - 1),
+                            onSelectedItemChanged: (i) => redesenhar(() => mes = i + 1),
+                            children: [
+                              for (var m = 1; m <= 12; m++)
+                                Center(child: Text(t.nomeDoMes(m), style: estilo)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  BotaoDeskside(
+                    rotulo: t.save,
+                    largo: true,
+                    onPressed: () => Navigator.pop(folha, true),
+                  ),
+                  if (atual != null)
+                    TextButton(
+                      style: TextButton.styleFrom(foregroundColor: c.perigo),
+                      onPressed: () => Navigator.pop(folha, false),
+                      child: Text(t.aniversarioTirar),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (escolha == null) return;
+    // 31 de abril não existe: fica o último dia do mês escolhido.
+    dia = dia.clamp(1, diasNoMes(mes));
+    final valor = escolha
+        ? '${mes.toString().padLeft(2, '0')}-${dia.toString().padLeft(2, '0')}'
+        : null;
+    try {
+      await state.setAniversario(valor);
+    } catch (e) {
+      mensageiro.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  /// Baixa tudo o que o servidor guarda sobre a conta e entrega à pessoa pela
+  /// folha de compartilhar do sistema (salvar em Arquivos, mandar por e-mail).
+  ///
+  /// O arquivo fica na pasta temporária do app, que o sistema limpa sozinho:
+  /// ele tem dados pessoais, e não há por que sobrar uma cópia além da que a
+  /// pessoa escolheu guardar.
+  Future<void> _exportarDados(BuildContext context) async {
+    final t = state.t;
+    final mensageiro = ScaffoldMessenger.of(context);
+    final caixa = context.findRenderObject() as RenderBox?;
+    final origem = caixa == null
+        ? null
+        : caixa.localToGlobal(Offset.zero) & caixa.size;
+    try {
+      final json = await state.exportMyData();
+      final dir = await getTemporaryDirectory();
+      final dia = DateTime.now().toIso8601String().split('T').first;
+      final arquivo = File('${dir.path}/deskside-meus-dados-$dia.json');
+      await arquivo.writeAsString(json);
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(arquivo.path, mimeType: 'application/json')],
+        sharePositionOrigin: origem,
+      ));
+    } catch (_) {
+      mensageiro.showSnackBar(SnackBar(content: Text(t.exportarDadosFalhou)));
+    }
+  }
+
+  // --- blocos visuais ---------------------------------------------------------
+
+  /// Uma seção: o título pequeno em cima e as linhas num cartão. Sem ícone no
+  /// título — cada linha já tem o seu, e dois ícones por linha é ruído.
+  Widget _card(BuildContext context, String title, List<Widget> children,
+      {bool recuo = false}) {
+    final c = context.cores;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+            child: Text(
+              title.toUpperCase(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+                color: c.texto3,
+              ),
+            ),
+          ),
+          Material(
+            color: c.superficie,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: BorderSide(color: c.linha),
+            ),
+            child: Padding(
+              padding: recuo
+                  ? const EdgeInsets.all(16)
+                  : const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Em que plano a conta está, e quanto falta.
+  ///
+  /// Lê o `plano` que o **servidor** calculou, e não a data: recalcular aqui
+  /// criaria uma segunda verdade sobre a mesma conta, e a que manda é a de lá,
+  /// porque é ela que recusa as chamadas. Duas contas dessas discordando é como
+  /// se constrói uma tela que promete o que a chamada seguinte nega.
+  Widget _plano(BuildContext context, AppState state) {
+    final t = state.t;
+    final theme = Theme.of(context);
+    final conta = state.conta;
+    // Conta ainda não lida (sem internet ao abrir o app): não dá para saber o
+    // plano. Tratar isso como grátis mostrava "Deskside grátis" e o botão
+    // Assinar a quem paga — e a pessoa podia assinar de novo por engano.
+    if (conta == null) {
+      return Row(
+        children: [
+          Icon(Icons.cloud_off, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(t.planoSemConexao, style: theme.textTheme.bodyMedium),
+          ),
+        ],
+      );
+    }
+    final pago = conta.ehPago;
+    final dias = conta.diasRestantes;
+    final emTeste = conta.emTeste;
+    final renova = conta.renova;
+
+    // Quem tem o que comprar: o grátis e o que está no teste.
+    //
+    // A pergunta é feita pela **mesma** função que a tela de compra usa. Um
+    // `!pago || emTeste` escrito aqui funcionaria hoje e seria uma segunda
+    // regra sobre o mesmo assunto — e o dia em que as duas discordassem, o app
+    // ofereceria assinar numa tela e não na outra, para a mesma conta.
+    final podeAssinar = ofereceAssinar(situacaoDaConta(
+      plano: conta.plano,
+      emTeste: emTeste,
+      planoAte: conta.planoAte,
+    ));
+
+    // O prazo aparece sempre que existe.
+    //
+    // A regra anterior escondia acima de 10 dias, com o argumento de que
+    // "faltam 340 dias" é ruído. O argumento valia quando todo prazo vinha de
+    // uma liberação manual de duração arbitrária. Depois que **toda conta nova
+    // nasce com 30 dias**, ele passou a esconder a contagem durante dois terços
+    // do teste — justamente a informação que faz a pessoa decidir assinar, e a
+    // que ela vem procurar nesta tela.
+    //
+    // E a mesma contagem tem três leituras, conforme o que vem no fim dela.
+    // Uma frase só para as três mentiria em duas: "próxima cobrança" dito a
+    // quem está no teste manda procurar onde cancelar uma cobrança que não
+    // existe, e dito a quem desligou a renovação contradiz o que a pessoa
+    // acabou de pedir. Quem sabe qual é o caso é o servidor.
+    final prazo = !pago
+        ? null
+        : dias == null
+            ? t.planoSemPrazo
+            : renova
+                ? t.planoProximaCobranca(dias)
+                : emTeste
+                    ? t.planoDiasRestantes(dias)
+                    : t.planoAcabaEm(dias);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // `Wrap` e não `Row`: com o prazo sempre visível, título mais selo mais
+        // contagem não cabem numa linha em telefone estreito, e um `Row` não
+        // quebra — ele estoura com a faixa amarela e preta.
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            Text(
+              pago ? t.planoPago : t.planoGratis,
+              style: theme.textTheme.titleMedium,
+            ),
+            if (emTeste)
+              Container(
+                key: const Key('plano-selo-teste'),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  // `withAlpha` e não `withValues`: é o que o resto do
+                  // cliente usa, e `theme.dart` registra o porquê — manter-se
+                  // em API estável para o `flutter analyze` não quebrar numa
+                  // versão nova do Flutter. 46 ≈ 18%.
+                  color: theme.colorScheme.primary.withAlpha(46),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  t.planoEmTeste,
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: theme.colorScheme.primary),
+                ),
+              ),
+            if (prazo != null)
+              Text(
+                prazo,
+                key: const Key('plano-prazo'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  // Vermelho só quando algo **acaba**. Para quem renova,
+                  // faltarem três dias para a cobrança é o normal do mês, e
+                  // pintar isso de alarme ensina a pessoa a abrir o app com
+                  // susto uma vez por mês — até parar de olhar.
+                  color: (!renova && dias != null && dias <= 3)
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            // Quem já assina **não** vê este botão, e quem está no teste vê.
+            //
+            // O teste é o momento em que o botão importa: a pessoa já usou
+            // tudo e tem uma data chegando. Esperar o plano acabar para só
+            // então oferecer seria oferecer depois de tirar.
+            if (podeAssinar)
+              FilledButton.icon(
+                key: const Key('plano-assinar-ajustes'),
+                onPressed: () => Navigator.of(context).push(
+                  fadeThroughRoute(AssinaturaScreen(state: state)),
+                ),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                ),
+                icon: const Icon(Icons.workspace_premium_outlined, size: 18),
+                label: Text(t.assinaturaAssinar),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          pago ? t.planoPagoResumo : t.planoGratisResumo,
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        if (emTeste) ...[
+          const SizedBox(height: 6),
+          Text(
+            t.planoTesteDepois,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
+        // Aqui havia o aviso de que o pagamento ainda estava sendo montado,
+        // mais o e-mail para pedir na mão. Saiu junto com o motivo: agora o
+        // botão acima abre a compra de verdade. Deixar os dois daria duas
+        // respostas à mesma pergunta, e a pessoa escolheria a mais lenta.
+        //
+        // O e-mail continua em `widgets/plano.dart`, no caminho que ainda não
+        // recebe o `AppState` — some de lá quando o último receber.
+      ],
+    );
+  }
+
+  Widget _label(BuildContext context, String text) => Text(
+        text,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+      );
+
+  /// Linha de ação com ícone, título e (opcional) subtítulo.
+  ///
+  /// [valor] vai à direita, antes da seta ("20 de abril"): a linha diz o que
+  /// está escolhido sem precisar abrir. [desenho] troca o ícone por um dos
+  /// ícones próprios do app.
+  Widget _action(
+    BuildContext context,
+    IconData icon,
+    String title,
+    VoidCallback onTap, {
+    String? subtitle,
+    bool danger = false,
+    String? valor,
+    Widget? desenho,
+  }) {
+    final c = context.cores;
+    final color = danger ? c.perigo : null;
+    return ListTile(
+      leading: desenho ?? Icon(icon, color: color),
+      title: Text(title, style: TextStyle(color: color)),
+      subtitle: subtitle == null ? null : Text(subtitle),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (valor != null)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 120),
+              child: Text(valor,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14, color: c.texto2)),
+            ),
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right, size: 20, color: c.texto3),
+        ],
+      ),
+      onTap: onTap,
+    );
+  }
+
+  /// Tema em controle segmentado (Auto / Claro / Escuro).
+  ///
+  /// O rótulo nunca quebra: em francês, "Sombre" ao lado do ícone não cabia
+  /// num terço da largura e virava "Sombr / e". Ele encolhe um pouco antes.
+  Widget _themeSelector(BuildContext context) {
+    final t = state.t;
+    Widget rotulo(String texto) => FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(texto, maxLines: 1, softWrap: false),
+        );
+    return SizedBox(
+      width: double.infinity,
+      child: SegmentedButton<ThemeMode>(
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
+        ),
+        segments: [
+          ButtonSegment(
+            value: ThemeMode.system,
+            icon: const Icon(Icons.brightness_auto, size: 18),
+            label: rotulo(t.autoShort),
+          ),
+          ButtonSegment(
+            value: ThemeMode.light,
+            icon: const Icon(Icons.light_mode_outlined, size: 18),
+            label: rotulo(t.themeLight),
+          ),
+          ButtonSegment(
+            value: ThemeMode.dark,
+            icon: const Icon(Icons.dark_mode_outlined, size: 18),
+            label: rotulo(t.themeDark),
+          ),
+        ],
+        selected: {state.themeMode},
+        onSelectionChanged: (s) => state.setThemeMode(s.first),
+      ),
+    );
+  }
+
+  /// Idiomas como chips (acomoda 6 opções sem estourar a largura).
+  Widget _languageChips(BuildContext context) {
+    final t = state.t;
+    const options = <(AppLanguage, String)>[
+      (AppLanguage.ptBr, 'Português'),
+      (AppLanguage.en, 'English'),
+      (AppLanguage.zh, '中文'),
+      (AppLanguage.fr, 'Français'),
+      (AppLanguage.es, 'Español'),
+    ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        ChoiceChip(
+          label: Text(t.autoShort),
+          selected: state.language == AppLanguage.system,
+          onSelected: (_) => state.setLanguage(AppLanguage.system),
+        ),
+        for (final (lang, label) in options)
+          ChoiceChip(
+            label: Text(label),
+            selected: state.language == lang,
+            onSelected: (_) => state.setLanguage(lang),
+          ),
+      ],
+    );
+  }
+
+  // --- verificação em duas etapas --------------------------------------------
+
+  Future<void> _startTwoFactor(BuildContext context) async {
+    await Navigator.of(context).push(
+      fadeThroughRoute(TwoFactorScreen(state: state)),
+    );
+  }
+
+  /// A linha dos códigos de recuperação, e o aviso quando eles acabam.
+  ///
+  /// Zero com a verificação ligada é quem a ligou antes de os códigos
+  /// existirem: está a um celular perdido de ficar sem a conta, e o aviso diz
+  /// isso com todas as letras.
+  List<Widget> _codigosDeRecuperacao(BuildContext context) {
+    final t = state.t;
+    final theme = Theme.of(context);
+    final conta = state.conta;
+    final restantes = conta?.recoveryCodesLeft;
+    final aviso = restantes == null
+        ? null
+        : restantes == 0
+            ? t.recoveryCodesNone
+            : restantes <= 3
+                ? t.recoveryCodesFew
+                : null;
+    return [
+      ListTile(
+        leading: const Icon(Icons.key_outlined),
+        title: Text(t.recoveryCodesTitle),
+        subtitle: restantes == null ? null : Text(t.recoveryCodesLeft(restantes)),
+        trailing: TextButton(
+          onPressed: () => _gerarCodigos(context),
+          child: Text(t.recoveryCodesGenerate),
+        ),
+      ),
+      if (aviso != null)
+        Container(
+          key: const Key('aviso-codigos-de-recuperacao'),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            // Âmbar e não vermelho: é um "faça logo", não um "deu errado".
+            // 46 ≈ 18%, como o selo do plano.
+            color: Colors.amber.withAlpha(46),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.amber),
+              const SizedBox(width: 10),
+              Expanded(child: Text(aviso, style: theme.textTheme.bodySmall)),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  Future<void> _gerarCodigos(BuildContext context) async {
+    final t = state.t;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final seguir = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(t.recoveryCodesTitle),
+        content: Text(t.recoveryCodesRegenerateBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t.recoveryCodesGenerate),
+          ),
+        ],
+      ),
+    );
+    if (seguir != true || !context.mounted) return;
+    var codigos = const <String>[];
+    try {
+      final gerou = await comSegundoFator(
+        context,
+        t,
+        (codigo) async {
+          codigos = await state.regenerateRecoveryCodes(codigo!);
+        },
+        pedirAntes: true,
+      );
+      if (!gerou) return;
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+      return;
+    }
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (_) => RecoveryCodesScreen(t: t, codigos: codigos),
+      ),
+    );
+  }
+
+  Future<void> _disableTwoFactor(BuildContext context) async {
+    final t = state.t;
+    final password = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(t.disableTwoFactor),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(t.disableTwoFactorBody),
+            const SizedBox(height: 12),
+            TextField(
+              controller: password,
+              obscureText: true,
+              autofocus: true,
+              decoration: InputDecoration(labelText: t.password),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t.disable),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      final desligou = await comSegundoFator(
+        context,
+        t,
+        (codigo) => state.disableTwoFactor(password.text, totpCode: codigo),
+      );
+      if (!desligou) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(t.twoFactorDisabled)),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  // --- diálogos de conta -----------------------------------------------------
+
+  Future<void> _showChangeEmail(BuildContext context) async {
+    final t = state.t;
+    final email = TextEditingController();
+    final password = TextEditingController();
+    // Captura antes do await para não usar o context após o gap assíncrono.
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(t.changeEmail),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(t.contactNeedsCode, style: const TextStyle(fontSize: 12)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: email,
+              autofocus: true,
+              keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(labelText: t.newEmail),
+            ),
+            TextField(
+              controller: password,
+              obscureText: true,
+              decoration: InputDecoration(labelText: t.currentPassword),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t.save),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (!context.mounted) return;
+    await _verificarContato(
+      context,
+      messenger,
+      (codigo) => state.contactChangeStart(
+        currentPassword: password.text,
+        email: email.text.trim(),
+        totpCode: codigo,
+      ),
+      t.emailUpdated,
+    );
+  }
+
+  /// A segunda metade das duas trocas: manda o código e abre a tela de código.
+  ///
+  /// Comum aos dois porque a partir daqui e-mail e telefone são o mesmo fluxo —
+  /// o que muda é só o que se digitou antes. A tela de verificação é a **mesma**
+  /// do cadastro, com outras ações penduradas: repetir aquela tela aqui daria
+  /// dois lugares para consertar a mesma máscara e a mesma contagem.
+  ///
+  /// O erro do início (senha errada, contato já cadastrado, número impossível)
+  /// aparece no aviso de rodapé e a tela de código **não** abre: mandar a pessoa
+  /// para um campo de código que nunca vai receber código seria o pior lugar
+  /// para descobrir que a senha estava errada.
+  Future<void> _verificarContato(
+    BuildContext context,
+    ScaffoldMessengerState messenger,
+    Future<SignupPending> Function(String? codigo) comecar,
+    String sucesso,
+  ) async {
+    final t = state.t;
+    SignupPending? pendente;
+    try {
+      // Trocar o contato pede o segundo fator: é o passo que tira a conta do
+      // dono de vez, porque a recuperação de senha passa a ir para lá.
+      final comecou = await comSegundoFator(
+        context,
+        t,
+        (codigo) async {
+          pendente = await comecar(codigo);
+        },
+      );
+      if (!comecou) return;
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(t.networkError)));
+      return;
+    }
+
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VerifyScreen(
+          state: state,
+          pendente: pendente!,
+          confirmar: (_, codigo) => state.contactChangeVerify(codigo),
+          reenviar: (_) => state.contactChangeResend(),
+          aoConcluir: (telaDoCodigo) {
+            Navigator.of(telaDoCodigo).pop();
+            messenger.showSnackBar(SnackBar(content: Text(sucesso)));
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showChangePassword(BuildContext context) async {
+    final t = state.t;
+    final current = TextEditingController();
+    final next = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(t.changePassword),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: current,
+              obscureText: true,
+              autofocus: true,
+              decoration: InputDecoration(labelText: t.currentPassword),
+            ),
+            TextField(
+              controller: next,
+              obscureText: true,
+              decoration: InputDecoration(labelText: t.newPasswordMin),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t.save),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      final trocou = await comSegundoFator(
+        context,
+        t,
+        (codigo) =>
+            state.updatePassword(current.text, next.text, totpCode: codigo),
+      );
+      if (trocou) {
+        messenger.showSnackBar(SnackBar(content: Text(t.passwordUpdated)));
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  Future<void> _showDeleteAccount(BuildContext context) async {
+    final t = state.t;
+    final password = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(t.deleteAccount),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(t.deleteAccountBody),
+            const SizedBox(height: 12),
+            TextField(
+              controller: password,
+              obscureText: true,
+              autofocus: true,
+              decoration: InputDecoration(labelText: t.confirmPassword),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t.delete),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      final excluiu = await comSegundoFator(
+        context,
+        t,
+        (codigo) => state.deleteAccount(password.text, totpCode: codigo),
+      );
+      if (!excluiu) return;
+      // Conta excluída: volta à raiz (LoginScreen assume via isAuthenticated).
+      navigator.popUntil((route) => route.isFirst);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+}

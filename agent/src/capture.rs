@@ -1,0 +1,1065 @@
+//! Captura da tela e codificação em JPEG (Etapa 7).
+//!
+//! A captura real usa o `xcap`, no Windows e no Mac — a biblioteca tem a mesma
+//! interface nos dois, e o código abaixo serve aos dois sem mudança. No Mac ela
+//! só entrega a tela depois de a pessoa liberar "Gravação de Tela" (ver
+//! `permissoes_mac.rs`); antes disso, os quadros vêm só com o papel de parede.
+//! No Linux são três caminhos, escolhidos ao rodar: o Wayland pelo portal do
+//! sistema (ver `wayland.rs`), o X11 pelo mesmo `xcap`, e, sem sessão gráfica
+//! nenhuma (servidor, CI), um frame sintético — que permite validar todo o
+//! pipeline (agente → backend → app). A codificação JPEG é compartilhada e
+//! testável em qualquer plataforma.
+//!
+//! ## A ordem das duas operações
+//!
+//! Capturar entrega RGBA; os codificadores querem RGB. O caminho antigo
+//! convertia **antes** de reduzir, e assim pagava a conversão sobre a imagem
+//! grande para jogar fora 40% dos bytes logo em seguida. Agora reduz primeiro
+//! e converte depois: mesma imagem no fim, metade do trabalho.
+
+use image::codecs::jpeg::JpegEncoder;
+use image::ExtendedColorType;
+
+/// Codifica pixels RGB (8 bits/canal) em JPEG.
+pub fn encode_jpeg(rgb: &[u8], width: u32, height: u32, quality: u8) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    let mut encoder = JpegEncoder::new_with_quality(&mut out, quality);
+    encoder
+        .encode(rgb, width, height, ExtendedColorType::Rgb8)
+        .map_err(|e| e.to_string())?;
+    Ok(out)
+}
+
+/// Resultado de uma captura com deduplicação.
+///
+/// `jpeg` é `None` quando a tela está idêntica ao frame anterior; `hash` deve
+/// ser guardado pelo chamador e devolvido na chamada seguinte.
+#[derive(Debug)]
+pub struct Frame {
+    pub jpeg: Option<Vec<u8>>,
+    pub hash: u64,
+}
+
+/// Valor a passar como `last_hash` quando ainda não há frame anterior —
+/// [`frame_hash`] nunca devolve `0`, então o primeiro frame sempre é enviado.
+pub const NO_FRAME: u64 = 0;
+
+/// Hash rápido (FNV-1a) do conteúdo do frame, para detectar tela parada.
+///
+/// Não precisa ser criptográfico: um falso positivo apenas manteria um frame
+/// desatualizado na tela, e 64 bits tornam isso improvável na prática.
+fn frame_hash(bytes: &[u8]) -> u64 {
+    let mut acc: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        acc ^= *b as u64;
+        acc = acc.wrapping_mul(0x100_0000_01b3);
+    }
+    // Reserva o 0 para o sentinela NO_FRAME.
+    if acc == NO_FRAME {
+        1
+    } else {
+        acc
+    }
+}
+
+/// O tamanho de destino para um quadro, respeitando `max_width`.
+///
+/// As duas dimensões saem **pares**, e isso não é estética: o H.264 trabalha em
+/// blocos e subamostra a cor pela metade, então o codificador recusa dimensão
+/// ímpar. Sem este arredondamento, uma tela 3000x2000 (Surface Book) vira
+/// 1280x853 e **nenhum quadro de vídeo é codificado** — o agente reclama a cada
+/// quadro e o app fica só no JPEG, sem que nada diga por quê.
+pub fn target_size(width: u32, height: u32, max_width: u32) -> (u32, u32) {
+    let (w, h) = if max_width > 0 && width > max_width {
+        (max_width, (height * max_width / width).max(1))
+    } else {
+        (width, height)
+    };
+    ((w - w % 2).max(2), (h - h % 2).max(2))
+}
+
+/// Redimensionador reaproveitado entre quadros.
+///
+/// Guarda os buffers internos do `fast_image_resize`; criar um por quadro
+/// jogaria fora exatamente o que ele existe para reaproveitar.
+///
+/// A redução é a etapa mais cara do pipeline depois da codificação, e por muito
+/// tempo foi a mais cara de todas. Medido a 1920x1080→1280x720: o filtro de
+/// caixa do `image` custava 26,5 ms por quadro; o mesmo filtro com SIMD custa
+/// 6,5 ms. As imagens saem praticamente iguais — em conteúdo de tela, a maior
+/// diferença por canal foi 2 (de 255) e a média, 1. Foi troca de implementação,
+/// não de qualidade.
+pub struct Scaler {
+    inner: fast_image_resize::Resizer,
+}
+
+impl Default for Scaler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Scaler {
+    pub fn new() -> Self {
+        Self {
+            inner: fast_image_resize::Resizer::new(),
+        }
+    }
+
+    /// Reduz um quadro RGBA para caber em `max_width`, mantendo a proporção.
+    ///
+    /// `rgba` entra por valor porque a biblioteca precisa dele mutável.
+    pub fn scale(
+        &mut self,
+        mut rgba: Vec<u8>,
+        width: u32,
+        height: u32,
+        max_width: u32,
+    ) -> Result<CapturedFrame, String> {
+        let esperado = (width as usize) * (height as usize) * 4;
+        if rgba.len() != esperado {
+            return Err(format!(
+                "quadro com {} bytes, esperado {esperado} para {width}x{height}",
+                rgba.len()
+            ));
+        }
+        let (dw, dh) = target_size(width, height, max_width);
+        if (dw, dh) == (width, height) {
+            return Ok(CapturedFrame {
+                rgb: rgba_to_rgb(&rgba),
+                width,
+                height,
+            });
+        }
+        use fast_image_resize::images::Image;
+        use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions};
+        let src = Image::from_slice_u8(width, height, &mut rgba, PixelType::U8x4)
+            .map_err(|e| format!("quadro inválido para redução: {e}"))?;
+        let mut dst = Image::new(dw, dh, PixelType::U8x4);
+        // Caixa (média de área) e não Lanczos: é o filtro certo para redução de
+        // conteúdo de tela, é o que o pipeline sempre usou, e é o mais barato
+        // dos três. Lanczos custou 10,1 ms contra 6,5 e realça o serrilhado do
+        // texto em vez de suavizá-lo.
+        let opcoes = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Box));
+        self.inner
+            .resize(&src, &mut dst, &opcoes)
+            .map_err(|e| format!("falha ao reduzir o quadro: {e}"))?;
+        Ok(CapturedFrame {
+            // A conversão vem **depois** da redução, sobre uma imagem que já é
+            // uma fração da original.
+            rgb: rgba_to_rgb(dst.buffer()),
+            width: dw,
+            height: dh,
+        })
+    }
+}
+
+/// Converte RGBA em RGB, descartando o alfa.
+pub fn rgba_to_rgb(rgba: &[u8]) -> Vec<u8> {
+    let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
+    for px in rgba.as_chunks::<4>().0 {
+        rgb.extend_from_slice(&px[0..3]);
+    }
+    rgb
+}
+
+/// Um monitor do computador, como o app o vê na lista.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MonitorInfo {
+    /// Identificador do sistema. É por ele que o app pede um monitor, e não
+    /// pela posição na lista: a ordem muda quando alguém liga ou desliga uma
+    /// tela, e um índice guardado passaria a apontar para outra coisa.
+    pub id: u32,
+    /// Nome legível ("Dell U2419H"), quando o sistema sabe dizer.
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    pub primary: bool,
+}
+
+/// Os monitores do computador, do principal para os demais.
+///
+/// O principal vem primeiro de propósito: é o que a maioria quer ver, e é o
+/// escolhido quando ninguém escolheu.
+#[cfg(any(windows, target_os = "macos"))]
+pub fn monitors() -> Vec<MonitorInfo> {
+    monitores_xcap()
+}
+
+/// No Linux, conforme a sessão gráfica.
+///
+/// No Wayland a lista é uma tela só: a que foi liberada na janela de
+/// permissão. O sistema não diz quais outras existem, e escolher outra exigiria
+/// pedir permissão de novo.
+#[cfg(target_os = "linux")]
+pub fn monitors() -> Vec<MonitorInfo> {
+    if crate::wayland::ativo() {
+        let (width, height) = crate::wayland::ultimo_tamanho().unwrap_or((0, 0));
+        return vec![MonitorInfo {
+            id: 0,
+            name: "Tela liberada no computador".to_string(),
+            width,
+            height,
+            primary: true,
+        }];
+    }
+    if x11() {
+        return monitores_xcap();
+    }
+    monitores_sinteticos()
+}
+
+/// Sessão X11 (e não Wayland) disponível?
+#[cfg(target_os = "linux")]
+fn x11() -> bool {
+    !crate::wayland::ativo() && std::env::var_os("DISPLAY").is_some()
+}
+
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+fn monitores_xcap() -> Vec<MonitorInfo> {
+    let todos = match xcap::Monitor::all() {
+        Ok(lista) => lista,
+        Err(e) => {
+            eprintln!("Não consegui listar os monitores: {e}");
+            return Vec::new();
+        }
+    };
+    let mut saida: Vec<MonitorInfo> = todos
+        .iter()
+        .filter_map(|m| {
+            // Um monitor sem identificador não serve: seria oferecido na lista
+            // e não poderia ser escolhido depois.
+            let id = m.id().ok()?;
+            Some(MonitorInfo {
+                id,
+                name: m
+                    .friendly_name()
+                    .or_else(|_| m.name())
+                    .unwrap_or_else(|_| format!("Monitor {id}")),
+                width: m.width().unwrap_or(0),
+                height: m.height().unwrap_or(0),
+                primary: m.is_primary().unwrap_or(false),
+            })
+        })
+        .collect();
+    saida.sort_by_key(|m| (!m.primary, m.id));
+    saida
+}
+
+/// Stub: uma tela sintética só, do mesmo tamanho que o gerador produz.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn monitores_sinteticos() -> Vec<MonitorInfo> {
+    vec![MonitorInfo {
+        id: 0,
+        name: "Tela sintética".to_string(),
+        width: 640,
+        height: 360,
+        primary: true,
+    }]
+}
+
+/// Escolhe o monitor pedido, ou o principal se o pedido sumiu.
+///
+/// Sumir é normal: um monitor pode ser desligado com a sessão aberta. Cair no
+/// principal é melhor do que devolver erro — a tela continua chegando, e a
+/// pessoa vê que mudou.
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+fn pick_monitor(id: Option<u32>) -> Result<xcap::Monitor, String> {
+    let todos = xcap::Monitor::all().map_err(|e| e.to_string())?;
+    if let Some(alvo) = id {
+        if let Some(m) = todos.iter().find(|m| m.id().ok() == Some(alvo)) {
+            return Ok(m.clone());
+        }
+        eprintln!("Monitor {alvo} não está mais ligado; usando o principal");
+    }
+    todos
+        .iter()
+        .find(|m| m.is_primary().unwrap_or(false))
+        .or_else(|| todos.first())
+        .cloned()
+        .ok_or_else(|| "nenhum monitor encontrado".to_string())
+}
+
+/// Fonte de captura, resolvida **uma vez** e reutilizada a cada quadro.
+///
+/// Existe por causa de um erro medido: a versão anterior chamava
+/// `Monitor::all()` — que enumera todos os monitores do sistema — a cada
+/// quadro, 30 vezes por segundo. A captura aparecia em 70–94 ms nas
+/// estatísticas, mais caro que codificar. Resolver o monitor uma vez e guardá-lo
+/// tira esse trabalho do caminho quente.
+pub struct Screen {
+    #[cfg(any(windows, target_os = "macos"))]
+    monitor: xcap::Monitor,
+}
+
+impl Screen {
+    /// Resolve o monitor a ser capturado. Chame uma vez por sessão.
+    #[cfg(any(windows, target_os = "macos"))]
+    pub fn new(monitor: Option<u32>) -> Result<Self, String> {
+        Ok(Self {
+            monitor: pick_monitor(monitor)?,
+        })
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    pub fn new(_monitor: Option<u32>) -> Result<Self, String> {
+        Ok(Self {})
+    }
+
+    /// Captura a tela em RGBA, devolvendo `(pixels, largura, altura)`.
+    #[cfg(any(windows, target_os = "macos"))]
+    fn grab_rgba(&self) -> Result<(Vec<u8>, u32, u32), String> {
+        let image = self.monitor.capture_image().map_err(|e| e.to_string())?;
+        let (width, height) = (image.width(), image.height());
+        Ok((image.into_raw(), width, height))
+    }
+
+    /// Stub (não-Windows): gera um frame sintético — um gradiente com uma faixa
+    /// vertical que se move com o tempo, para dar movimento visível ao testar.
+    #[cfg(not(any(windows, target_os = "macos")))]
+    fn grab_rgba(&self) -> Result<(Vec<u8>, u32, u32), String> {
+        let (width, height) = (640u32, 360u32);
+        let ticks = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let bar = (ticks / 16 % width as u128) as i64;
+
+        let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+        for y in 0..height {
+            for x in 0..width {
+                let r = (x * 255 / width) as u8;
+                let g = (y * 255 / height) as u8;
+                let b = if (x as i64 - bar).abs() < 8 { 255 } else { 64 };
+                rgba.extend_from_slice(&[r, g, b, 255]);
+            }
+        }
+        Ok((rgba, width, height))
+    }
+
+    /// Captura já reduzida, pronta para codificar.
+    pub fn frame(&self, scaler: &mut Scaler, max_width: u32) -> Result<CapturedFrame, String> {
+        let (rgba, width, height) = self.grab_rgba()?;
+        scaler.scale(rgba, width, height, max_width)
+    }
+}
+
+/// Captura contínua: a sessão fica **aberta** entre os quadros.
+///
+/// É a diferença que decidiu o desempenho. O `capture_image()` do xcap é API de
+/// captura pontual: por baixo ele cria um dispositivo Direct3D11, um pool de
+/// quadros, uma sessão de captura, espera um quadro e destrói tudo — **a cada
+/// chamada**. Medido no agente, isso custava 70–100 ms por quadro. O
+/// `video_recorder()` abre a sessão uma vez e entrega os quadros por um canal.
+struct ContinuousCapture {
+    #[cfg(windows)]
+    recorder: xcap::VideoRecorder,
+    /// No Mac, o ScreenCaptureKit (ver `captura_mac.rs`), ou o `xcap` quando
+    /// ele não está disponível.
+    #[cfg(target_os = "macos")]
+    fonte_mac: FonteMac,
+    #[cfg(any(windows, target_os = "macos"))]
+    frames: std::sync::mpsc::Receiver<xcap::Frame>,
+    /// Quanto esperar por um quadro antes de devolver o controle ao laço.
+    timeout: std::time::Duration,
+    /// Vive aqui para reaproveitar os buffers internos entre os quadros.
+    scaler: Scaler,
+    #[cfg(not(any(windows, target_os = "macos")))]
+    fonte: FonteLinux,
+}
+
+/// De onde vêm os quadros no Mac.
+#[cfg(target_os = "macos")]
+enum FonteMac {
+    /// O caminho normal: sem as janelas do Deskside na imagem.
+    Sck(#[allow(dead_code)] crate::captura_mac::Gravador),
+    /// O de antes, para um Mac em que o ScreenCaptureKit não abre.
+    Xcap(xcap::VideoRecorder),
+}
+
+/// Abre a captura do Mac: o ScreenCaptureKit, ou o `xcap` se ele recusar.
+#[cfg(target_os = "macos")]
+fn abrir_mac(
+    monitor: Option<u32>,
+    interval: std::time::Duration,
+) -> Result<(FonteMac, std::sync::mpsc::Receiver<xcap::Frame>), String> {
+    let escolhido = pick_monitor(monitor)?;
+    let id = escolhido.id().ok();
+    let escala = escolhido.scale_factor().map(f64::from).unwrap_or(2.0);
+    match crate::captura_mac::Gravador::iniciar(id, escala, interval) {
+        Ok((gravador, quadros)) => Ok((FonteMac::Sck(gravador), quadros)),
+        Err(e) => {
+            crate::diario(&format!(
+                "Tela do Mac: ScreenCaptureKit indisponível ({e}); usando a captura antiga"
+            ));
+            let (recorder, quadros) = abrir_gravador(monitor)?;
+            Ok((FonteMac::Xcap(recorder), quadros))
+        }
+    }
+}
+
+/// De onde vêm os quadros no Linux.
+#[cfg(not(any(windows, target_os = "macos")))]
+enum FonteLinux {
+    Wayland(crate::wayland::Captura),
+    X11 {
+        recorder: xcap::VideoRecorder,
+        frames: std::sync::mpsc::Receiver<xcap::Frame>,
+    },
+    /// Sem sessão gráfica: o gradiente de teste.
+    Sintetica(Screen),
+}
+
+/// Abre a captura contínua do `xcap` no monitor pedido (Windows, Mac e X11).
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+fn abrir_gravador(
+    monitor: Option<u32>,
+) -> Result<(xcap::VideoRecorder, std::sync::mpsc::Receiver<xcap::Frame>), String> {
+    let monitor = pick_monitor(monitor)?;
+    let (recorder, frames) = monitor
+        .video_recorder()
+        .map_err(|e| format!("não consegui abrir a captura contínua: {e}"))?;
+    recorder
+        .start()
+        .map_err(|e| format!("não consegui iniciar a captura: {e}"))?;
+    Ok((recorder, frames))
+}
+
+/// O quadro mais recente do gravador, ou `None` se nada chegou no prazo.
+///
+/// O canal do gravador é ilimitado e o WGC entrega no ritmo do monitor, mais
+/// rápido do que se consegue reduzir e codificar. Sem esvaziar a fila, cada
+/// volta processa o quadro **mais antigo** e o atraso cresce sem limite —
+/// reduzir todos seria gastar CPU para exibir imagem velha. O que vale é
+/// sempre o último.
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+fn ultimo_do_gravador(
+    frames: &std::sync::mpsc::Receiver<xcap::Frame>,
+    timeout: std::time::Duration,
+) -> Result<Option<xcap::Frame>, String> {
+    use std::sync::mpsc::RecvTimeoutError;
+    let mut frame = match frames.recv_timeout(timeout) {
+        Ok(frame) => frame,
+        Err(RecvTimeoutError::Timeout) => return Ok(None),
+        Err(RecvTimeoutError::Disconnected) => {
+            return Err("a captura contínua foi encerrada".to_string())
+        }
+    };
+    // Fila vazia, ou o gravador acabou: em ambos os casos o quadro em mãos é o
+    // mais recente que existe. Se foi encerrado, a próxima chamada devolve o
+    // erro.
+    while let Ok(newer) = frames.try_recv() {
+        frame = newer;
+    }
+    Ok(Some(frame))
+}
+
+impl ContinuousCapture {
+    #[cfg(any(windows, target_os = "macos"))]
+    fn start(monitor: Option<u32>, interval: std::time::Duration) -> Result<Self, String> {
+        #[cfg(windows)]
+        let (recorder, frames) = abrir_gravador(monitor)?;
+        #[cfg(target_os = "macos")]
+        let (fonte_mac, frames) = abrir_mac(monitor, interval)?;
+        Ok(Self {
+            #[cfg(windows)]
+            recorder,
+            #[cfg(target_os = "macos")]
+            fonte_mac,
+            frames,
+            // Generoso de propósito: numa tela parada o WGC não entrega quadro
+            // nenhum, e isso é normal, não erro.
+            timeout: (interval * 20).max(std::time::Duration::from_millis(500)),
+            scaler: Scaler::new(),
+        })
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    fn start(monitor: Option<u32>, interval: std::time::Duration) -> Result<Self, String> {
+        // O mesmo prazo generoso do Windows e do Mac: tela parada não entrega
+        // quadro, e isso é normal.
+        let generoso = (interval * 20).max(std::time::Duration::from_millis(500));
+        let (fonte, timeout) = if crate::wayland::ativo() {
+            // Não bloqueia: na primeira vez a abertura espera alguém aprovar a
+            // janela, e quem chama é o laço que mantém o computador conectado.
+            (
+                FonteLinux::Wayland(crate::wayland::Captura::iniciar()),
+                generoso,
+            )
+        } else if x11() {
+            let (recorder, frames) = abrir_gravador(monitor)?;
+            (FonteLinux::X11 { recorder, frames }, generoso)
+        } else {
+            (FonteLinux::Sintetica(Screen::new(monitor)?), interval)
+        };
+        Ok(Self {
+            timeout,
+            scaler: Scaler::new(),
+            fonte,
+        })
+    }
+
+    /// Próximo quadro já reduzido, ou `None` se nada chegou no prazo.
+    #[cfg(any(windows, target_os = "macos"))]
+    fn next_frame(&mut self, max_width: u32) -> Result<Option<CapturedFrame>, String> {
+        let Some(frame) = ultimo_do_gravador(&self.frames, self.timeout)? else {
+            return Ok(None);
+        };
+        // `raw` já vem em RGBA: o xcap converte de BGRA antes de entregar, e
+        // o ScreenCaptureKit do Mac é convertido em `captura_mac.rs`.
+        Ok(Some(self.scaler.scale(
+            frame.raw,
+            frame.width,
+            frame.height,
+            max_width,
+        )?))
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    fn next_frame(&mut self, max_width: u32) -> Result<Option<CapturedFrame>, String> {
+        match &mut self.fonte {
+            FonteLinux::Wayland(captura) => {
+                let Some(q) = captura.proximo(self.timeout)? else {
+                    return Ok(None);
+                };
+                Ok(Some(
+                    self.scaler.scale(q.rgba, q.largura, q.altura, max_width)?,
+                ))
+            }
+            FonteLinux::X11 { frames, .. } => {
+                let Some(frame) = ultimo_do_gravador(frames, self.timeout)? else {
+                    return Ok(None);
+                };
+                Ok(Some(self.scaler.scale(
+                    frame.raw,
+                    frame.width,
+                    frame.height,
+                    max_width,
+                )?))
+            }
+            FonteLinux::Sintetica(screen) => {
+                // O sintético é síncrono: gera na hora e respeita o ritmo
+                // pedido.
+                let frame = screen.frame(&mut self.scaler, max_width)?;
+                std::thread::sleep(self.timeout);
+                Ok(Some(frame))
+            }
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+impl Drop for ContinuousCapture {
+    fn drop(&mut self) {
+        if let FonteLinux::X11 { recorder, .. } = &self.fonte {
+            if let Err(e) = recorder.stop() {
+                eprintln!("Falha ao encerrar a captura: {e}");
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ContinuousCapture {
+    fn drop(&mut self) {
+        if let Err(e) = self.recorder.stop() {
+            eprintln!("Falha ao encerrar a captura: {e}");
+        }
+    }
+}
+
+/// O ScreenCaptureKit para sozinho quando o gravador sai de escopo; o `xcap`
+/// precisa do pedido.
+#[cfg(target_os = "macos")]
+impl Drop for ContinuousCapture {
+    fn drop(&mut self) {
+        if let FonteMac::Xcap(recorder) = &self.fonte_mac {
+            if let Err(e) = recorder.stop() {
+                eprintln!("Falha ao encerrar a captura: {e}");
+            }
+        }
+    }
+}
+
+/// Captura pontual: resolve o monitor, captura e descarta.
+///
+/// Serve para uso de uma vez (exemplos, testes). No caminho quente use
+/// [`Screen`], que resolve o monitor só uma vez.
+fn capture_rgba() -> Result<(Vec<u8>, u32, u32), String> {
+    Screen::new(None)?.grab_rgba()
+}
+
+/// Um quadro capturado e já reduzido, pronto para codificar.
+///
+/// Em RGB, que é o que os dois codificadores querem — e as duas dimensões são
+/// pares, que é o que o H.264 exige.
+pub struct CapturedFrame {
+    pub rgb: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl CapturedFrame {
+    /// Quantos bytes um quadro deste tamanho tem que ter.
+    pub fn expected_len(width: u32, height: u32) -> usize {
+        (width as usize) * (height as usize) * 3
+    }
+}
+
+/// Captura contínua numa thread própria, publicando sempre o quadro mais
+/// recente.
+///
+/// Existe porque capturar e codificar em série faz o ritmo ser a **soma** dos
+/// dois. Com a captura correndo à parte, o custo por quadro do laço principal
+/// passa a ser só a codificação, e o intervalo fica mais regular — que é o que
+/// se percebe como imagem menos travada.
+///
+/// Só o quadro mais recente é guardado: se a codificação não acompanha, o certo
+/// é pular para o presente em vez de acumular atraso.
+pub struct FramePump {
+    latest: std::sync::Arc<std::sync::Mutex<Option<CapturedFrame>>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Custo acumulado das capturas e quantas foram, para o resumo periódico.
+    /// Sem isto, não há como distinguir "a captura é lenta" de "o codificador é
+    /// lento" — e a resposta certa é diferente em cada caso.
+    cost: std::sync::Arc<CaptureCost>,
+    /// A largura máxima em vigor. Trocável com a captura de pé (ver
+    /// `ajustar_largura`).
+    largura: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+/// Custo de captura observado, compartilhado com a thread.
+#[derive(Default)]
+pub struct CaptureCost {
+    micros: std::sync::atomic::AtomicU64,
+    frames: std::sync::atomic::AtomicU64,
+}
+
+impl CaptureCost {
+    /// Média em milissegundos desde a última leitura, zerando os contadores.
+    pub fn take_average_ms(&self) -> Option<f64> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let frames = self.frames.swap(0, Relaxed);
+        let micros = self.micros.swap(0, Relaxed);
+        if frames == 0 {
+            return None;
+        }
+        Some(micros as f64 / frames as f64 / 1000.0)
+    }
+}
+
+/// Quanto ainda falta esperar antes de valer a pena preparar outro quadro.
+///
+/// Zero se nenhum quadro saiu ainda ou se o prazo já passou.
+fn remaining_budget(
+    published: Option<std::time::Instant>,
+    budget: std::time::Duration,
+) -> std::time::Duration {
+    match published {
+        Some(last) => budget.saturating_sub(last.elapsed()),
+        None => std::time::Duration::ZERO,
+    }
+}
+
+impl FramePump {
+    /// Começa a capturar em `max_width`, mirando `fps` quadros por segundo.
+    ///
+    /// Falha se não houver monitor — melhor saber na hora de ligar do que
+    /// descobrir por uma thread que captura nada em silêncio.
+    pub fn start(monitor: Option<u32>, max_width: u32, fps: u32) -> Result<Self, String> {
+        let latest = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let interval = std::time::Duration::from_micros(1_000_000 / fps.clamp(1, 60) as u64);
+
+        let cost = std::sync::Arc::new(CaptureCost::default());
+        let largura = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(max_width));
+        let largura_da_thread = std::sync::Arc::clone(&largura);
+        let slot = std::sync::Arc::clone(&latest);
+        let halt = std::sync::Arc::clone(&stop);
+        let meter = std::sync::Arc::clone(&cost);
+        // A fonte de captura nasce **dentro** da thread e o resultado volta por
+        // este canal. Não é preciosismo: no Windows ela guarda handles que não
+        // são `Send` e por isso não podem atravessar a fronteira de thread.
+        // Assim nasce onde vive, e quem chamou ainda descobre na hora se falhou.
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        // Folga de 25% sobre o intervalo pedido: o quadro fica pronto um pouco
+        // antes do tique que vai consumi-lo, sem reduzir dois para entregar um.
+        let budget = interval.mul_f32(0.75);
+        let worker = std::thread::spawn(move || {
+            use std::sync::atomic::Ordering::Relaxed;
+            let mut source = match ContinuousCapture::start(monitor, interval) {
+                Ok(source) => {
+                    let _ = ready_tx.send(Ok(()));
+                    source
+                }
+                Err(e) => {
+                    let _ = ready_tx.send(Err(e));
+                    return;
+                }
+            };
+            let mut published: Option<std::time::Instant> = None;
+            while !halt.load(Relaxed) {
+                // Não adianta preparar mais quadros do que o laço principal
+                // consome — o excedente é CPU gasta em imagem descartada. Espera
+                // o resto do intervalo; os quadros do WGC acumulam no canal e o
+                // `next_frame` pega o mais recente.
+                let wait = remaining_budget(published, budget);
+                if !wait.is_zero() {
+                    std::thread::sleep(wait);
+                    if halt.load(Relaxed) {
+                        break;
+                    }
+                }
+                let started = std::time::Instant::now();
+                match source.next_frame(largura_da_thread.load(Relaxed)) {
+                    Ok(Some(frame)) => {
+                        meter
+                            .micros
+                            .fetch_add(started.elapsed().as_micros() as u64, Relaxed);
+                        meter.frames.fetch_add(1, Relaxed);
+                        published = Some(std::time::Instant::now());
+                        if let Ok(mut guard) = slot.lock() {
+                            *guard = Some(frame); // substitui o anterior
+                        }
+                    }
+                    // Sem quadro novo dentro do prazo: a tela não mudou. Volta ao
+                    // laço para checar a parada.
+                    Ok(None) => {}
+                    Err(e) => {
+                        eprintln!("Falha ao capturar a tela: {e}");
+                        std::thread::sleep(std::time::Duration::from_millis(200));
+                    }
+                }
+            }
+        });
+
+        match ready_rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err("a thread de captura morreu ao iniciar".to_string()),
+        }
+
+        Ok(Self {
+            latest,
+            stop,
+            cost,
+            largura,
+            worker: Some(worker),
+        })
+    }
+
+    /// Troca a largura máxima sem reabrir a captura.
+    ///
+    /// A largura só entra na redução de cada quadro já capturado; a captura em
+    /// si não depende dela. Reabrir para mudá-la custava, no Wayland, fechar e
+    /// abrir a sessão do portal — o ícone de compartilhamento piscando, o
+    /// controle e a área de transferência soluçando — a cada degrau.
+    pub fn ajustar_largura(&self, max_width: u32) {
+        self.largura
+            .store(max_width, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Retira o quadro mais recente, se houver um ainda não consumido.
+    pub fn take(&self) -> Option<CapturedFrame> {
+        self.latest.lock().ok()?.take()
+    }
+
+    /// Custo médio de captura desde a última leitura.
+    pub fn cost(&self) -> &CaptureCost {
+        &self.cost
+    }
+}
+
+impl Drop for FramePump {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+/// Captura a tela já reduzida, em RGB e sem compressão: `(pixels, largura,
+/// altura)`.
+///
+/// É a saída do pipeline logo antes da codificação. Serve para alimentar um
+/// codificador que não seja o JPEG — hoje, a medição do H.264 em
+/// `examples/bench_h264.rs`; adiante, o próprio encoder de vídeo.
+pub fn capture_rgb(max_width: u32) -> Result<(Vec<u8>, u32, u32), String> {
+    let (rgba, width, height) = capture_rgba()?;
+    let frame = Scaler::new().scale(rgba, width, height, max_width)?;
+    Ok((frame.rgb, frame.width, frame.height))
+}
+
+/// Codifica um quadro **já capturado e reduzido** em JPEG, ou devolve só o hash
+/// se ele é idêntico ao anterior.
+///
+/// Os dois caminhos de tela — o vídeo por WebRTC e o JPEG de reserva — comem
+/// os quadros do mesmo [`FramePump`]. Por isso esta função **não captura**:
+/// capturar aqui abriria uma segunda captura da mesma tela, dobrando o custo
+/// para produzir a mesma imagem.
+pub fn jpeg_if_changed(
+    frame: &CapturedFrame,
+    quality: u8,
+    last_hash: u64,
+) -> Result<Frame, String> {
+    let hash = frame_hash(&frame.rgb);
+    if hash == last_hash {
+        return Ok(Frame { jpeg: None, hash });
+    }
+    let jpeg = encode_jpeg(&frame.rgb, frame.width, frame.height, quality)?;
+    Ok(Frame {
+        jpeg: Some(jpeg),
+        hash,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn is_jpeg(bytes: &[u8]) -> bool {
+        bytes.len() > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF
+    }
+
+    #[test]
+    fn a_lista_de_monitores_poe_o_principal_na_frente() {
+        // Quem abre a tela quase sempre quer o principal, e é ele que vale
+        // quando ninguém escolheu - a lista tem de refletir isso.
+        let lista = monitors();
+        assert!(!lista.is_empty(), "sempre há ao menos uma tela");
+        if lista.iter().any(|m| m.primary) {
+            assert!(lista[0].primary, "o principal tem de vir primeiro");
+        }
+        // Identificadores repetidos fariam a escolha do app apontar para dois
+        // monitores ao mesmo tempo.
+        let mut ids: Vec<u32> = lista.iter().map(|m| m.id).collect();
+        ids.sort_unstable();
+        let antes = ids.len();
+        ids.dedup();
+        assert_eq!(ids.len(), antes, "identificador de monitor repetido");
+    }
+
+    #[test]
+    fn encode_jpeg_produces_jpeg_magic() {
+        let rgb = vec![128u8; 8 * 8 * 3];
+        let jpeg = encode_jpeg(&rgb, 8, 8, 70).unwrap();
+        assert!(is_jpeg(&jpeg));
+    }
+
+    #[test]
+    fn a_captura_de_uma_vez_ainda_produz_imagem() {
+        // Caminho usado pelo exemplo de medição (`examples/capture_frames`).
+        // No stub (Linux) captura o quadro sintético.
+        let (rgb, largura, altura) = capture_rgb(1280).unwrap();
+        assert!(largura > 0 && altura > 0);
+        assert_eq!(rgb.len() as u32, largura * altura * 3);
+    }
+
+    #[test]
+    fn dedup_manda_o_primeiro_quadro() {
+        let frame = jpeg_if_changed(&quadro(30), 60, NO_FRAME).unwrap();
+        assert!(is_jpeg(frame.jpeg.as_deref().unwrap()));
+        assert_ne!(frame.hash, NO_FRAME);
+    }
+
+    #[test]
+    fn dedup_of_a_frozen_screen_skips_the_encode() {
+        // Caminho puro, sem o stub animado: o mesmo buffer duas vezes.
+        let rgba = vec![90u8; (64 * 32 * 4) as usize];
+        let mut scaler = Scaler::new();
+        let um = scaler.scale(rgba.clone(), 64, 32, 64).unwrap();
+        let outro = scaler.scale(rgba, 64, 32, 64).unwrap();
+        assert_eq!(frame_hash(&um.rgb), frame_hash(&outro.rgb));
+    }
+
+    fn quadro(valor: u8) -> CapturedFrame {
+        CapturedFrame {
+            rgb: vec![valor; 8 * 8 * 3],
+            width: 8,
+            height: 8,
+        }
+    }
+
+    #[test]
+    fn jpeg_if_changed_codifica_quadro_novo() {
+        let frame = jpeg_if_changed(&quadro(30), 60, NO_FRAME).unwrap();
+        assert!(is_jpeg(frame.jpeg.as_deref().unwrap()));
+        assert_ne!(frame.hash, NO_FRAME);
+    }
+
+    #[test]
+    fn jpeg_if_changed_pula_quadro_identico() {
+        let primeiro = jpeg_if_changed(&quadro(30), 60, NO_FRAME).unwrap();
+        let repetido = jpeg_if_changed(&quadro(30), 60, primeiro.hash).unwrap();
+        assert!(repetido.jpeg.is_none(), "tela igual não deve gastar encode");
+        assert_eq!(repetido.hash, primeiro.hash);
+        // Conteúdo diferente com o mesmo hash anterior: tem de codificar.
+        let outro = jpeg_if_changed(&quadro(200), 60, primeiro.hash).unwrap();
+        assert!(outro.jpeg.is_some());
+    }
+
+    #[test]
+    fn budget_espera_o_intervalo_e_nao_espera_atrasado() {
+        use std::time::{Duration, Instant};
+        // Nada saiu ainda: prepara na hora.
+        assert_eq!(
+            remaining_budget(None, Duration::from_millis(100)),
+            Duration::ZERO
+        );
+        // Quadro pronto agora: espera quase o intervalo inteiro.
+        let falta = remaining_budget(Some(Instant::now()), Duration::from_millis(100));
+        assert!(
+            falta > Duration::from_millis(80) && falta <= Duration::from_millis(100),
+            "esperou {falta:?}"
+        );
+        // Já passou do prazo (a codificação demorou): não espera mais nada, e
+        // sobretudo não estoura o `Duration`.
+        let atrasado = Instant::now() - Duration::from_millis(500);
+        assert_eq!(
+            remaining_budget(Some(atrasado), Duration::from_millis(100)),
+            Duration::ZERO
+        );
+    }
+
+    #[test]
+    fn frame_hash_reacts_to_content_and_avoids_the_sentinel() {
+        assert_ne!(frame_hash(&[1, 2, 3]), frame_hash(&[1, 2, 4]));
+        assert_eq!(frame_hash(&[1, 2, 3]), frame_hash(&[1, 2, 3]));
+        assert_ne!(frame_hash(&[]), NO_FRAME);
+    }
+
+    #[test]
+    fn pump_entrega_quadros_e_sempre_o_mais_recente() {
+        let pump = FramePump::start(None, 1280, 30).unwrap();
+        // Espera a thread produzir algo.
+        let mut primeiro = None;
+        for _ in 0..100 {
+            if let Some(frame) = pump.take() {
+                primeiro = Some(frame);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let primeiro = primeiro.expect("a captura não produziu quadro em 1s");
+        assert!(primeiro.width > 0 && primeiro.height > 0);
+        assert_eq!(
+            primeiro.rgb.len(),
+            CapturedFrame::expected_len(primeiro.width, primeiro.height)
+        );
+
+        // `take` consome: sem quadro novo, devolve None na hora.
+        assert!(
+            pump.take().is_none(),
+            "o mesmo quadro não deve ser entregue duas vezes"
+        );
+    }
+
+    #[test]
+    fn pump_troca_a_largura_sem_reabrir_a_captura() {
+        fn proximo(pump: &FramePump) -> CapturedFrame {
+            for _ in 0..200 {
+                if let Some(frame) = pump.take() {
+                    return frame;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            panic!("a captura não produziu quadro em 2s");
+        }
+        let pump = FramePump::start(None, 640, 30).unwrap();
+        let antes = proximo(&pump);
+        assert!(antes.width <= 640);
+        pump.ajustar_largura(320);
+        // O quadro que já estava sendo reduzido pode sair na largura antiga.
+        let _ = proximo(&pump);
+        let depois = proximo(&pump);
+        assert!(
+            depois.width <= 320,
+            "largura nova não pegou: {}",
+            depois.width
+        );
+        assert!(depois.width < antes.width);
+    }
+
+    #[test]
+    fn pump_para_a_thread_ao_ser_descartado() {
+        // Se o Drop não parasse a thread, ela seguiria capturando para sempre —
+        // com o custo de CPU que isso implica depois de o app sair.
+        let pump = FramePump::start(None, 1280, 30).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let stop = std::sync::Arc::clone(&pump.stop);
+        drop(pump);
+        assert!(
+            stop.load(std::sync::atomic::Ordering::Relaxed),
+            "o Drop precisa sinalizar a parada"
+        );
+    }
+
+    #[test]
+    fn downscale_reduces_dimensions() {
+        // Uma imagem 100x50 reduzida para max_width 40 vira 40x20. A redução é
+        // o passo mais caro depois da codificação: se ela parar de acontecer,
+        // o custo por quadro dispara sem nada quebrar visivelmente.
+        let rgba = vec![10u8; (100 * 50 * 4) as usize];
+        let frame = Scaler::new().scale(rgba, 100, 50, 40).unwrap();
+        assert_eq!((frame.width, frame.height), (40, 20));
+        assert_eq!(
+            frame.rgb.len(),
+            CapturedFrame::expected_len(frame.width, frame.height)
+        );
+    }
+
+    #[test]
+    fn o_destino_nunca_tem_dimensao_impar() {
+        // O H.264 recusa dimensão ímpar. Sem este arredondamento, uma tela
+        // 3000x2000 (Surface Book) vira 1280x853 e **nenhum** quadro de vídeo
+        // é codificado - o agente reclama a cada quadro e o app fica só no
+        // JPEG, sem nada dizer por quê. Era um bug real.
+        for (w, h) in [(3000u32, 2000u32), (1366, 768), (1920, 1080), (1280, 800)] {
+            let (dw, dh) = target_size(w, h, 1280);
+            assert_eq!(dw % 2, 0, "{w}x{h} gerou largura ímpar {dw}");
+            assert_eq!(dh % 2, 0, "{w}x{h} gerou altura ímpar {dh}");
+        }
+        // Especificamente o caso que quebrava.
+        assert_eq!(target_size(3000, 2000, 1280), (1280, 852));
+        assert_eq!(target_size(1366, 768, 1280), (1280, 718));
+    }
+
+    #[test]
+    fn tela_menor_que_o_teto_nao_e_ampliada() {
+        // Ampliar custaria tempo e não acrescentaria informação nenhuma.
+        assert_eq!(target_size(800, 600, 1280), (800, 600));
+        let rgba = vec![7u8; (800 * 600 * 4) as usize];
+        let frame = Scaler::new().scale(rgba, 800, 600, 1280).unwrap();
+        assert_eq!((frame.width, frame.height), (800, 600));
+    }
+
+    #[test]
+    fn a_reducao_preserva_uma_cor_chapada() {
+        // Média de área sobre uma cor só tem de devolver a mesma cor. É o teste
+        // que pega inversão de canal e leitura fora de passo, que num quadro
+        // reduzido de tela poderiam passar despercebidas a olho nu.
+        let mut rgba = Vec::new();
+        for _ in 0..(120 * 80) {
+            rgba.extend_from_slice(&[10, 200, 40, 255]);
+        }
+        let frame = Scaler::new().scale(rgba, 120, 80, 60).unwrap();
+        for px in frame.rgb.as_chunks::<3>().0 {
+            assert_eq!(px, &[10, 200, 40], "cor mudou na redução");
+        }
+    }
+
+    #[test]
+    fn quadro_com_tamanho_errado_e_recusado() {
+        // Um buffer curto viraria leitura fora dos limites lá dentro; melhor
+        // recusar aqui, onde dá para dizer o que se esperava.
+        assert!(Scaler::new().scale(vec![0u8; 10], 100, 50, 40).is_err());
+    }
+
+    #[test]
+    fn rgba_para_rgb_descarta_so_o_alfa() {
+        let rgba = vec![1, 2, 3, 255, 4, 5, 6, 0];
+        assert_eq!(rgba_to_rgb(&rgba), vec![1, 2, 3, 4, 5, 6]);
+    }
+}

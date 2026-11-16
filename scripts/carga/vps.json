@@ -1,0 +1,8 @@
+{
+  "url": "https://deskside.com.br",
+  "maquinas": 4,
+  "degraus": "500,1250,2000",
+  "segundos": 60,
+  "teto_ms": 1000,
+  "pedido": "Sexta rodada, pedida pelo Caio em 2026-11-15: a quinta de novo, agora com a entrada do agente fora do laço de eventos e o SQLite em WAL. Quatro máquinas, degraus por máquina; no servidor 2.000, 5.000 e 8.000 computadores sem parear (prefixo carga-vps-mN)."
+}

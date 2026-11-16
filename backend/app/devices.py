@@ -1,0 +1,1083 @@
+"""Rotas de pareamento e gerenciamento de dispositivos (Etapas 5 e 7.2)."""
+
+import asyncio
+import base64
+import logging
+
+import jwt
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
+from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials
+from sqlalchemy.orm import Session
+
+from app import alertas, cobranca, pairing, plano, teste, vinculos
+from app.auth import _bearer, get_current_user
+from app.connections import manager
+from app.db import get_db, liberar
+from app.ice import ice_servers
+from app.input import InputAction
+from app.models import Device, User
+from app.rpc import pending
+from app.schemas import (
+    AppActionRequest,
+    AppOut,
+    AudioRequest,
+    BrightnessOut,
+    BrightnessRequest,
+    ClaimRequest,
+    ClipboardIn,
+    ClipboardOut,
+    ClipboardSyncRequest,
+    DeviceOut,
+    ForegroundOut,
+    KeepAwakeOut,
+    KeepAwakeRequest,
+    LaunchManyOut,
+    LaunchManyRequest,
+    ListingOut,
+    MediaRequest,
+    MonitorIn,
+    MonitorsOut,
+    PowerRequest,
+    PresentationOut,
+    PresentationRequest,
+    RenameDeviceRequest,
+    SystemStatsOut,
+)
+from app.screen import frame_store
+from app.security import decode_token
+from app.transfers import MAX_TRANSFER_BYTES, TransferError, transfers
+
+logger = logging.getLogger("deskside")
+
+router = APIRouter(prefix="/api/v1", tags=["devices"])
+
+# Alvo de fps padrão que o backend pede ao agente ao iniciar a transmissão.
+_STREAM_FPS = 3
+# Faixas aceitas para ajuste de qualidade/desempenho pelo app.
+_FPS_RANGE = (1, 30)
+_QUALITY_RANGE = (20, 90)
+_WIDTH_RANGE = (640, 1920)
+# Tempo máximo esperando o agente responder com a lista de aplicativos.
+_APPS_TIMEOUT_SECONDS = 15
+# Métricas são baratas de medir (o agente mantém o monitor pronto), mas o painel
+# do app pergunta de novo a cada poucos segundos: uma espera curta evita que
+# pedidos velhos se acumulem quando a rede engasga.
+_SYSTEM_TIMEOUT_SECONDS = 5
+#: Mais folgado que as métricas: o ajuste de brilho custa um processo do
+#: PowerShell no computador, e numa máquina ocupada isso passa de um segundo.
+_BRIGHTNESS_TIMEOUT_SECONDS = 15
+#: O mais folgado de todos, e com razão: são até 16 programas com intervalo de
+#: 400 ms entre eles, e cada abertura pode custar um segundo numa máquina
+#: ocupada. Curto demais aqui daria 504 numa lista que estava funcionando.
+_LAUNCH_MANY_TIMEOUT_SECONDS = 60
+# Listar uma pasta é ida e volta ao computador, como a lista de aplicativos.
+_FILES_TIMEOUT_SECONDS = 20
+#: Teto de uma imagem mandada do celular para a área de transferência.
+#:
+#: Vai ao agente numa mensagem só, em base64 (um terço maior): 8 MB viram uns
+#: 11 MB, abaixo dos 16 MB que o WebSocket do agente aceita por quadro. O app
+#: reduz antes de mandar, então isto só pega quem chegar por outro caminho.
+MAX_CLIPBOARD_IMAGE_BYTES = 8 * 1024 * 1024
+#: Decodificar e converter uma foto no computador leva algum tempo, e a
+#: mensagem é grande: mais folga que as métricas.
+_CLIPBOARD_IMAGE_TIMEOUT_SECONDS = 30
+# Quanto esperar por *cada* pedaço de um arquivo. Generoso: o computador pode
+# estar lendo de um disco lento, mas um silêncio longo é conexão morta.
+_CHUNK_TIMEOUT_SECONDS = 60
+# Tamanho do pedaço que sobe ao computador. O mesmo do agente.
+_UPLOAD_CHUNK = 64 * 1024
+
+
+def _device_out(device: Device) -> DeviceOut:
+    """Serializa incluindo o estado de conexão (online) do momento."""
+    out = DeviceOut.model_validate(device)
+    out.online = manager.is_online(device.device_id)
+    return out
+
+
+def _clamp(value: int, bounds: tuple[int, int]) -> int:
+    low, high = bounds
+    return max(low, min(high, value))
+
+
+async def dono_do_computador(
+    device_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+) -> int:
+    """O login vale e o computador é desta conta? Devolve o id da conta.
+
+    A mesma conferência de `get_current_user` + `_owned_device_or_404`, para
+    as perguntas que o app repete com a tela aberta (primeiro plano, programas,
+    métricas…), pela memória de `app.vinculos`: sem banco e sem thread quando
+    a resposta já é conhecida, que é quase sempre.
+    """
+    invalido = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="credenciais inválidas",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = decode_token(credentials.credentials)
+    except jwt.PyJWTError as exc:
+        raise invalido from exc
+    if payload.get("type") != "access":
+        raise invalido
+    resposta = vinculos.na_memoria(payload, device_id)
+    if resposta is None:
+        resposta = await asyncio.to_thread(vinculos.do_banco, payload, device_id)
+    vale, dono = resposta
+    if not vale:
+        raise invalido
+    if dono != int(payload["sub"]):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="dispositivo não encontrado"
+        )
+    return dono
+
+
+def _owned_device_or_404(db: Session, device_id: str, user: User) -> Device:
+    device = pairing.get_device(db, device_id)
+    if device is None or device.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="dispositivo não encontrado"
+        )
+    return device
+
+
+@router.post("/pairing/claim", response_model=DeviceOut, status_code=status.HTTP_201_CREATED)
+def claim_device(
+    body: ClaimRequest,
+    tarefas: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DeviceOut:
+    """Vincula à conta o computador identificado pelo código de pareamento."""
+    # O limite conta **antes** de criar, e é o servidor quem conta: o app pode
+    # esconder o botão, mas esconder não é impedir.
+    cobranca.exigir_espaco(
+        current_user,
+        len(pairing.list_devices(db, current_user)),
+        plano.limite_de_dispositivos(cobranca.plano_de(current_user)),
+        "computador",
+    )
+    try:
+        device = pairing.claim(db, body.code.strip().upper(), current_user)
+    except pairing.PairingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    # **Depois** de parear, e não antes: o computador fica na conta de
+    # qualquer jeito — o grátis também alcança um. O que pode mudar é só o
+    # teste, e recusar o pareamento puniria a pessoa duas vezes pelo mesmo
+    # motivo.
+    encerrado = teste.ao_parear(db, current_user, device.maquina)
+    # Daqui em diante o computador pode ser controlado pela conta: é o passo
+    # que mais interessa a quem entrou nela sem ser o dono.
+    tarefas.add_task(
+        alertas.enviar, alertas.montar(current_user, "computador", detalhe=device.name)
+    )
+    saida = _device_out(device)
+    saida.teste_encerrado = encerrado
+    return saida
+
+
+@router.get("/devices", response_model=list[DeviceOut])
+def list_devices(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[DeviceOut]:
+    """Lista os computadores pareados na conta, com o estado online de cada um."""
+    return [_device_out(d) for d in pairing.list_devices(db, current_user)]
+
+
+@router.patch("/devices/{device_id}", response_model=DeviceOut)
+def rename_device(
+    device_id: str,
+    body: RenameDeviceRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DeviceOut:
+    """Renomeia (apelido) um computador da conta."""
+    device = pairing.rename_device(db, device_id, current_user, body.name.strip())
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="dispositivo não encontrado"
+        )
+    return _device_out(device)
+
+
+@router.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_device(
+    device_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Desvincula um computador da conta."""
+    if not pairing.remove_device(db, device_id, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="dispositivo não encontrado"
+        )
+
+
+@router.post("/devices/{device_id}/input", status_code=status.HTTP_204_NO_CONTENT)
+async def send_input(
+    device_id: str,
+    action: InputAction = Body(...),
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Retransmite um comando de entrada (mouse) ao computador pareado.
+
+    Exige que o dispositivo seja da conta (posse) e esteja conectado. É a base
+    do controle remoto (Etapa 6); o streaming contínuo do touchpad virá pelo
+    canal WebSocket do app.
+    """
+
+    envelope = {"type": "input", "action": action.model_dump()}
+    if not await manager.send_to_agent(device_id, envelope):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="agente offline",
+        )
+
+
+@router.post("/devices/{device_id}/power", status_code=status.HTTP_204_NO_CONTENT)
+async def power_device(
+    device_id: str,
+    body: PowerRequest,
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Desliga, reinicia ou suspende o computador pareado."""
+    message = {"type": "power", "action": body.action}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.get("/devices/{device_id}/system", response_model=SystemStatsOut)
+async def system_stats(
+    device_id: str,
+    _dono: int = Depends(dono_do_computador),
+) -> SystemStatsOut:
+    """Mede CPU, memória e disco do computador pareado.
+
+    Pergunta e resposta com `request_id`, como a lista de aplicativos: o backend
+    espera o agente medir.
+    """
+
+    request_id, future = pending.create()
+    message = {"type": "system_info", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        stats = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return SystemStatsOut(**stats)
+
+
+@router.post("/devices/{device_id}/brightness", response_model=BrightnessOut)
+async def set_brightness(
+    device_id: str,
+    body: BrightnessRequest,
+    _dono: int = Depends(dono_do_computador),
+) -> BrightnessOut:
+    """Ajusta o brilho da tela do computador e devolve o nível resultante.
+
+    Tem resposta - ao contrário das teclas de mídia, que são mão única. Volume
+    mexe no sistema e funciona em qualquer máquina; brilho por software só
+    alcança o painel embutido de um notebook. Num computador de mesa com monitor
+    externo não há o que ajustar, e sem resposta o toque simplesmente não faria
+    nada, que é o pior tipo de falha: a que não deixa rastro.
+
+    O motivo da recusa vem do agente e sobe como `detail` de um 409, porque é a
+    única explicação que existe - um 500 genérico a jogaria fora.
+    """
+
+    request_id, future = pending.create()
+    message = {
+        "type": "brightness",
+        "request_id": request_id,
+        "level": body.level,
+        "delta": body.delta,
+    }
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_BRIGHTNESS_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    if reply.get("level") is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=reply.get("error") or "não consegui ajustar o brilho",
+        )
+    return BrightnessOut(level=reply["level"])
+
+
+@router.get("/devices/{device_id}/clipboard", response_model=ClipboardOut)
+async def clipboard_get(
+    device_id: str,
+    _dono: int = Depends(dono_do_computador),
+) -> ClipboardOut:
+    """O que está na área de transferência do computador."""
+
+    request_id, future = pending.create()
+    message = {"type": "clipboard_get", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return ClipboardOut(**reply)
+
+
+@router.post(
+    "/devices/{device_id}/clipboard", status_code=status.HTTP_204_NO_CONTENT
+)
+async def clipboard_set(
+    device_id: str,
+    body: ClipboardIn,
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Coloca um texto na área de transferência do computador."""
+    message = {"type": "clipboard_set", "text": body.text}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post(
+    "/devices/{device_id}/clipboard/image", status_code=status.HTTP_204_NO_CONTENT
+)
+async def clipboard_set_image(
+    device_id: str,
+    request: Request,
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Põe uma imagem do celular na área de transferência do computador.
+
+    O corpo é a imagem crua (PNG ou JPEG), sem multipart, como no envio de
+    arquivo. Quem confere se é imagem de verdade é o agente, que precisa
+    decodificá-la de qualquer jeito — e a recusa dele volta como 400 com o
+    motivo.
+    """
+
+    limite_mb = MAX_CLIPBOARD_IMAGE_BYTES // 1024 // 1024
+    declarado = request.headers.get("content-length")
+    if declarado and declarado.isdigit() and int(declarado) > MAX_CLIPBOARD_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"imagem grande demais (limite de {limite_mb} MB)",
+        )
+    corpo = await request.body()
+    if len(corpo) > MAX_CLIPBOARD_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"imagem grande demais (limite de {limite_mb} MB)",
+        )
+    if not corpo:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="nenhuma imagem enviada"
+        )
+
+    request_id, future = pending.create()
+    message = {
+        "type": "clipboard_set_image",
+        "request_id": request_id,
+        "image": base64.b64encode(corpo).decode(),
+    }
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(
+            future, timeout=_CLIPBOARD_IMAGE_TIMEOUT_SECONDS
+        )
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        # Um agente de antes desta função ignora o pedido, e o silêncio chega
+        # aqui como demora.
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador não respondeu; se o Deskside dele for antigo, atualize-o",
+        ) from exc
+    if reply.get("error"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=reply["error"]
+        )
+
+
+@router.post(
+    "/devices/{device_id}/clipboard/sync", status_code=status.HTTP_204_NO_CONTENT
+)
+async def clipboard_sync(
+    device_id: str,
+    body: ClipboardSyncRequest,
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Liga ou desliga o aviso automático de cópia nova no computador.
+
+    Desligado, o agente nem olha o que se copia por lá. É o padrão: o que passa
+    pela área de transferência de alguém costuma incluir senha.
+    """
+    message = {"type": "clipboard_sync", "enabled": body.enabled}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.get("/ice-servers")
+async def ice_servers_for_app(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Servidores ICE para o app negociar o vídeo direto.
+
+    Vem do servidor, e não fixo no app, por dois motivos: as credenciais do
+    TURN são temporárias (não dá para embutir), e trocar de servidor deixa de
+    exigir um app novo.
+    """
+    return {"ice_servers": ice_servers(f"user-{current_user.id}")}
+
+
+@router.post("/devices/{device_id}/audio", status_code=status.HTTP_204_NO_CONTENT)
+async def audio_stream(
+    device_id: str,
+    body: AudioRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Liga ou desliga o som do computador no telefone.
+
+    O som viaja pela conexão WebRTC que já leva a tela, numa faixa Opus. Este
+    endpoint só diz ao computador para começar (ou parar) de capturar: se não
+    houver conexão direta de vídeo, não há por onde o som passar.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.AUDIO)
+    liberar(db)
+    message = {"type": "audio", "enabled": body.enabled, "gain": body.gain}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.get("/devices/{device_id}/foreground", response_model=ForegroundOut)
+async def foreground_app(
+    device_id: str,
+    _dono: int = Depends(dono_do_computador),
+) -> ForegroundOut:
+    """Qual programa está em primeiro plano no computador, com o ícone dele.
+
+    Serve à barra de perfis do app: o perfil que combina com o programa da
+    frente passa a mostrar o ícone real dele. Quem decide qual perfil combina
+    com qual programa é o app - aqui só se repassa o que o agente respondeu.
+    """
+
+    request_id, future = pending.create()
+    message = {"type": "foreground_info", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return ForegroundOut(**reply)
+
+
+@router.get("/devices/{device_id}/keep-awake", response_model=KeepAwakeOut)
+async def keep_awake_state(
+    device_id: str,
+    _dono: int = Depends(dono_do_computador),
+) -> KeepAwakeOut:
+    """Se o computador está sendo mantido pronto para ser alcançado.
+
+    Pergunta ao agente em vez de guardar no banco, e de propósito: o estado
+    depende de o notebook estar ou não na tomada, o que muda a qualquer
+    momento e sem passar por aqui. Um valor guardado estaria errado na hora
+    exata em que a resposta importa.
+    """
+
+    request_id, future = pending.create()
+    message = {"type": "keep_awake_info", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return KeepAwakeOut(**reply)
+
+
+@router.post("/devices/{device_id}/keep-awake", status_code=status.HTTP_204_NO_CONTENT)
+async def set_keep_awake(
+    device_id: str,
+    body: KeepAwakeRequest,
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Liga ou desliga o "manter pronto". O agente grava a escolha em disco."""
+    message = {"type": "keep_awake", "enabled": body.enabled}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.get("/devices/{device_id}/presentation", response_model=PresentationOut)
+async def presentation_state(
+    device_id: str,
+    _dono: int = Depends(dono_do_computador),
+) -> PresentationOut:
+    """Como está o modo apresentação naquele computador.
+
+    Perguntado ao agente e não guardado aqui, pelo mesmo motivo do "manter
+    pronto": o estado muda sem passar por este servidor. A detecção liga e
+    desliga o modo sozinha a cada três segundos, e um valor guardado no banco
+    estaria errado justamente quando alguém abre a tela para conferir.
+    """
+
+    request_id, future = pending.create()
+    message = {"type": "presentation_info", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return PresentationOut(**reply)
+
+
+@router.post(
+    "/devices/{device_id}/presentation", status_code=status.HTTP_204_NO_CONTENT
+)
+async def set_presentation(
+    device_id: str,
+    body: PresentationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Liga/desliga o modo, e/ou a deteccao automatica.
+
+    Os dois campos viajam separados de propósito: o botão da barra de perfis
+    manda só `on`, e a área de perfis manda só `auto`. Mandar os dois sempre
+    faria um lado sobrescrever, com um valor lido há dez minutos, a escolha que
+    o outro acabou de fazer.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.APRESENTACAO)
+    liberar(db)
+    message: dict = {"type": "presentation"}
+    if body.on is not None:
+        message["on"] = body.on
+    if body.auto is not None:
+        message["auto"] = body.auto
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post("/devices/{device_id}/media", status_code=status.HTTP_204_NO_CONTENT)
+async def media_key(
+    device_id: str,
+    body: MediaRequest,
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Aciona uma tecla de mídia (play/pause, faixa, volume) no computador."""
+    message = {"type": "media", "action": body.action}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.get("/devices/{device_id}/files", response_model=ListingOut)
+async def list_files(
+    device_id: str,
+    path: str = Query("", max_length=4096),
+    offset: int = Query(0, ge=0, le=10_000_000),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ListingOut:
+    """Lista uma pasta do computador. Caminho vazio = a pasta do usuário.
+
+    O agente só enxerga dentro da pasta do usuário; um caminho fora dela volta
+    como 400, não como pasta vazia.
+
+    Uma página por vez: o agente manda até 500 itens a partir de `offset`, e o
+    `total` diz se há mais. Um agente antigo ignora o `offset` e manda a pasta
+    inteira, sem `total` — o app trata isso como "veio tudo".
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
+    liberar(db)
+
+    request_id, future = pending.create()
+    message = {"type": "list_files", "request_id": request_id, "path": path, "offset": offset}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        payload = await asyncio.wait_for(future, timeout=_FILES_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    if payload.get("error"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=payload["error"]
+        )
+    return ListingOut(**payload["listing"])
+
+
+@router.get("/devices/{device_id}/files/download")
+async def download_file(
+    device_id: str,
+    path: str = Query(..., min_length=1, max_length=4096),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Traz um arquivo do computador para o celular.
+
+    O backend **repassa** os pedaços enquanto chegam; o arquivo nunca existe
+    inteiro aqui. É o que torna possível mover 100 MB numa VM de 1 GB.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
+    liberar(db)
+
+    transfer_id, download = transfers.start_download()
+    message = {"type": "read_file", "transfer_id": transfer_id, "path": path}
+    if not await manager.send_to_agent(device_id, message):
+        transfers.drop(transfer_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+    async def stream():
+        try:
+            while True:
+                chunk = await asyncio.wait_for(
+                    download.chunks.get(), timeout=_CHUNK_TIMEOUT_SECONDS
+                )
+                if chunk is None:
+                    return
+                if isinstance(chunk, TransferError):
+                    # A conexão já começou (200 enviado): não há como virar erro
+                    # HTTP. Cortar o corpo é o que sinaliza a falha ao app, que
+                    # compara o recebido com o Content-Length.
+                    logger.warning("transferência %s falhou: %s", transfer_id, chunk)
+                    return
+                yield chunk
+        except (TimeoutError, asyncio.CancelledError):
+            logger.info("transferência %s interrompida", transfer_id)
+        finally:
+            transfers.drop(transfer_id)
+            # Avisa o computador para parar de ler — sem isso ele seguiria
+            # bombeando um arquivo que ninguém mais quer.
+            await manager.send_to_agent(
+                device_id, {"type": "cancel_transfer", "transfer_id": transfer_id}
+            )
+
+    name = path.replace("\\", "/").rsplit("/", 1)[-1] or "arquivo"
+    return StreamingResponse(
+        stream(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@router.post("/devices/{device_id}/files/upload", status_code=status.HTTP_200_OK)
+async def upload_file(
+    device_id: str,
+    request: Request,
+    name: str = Query(..., min_length=1, max_length=255),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Envia um arquivo do celular para o computador.
+
+    O corpo é o arquivo cru (sem multipart): o app já sabe o nome, e envelopar
+    custaria uma cópia a mais em cada ponta. O backend lê e repassa pedaço a
+    pedaço — o `await` de cada envio ao agente é o que segura o upload quando o
+    computador não acompanha.
+    """
+    device = _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.ARQUIVOS)
+    liberar(db)
+
+    declared = request.headers.get("content-length")
+    size = int(declared) if declared and declared.isdigit() else 0
+    if size > MAX_TRANSFER_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"limite de {MAX_TRANSFER_BYTES // 1024 // 1024} MB por arquivo",
+        )
+
+    # O agente responde o `file_done` carregando o transfer_id, então é ele que
+    # identifica o pedido pendente — não um request_id separado.
+    transfer_id = transfers.new_upload_id()
+    future = pending.create_with_id(transfer_id)
+
+    begin = {
+        "type": "write_file_begin",
+        "transfer_id": transfer_id,
+        "name": name,
+        "size": size,
+    }
+    if not await manager.send_to_agent(device_id, begin):
+        pending.cancel(transfer_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+    seq = 0
+    enviados = 0
+    try:
+        async for chunk in _chunked(request.stream(), _UPLOAD_CHUNK):
+            enviados += len(chunk)
+            if enviados > MAX_TRANSFER_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    detail=f"limite de {MAX_TRANSFER_BYTES // 1024 // 1024} MB por arquivo",
+                )
+            ok = await manager.send_to_agent(
+                device_id,
+                {
+                    "type": "write_file_chunk",
+                    "transfer_id": transfer_id,
+                    "seq": seq,
+                    "data": base64.b64encode(chunk).decode(),
+                },
+            )
+            if not ok:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="o computador saiu no meio do envio",
+                )
+            seq += 1
+        await manager.send_to_agent(
+            device_id, {"type": "write_file_end", "transfer_id": transfer_id}
+        )
+    except HTTPException:
+        pending.cancel(transfer_id)
+        await manager.send_to_agent(
+            device_id, {"type": "cancel_transfer", "transfer_id": transfer_id}
+        )
+        raise
+
+    try:
+        result = await asyncio.wait_for(future, timeout=_CHUNK_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(transfer_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador não confirmou o arquivo",
+        ) from exc
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=result.get("detail") or "o computador recusou o arquivo",
+        )
+    return {"path": result.get("detail", ""), "device": device.name, "bytes": enviados}
+
+
+async def _chunked(stream, size: int):
+    """Reagrupa o corpo da requisição em pedaços de tamanho fixo.
+
+    O `request.stream()` entrega o que a rede trouxer — às vezes 1 KB, às vezes
+    200 KB. Sem reagrupar, o tamanho do pedaço no fio dependeria do humor da
+    rede, e um pedaço grande demais estouraria a mensagem do WebSocket.
+    """
+    buffer = bytearray()
+    async for parte in stream:
+        buffer.extend(parte)
+        while len(buffer) >= size:
+            yield bytes(buffer[:size])
+            del buffer[:size]
+    if buffer:
+        yield bytes(buffer)
+
+
+@router.get("/devices/{device_id}/apps", response_model=list[AppOut])
+async def list_apps(
+    device_id: str,
+    kind: str = Query("installed", pattern="^(desktop|installed|running)$"),
+    _dono: int = Depends(dono_do_computador),
+) -> list[AppOut]:
+    """Lista os aplicativos do computador.
+
+    `kind`: `desktop` (atalhos da área de trabalho — o que a dock usa),
+    `installed` (menu Iniciar) ou `running` (abertos agora).
+
+    Diferente dos outros comandos, aqui o backend **espera a resposta** do
+    agente (pergunta e resposta com `request_id`), com tempo limite.
+    """
+
+    request_id, future = pending.create()
+    message = {"type": "list_apps", "request_id": request_id, "kind": kind}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        apps = await asyncio.wait_for(future, timeout=_APPS_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return [AppOut(**app) for app in apps]
+
+
+@router.get("/devices/{device_id}/monitors", response_model=MonitorsOut)
+async def list_monitors(
+    device_id: str,
+    _dono: int = Depends(dono_do_computador),
+) -> MonitorsOut:
+    """As telas do computador, e qual delas está sendo capturada."""
+
+    request_id, future = pending.create()
+    message = {"type": "list_monitors", "request_id": request_id}
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_SYSTEM_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return MonitorsOut(**reply)
+
+
+@router.post("/devices/{device_id}/monitors", status_code=status.HTTP_204_NO_CONTENT)
+async def set_monitor(
+    device_id: str,
+    body: MonitorIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Escolhe qual tela capturar. `monitor` nulo volta ao principal.
+
+    Mão única: o agente troca a captura no tique seguinte e o resultado aparece
+    na imagem. Não há o que responder que a própria tela não diga.
+    """
+    _owned_device_or_404(db, device_id, current_user)
+    cobranca.exigir_recurso(current_user, plano.Recurso.MONITORES)
+    liberar(db)
+
+    message = {"type": "set_monitor", "monitor": body.monitor}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post("/devices/{device_id}/apps/launch", status_code=status.HTTP_204_NO_CONTENT)
+async def launch_app(
+    device_id: str,
+    body: AppActionRequest,
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Abre um aplicativo no computador (id = caminho do atalho)."""
+    message = {"type": "launch_app", "id": body.id}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post("/devices/{device_id}/apps/launch-many", response_model=LaunchManyOut)
+async def launch_many(
+    device_id: str,
+    body: LaunchManyRequest,
+    _dono: int = Depends(dono_do_computador),
+) -> LaunchManyOut:
+    """Abre vários programas de uma vez - o "abrir todos" de um perfil.
+
+    Uma mensagem só, e não N chamadas de `/apps/launch`, por causa do iOS: quem
+    aperta o botão e bloqueia a tela teria a lista interrompida no meio, com o
+    primeiro programa aberto e o resto não.
+
+    Devolve o resultado de **cada** programa, e não um "deu certo": abrir quatro
+    e não dizer que um falhou é o mesmo que falhar em silêncio.
+    """
+
+    request_id, future = pending.create()
+    message = {
+        "type": "launch_many",
+        "request_id": request_id,
+        "apps": body.apps,
+    }
+    # Só vai quando há alguma zona: sem isso, todo "abrir todos" carregaria uma
+    # lista de nulos do tamanho da outra, sem informação nenhuma.
+    if body.zones is not None:
+        message["zones"] = [
+            z.model_dump() if z is not None else None for z in body.zones
+        ]
+    if not await manager.send_to_agent(device_id, message):
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+    try:
+        reply = await asyncio.wait_for(future, timeout=_LAUNCH_MANY_TIMEOUT_SECONDS)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        pending.cancel(request_id)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="o computador demorou para responder",
+        ) from exc
+    return LaunchManyOut(**reply)
+
+
+@router.post("/devices/{device_id}/apps/close", status_code=status.HTTP_204_NO_CONTENT)
+async def close_app(
+    device_id: str,
+    body: AppActionRequest,
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Encerra um aplicativo em execução (id = PID)."""
+    message = {"type": "close_app", "id": body.id}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post("/devices/{device_id}/apps/focus", status_code=status.HTTP_204_NO_CONTENT)
+async def focus_app(
+    device_id: str,
+    body: AppActionRequest,
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Traz a janela de um aplicativo para frente (id = PID).
+
+    Sem espera por resposta, como o `close_app`: o efeito é visível na tela do
+    computador, e o app não tem o que fazer com um "deu certo" que chegaria
+    depois de a pessoa já estar olhando o resultado.
+    """
+    message = {"type": "focus_app", "id": body.id}
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post("/devices/{device_id}/screen/start", status_code=status.HTTP_204_NO_CONTENT)
+async def start_screen(
+    device_id: str,
+    fps: int = Body(_STREAM_FPS, embed=True),
+    quality: int | None = Body(None, embed=True),
+    max_width: int | None = Body(None, embed=True),
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Pede ao agente que comece a transmitir a tela (Etapa 7).
+
+    O app pode ajustar desempenho enviando `fps`, `quality` (JPEG) e
+    `max_width`; valores fora da faixa são limitados aos extremos aceitos.
+    """
+    message: dict = {"type": "start_stream", "max_fps": _clamp(fps, _FPS_RANGE)}
+    if quality is not None:
+        message["quality"] = _clamp(quality, _QUALITY_RANGE)
+    if max_width is not None:
+        message["max_width"] = _clamp(max_width, _WIDTH_RANGE)
+    if not await manager.send_to_agent(device_id, message):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="agente offline"
+        )
+
+
+@router.post("/devices/{device_id}/screen/stop", status_code=status.HTTP_204_NO_CONTENT)
+async def stop_screen(
+    device_id: str,
+    _dono: int = Depends(dono_do_computador),
+) -> None:
+    """Pede ao agente que pare de transmitir a tela."""
+    frame_store.clear(device_id)
+    await manager.send_to_agent(device_id, {"type": "stop_stream"})
+
+
+@router.get("/devices/{device_id}/screen")
+def get_screen(
+    device_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Retorna o último frame (JPEG) da tela do computador."""
+    _owned_device_or_404(db, device_id, current_user)
+    frame = frame_store.get(device_id)
+    if frame is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="sem frame disponível (a transmissão já começou?)",
+        )
+    return Response(content=frame, media_type="image/jpeg")

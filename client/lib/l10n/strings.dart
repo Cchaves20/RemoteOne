@@ -1,0 +1,2274 @@
+
+/// Idioma do app: segue o sistema, ou fixo num dos cinco suportados.
+enum AppLanguage { system, ptBr, en, zh, fr, es }
+
+/// Textos do app nos cinco idiomas. Uma única fonte, sem geração de código.
+/// Cada texto é `_t(pt, en, zh, fr, es)`. Acesse por `state.t` (reconstrói ao
+/// trocar o idioma). O idioma `system` é resolvido antes de chegar aqui.
+class Strings {
+  const Strings(this.lang);
+  final AppLanguage lang;
+
+  String _t(String pt, String en, String zh, String fr, String es) =>
+      switch (lang) {
+        AppLanguage.ptBr => pt,
+        AppLanguage.zh => zh,
+        AppLanguage.fr => fr,
+        AppLanguage.es => es,
+        _ => en,
+      };
+
+  // Comuns
+  String get cancel => _t('Cancelar', 'Cancel', '取消', 'Annuler', 'Cancelar');
+  String get save => _t('Salvar', 'Save', '保存', 'Enregistrer', 'Guardar');
+  String get remove => _t('Remover', 'Remove', '移除', 'Retirer', 'Quitar');
+  String get delete => _t('Excluir', 'Delete', '删除', 'Supprimer', 'Eliminar');
+  String get enable => _t('Ativar', 'Enable', '启用', 'Activer', 'Activar');
+  String get retry => _t('Tentar de novo', 'Try again', '重试', 'Réessayer', 'Reintentar');
+  String get disable => _t('Desativar', 'Disable', '停用', 'Désactiver', 'Desactivar');
+
+  // Login
+  /// A frase da marca, a mesma do material de divulgação.
+  String get fraseDaMarca => _t('Seu computador junto, sem carregar ele.',
+      'Your computer with you, without carrying it.', '电脑随身，无需携带。',
+      'Votre ordinateur avec vous, sans le porter.', 'Tu computadora contigo, sin cargarla.');
+  String get signInTitle => _t('Entrar', 'Sign in', '登录', 'Se connecter', 'Entrar');
+  String get createAccountTitle =>
+      _t('Criar conta', 'Create account', '创建账户', 'Créer un compte', 'Crear cuenta');
+  String get email => _t('E-mail', 'Email', '邮箱', 'E-mail', 'Correo');
+  String get password => _t('Senha', 'Password', '密码', 'Mot de passe', 'Contraseña');
+  String get twoFactorCode => _t('Código de verificação (2FA)', 'Verification code (2FA)',
+      '验证码 (2FA)', 'Code de vérification (2FA)', 'Código de verificación (2FA)');
+  String get twoFactorCodeHint => _t('Do seu app autenticador', 'From your authenticator app',
+      '来自身份验证器应用', "De votre application d'authentification", 'De tu app de autenticación');
+  // Criação de conta
+  String get firstName => _t('Nome', 'First name', '名字', 'Prénom', 'Nombre');
+  String get lastName =>
+      _t('Sobrenome', 'Last name', '姓氏', 'Nom', 'Apellido');
+  String get birthDate => _t('Data de nascimento', 'Date of birth', '出生日期',
+      'Date de naissance', 'Fecha de nacimiento');
+  String get birthDateHint =>
+      _t('Toque para escolher', 'Tap to pick', '点击选择', 'Touchez pour choisir',
+          'Toca para elegir');
+  String get phone => _t('Telefone', 'Phone', '手机', 'Téléphone', 'Teléfono');
+  String get phoneHint => _t('(11) 98765-4321', '(555) 123-4567', '138 0013 8000',
+      '06 12 34 56 78', '612 345 678');
+  String get passwordConfirm => _t('Confirmar senha', 'Confirm password',
+      '确认密码', 'Confirmer le mot de passe', 'Confirmar contraseña');
+  String get passwordMismatch => _t('As senhas não conferem.',
+      "Passwords don't match.", '两次输入的密码不一致。',
+      'Les mots de passe ne correspondent pas.', 'Las contraseñas no coinciden.');
+  String get continueButton =>
+      _t('Continuar', 'Continue', '继续', 'Continuer', 'Continuar');
+  String get signupCodeExplain => _t(
+      'Vamos mandar um código para confirmar que o contato é seu. A conta só é criada depois disso.',
+      "We'll send a code to confirm the contact is yours. The account is only created after that.",
+      '我们会发送验证码确认联系方式属于你。之后才会创建账户。',
+      "Nous enverrons un code pour confirmer que ce contact est le vôtre. Le compte n'est créé qu'ensuite.",
+      'Enviaremos un código para confirmar que el contacto es tuyo. La cuenta solo se crea después.');
+  String get networkError => _t(
+      'Não consegui falar com o servidor. Confira a conexão e o endereço.',
+      "Couldn't reach the server. Check your connection and the address.",
+      '无法连接服务器。请检查网络和地址。',
+      "Impossible de joindre le serveur. Vérifiez la connexion et l'adresse.",
+      'No pude contactar al servidor. Revisa la conexión y la dirección.');
+
+  // As cinco regras da senha. Aparecem todas desde o começo e vão acendendo —
+  // um formulário que revela uma exigência por vez faz a pessoa tentar cinco
+  // vezes para descobrir cinco regras.
+  String regraTamanho(int n) => _t('$n caracteres', '$n characters', '$n 个字符',
+      '$n caractères', '$n caracteres');
+  String get regraMaiuscula =>
+      _t('1 maiúscula', '1 uppercase', '1 个大写字母', '1 majuscule', '1 mayúscula');
+  String get regraMinuscula =>
+      _t('1 minúscula', '1 lowercase', '1 个小写字母', '1 minuscule', '1 minúscula');
+  String get regraNumero =>
+      _t('1 número', '1 number', '1 个数字', '1 chiffre', '1 número');
+  String get regraEspecial => _t('1 caractere especial', '1 special character',
+      '1 个特殊字符', '1 caractère spécial', '1 carácter especial');
+
+  // Verificação do cadastro
+  String get verifyTitle => _t('Confirme o código', 'Confirm the code',
+      '输入验证码', 'Confirmez le code', 'Confirma el código');
+  String get verifySentEmail => _t('Mandamos um código para o seu e-mail.',
+      'We sent a code to your email.', '我们已向你的邮箱发送验证码。',
+      'Nous avons envoyé un code à votre e-mail.',
+      'Enviamos un código a tu correo.');
+  String get verifySentSms => _t('Mandamos um código por SMS.',
+      'We sent a code by SMS.', '我们已通过短信发送验证码。',
+      'Nous avons envoyé un code par SMS.', 'Enviamos un código por SMS.');
+  /// O servidor está sem provedor e o código foi para o diário dele. Sem este
+  /// aviso, a pessoa esperaria uma mensagem que nunca vai chegar e concluiria
+  /// que o app está quebrado.
+  String get verifyNotDelivered => _t(
+      'Este servidor ainda não tem envio configurado: o código foi para o registro do servidor, não para você.',
+      'This server has no delivery configured yet: the code went to the server log, not to you.',
+      '此服务器尚未配置发送方式：验证码写入了服务器日志，而不是发给你。',
+      "Ce serveur n'a pas encore d'envoi configuré : le code est allé dans le journal du serveur, pas à vous.",
+      'Este servidor aún no tiene envío configurado: el código fue al registro del servidor, no a ti.');
+  String get verifyConfirm =>
+      _t('Confirmar', 'Confirm', '确认', 'Confirmer', 'Confirmar');
+  String get resendCode => _t('Reenviar código', 'Resend code', '重新发送验证码',
+      'Renvoyer le code', 'Reenviar código');
+  String resendIn(int s) => _t('Reenviar em ${s}s', 'Resend in ${s}s',
+      '$s 秒后可重发', 'Renvoyer dans ${s}s', 'Reenviar en ${s}s');
+  String get codeResent => _t('Código reenviado.', 'Code resent.', '验证码已重发。',
+      'Code renvoyé.', 'Código reenviado.');
+  // `verify*` e não `change*`: já existe um `changeEmail` na tela de
+  // configurações, e ele quer dizer outra coisa — lá se **troca** o e-mail de
+  // uma conta que existe, aqui se **corrige** o que foi digitado num cadastro
+  // que ainda nem virou conta.
+  String get verifyChangeEmail => _t('Corrigir o e-mail', 'Change the email',
+      '修改邮箱', "Corriger l'e-mail", 'Corregir el correo');
+  String get verifyChangePhone => _t('Corrigir o telefone', 'Change the phone',
+      '修改手机号', 'Corriger le téléphone', 'Corregir el teléfono');
+
+  String get server => _t('Servidor', 'Server', '服务器', 'Serveur', 'Servidor');
+  String get serverHint => 'Ex.: http://192.168.0.10:8000';
+  String get usarOutroServidor => _t(
+      'Usar outro servidor',
+      'Use another server',
+      '使用其他服务器',
+      'Utiliser un autre serveur',
+      'Usar otro servidor');
+  /// A saída para quem ficou com um endereço salvo que não responde mais.
+  ///
+  /// Sem ela, o único conserto seria reinstalar o app — e a pessoa nem saberia
+  /// que era isso.
+  String get voltarAoServidorPadrao => _t(
+      'Voltar ao servidor padrão',
+      'Back to the default server',
+      '恢复默认服务器',
+      'Revenir au serveur par défaut',
+      'Volver al servidor predeterminado');
+  String get signInButton => _t('Entrar', 'Sign in', '登录', 'Se connecter', 'Entrar');
+  // `createAccountButton` e `haveAccount` saíram junto com o botão que
+  // alternava login e cadastro na mesma tela. O cadastro tem tela própria,
+  // e quem volta usa a seta da barra — texto traduzido em cinco idiomas que
+  // ninguém mostra é peso que engana quem procura de onde vem uma frase.
+  String get createOne => _t('Criar uma conta', 'Create an account', '创建账户',
+      'Créer un compte', 'Crear una cuenta');
+  String get invalidCode => _t('Código inválido. Tente de novo.', 'Invalid code. Try again.',
+      '验证码无效，请重试。', 'Code invalide. Réessayez.', 'Código inválido. Inténtalo de nuevo.');
+
+  // Dispositivos
+  // Saudação do início (ver `services/saudacao.dart`). Com nome e sem nome:
+  // conta antiga pode não ter nome nenhum.
+  String bomDia(String nome) => nome.isEmpty
+      ? _t('Bom dia', 'Good morning', '早上好', 'Bonjour', 'Buenos días')
+      : _t('Bom dia, $nome', 'Good morning, $nome', '早上好，$nome', 'Bonjour, $nome',
+          'Buenos días, $nome');
+  String boaTarde(String nome) => nome.isEmpty
+      ? _t('Boa tarde', 'Good afternoon', '下午好', 'Bon après-midi', 'Buenas tardes')
+      : _t('Boa tarde, $nome', 'Good afternoon, $nome', '下午好，$nome',
+          'Bon après-midi, $nome', 'Buenas tardes, $nome');
+  String boaNoite(String nome) => nome.isEmpty
+      ? _t('Boa noite', 'Good evening', '晚上好', 'Bonsoir', 'Buenas noches')
+      : _t('Boa noite, $nome', 'Good evening, $nome', '晚上好，$nome', 'Bonsoir, $nome',
+          'Buenas noches, $nome');
+  String felizAniversario(String nome) => nome.isEmpty
+      ? _t('Feliz aniversário!', 'Happy birthday!', '生日快乐！', 'Joyeux anniversaire !',
+          '¡Feliz cumpleaños!')
+      : _t('Feliz aniversário, $nome!', 'Happy birthday, $nome!', '$nome，生日快乐！',
+          'Joyeux anniversaire, $nome !', '¡Feliz cumpleaños, $nome!');
+  String computadoresOnline(int online, int total) => total == 1
+      ? (online == 1
+          ? _t('Seu computador está online', 'Your computer is online', '你的电脑在线',
+              'Votre ordinateur est en ligne', 'Tu equipo está en línea')
+          : _t('Seu computador está offline', 'Your computer is offline', '你的电脑离线',
+              'Votre ordinateur est hors ligne', 'Tu equipo está desconectado'))
+      : _t('$online de $total computadores online', '$online of $total computers online',
+          '$total 台电脑中 $online 台在线', '$online ordinateurs sur $total en ligne',
+          '$online de $total equipos en línea');
+
+  String get outrosComputadores => _t('Outros computadores', 'Other computers',
+      '其他电脑', 'Autres ordinateurs', 'Otros equipos');
+  String get segureParaAcoes => _t(
+      'Segure um computador para ver as automações, desligar ou reiniciar.',
+      'Press and hold a computer for automations, shut down or restart.',
+      '长按电脑可查看自动化、关机或重启。',
+      "Maintenez un ordinateur appuyé pour les automatisations, l'éteindre ou le redémarrer.",
+      'Mantén pulsado un equipo para ver automatizaciones, apagar o reiniciar.');
+  String estaOffline(String nome) => _t(
+      '$nome está offline. Abra o Deskside nele para conectar.',
+      '$nome is offline. Open Deskside on it to connect.',
+      '$nome 离线。在那台电脑上打开 Deskside 即可连接。',
+      '$nome est hors ligne. Ouvrez Deskside dessus pour vous connecter.',
+      '$nome está desconectado. Abre Deskside en él para conectarte.');
+  String get acoesDoComputador => _t('Ações do computador', 'Computer actions',
+      '电脑操作', "Actions de l'ordinateur", 'Acciones del equipo');
+  String get digiteOCodigo => _t('Digite o código que aparece no computador.',
+      'Enter the code shown on the computer.', '输入电脑上显示的代码。',
+      "Saisissez le code affiché sur l'ordinateur.", 'Introduce el código que aparece en el equipo.');
+
+  // Tela remota: os passos da conexão e o indicador.
+  String get ligandoATela => _t('Ligando a tela…', 'Turning the screen on…', '正在点亮屏幕…',
+      "Allumage de l'écran…", 'Encendiendo la pantalla…');
+  String get passoAchando => _t('Achando o computador', 'Finding the computer', '正在寻找电脑',
+      "Recherche de l'ordinateur", 'Buscando el equipo');
+  String get passoConexaoDireta => _t('Conexão direta', 'Direct connection', '直接连接',
+      'Connexion directe', 'Conexión directa');
+  String get passoConexaoRelay => _t('Conexão pelo relay', 'Connection via relay',
+      '通过中继连接', 'Connexion via relais', 'Conexión por relé');
+  String get passoConexaoServidor => _t('Conexão pelo servidor', 'Connection via server',
+      '通过服务器连接', 'Connexion via le serveur', 'Conexión por el servidor');
+  String get passoImagem => _t('Imagem da tela', 'Screen image', '屏幕画面',
+      "Image de l'écran", 'Imagen de la pantalla');
+  String get direto => _t('direto', 'direct', '直连', 'direct', 'directo');
+  String get relay => _t('relay', 'relay', '中继', 'relais', 'relé');
+  String get maisOpcoes => _t('Mais opções', 'More options', '更多选项',
+      "Plus d'options", 'Más opciones');
+  String get mostrarBarra => _t('Mostrar a barra', 'Show the bar', '显示工具栏',
+      'Afficher la barre', 'Mostrar la barra');
+  // Atalhos por programa.
+  String get atalhoSalvar => _t('Salvar', 'Save', '保存', 'Enregistrer', 'Guardar');
+  String get atalhoAbrirArquivo => _t('Abrir arquivo', 'Open file', '打开文件',
+      'Ouvrir un fichier', 'Abrir archivo');
+  String get atalhoTerminal => _t('Terminal', 'Terminal', '终端', 'Terminal', 'Terminal');
+  String get atalhoComentar => _t('Comentar', 'Comment', '注释', 'Commenter', 'Comentar');
+  String get atalhoNovaAba => _t('Nova aba', 'New tab', '新标签页', 'Nouvel onglet', 'Nueva pestaña');
+  String get atalhoFecharAba => _t('Fechar aba', 'Close tab', '关闭标签页', "Fermer l'onglet",
+      'Cerrar pestaña');
+  String get atalhoEndereco => _t('Endereço', 'Address bar', '地址栏', 'Adresse', 'Dirección');
+  String get atalhoVoltar => _t('Voltar', 'Back', '返回', 'Retour', 'Atrás');
+  String get atalhoRenomear => _t('Renomear', 'Rename', '重命名', 'Renommer', 'Renombrar');
+  String get atalhoNovaPasta => _t('Nova pasta', 'New folder', '新建文件夹', 'Nouveau dossier',
+      'Nueva carpeta');
+  String get atalhoCopiar => _t('Copiar', 'Copy', '复制', 'Copier', 'Copiar');
+  String get atalhoColar => _t('Colar', 'Paste', '粘贴', 'Coller', 'Pegar');
+  String get atalhoDesfazer => _t('Desfazer', 'Undo', '撤销', 'Annuler', 'Deshacer');
+  String get atalhoTudo => _t('Selecionar tudo', 'Select all', '全选', 'Tout sélectionner',
+      'Seleccionar todo');
+
+  String get myComputers =>
+      _t('Meus computadores', 'My computers', '我的电脑', 'Mes ordinateurs', 'Mis equipos');
+  String get settings =>
+      _t('Configurações', 'Settings', '设置', 'Paramètres', 'Ajustes');
+  String get pairComputer => _t('Parear computador', 'Pair computer', '配对电脑',
+      "Associer l'ordinateur", 'Vincular equipo');
+  String get codeShownOnComputer => _t('Código exibido no computador',
+      'Code shown on the computer', '电脑上显示的代码', "Code affiché sur l'ordinateur",
+      'Código mostrado en el equipo');
+  String get pair => _t('Parear', 'Pair', '配对', 'Associer', 'Vincular');
+  String get computerPaired => _t('Computador pareado!', 'Computer paired!', '电脑已配对！',
+      'Ordinateur associé !', '¡Equipo vinculado!');
+  // --- primeiro uso -----------------------------------------------------------
+  // O texto anterior era "Nenhum computador pareado. Toque em + e informe o
+  // código exibido pelo agente" — e supunha duas coisas que quem chega aqui não
+  // tem: saber o que é "o agente", e tê-lo já instalado. Nunca dizia que existe
+  // um programa a instalar no computador, que é justamente o passo que falta.
+  String get noComputers => _t(
+      'Nenhum computador ainda',
+      'No computers yet',
+      '还没有电脑',
+      'Aucun ordinateur pour le moment',
+      'Aún no hay equipos');
+  String primeiroPassoBaixar(String site) => _t(
+      'No computador que você quer controlar, abra $site e baixe o Deskside.',
+      'On the computer you want to control, open $site and download Deskside.',
+      '在你想控制的电脑上，打开 $site 并下载 Deskside。',
+      "Sur l'ordinateur à contrôler, ouvrez $site et téléchargez Deskside.",
+      'En el equipo que quieres controlar, abre $site y descarga Deskside.');
+  // Nove caracteres, com letras — e **não** seis dígitos, que era o que este
+  // texto dizia. Seis dígitos é o código de verificação do cadastro, que é
+  // outra coisa: são dois códigos diferentes no produto, e trocar um pelo outro
+  // faz a pessoa procurar na tela um número que não existe. O alfabeto do
+  // pareamento não tem O, 0, I, 1 nem L, justamente para ser lido em voz alta
+  // sem ambiguidade.
+  String get primeiroPassoCodigo => _t(
+      'Ele vai mostrar um código de 9 caracteres, com letras e números.',
+      'It will show a 9-character code with letters and numbers.',
+      '它会显示一个 9 位代码，包含字母和数字。',
+      'Il affichera un code de 9 caractères, avec des lettres et des chiffres.',
+      'Mostrará un código de 9 caracteres, con letras y números.');
+  String get primeiroPassoDigitar => _t(
+      'Toque no botão abaixo e digite esse código.',
+      'Tap the button below and enter that code.',
+      '点击下面的按钮并输入该代码。',
+      'Touchez le bouton ci-dessous et saisissez ce code.',
+      'Toca el botón de abajo e introduce ese código.');
+  String get tenhoUmCodigo => _t('Tenho um código', 'I have a code', '我有代码',
+      "J'ai un code", 'Tengo un código');
+  /// A dúvida que aparece na hora: a pessoa instalou e não sabe onde olhar. Os
+  /// três lugares porque o primeiro pode não existir — numa máquina virtual sem
+  /// placa de vídeo a janela não abre, e aí vale o ícone ao lado do relógio.
+  String get ondeAchoOCodigo => _t(
+      'Onde acho o código? Na janela do Deskside, no ícone ao lado do relógio, '
+          'ou no arquivo %APPDATA%\\deskside\\pairing-code.txt',
+      'Where is the code? In the Deskside window, in the icon next to the clock, '
+          'or in the file %APPDATA%\\deskside\\pairing-code.txt',
+      '代码在哪里？在 Deskside 窗口、时钟旁的图标，'
+          '或文件 %APPDATA%\\deskside\\pairing-code.txt 中。',
+      'Où est le code ? Dans la fenêtre Deskside, dans l\'icône près de '
+          'l\'horloge, ou dans le fichier %APPDATA%\\deskside\\pairing-code.txt',
+      '¿Dónde está el código? En la ventana de Deskside, en el icono junto al '
+          'reloj, o en el archivo %APPDATA%\\deskside\\pairing-code.txt');
+  String get enderecoCopiado => _t('Endereço copiado', 'Address copied',
+      '地址已复制', 'Adresse copiée', 'Dirección copiada');
+  String get online => _t('Online', 'Online', '在线', 'En ligne', 'En línea');
+  String get offline => _t('Offline', 'Offline', '离线', 'Hors ligne', 'Desconectado');
+  String get semConexaoTitulo => _t('Sem conexão com a internet',
+      'No internet connection', '没有网络连接', 'Pas de connexion Internet',
+      'Sin conexión a internet');
+  String get semConexaoTexto => _t(
+      'Seus computadores continuam na conta. Eles voltam a aparecer sozinhos '
+          'quando a internet voltar.',
+      'Your computers are still on your account. They will show up again on '
+          'their own when the internet is back.',
+      '你的电脑仍在账户中。网络恢复后会自动重新显示。',
+      'Vos ordinateurs sont toujours sur votre compte. Ils réapparaîtront '
+          "d'eux-mêmes au retour d'Internet.",
+      'Tus equipos siguen en tu cuenta. Volverán a aparecer solos cuando '
+          'vuelva internet.');
+  String get semConexaoAviso => _t('Sem internet: a lista pode estar desatualizada',
+      'No internet: this list may be out of date', '无网络：列表可能不是最新的',
+      'Pas d\'Internet : la liste peut être périmée',
+      'Sin internet: la lista puede estar desactualizada');
+  String get planoSemConexao => _t(
+      'Sem internet: seu plano aparece aqui quando a conexão voltar.',
+      'No internet: your plan will show here when the connection is back.',
+      '无网络：连接恢复后会在这里显示你的套餐。',
+      "Pas d'Internet : votre forfait s'affichera ici au retour de la connexion.",
+      'Sin internet: tu plan aparecerá aquí cuando vuelva la conexión.');
+  String get control => _t('Controlar', 'Control', '控制', 'Contrôler', 'Controlar');
+  String get rename => _t('Renomear', 'Rename', '重命名', 'Renommer', 'Renombrar');
+  String get shutdown => _t('Desligar', 'Shut down', '关机', 'Éteindre', 'Apagar');
+  String get restart => _t('Reiniciar', 'Restart', '重启', 'Redémarrer', 'Reiniciar');
+  String get suspend => _t('Suspender', 'Sleep', '睡眠', 'Veille', 'Suspender');
+  String get renameComputer => _t('Renomear computador', 'Rename computer', '重命名电脑',
+      "Renommer l'ordinateur", 'Renombrar equipo');
+  String get name => _t('Nome', 'Name', '名称', 'Nom', 'Nombre');
+  String get nameUpdated =>
+      _t('Nome atualizado.', 'Name updated.', '名称已更新。', 'Nom mis à jour.', 'Nombre actualizado.');
+  String get removeComputer => _t('Remover computador', 'Remove computer', '移除电脑',
+      "Retirer l'ordinateur", 'Quitar equipo');
+  String unlinkConfirm(String device) => _t(
+      'Desvincular "$device" da sua conta?',
+      'Unlink "$device" from your account?',
+      '将"$device"从你的账户解绑？',
+      'Dissocier « $device » de votre compte ?',
+      '¿Desvincular «$device» de tu cuenta?');
+  String get computerRemoved => _t('Computador removido.', 'Computer removed.', '电脑已移除。',
+      'Ordinateur retiré.', 'Equipo eliminado.');
+  String powerLabel(String action) => switch (action) {
+        'shutdown' => shutdown,
+        'restart' => restart,
+        _ => suspend,
+      };
+  String powerConfirm(String action, String device) => _t(
+      '${powerLabel(action)} "$device" agora?',
+      '${powerLabel(action)} "$device" now?',
+      '现在${powerLabel(action)}"$device"？',
+      '${powerLabel(action)} « $device » maintenant ?',
+      '¿${powerLabel(action)} «$device» ahora?');
+  String powerSent(String action) => _t(
+      '${powerLabel(action)} enviado.',
+      '${powerLabel(action)} sent.',
+      '已发送：${powerLabel(action)}。',
+      '${powerLabel(action)} envoyé.',
+      '${powerLabel(action)} enviado.');
+
+  // Aplicativos do computador
+  String get apps => _t('Aplicativos', 'Apps', '应用', 'Applications', 'Aplicaciones');
+  String get appsDesktop => _t('Área de trabalho', 'Desktop', '桌面',
+      'Bureau', 'Escritorio');
+  String get appsInstalled =>
+      _t('Instalados', 'Installed', '已安装', 'Installées', 'Instaladas');
+  String get appsRunning => _t('Abertos', 'Running', '运行中', 'Ouvertes', 'Abiertas');
+  String get appsSearch => _t('Buscar aplicativo', 'Search app', '搜索应用',
+      'Rechercher une application', 'Buscar aplicación');
+  /// O que o leitor de tela anuncia num esqueleto de carregamento.
+  String get carregando => _t(
+      'Carregando…', 'Loading…', '正在加载…', 'Chargement…', 'Cargando…');
+  String get appsQuerying => _t(
+      'Consultando o computador…',
+      'Asking the computer…',
+      '正在查询电脑…',
+      "Interrogation de l'ordinateur…",
+      'Consultando el equipo…');
+  String get appsEmptyDesktop => _t(
+      'Nenhum atalho na área de trabalho do computador.',
+      'No shortcuts on the computer desktop.',
+      '电脑桌面上没有快捷方式。',
+      "Aucun raccourci sur le bureau de l'ordinateur.",
+      'No hay accesos directos en el escritorio del equipo.');
+  String get appsEmptyInstalled => _t(
+      'Nenhum aplicativo encontrado no computador.',
+      'No apps found on the computer.',
+      '在电脑上没有找到应用。',
+      "Aucune application trouvée sur l'ordinateur.",
+      'No se encontraron aplicaciones en el equipo.');
+  String get appsEmptyRunning => _t(
+      'Nenhum aplicativo aberto no momento.',
+      'No apps are open right now.',
+      '当前没有打开的应用。',
+      'Aucune application ouverte pour le moment.',
+      'No hay aplicaciones abiertas ahora mismo.');
+  String appOpening(String name) => _t('Abrindo $name…', 'Opening $name…',
+      '正在打开 $name…', 'Ouverture de $name…', 'Abriendo $name…');
+  String appClosed(String name) => _t('$name encerrado.', '$name closed.',
+      '$name 已关闭。', '$name fermé.', '$name cerrado.');
+  String get appClose => _t('Encerrar', 'Close', '关闭', 'Fermer', 'Cerrar');
+  String appCloseConfirm(String name) => _t(
+      'Encerrar "$name" no computador?',
+      'Close "$name" on the computer?',
+      '在电脑上关闭"$name"？',
+      'Fermer « $name » sur l\'ordinateur ?',
+      '¿Cerrar «$name» en el equipo?');
+  String get appsHint => _t(
+      'Toque para abrir. A lista vem do computador, pode levar alguns segundos.',
+      'Tap to open. The list comes from the computer and may take a few seconds.',
+      '点击打开。列表来自电脑，可能需要几秒钟。',
+      "Touchez pour ouvrir. La liste vient de l'ordinateur et peut prendre quelques secondes.",
+      'Toca para abrir. La lista viene del equipo y puede tardar unos segundos.');
+
+  // Configurações
+  // Configurações › Você.
+  String get voce => _t('Você', 'You', '你', 'Vous', 'Tú');
+  String get aniversarioTitulo =>
+      _t('Aniversário', 'Birthday', '生日', 'Anniversaire', 'Cumpleaños');
+  String get aniversarioDica => _t('Para o app te dar parabéns no dia',
+      'So the app can wish you a happy birthday', '让应用在当天祝你生日快乐',
+      "Pour que l'app vous souhaite un joyeux anniversaire",
+      'Para que la app te felicite en tu día');
+  String get aniversarioTirar => _t('Tirar o aniversário', 'Remove birthday',
+      '移除生日', "Retirer l'anniversaire", 'Quitar el cumpleaños');
+  String get aniversarioSoDiaEMes => _t('Só o dia e o mês. O ano não é guardado.',
+      'Only the day and month. The year is not stored.', '只保存日和月，不保存年份。',
+      "Seulement le jour et le mois. L'année n'est pas conservée.",
+      'Solo el día y el mes. El año no se guarda.');
+  String get avancado => _t('Avançado', 'Advanced', '高级', 'Avancé', 'Avanzado');
+  String get atalhos => _t('Atalhos', 'Shortcuts', '快捷方式', 'Raccourcis', 'Atajos');
+  String get ajudaEPrivacidade => _t('Ajuda e privacidade', 'Help and privacy',
+      '帮助与隐私', 'Aide et confidentialité', 'Ayuda y privacidad');
+
+  /// O nome do mês, para o aniversário ("abril").
+  String nomeDoMes(int mes) {
+    const pt = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho',
+      'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const en = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+      'August', 'September', 'October', 'November', 'December'];
+    const fr = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet',
+      'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    const es = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+      'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    final i = (mes - 1).clamp(0, 11);
+    return _t(pt[i], en[i], '$mes月', fr[i], es[i]);
+  }
+
+  /// "20 de abril", "April 20", "4月20日"…
+  String diaEMes(int dia, int mes) => _t('$dia de ${nomeDoMes(mes)}',
+      '${nomeDoMes(mes)} $dia', '$mes月$dia日', '$dia ${nomeDoMes(mes)}',
+      '$dia de ${nomeDoMes(mes)}');
+
+  String get appearance => _t('Aparência', 'Appearance', '外观', 'Apparence', 'Apariencia');
+  String get screenQuality => _t('Qualidade da tela', 'Screen quality', '画面质量',
+      "Qualité de l'écran", 'Calidad de pantalla');
+  String get security => _t('Segurança', 'Security', '安全', 'Sécurité', 'Seguridad');
+  String get account => _t('Conta', 'Account', '账户', 'Compte', 'Cuenta');
+  String get help => _t('Ajuda', 'Help', '帮助', 'Aide', 'Ayuda');
+  String get about => _t('Sobre', 'About', '关于', 'À propos', 'Acerca de');
+  String get language => _t('Idioma', 'Language', '语言', 'Langue', 'Idioma');
+  String get languageSystem => _t('Automático (sistema)', 'Automatic (system)', '自动（系统）',
+      'Automatique (système)', 'Automático (sistema)');
+  String get themeAuto => _t('Automático (sistema)', 'Automatic (system)', '自动（系统）',
+      'Automatique (système)', 'Automático (sistema)');
+  String get themeLight => _t('Claro', 'Light', '浅色', 'Clair', 'Claro');
+  String get themeDark => _t('Escuro', 'Dark', '深色', 'Sombre', 'Oscuro');
+  /// Rótulo curto para o seletor segmentado (evita quebrar em telas estreitas).
+  String get autoShort => _t('Auto', 'Auto', '自动', 'Auto', 'Auto');
+  String get faceIdLock => _t('Bloquear com Face ID / biometria',
+      'Lock with Face ID / biometrics', '使用 Face ID / 生物识别锁定',
+      'Verrouiller avec Face ID / biométrie', 'Bloquear con Face ID / biometría');
+  String get faceIdLockSub => _t('Pede biometria ao abrir o app',
+      'Asks for biometrics when opening the app', '打开应用时要求生物识别',
+      "Demande la biométrie à l'ouverture de l'app", 'Pide biometría al abrir la app');
+  String get twoFactor => _t('Verificação em duas etapas (2FA)', 'Two-step verification (2FA)',
+      '两步验证 (2FA)', 'Vérification en deux étapes (2FA)', 'Verificación en dos pasos (2FA)');
+  String get appLocked =>
+      _t('Deskside bloqueado', 'Deskside locked', 'Deskside 已锁定', 'Deskside verrouillé', 'Deskside bloqueado');
+  String get unlock => _t('Desbloquear', 'Unlock', '解锁', 'Déverrouiller', 'Desbloquear');
+  String get twoFactorSub => _t('Pede um código do autenticador ao entrar',
+      'Asks for an authenticator code at sign-in', '登录时要求身份验证器代码',
+      "Demande un code d'authentification à la connexion",
+      'Pide un código del autenticador al entrar');
+  String get changeEmail =>
+      _t('Alterar e-mail', 'Change email', '更改邮箱', "Changer l'e-mail", 'Cambiar correo');
+
+  /// O mesmo caminho, para a conta que ainda entra pelo telefone.
+  ///
+  /// "Alterar e-mail" ali oferecia trocar um e-mail que a conta não tem. E a
+  /// entrada não pode simplesmente sumir para essas contas: sem SMS, é por
+  /// ela que uma conta de telefone passa a entrar por e-mail.
+  String get usarEmailParaEntrar => _t('Entrar com e-mail em vez do telefone',
+      'Sign in with email instead of phone', '改用邮箱登录，而非手机号',
+      "Se connecter par e-mail plutôt que par téléphone",
+      'Entrar con correo en lugar del teléfono');
+  String get changePassword => _t('Alterar senha', 'Change password', '更改密码',
+      'Changer le mot de passe', 'Cambiar contraseña');
+  String get signOut => _t('Sair', 'Sign out', '退出', 'Se déconnecter', 'Salir');
+  String get deleteAccount => _t('Excluir conta', 'Delete account', '删除账户',
+      'Supprimer le compte', 'Eliminar cuenta');
+  String get howToControl => _t('Como controlar (gestos)', 'How to control (gestures)',
+      '如何控制（手势）', 'Comment contrôler (gestes)', 'Cómo controlar (gestos)');
+  String get howToControlSub => _t('Toque, arrastar, segurar, rolar', 'Tap, drag, hold, scroll',
+      '点按、拖动、长按、滚动', 'Toucher, glisser, maintenir, défiler', 'Tocar, arrastrar, mantener, desplazar');
+  String version(String v) =>
+      _t('Versão $v', 'Version $v', '版本 $v', 'Version $v', 'Versión $v');
+
+  /// Mostrado no lugar do contador quando a tela do computador está parada —
+  /// o agente para de enviar frames idênticos, então 0 fps é o esperado.
+  String get screenStill =>
+      _t('tela parada', 'screen still', '画面静止', 'écran fixe', 'pantalla fija');
+
+  /// Mostrado no lugar do contador quando a tela chega por vídeo (WebRTC): não
+  /// há frames JPEG para contar, então o número ficaria em 0 por definição.
+  String get videoMode => _t('vídeo', 'video', '视频', 'vidéo', 'vídeo');
+
+  /// Vídeo **e** entrada indo direto ao computador, sem passar pelo servidor.
+  /// Vale distinguir: é o estado em que o toque tem a menor latência possível.
+  String get videoDirectMode =>
+      _t('direto', 'direct', '直连', 'direct', 'directo');
+
+  /// A falha da conexão direta, explicada para quem segura o telefone.
+  ///
+  /// A versão anterior despejava o vocabulário do protocolo — "ICE Failed",
+  /// "srflx", "relay" — na cara de quem estava usando o produto. Era verdadeira
+  /// e inútil: dizia "quebrou" sem dizer o quê, enquanto a tela continuava
+  /// funcionando. Ver `services/diagnostico_video.dart`.
+  String get videoFalhouTitulo => _t(
+      'A conexão direta não fechou',
+      'The direct connection did not go through',
+      '直连未能建立',
+      "La connexion directe n'a pas abouti",
+      'La conexión directa no se estableció');
+
+  /// A parte que tranquiliza, e vem sempre. É o que impede a pessoa de achar
+  /// que o produto quebrou: a tela **está** funcionando enquanto ela lê isto.
+  String get videoFalhouTelaOk => _t(
+      'A tela continua funcionando normalmente, só um pouco mais pesada.',
+      'The screen keeps working normally, just a bit heavier.',
+      '画面仍可正常使用，只是流量占用略高。',
+      "L'écran continue de fonctionner normalement, juste un peu plus lourd.",
+      'La pantalla sigue funcionando normalmente, solo un poco más pesada.');
+
+  String get videoCausaComputadorMudo => _t(
+      'O computador não respondeu ao pedido. Ele pode ter sido desligado, ou o Deskside pode ter parado nele.',
+      'The computer did not answer the request. It may have been turned off, or Deskside may have stopped on it.',
+      '电脑没有响应请求。它可能已关机，或 Deskside 在上面停止了。',
+      "L'ordinateur n'a pas répondu à la demande. Il a pu être éteint, ou Deskside s'y est arrêté.",
+      'El equipo no respondió a la solicitud. Puede haberse apagado, o Deskside puede haberse detenido en él.');
+
+  /// Rede antes de firewall, e não o contrário. A mensagem já mandou alguém
+  /// procurar no firewall um bloqueio que era do Wi-Fi da rede onde o
+  /// computador estava: UDP barrado para fora, o caso mais comum em rede de
+  /// faculdade, empresa e hotel. Trocar de rede é o teste que separa os dois.
+  String get videoCausaComputadorBloqueado => _t(
+      'O computador não conseguiu falar com o nosso servidor de conexão. Costuma ser a rede em que ele está (Wi-Fi de faculdade, empresa ou hotel); o firewall do Windows ou um antivírus também podem ser. Para descobrir, ligue o computador em outra rede, como o roteador do celular, e tente de novo.',
+      'The computer could not reach our connection server. It is usually the network it is on (university, company or hotel Wi-Fi); the Windows firewall or an antivirus can also be the cause. To find out, connect the computer to another network, such as your phone\'s hotspot, and try again.',
+      '电脑无法连接到我们的连接服务器。通常是它所在的网络造成的（学校、公司或酒店的 Wi-Fi）；Windows 防火墙或杀毒软件也可能是原因。要确认，请把电脑连到另一个网络（例如手机热点）再试一次。',
+      "L'ordinateur n'a pas pu joindre notre serveur de connexion. C'est en général le réseau où il se trouve (Wi-Fi d'université, d'entreprise ou d'hôtel) ; le pare-feu Windows ou un antivirus peuvent aussi en être la cause. Pour le savoir, connectez l'ordinateur à un autre réseau, comme le partage de connexion du téléphone, et réessayez.",
+      'El equipo no pudo comunicarse con nuestro servidor de conexión. Suele ser la red en la que está (Wi-Fi de universidad, empresa u hotel); el firewall de Windows o un antivirus también pueden ser la causa. Para saberlo, conecta el equipo a otra red, como el punto de acceso del teléfono, e inténtalo de nuevo.');
+
+  String get videoCausaCelularBloqueado => _t(
+      'Este aparelho não conseguiu falar com o nosso servidor de conexão. Costuma ser a rede em que ele está.',
+      'This device could not reach our connection server. It is usually the network it is on.',
+      '此设备无法连接到我们的连接服务器。通常是它所在的网络造成的。',
+      "Cet appareil n'a pas pu joindre notre serveur de connexion. C'est en général le réseau où il se trouve.",
+      'Este dispositivo no pudo comunicarse con nuestro servidor de conexión. Suele ser la red en la que está.');
+
+  String get videoCausaRedeBloqueia => _t(
+      'A rede em que você está bloqueia conexões diretas. Acontece em Wi-Fi de empresa, de hotel e de aeroporto.',
+      'The network you are on blocks direct connections. Common on company, hotel and airport Wi-Fi.',
+      '你所在的网络阻止直连。公司、酒店和机场的 Wi-Fi 常见此情况。',
+      "Le réseau sur lequel vous êtes bloque les connexions directes. Fréquent sur le Wi-Fi d'entreprise, d'hôtel et d'aéroport.",
+      'La red en la que estás bloquea las conexiones directas. Es común en Wi-Fi de empresa, hotel y aeropuerto.');
+
+  String get videoCausaSemRepasse => _t(
+      'O celular e o computador estão em redes que não se enxergam, e o caminho reserva não ficou disponível.',
+      'Phone and computer are on networks that cannot see each other, and the fallback path was unavailable.',
+      '手机和电脑处于互相不可见的网络中，备用路径也不可用。',
+      "Le téléphone et l'ordinateur sont sur des réseaux qui ne se voient pas, et le chemin de secours n'était pas disponible.",
+      'El teléfono y el equipo están en redes que no se ven entre sí, y la vía alternativa no estuvo disponible.');
+
+  String get videoCausaIndefinida => _t(
+      'Não deu para descobrir o motivo desta vez.',
+      'Could not determine the reason this time.',
+      '这次未能确定原因。',
+      "Impossible de déterminer la raison cette fois.",
+      'No se pudo determinar el motivo esta vez.');
+
+  /// Abre os detalhes técnicos. Existe para o **suporte**: sem isto, quem
+  /// atende um cliente depende de ele descrever de memória o que apareceu.
+  String get videoDetalhes =>
+      _t('Detalhes', 'Details', '详情', 'Détails', 'Detalles');
+
+  String get videoDetalhesCopiados => _t('Detalhes copiados',
+      'Details copied', '详情已复制', 'Détails copiés', 'Detalles copiados');
+
+  /// Fechar um diálogo que só mostra informação.
+  ///
+  /// Não é `cancel` ("Cancelar" sugere desfazer algo, e não há nada a desfazer)
+  /// nem `appClose` (aquilo encerra um programa no computador).
+  String get videoDetalhesFechar =>
+      _t('Fechar', 'Close', '关闭', 'Fermer', 'Cerrar');
+
+  /// Enquanto ainda há tentativa pela frente.
+  ///
+  /// Separado do aviso de desistência de propósito: a primeira falha de ICE é
+  /// quase sempre passageira (a rede móvel trocou de torre, o Wi-Fi oscilou), e
+  /// anunciá-la com o texto de derrota ensina a pessoa a desconfiar de algo que
+  /// vai se resolver sozinho em três segundos.
+  String videoRetrying(int tentativa, int de) => _t(
+      'Vídeo direto caiu; tentando de novo ($tentativa de $de). A tela continua funcionando.',
+      'Direct video dropped; retrying ($tentativa of $de). The screen keeps working.',
+      '直连视频中断，正在重试（第 $tentativa 次，共 $de 次）。画面仍可正常使用。',
+      "La vidéo directe est tombée ; nouvelle tentative ($tentativa sur $de). L'écran continue de fonctionner.",
+      'El vídeo directo cayó; reintentando ($tentativa de $de). La pantalla sigue funcionando.');
+
+  // Preferência do vídeo por WebRTC
+  String get webrtcVideo =>
+      _t('Vídeo em alta eficiência', 'High-efficiency video', '高效视频',
+          'Vidéo haute efficacité', 'Vídeo de alta eficiencia');
+  String get webrtcVideoSub => _t(
+      'Usa muito menos internet. Se der problema, desligue para voltar ao modo antigo.',
+      'Uses far less data. If it misbehaves, turn it off to go back to the old mode.',
+      '流量消耗大幅降低。如出现问题，可关闭以恢复旧模式。',
+      "Consomme beaucoup moins de données. En cas de problème, désactivez pour revenir à l'ancien mode.",
+      'Consume mucho menos datos. Si falla, desactívalo para volver al modo anterior.');
+
+  // Sugestões no teclado
+  String get suggestions => _t('Sugestões de palavra', 'Word suggestions',
+      '词语建议', 'Suggestions de mots', 'Sugerencias de palabras');
+  String get suggestionsSub => _t(
+      'Mostra palavras acima do teclado. Nunca corrige sozinho: só troca se você tocar.',
+      'Shows words above the keyboard. Never corrects on its own: it only changes if you tap.',
+      '在键盘上方显示词语。不会自动更正：只有点击才会替换。',
+      "Affiche des mots au-dessus du clavier. Ne corrige jamais tout seul : rien ne change sans un appui.",
+      'Muestra palabras sobre el teclado. Nunca corrige solo: solo cambia si tocas.');
+
+  // O outro teclado: um campo nativo, onde o aparelho põe o que já tem —
+  // correção, previsão, dicionário pessoal, deslize, emoji e o microfone. Sem
+  // título nem texto de ajuda de propósito: é um teclado que substitui o
+  // outro, e teclado não se apresenta. Só o aviso do Enter fica, embaixo do
+  // campo, porque não é descobrível de nenhum outro jeito.
+  String get ditadoCampo => _t(
+      'O que escrever no computador',
+      'What to type on the computer',
+      '要在电脑上输入的内容',
+      "Ce qu'il faut écrire sur l'ordinateur",
+      'Qué escribir en el equipo');
+  String get ditadoEnviar =>
+      _t('Enviar', 'Send', '发送', 'Envoyer', 'Enviar');
+  String get ditadoLimpar =>
+      _t('Limpar', 'Clear', '清空', 'Effacer', 'Borrar');
+  String get ditadoTeclado => _t('Teclas especiais', 'Special keys', '特殊按键',
+      'Touches spéciales', 'Teclas especiales');
+  String get ditadoEnviado => _t(
+      'Texto enviado ao computador.',
+      'Text sent to the computer.',
+      '文字已发送到电脑。',
+      "Texte envoyé à l'ordinateur.",
+      'Texto enviado al equipo.');
+  String get ditadoSemEnter => _t(
+      'O envio não aperta Enter.',
+      'Sending does not press Enter.',
+      '发送不会按回车。',
+      "L'envoi n'appuie pas sur Entrée.",
+      'El envío no pulsa Intro.');
+
+  // Arquivos
+  String get files => _t('Arquivos', 'Files', '文件', 'Fichiers', 'Archivos');
+  String get refresh =>
+      _t('Atualizar', 'Refresh', '刷新', 'Actualiser', 'Actualizar');
+  String get filesUp =>
+      _t('Pasta acima', 'Up one folder', '上一级', 'Dossier parent', 'Carpeta superior');
+  /// O fim de uma página da pasta: `n` itens ainda não carregados.
+  String filesLoadMore(int n) => _t('Carregar mais ($n)', 'Load more ($n)',
+      '加载更多（$n）', 'Charger plus ($n)', 'Cargar más ($n)');
+  String get filesEmpty =>
+      _t('Pasta vazia', 'Empty folder', '空文件夹', 'Dossier vide', 'Carpeta vacía');
+  String get filesBackToHome => _t('Voltar ao início', 'Back to start', '回到起点',
+      'Revenir au début', 'Volver al inicio');
+  String get fileBring =>
+      _t('Trazer para o celular', 'Bring to phone', '下载到手机',
+          'Récupérer sur le téléphone', 'Traer al teléfono');
+  String get fileSend =>
+      _t('Enviar arquivo', 'Send file', '发送文件', 'Envoyer un fichier', 'Enviar archivo');
+  String get fileTransferring =>
+      _t('Transferindo…', 'Transferring…', '传输中…', 'Transfert…', 'Transfiriendo…');
+  String fileSentTo(String path) => _t(
+      'Salvo no computador em $path',
+      'Saved on the computer at $path',
+      '已保存到电脑：$path',
+      "Enregistré sur l'ordinateur dans $path",
+      'Guardado en el equipo en $path');
+  String get fileDownloadFailed => _t('Não consegui trazer o arquivo',
+      "Couldn't bring the file", '无法下载该文件',
+      'Impossible de récupérer le fichier', 'No se pudo traer el archivo');
+  String get fileUploadFailed => _t('Não consegui enviar o arquivo',
+      "Couldn't send the file", '无法发送该文件',
+      "Impossible d'envoyer le fichier", 'No se pudo enviar el archivo');
+
+  // Painel de métricas do computador
+  String get systemPanel =>
+      _t('Computador', 'Computer', '电脑', 'Ordinateur', 'Equipo');
+  String get systemCpu => _t('CPU', 'CPU', '处理器', 'Processeur', 'CPU');
+  String get systemMemory =>
+      _t('Memória', 'Memory', '内存', 'Mémoire', 'Memoria');
+  String get systemDisk => _t('Disco', 'Disk', '磁盘', 'Disque', 'Disco');
+  String get systemUptime =>
+      _t('Ligado há', 'Powered on for', '已开机', 'Allumé depuis', 'Encendido hace');
+  String get systemGpu => _t('GPU', 'GPU', '显卡', 'GPU', 'GPU');
+  String get systemTemperature =>
+      _t('Temperatura', 'Temperature', '温度', 'Température', 'Temperatura');
+  String get systemNetwork => _t('Rede', 'Network', '网络', 'Réseau', 'Red');
+  String get systemBattery =>
+      _t('Bateria', 'Battery', '电池', 'Batterie', 'Batería');
+  /// Sufixos da bateria: dizem se ela está drenando ou carregando. Sem isto,
+  /// "68%" não distingue um notebook que vai durar horas de um que vai
+  /// desaparecer do app em vinte minutos.
+  String get batteryOnBattery =>
+      _t('na bateria', 'on battery', '使用电池', 'sur batterie', 'con batería');
+  String get batteryPluggedIn =>
+      _t('na tomada', 'plugged in', '已接电源', 'sur secteur', 'enchufado');
+  /// Abreviações de tempo. Curtas de propósito: cabem no painel retraído.
+  String get unitDay => _t('d', 'd', '天', 'j', 'd');
+  String get unitHour => _t('h', 'h', '时', 'h', 'h');
+  String get unitMinute => _t('min', 'min', '分', 'min', 'min');
+  String get systemUnavailable => _t(
+      'Não consegui medir agora.',
+      "Couldn't measure right now.",
+      '暂时无法测量。',
+      'Mesure impossible pour le moment.',
+      'No se pudo medir ahora.');
+
+  // Controle de mídia
+  String get mediaPanel => _t('Mídia', 'Media', '媒体', 'Média', 'Medios');
+  String get mediaPlayPause =>
+      _t('Tocar ou pausar', 'Play or pause', '播放/暂停', 'Lire ou mettre en pause',
+          'Reproducir o pausar');
+  String get mediaNext =>
+      _t('Próxima', 'Next', '下一首', 'Suivant', 'Siguiente');
+  String get mediaPrevious =>
+      _t('Anterior', 'Previous', '上一首', 'Précédent', 'Anterior');
+  String get mediaVolumeUp =>
+      _t('Aumentar volume', 'Volume up', '音量加', 'Augmenter le volume', 'Subir volumen');
+  String get mediaVolumeDown =>
+      _t('Diminuir volume', 'Volume down', '音量减', 'Baisser le volume', 'Bajar volumen');
+  String get mediaMute =>
+      _t('Silenciar', 'Mute', '静音', 'Couper le son', 'Silenciar');
+
+  /// O rótulo de uma tecla de mídia pelo nome que ela tem no protocolo.
+  ///
+  /// Existe pelo mesmo motivo que `powerLabel`: as automações guardam o comando
+  /// (`volume_up`), não o texto, e o texto muda com o idioma.
+  String mediaLabel(String action) => switch (action) {
+        'mute' => mediaMute,
+        'volume_down' => mediaVolumeDown,
+        'volume_up' => mediaVolumeUp,
+        'next' => mediaNext,
+        'previous' => mediaPrevious,
+        _ => mediaPlayPause,
+      };
+
+  // Som do computador no telefone
+  String get audioOn => _t('Ouvir o computador', 'Listen to the computer',
+      '收听电脑声音', "Écouter l'ordinateur", 'Escuchar el equipo');
+  String get audioOff => _t('Parar de ouvir', 'Stop listening', '停止收听',
+      "Arrêter d'écouter", 'Dejar de escuchar');
+  String get audioNeedsVideo => _t(
+      'O som precisa da conexão direta de vídeo, que ainda não está de pé.',
+      'Sound needs the direct video connection, which is not up yet.',
+      '声音需要直连视频，目前尚未建立。',
+      "Le son a besoin de la connexion vidéo directe, pas encore établie.",
+      'El sonido necesita la conexión directa de vídeo, que aún no está lista.');
+
+  String get videoDisabled => _t('vídeo direto desligado', 'direct video off',
+      '直连视频已关闭', 'vidéo directe désactivée', 'vídeo directo desactivado');
+  String get videoConnecting => _t('conectando vídeo…', 'connecting video…',
+      '正在连接视频…', 'connexion vidéo…', 'conectando vídeo…');
+  /// Aviso sobre o vídeo quando o programa da frente se esconde da captura.
+  String hiddenWindowWarning(String app) => _t(
+      '$app está aberto, mas se esconde de transmissões por segurança contra golpes. Ele não aparece aqui, e toques nesta área podem cair nele. Para usá-lo, use o computador diretamente.',
+      '$app is open, but hides itself from screen sharing to protect against scams. It does not show here, and taps in this area may land on it. To use it, use the computer directly.',
+      '$app 已打开，但为防范诈骗会对屏幕共享隐藏自己。它不会显示在这里，在此区域的点击可能会落在它上面。如需使用，请直接操作电脑。',
+      "$app est ouvert, mais se cache du partage d'écran pour se protéger des arnaques. Il n'apparaît pas ici, et les touches dans cette zone peuvent l'atteindre. Pour l'utiliser, utilisez directement l'ordinateur.",
+      '$app está abierto, pero se oculta de las transmisiones por seguridad contra estafas. No aparece aquí, y los toques en esta zona pueden caer en él. Para usarlo, usa el ordenador directamente.');
+  String get hiddenWindowSomeApp => _t('Um programa', 'A program', '某个程序',
+      'Un programme', 'Un programa');
+  String get videoFailedShort => _t('vídeo direto falhou', 'direct video failed',
+      '直连视频失败', 'échec de la vidéo directe', 'falló el vídeo directo');
+  String get audioNeedsVideoEnabled => _t(
+      'Ligue "Vídeo por WebRTC" nas configurações: o som viaja pela conexão direta.',
+      'Turn on "WebRTC video" in settings: sound travels over the direct connection.',
+      '请在设置中开启"WebRTC 视频"：声音通过直连传输。',
+      'Activez « Vidéo WebRTC » dans les réglages : le son passe par la connexion directe.',
+      'Activa "Vídeo por WebRTC" en ajustes: el sonido viaja por la conexión directa.');
+  String get audioWaitVideo => _t(
+      'A conexão direta de vídeo ainda está sendo montada. Tente em alguns segundos.',
+      'The direct video connection is still being set up. Try again in a few seconds.',
+      '直连视频仍在建立中，请稍后再试。',
+      "La connexion vidéo directe est en cours d'établissement. Réessayez dans quelques secondes.",
+      'La conexión directa de vídeo aún se está estableciendo. Inténtalo en unos segundos.');
+  String get audioGainHint => _t(
+      'Deixe o volume do computador no mínimo (sem silenciar) e recupere o volume aqui.',
+      "Set the computer's volume to minimum (not muted) and bring the volume back here.",
+      '把电脑音量调到最低（不要静音），在这里把音量补回来。',
+      "Mettez le volume de l'ordinateur au minimum (sans couper) et récupérez le volume ici.",
+      'Deja el volumen del equipo al mínimo (sin silenciar) y recupera el volumen aquí.');
+  String get audioNoTrack => _t(
+      'O computador não mandou som. Confira se o agente e o app estão na mesma versão.',
+      "The computer didn't send any sound. Check that the agent and the app are on the same version.",
+      '电脑没有发送声音。请确认代理和 App 版本一致。',
+      "L'ordinateur n'a envoyé aucun son. Vérifiez que l'agent et l'app sont à jour.",
+      'El equipo no envió sonido. Comprueba que el agente y la app estén en la misma versión.');
+
+  // Área de transferência compartilhada
+  String get clipboardTitle => _t('Área de transferência', 'Clipboard',
+      '剪贴板', 'Presse-papiers', 'Portapapeles');
+  String get clipboardOnComputer =>
+      _t('No computador', 'On the computer', '电脑上', "Sur l'ordinateur",
+          'En el equipo');
+  String get clipboardEmpty =>
+      _t('(vazia)', '(empty)', '（空）', '(vide)', '(vacío)');
+  String get clipboardPull => _t('Trazer', 'Bring', '取回', 'Récupérer', 'Traer');
+  String get clipboardPush => _t('Enviar', 'Send', '发送', 'Envoyer', 'Enviar');
+  String get clipboardPulled => _t('Copiado no telefone.', 'Copied on the phone.',
+      '已复制到手机。', 'Copié sur le téléphone.', 'Copiado en el teléfono.');
+  String get clipboardPushed => _t('Copiado no computador.',
+      'Copied on the computer.', '已复制到电脑。', "Copié sur l'ordinateur.",
+      'Copiado en el equipo.');
+  String get clipboardPhoneEmpty => _t(
+      'Não há nada copiado no telefone.',
+      'Nothing is copied on the phone.',
+      '手机上没有已复制的内容。',
+      "Rien n'est copié sur le téléphone.",
+      'No hay nada copiado en el teléfono.');
+  // Widgets
+  String get widgetsTitulo =>
+      _t('Widgets', 'Widgets', '小组件', 'Widgets', 'Widgets');
+  String get widgetsDica => _t(
+      'O widget da tela inicial e os atalhos do ícone',
+      'The home screen widget and the icon shortcuts',
+      '主屏幕小组件和图标快捷方式',
+      "Le widget de l'écran d'accueil et les raccourcis de l'icône",
+      'El widget de la pantalla de inicio y los atajos del icono');
+  String get widgetsPrevia =>
+      _t('Prévia', 'Preview', '预览', 'Aperçu', 'Vista previa');
+  String get widgetsComputador => _t('Computador do widget',
+      'Widget computer', '小组件的电脑', 'Ordinateur du widget', 'Equipo del widget');
+  String get widgetsSemComputador => _t(
+      'Pareie um computador para montar o widget.',
+      'Pair a computer to set up the widget.',
+      '先配对一台电脑才能设置小组件。',
+      'Associez un ordinateur pour configurer le widget.',
+      'Vincula un equipo para configurar el widget.');
+  String widgetsBotao(int n) =>
+      _t('Botão $n', 'Button $n', '按钮 $n', 'Bouton $n', 'Botón $n');
+  String get widgetsNenhum =>
+      _t('Nenhum', 'None', '无', 'Aucun', 'Ninguno');
+  String get botaoTocarPausar =>
+      _t('Tocar/pausar', 'Play/pause', '播放/暂停', 'Lecture/pause', 'Reproducir/pausar');
+  String get botaoVolumeMais =>
+      _t('Volume +', 'Volume +', '音量 +', 'Volume +', 'Volumen +');
+  String get botaoVolumeMenos =>
+      _t('Volume −', 'Volume −', '音量 −', 'Volume −', 'Volumen −');
+  String get botaoSilenciar =>
+      _t('Silenciar', 'Mute', '静音', 'Couper le son', 'Silenciar');
+  String botaoAutomacao(String nome) => _t('Automação: $nome',
+      'Automation: $nome', '自动化：$nome', 'Automatisation : $nome', 'Automatización: $nome');
+  String get widgetsAtalhosTitulo => _t('Atalhos do ícone',
+      'Icon shortcuts', '图标快捷方式', "Raccourcis de l'icône", 'Atajos del icono');
+  String get widgetsAtalhosDica => _t(
+      'Segure o ícone do Deskside para ver estas automações. Até 4; sem escolher nenhuma, vão as primeiras da lista.',
+      'Press and hold the Deskside icon to see these automations. Up to 4; if you pick none, the first ones in the list are used.',
+      '长按 Deskside 图标即可看到这些自动化。最多 4 个；不选择则使用列表中的前几个。',
+      "Maintenez l'icône Deskside pour voir ces automatisations. Jusqu'à 4 ; sans choix, ce sont les premières de la liste.",
+      'Mantén pulsado el icono de Deskside para ver estas automatizaciones. Hasta 4; si no eliges ninguna, se usan las primeras de la lista.');
+  String get widgetsAtalhosMaximo => _t('Até 4 atalhos.', 'Up to 4 shortcuts.',
+      '最多 4 个快捷方式。', "Jusqu'à 4 raccourcis.", 'Hasta 4 atajos.');
+  String get widgetsSalvo => _t(
+      'Salvo. O widget se atualiza em alguns instantes.',
+      'Saved. The widget updates in a moment.',
+      '已保存。小组件稍后会更新。',
+      'Enregistré. Le widget se met à jour dans un instant.',
+      'Guardado. El widget se actualiza en unos instantes.');
+  String get widgetsComoAdicionar => _t(
+      'Para pôr o widget na tela inicial: segure um espaço vazio da tela, toque em "+" (iPhone) ou em "Widgets" (Android) e escolha Deskside.',
+      'To add the widget: press and hold an empty spot on the home screen, tap "+" (iPhone) or "Widgets" (Android) and choose Deskside.',
+      '添加小组件：长按主屏幕空白处，点“+”（iPhone）或“小组件”（Android），然后选择 Deskside。',
+      "Pour ajouter le widget : maintenez un espace vide de l'écran d'accueil, touchez « + » (iPhone) ou « Widgets » (Android) et choisissez Deskside.",
+      'Para añadir el widget: mantén pulsado un espacio vacío de la pantalla de inicio, toca "+" (iPhone) o "Widgets" (Android) y elige Deskside.');
+
+  String get atalhoSemAutomacao => _t(
+      'Essa automação não existe mais. Os atalhos do ícone se atualizam sozinhos.',
+      'That automation no longer exists. The icon shortcuts update on their own.',
+      '该自动化已不存在。图标快捷方式会自动更新。',
+      "Cette automatisation n'existe plus. Les raccourcis de l'icône se mettent à jour seuls.",
+      'Esa automatización ya no existe. Los atajos del icono se actualizan solos.');
+  String get clipboardImagemParaOPc => _t(
+      'Mandar imagem para o computador',
+      'Send an image to the computer',
+      '把图片发送到电脑',
+      "Envoyer une image à l'ordinateur",
+      'Enviar una imagen al equipo');
+  String get clipboardColarImagem => _t('Imagem copiada', 'Copied image',
+      '已复制的图片', 'Image copiée', 'Imagen copiada');
+  String get clipboardDaGaleria =>
+      _t('Da galeria', 'From gallery', '从相册', 'Depuis la galerie', 'De la galería');
+  String get clipboardSemImagemNoCelular => _t(
+      'Não há imagem copiada no celular.',
+      'There is no image copied on the phone.',
+      '手机上没有已复制的图片。',
+      "Aucune image n'est copiée sur le téléphone.",
+      'No hay ninguna imagen copiada en el teléfono.');
+  String get clipboardMandandoImagem => _t('Mandando a imagem…',
+      'Sending the image…', '正在发送图片…', "Envoi de l'image…", 'Enviando la imagen…');
+  String get clipboardImagemNoPc => _t(
+      'Imagem copiada no computador. Cole com Ctrl+V.',
+      'Image copied on the computer. Paste it with Ctrl+V.',
+      '图片已复制到电脑。用 Ctrl+V 粘贴。',
+      "Image copiée sur l'ordinateur. Collez-la avec Ctrl+V.",
+      'Imagen copiada en el equipo. Pégala con Ctrl+V.');
+  String get clipboardImagemIlegivel => _t(
+      'Não consegui ler essa imagem.',
+      "Couldn't read that image.",
+      '无法读取这张图片。',
+      'Impossible de lire cette image.',
+      'No se pudo leer esa imagen.');
+  String get clipboardImagemGrande => _t(
+      'Essa imagem é grande demais para mandar.',
+      'That image is too large to send.',
+      '这张图片太大，无法发送。',
+      'Cette image est trop grande pour être envoyée.',
+      'Esa imagen es demasiado grande para enviarla.');
+  String get clipboardReceived => _t('Copiado do computador.',
+      'Copied from the computer.', '已从电脑复制。', "Copié depuis l'ordinateur.",
+      'Copiado desde el equipo.');
+  String get clipboardSync => _t('Sincronizar automaticamente',
+      'Sync automatically', '自动同步', 'Synchroniser automatiquement',
+      'Sincronizar automáticamente');
+  String get clipboardSyncSub => _t(
+      'O que você copiar no computador aparece aqui na hora. Isso inclui senhas.',
+      'Whatever you copy on the computer shows up here right away. That includes passwords.',
+      '你在电脑上复制的内容会立即出现在这里，包括密码。',
+      "Ce que vous copiez sur l'ordinateur apparaît ici aussitôt. Mots de passe compris.",
+      'Lo que copies en el equipo aparece aquí al instante. Eso incluye contraseñas.');
+
+  String clipboardFiles(int n) => _t(
+      n == 1 ? '1 arquivo copiado' : '$n arquivos copiados',
+      n == 1 ? '1 copied file' : '$n copied files',
+      '已复制 $n 个文件',
+      n == 1 ? '1 fichier copié' : '$n fichiers copiés',
+      n == 1 ? '1 archivo copiado' : '$n archivos copiados');
+
+  /// Cabeçalho da imagem copiada, com o tamanho. O tamanho importa: uma
+  /// captura reduzida pelo agente não é a mesma coisa que a original, e quem
+  /// vai usar a imagem em outro lugar precisa saber com o que está lidando.
+  String clipboardImage(int w, int h) => _t(
+      'Imagem copiada · $w×$h',
+      'Copied image · $w×$h',
+      '已复制的图片 · $w×$h',
+      'Image copiée · $w×$h',
+      'Imagen copiada · $w×$h');
+  String get clipboardImageShare => _t('Salvar ou compartilhar',
+      'Save or share', '保存或分享', 'Enregistrer ou partager', 'Guardar o compartir');
+  String get clipboardImageFailed => _t(
+      'Não consegui abrir a imagem',
+      "Couldn't open the image",
+      '无法打开该图片',
+      "Impossible d'ouvrir l'image",
+      'No se pudo abrir la imagen');
+  // Perfis de controle
+  String get profilesTitle =>
+      _t('Perfis', 'Profiles', '配置文件', 'Profils', 'Perfiles');
+  String get profilesHint => _t(
+      'Arraste para mudar a ordem na barra. Toque num perfil seu para editar.',
+      'Drag to reorder the bar. Tap one of your profiles to edit it.',
+      '拖动可调整栏中顺序。点击你的配置文件进行编辑。',
+      "Faites glisser pour réordonner la barre. Touchez un de vos profils pour l'éditer.",
+      'Arrastra para cambiar el orden de la barra. Toca uno de tus perfiles para editarlo.');
+  String get profileNew =>
+      _t('Novo perfil', 'New profile', '新建配置', 'Nouveau profil', 'Nuevo perfil');
+  String get profileEdit => _t('Editar perfil', 'Edit profile', '编辑配置',
+      'Modifier le profil', 'Editar perfil');
+  String get profileDelete => _t('Excluir perfil', 'Delete profile', '删除配置',
+      'Supprimer le profil', 'Eliminar perfil');
+  String profileDeleteConfirm(String nome) => _t(
+      'Excluir "$nome"? Isso vale para todos os seus aparelhos.',
+      'Delete "$nome"? This applies to all your devices.',
+      '删除"$nome"？这会影响你所有的设备。',
+      'Supprimer « $nome » ? Cela vaut pour tous vos appareils.',
+      '¿Eliminar «$nome»? Esto afecta a todos tus dispositivos.');
+  String get profileBuiltIn => _t('Vem com o app', 'Built in', '应用内置',
+      "Fourni avec l'app", 'Incluido en la app');
+  String profileAppCount(int n) => _t(
+      n == 1 ? '1 programa' : '$n programas',
+      n == 1 ? '1 program' : '$n programs',
+      '$n 个程序',
+      n == 1 ? '1 programme' : '$n programmes',
+      n == 1 ? '1 programa' : '$n programas');
+  String profileOnComputers(int n) => _t(
+      n == 1 ? '1 computador' : '$n computadores',
+      n == 1 ? '1 computer' : '$n computers',
+      '$n 台电脑',
+      n == 1 ? '1 ordinateur' : '$n ordinateurs',
+      n == 1 ? '1 equipo' : '$n equipos');
+  String get profileName => _t('Nome', 'Name', '名称', 'Nom', 'Nombre');
+  String get profileNameHint => _t('Ex.: Estudo, Jogos, Reunião',
+      'e.g. Study, Games, Meeting', '例如：学习、游戏、会议',
+      'Ex. : Étude, Jeux, Réunion', 'Ej.: Estudio, Juegos, Reunión');
+  String get profileNameRequired => _t('Dê um nome ao perfil.',
+      'Give the profile a name.', '请为配置文件命名。',
+      'Donnez un nom au profil.', 'Ponle un nombre al perfil.');
+  String get profileIcon => _t('Ícone', 'Icon', '图标', 'Icône', 'Icono');
+  String get profilePrograms =>
+      _t('Programas', 'Programs', '程序', 'Programmes', 'Programas');
+  String get profileAddProgram => _t('Adicionar', 'Add', '添加', 'Ajouter', 'Añadir');
+  String get profileNoPrograms => _t(
+      'Nenhum programa ainda. Cada um vira um botão na barra.',
+      'No programs yet. Each one becomes a button on the bar.',
+      '还没有程序。每个程序都会成为栏上的一个按钮。',
+      'Aucun programme pour le moment. Chacun devient un bouton dans la barre.',
+      'Aún no hay programas. Cada uno se convierte en un botón de la barra.');
+  String get profilePickFrom => _t(
+      'Escolher programas de qual computador?',
+      'Pick programs from which computer?',
+      '从哪台电脑选择程序？',
+      'Choisir des programmes de quel ordinateur ?',
+      '¿Elegir programas de qué equipo?');
+  String get profileNoComputers => _t(
+      'Pareie um computador primeiro.',
+      'Pair a computer first.',
+      '请先配对一台电脑。',
+      "Associez d'abord un ordinateur.",
+      'Vincula un equipo primero.');
+  String get profileComputers =>
+      _t('Computadores', 'Computers', '电脑', 'Ordinateurs', 'Equipos');
+  String get profileComputersHint => _t(
+      'Deixe tudo desmarcado para o perfil valer em todos.',
+      'Leave everything unchecked for the profile to apply everywhere.',
+      '全部不勾选表示该配置适用于所有电脑。',
+      'Ne cochez rien pour que le profil vaille partout.',
+      'Deja todo sin marcar para que el perfil valga en todos.');
+
+  // Automações
+  //
+  // Moram na tela de perfis, e não numa aba própria: um perfil já é uma
+  // pré-automatização (um punhado de atalhos guardados juntos), e a automação é
+  // o passo seguinte da mesma ideia. Separar em duas telas obrigaria a pessoa a
+  // saber a diferença antes de qualquer uma das duas servir para algo.
+  String get automations =>
+      _t('Automações', 'Automations', '自动化', 'Automatisations', 'Automatizaciones');
+  String get automationsHint => _t(
+      'Uma sequência que um toque executa: abrir programas, silenciar, ajustar o brilho.',
+      'A sequence one tap runs: open programs, mute, adjust brightness.',
+      '一次点击执行的一串动作：打开程序、静音、调整亮度。',
+      "Une séquence lancée d'un seul geste : ouvrir des programmes, couper le son, régler la luminosité.",
+      'Una secuencia que un toque ejecuta: abrir programas, silenciar, ajustar el brillo.');
+  String get automationsEmpty => _t(
+      'Nenhuma automação ainda.',
+      'No automations yet.',
+      '还没有自动化。',
+      'Aucune automatisation pour le moment.',
+      'Aún no hay automatizaciones.');
+  String get automationNew => _t('Nova automação', 'New automation', '新建自动化',
+      'Nouvelle automatisation', 'Nueva automatización');
+  String get automationEdit => _t('Editar automação', 'Edit automation', '编辑自动化',
+      "Modifier l'automatisation", 'Editar automatización');
+  String automationDeleteConfirm(String nome) => _t(
+      'Excluir "$nome"? Isso vale para todos os seus aparelhos.',
+      'Delete "$nome"? This applies to all your devices.',
+      '删除"$nome"？这会影响你所有的设备。',
+      'Supprimer « $nome » ? Cela vaut pour tous vos appareils.',
+      '¿Eliminar «$nome»? Esto afecta a todos tus dispositivos.');
+  String get automationNameHint => _t('Ex.: Modo reunião, Fim do expediente',
+      'e.g. Meeting mode, End of day', '例如：会议模式、下班',
+      'Ex. : Mode réunion, Fin de journée', 'Ej.: Modo reunión, Fin de jornada');
+  String get automationNameRequired => _t('Dê um nome à automação.',
+      'Give the automation a name.', '请为自动化命名。',
+      "Donnez un nom à l'automatisation.", 'Ponle un nombre a la automatización.');
+  String get automationNoSteps => _t(
+      'Nenhum passo ainda. Eles acontecem na ordem em que estão aqui.',
+      'No steps yet. They run in the order shown here.',
+      '还没有步骤。它们会按这里的顺序执行。',
+      "Aucune étape pour le moment. Elles s'exécutent dans l'ordre affiché ici.",
+      'Aún no hay pasos. Se ejecutan en el orden que aparece aquí.');
+  String automationStepCount(int n) => _t(
+      n == 1 ? '1 passo' : '$n passos',
+      n == 1 ? '1 step' : '$n steps',
+      '$n 步',
+      n == 1 ? '1 étape' : '$n étapes',
+      n == 1 ? '1 paso' : '$n pasos');
+  String get automationSteps => _t('Passos', 'Steps', '步骤', 'Étapes', 'Pasos');
+  String get automationAddStep =>
+      _t('Adicionar passo', 'Add step', '添加步骤', 'Ajouter une étape', 'Añadir paso');
+  String get automationWhere => _t('Onde rodar', 'Where to run', '在哪里运行',
+      'Où exécuter', 'Dónde ejecutar');
+  String get automationWhereAsk => _t('Perguntar na hora', 'Ask each time',
+      '每次询问', 'Demander à chaque fois', 'Preguntar cada vez');
+  String get automationSchedule =>
+      _t('Horário', 'Schedule', '定时', 'Horaire', 'Horario');
+  String get automationScheduleOff => _t('Só quando eu tocar',
+      'Only when I tap it', '仅在我点按时', 'Seulement si je la lance',
+      'Solo cuando yo la ejecute');
+  String get automationScheduleOn =>
+      _t('Todo dia às…', 'Every day at…', '每天于…', 'Chaque jour à…',
+          'Todos los días a las…');
+  /// A hora é a **do computador**, e dizer isso importa: quem viaja com o
+  /// celular não quer o expediente encerrando às 14h porque mudou de fuso.
+  String get automationScheduleHint => _t(
+      'Hora do computador. Ele avisa 5 minutos antes e dá a opção de cancelar.',
+      "The computer's clock. It warns 5 minutes ahead and lets you cancel.",
+      '使用电脑的时间。它会提前 5 分钟提醒并允许取消。',
+      "L'heure de l'ordinateur. Il prévient 5 minutes avant et permet d'annuler.",
+      'La hora del equipo. Avisa 5 minutos antes y permite cancelar.');
+  /// Por que o horário não aparece enquanto não há computador escolhido: quem
+  /// guarda a agenda é a máquina, e "perguntar na hora" pressupõe alguém ali —
+  /// que é justamente quem não está quando o agendamento importa.
+  String get automationScheduleNeedsDevice => _t(
+      'Escolha um computador acima para poder agendar.',
+      'Pick a computer above to schedule this.',
+      '请在上方选择一台电脑后再定时。',
+      'Choisissez un ordinateur ci-dessus pour programmer.',
+      'Elige un equipo arriba para poder programarla.');
+  String get automationScheduleDays =>
+      _t('Em quais dias', 'On which days', '在哪些天', 'Quels jours',
+          'En qué días');
+  String get automationScheduleEveryDay =>
+      _t('Todos os dias', 'Every day', '每天', 'Tous les jours', 'Todos los días');
+  /// Segunda = 0, como no servidor e no agente.
+  String weekdayShort(int dia) => _t(
+      const ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][dia],
+      const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][dia],
+      const ['一', '二', '三', '四', '五', '六', '日'][dia],
+      const ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'][dia],
+      const ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'][dia]);
+  /// O resumo na lista: "18:00 · Seg a Sex".
+  String automationScheduleSummary(String hora, String dias) =>
+      '$hora · $dias';
+  String get automationRun => _t('Rodar', 'Run', '运行', 'Exécuter', 'Ejecutar');
+  String get automationRunning =>
+      _t('Rodando…', 'Running…', '正在运行…', 'En cours…', 'Ejecutando…');
+  /// A confirmação antes de rodar uma automação que fecha programas ou mexe na
+  /// energia. Só aparece nessas — pedir confirmação em toda automação faria o
+  /// recurso custar dois toques, que é o oposto do que ele existe para fazer.
+  String automationConfirmDestructive(String nome) => _t(
+      '"$nome" fecha programas ou desliga o computador. Rodar agora?',
+      '"$nome" closes programs or powers the computer off. Run it now?',
+      '"$nome" 会关闭程序或关闭电脑。现在运行？',
+      '« $nome » ferme des programmes ou éteint l\'ordinateur. Exécuter maintenant ?',
+      '«$nome» cierra programas o apaga el equipo. ¿Ejecutar ahora?');
+  /// O resultado. Diz o número porque tudo acontece **no computador**, e de
+  /// longe não se vê nada: sem isto, uma automação que rodou inteira e uma que
+  /// não fez nada seriam idênticas.
+  String automationDone(int n) => _t(
+      n == 1 ? '1 passo executado.' : '$n passos executados.',
+      n == 1 ? '1 step done.' : '$n steps done.',
+      '已执行 $n 步。',
+      n == 1 ? '1 étape exécutée.' : '$n étapes exécutées.',
+      n == 1 ? '1 paso ejecutado.' : '$n pasos ejecutados.');
+  String automationPartial(int feitos, int total) => _t(
+      '$feitos de $total passos. Toque para ver o que falhou.',
+      '$feitos of $total steps. Tap to see what failed.',
+      '$total 步中完成 $feitos 步。点击查看失败项。',
+      '$feitos étapes sur $total. Touchez pour voir ce qui a échoué.',
+      '$feitos de $total pasos. Toca para ver qué falló.');
+  String get automationResult =>
+      _t('Resultado', 'Result', '结果', 'Résultat', 'Resultado');
+  String get automationPickComputer => _t('Rodar em qual computador?',
+      'Run on which computer?', '在哪台电脑上运行？',
+      'Exécuter sur quel ordinateur ?', '¿Ejecutar en qué equipo?');
+  String get automationEmpty => _t('Adicione ao menos um passo.',
+      'Add at least one step.', '请至少添加一个步骤。',
+      'Ajoutez au moins une étape.', 'Añade al menos un paso.');
+
+  // Os tipos de passo, como aparecem no seletor e na lista.
+  String get stepKindLaunch =>
+      _t('Abrir programa', 'Open program', '打开程序', 'Ouvrir un programme', 'Abrir programa');
+  String get stepKindClose => _t('Fechar programa', 'Close program', '关闭程序',
+      'Fermer un programme', 'Cerrar programa');
+  // Diz o que o toque faz, e é diferente do atalho: este já está aberto, então
+  // tocar traz para frente em vez de abrir.
+  String dockOpenOnly(String programa) => _t(
+      '$programa (aberto — tocar traz para frente)',
+      '$programa (open — tap to bring to front)',
+      '$programa（已打开 — 点按可置于前台）',
+      '$programa (ouvert — appuyez pour mettre au premier plan)',
+      '$programa (abierto — toca para traer al frente)');
+  // "Trazendo", e não "pronto": o Windows pode recusar dar o foco, e nesse caso
+  // a janela pisca na barra de tarefas. Prometer o que não se controla é pior
+  // do que descrever o que se pediu.
+  String appFocusing(String programa) => _t(
+      'Trazendo $programa para frente…',
+      'Bringing $programa to front…',
+      '正在将 $programa 置于前台…',
+      'Mise au premier plan de $programa…',
+      'Trayendo $programa al frente…');
+  String get stepKindCloseAll => _t(
+      'Fechar tudo',
+      'Close everything',
+      '全部关闭',
+      'Tout fermer',
+      'Cerrar todo');
+  // --- erros do servidor ------------------------------------------------------
+  // Ver `services/erros.dart`: o servidor responde 422 com uma lista de objetos,
+  // e antes disso ia crua para a tela.
+  String erroGenerico(int status) => _t(
+      'Algo deu errado no servidor (erro $status).',
+      'Something went wrong on the server (error $status).',
+      '服务器出错（错误 $status）。',
+      "Une erreur s'est produite sur le serveur (erreur $status).",
+      'Algo salió mal en el servidor (error $status).');
+  String erroCampoFaltando(String campo) => _t(
+      'Falta preencher: $campo.',
+      'Missing: $campo.',
+      '缺少填写：$campo。',
+      'À remplir : $campo.',
+      'Falta completar: $campo.');
+  String erroCampoInvalido(String campo) => _t(
+      'O servidor não aceitou o campo $campo.',
+      "The server didn't accept the $campo field.",
+      '服务器不接受 $campo 字段。',
+      "Le serveur n'a pas accepté le champ $campo.",
+      'El servidor no aceptó el campo $campo.');
+  String erroCampoCurto(String campo) => _t(
+      'O campo $campo está curto demais.',
+      'The $campo field is too short.',
+      '$campo 字段太短。',
+      'Le champ $campo est trop court.',
+      'El campo $campo es demasiado corto.');
+  String erroCampoLongo(String campo) => _t(
+      'O campo $campo está longo demais.',
+      'The $campo field is too long.',
+      '$campo 字段太长。',
+      'Le champ $campo est trop long.',
+      'El campo $campo es demasiado largo.');
+  String erroCampoForaDoIntervalo(String campo) => _t(
+      'O valor de $campo está fora do que o servidor aceita.',
+      'The $campo value is outside what the server accepts.',
+      '$campo 的值超出服务器接受的范围。',
+      "La valeur de $campo est hors de ce que le serveur accepte.",
+      'El valor de $campo está fuera de lo que el servidor acepta.');
+  /// O diagnóstico que estava escondido no despejo: uma lista fechada recusando
+  /// um valor que o próprio app mandou significa servidor mais velho que o app.
+  String erroServidorAntigo(String campo) => _t(
+      'O servidor não conhece este valor de $campo. Ele provavelmente está '
+          'desatualizado — atualize o servidor e tente de novo.',
+      "The server doesn't know this $campo value. It's likely out of date — "
+          'update the server and try again.',
+      '服务器不认识这个 $campo 值，可能版本过旧——请更新服务器后重试。',
+      "Le serveur ne connaît pas cette valeur de $campo. Il est probablement "
+          'obsolète : mettez-le à jour et réessayez.',
+      'El servidor no conoce este valor de $campo. Probablemente está '
+          'desactualizado: actualízalo e inténtalo de nuevo.');
+  String get erroCampoSemNome =>
+      _t('um dos campos', 'one of the fields', '其中一个字段',
+          "l'un des champs", 'uno de los campos');
+  String get presentationMode => _t('Modo apresentação', 'Presentation mode',      '演示模式', 'Mode présentation', 'Modo presentación');
+  /// O que a chave faz, dito na própria linha: "detecção automática" sozinho
+  /// não diz o que ela detecta nem o que acontece depois.
+  String get presentationAutoDetect => _t(
+      'Ligar sozinho quando algo abrir em tela cheia',
+      'Turn on by itself when something goes fullscreen',
+      '当有程序全屏时自动开启',
+      "S'active tout seul quand une fenêtre passe en plein écran",
+      'Se activa solo cuando algo se abre en pantalla completa');
+  String get presentationAutoHint => _t(
+      'Com o modo ligado, a tela do computador não apaga e as notificações '
+          'não aparecem. Ligar e desligar na hora é pela barra de perfis, ao '
+          'controlar o computador.',
+      "With the mode on, the computer's screen stays awake and notifications "
+          'stay hidden. Turning it on and off is done from the profile bar '
+          'while controlling the computer.',
+      '开启后，电脑屏幕不会熄灭，通知也不会弹出。即时开关请在控制电脑时的配置栏中操作。',
+      "Avec le mode actif, l'écran de l'ordinateur ne s'éteint pas et les "
+          "notifications n'apparaissent pas. Pour activer sur le moment, "
+          'utilisez la barre de profils pendant le contrôle.',
+      'Con el modo activo, la pantalla del equipo no se apaga y las '
+          'notificaciones no aparecen. Para activarlo en el momento, usa la '
+          'barra de perfiles mientras controlas el equipo.');
+  String get presentationNoDevices => _t(
+      'Nenhum computador pareado ainda.',
+      'No computers paired yet.',
+      '还没有配对的电脑。',
+      'Aucun ordinateur appairé pour le moment.',
+      'Aún no hay equipos emparejados.');
+  /// Dito no lugar da chave, e não junto dela: uma chave apagada e uma chave
+  /// que não pôde ser lida se parecem, e são coisas opostas.
+  String get presentationUnreachable => _t(
+      'Computador desligado — não deu para ler o ajuste.',
+      "Computer is off — couldn't read the setting.",
+      '电脑已关机，无法读取设置。',
+      "Ordinateur éteint — impossible de lire le réglage.",
+      'Equipo apagado: no se pudo leer el ajuste.');
+  String get stepKindSaveAll => _t(
+      'Salvar o trabalho',
+      'Save open work',
+      '保存工作',
+      'Enregistrer le travail',
+      'Guardar el trabajo');
+  String get stepKindKeys => _t('Atalho de teclado', 'Keyboard shortcut', '键盘快捷键',
+      'Raccourci clavier', 'Atajo de teclado');
+  String get stepKindMedia => _t('Som', 'Sound', '声音', 'Son', 'Sonido');
+  String get stepKindBrightness =>
+      _t('Brilho', 'Brightness', '亮度', 'Luminosité', 'Brillo');
+  String get stepKindPower => _t('Energia', 'Power', '电源', 'Alimentation', 'Energía');
+  String stepLaunch(String programa) => _t('Abrir $programa', 'Open $programa',
+      '打开 $programa', 'Ouvrir $programa', 'Abrir $programa');
+  String stepClose(String programa) => _t('Fechar $programa', 'Close $programa',
+      '关闭 $programa', 'Fermer $programa', 'Cerrar $programa');
+  // Sem interpolação, ao contrário do `stepClose`: este passo não tem alvo, e
+  // é justamente essa a diferença que a pessoa precisa enxergar na lista.
+  String get stepCloseAll => _t(
+      'Fechar todos os programas abertos',
+      'Close all open programs',
+      '关闭所有已打开的程序',
+      'Fermer tous les programmes ouverts',
+      'Cerrar todos los programas abiertos');
+  String get stepSaveAll => _t(
+      'Salvar o trabalho aberto (Ctrl+S nos editores)',
+      'Save open work (Ctrl+S in editors)',
+      '保存已打开的工作（在编辑器中按 Ctrl+S）',
+      'Enregistrer le travail ouvert (Ctrl+S dans les éditeurs)',
+      'Guardar el trabajo abierto (Ctrl+S en los editores)');
+  /// Por que o passo não alcança tudo que está aberto. Dito na tela porque a
+  /// alternativa é a pessoa supor que o navegador também foi salvo.
+  String get stepSaveAllHint => _t(
+      'Vale para editores de texto, código, imagem e vídeo. Em outros '
+          'programas o Ctrl+S abre uma janela de salvar, e a automação ficaria '
+          'parada nela.',
+      'Applies to text, code, image and video editors. Elsewhere Ctrl+S opens '
+          'a save dialog, and the automation would sit waiting on it.',
+      '适用于文本、代码、图像和视频编辑器。在其他程序中，Ctrl+S 会打开保存窗口，自动化会卡在那里。',
+      "S'applique aux éditeurs de texte, de code, d'image et de vidéo. Ailleurs, "
+          "Ctrl+S ouvre une fenêtre d'enregistrement, et l'automatisation "
+          'resterait bloquée dessus.',
+      'Se aplica a editores de texto, código, imagen y vídeo. En otros programas '
+          'Ctrl+S abre una ventana de guardado, y la automatización se quedaría '
+          'esperando en ella.');
+  String stepKeys(String atalho) => _t('Teclas: $atalho', 'Keys: $atalho',
+      '按键：$atalho', 'Touches : $atalho', 'Teclas: $atalho');
+  String stepBrightness(int nivel) => _t('Brilho em $nivel%', 'Brightness at $nivel%',
+      '亮度 $nivel%', 'Luminosité à $nivel %', 'Brillo al $nivel%');
+  String get stepCloseHint => _t(
+      'O nome do programa, sem o caminho. Ex.: slack, outlook.',
+      'The program name, without the path. e.g. slack, outlook.',
+      '程序名称，不含路径。例如：slack、outlook。',
+      'Le nom du programme, sans le chemin. Ex. : slack, outlook.',
+      'El nombre del programa, sin la ruta. Ej.: slack, outlook.');
+  /// Explica por que fechar não é forçar. O agente pede ao programa que feche,
+  /// como o X da janela — uma automação roda sem ninguém olhando, e matar o
+  /// processo descartaria em silêncio o que não foi salvo.
+  String get stepCloseGentle => _t(
+      'Fecha como o X da janela: se houver algo não salvo, o programa pergunta e continua aberto.',
+      'Closes like the window X: if something is unsaved, the program asks and stays open.',
+      '相当于点击窗口的关闭按钮：若有未保存内容，程序会询问并保持打开。',
+      "Ferme comme la croix de la fenêtre : s'il y a du non enregistré, le programme demande et reste ouvert.",
+      'Cierra como la X de la ventana: si hay algo sin guardar, el programa pregunta y sigue abierto.');
+  String get stepWait => _t('Esperar depois', 'Wait afterwards', '之后等待',
+      'Attendre ensuite', 'Esperar después');
+  /// Por que a espera existe. Sem ela o atalho chega antes de o programa
+  /// existir para recebê-lo, e o passo falha sem deixar rastro.
+  String get stepWaitHint => _t(
+      'Dá tempo ao programa de abrir antes do passo seguinte.',
+      'Gives the program time to open before the next step.',
+      '让程序有时间打开，再执行下一步。',
+      "Laisse au programme le temps de s'ouvrir avant l'étape suivante.",
+      'Da tiempo al programa para abrir antes del siguiente paso.');
+  /// A espera de um passo, em segundos. Recebe milissegundos porque é como o
+  /// passo a guarda — converter no chamador espalharia a mesma divisão por mil
+  /// por toda a tela.
+  String stepSeconds(int ms) {
+    if (ms == 0) {
+      return _t('Sem espera', 'No wait', '不等待', "Aucune attente", 'Sin espera');
+    }
+    final s = (ms / 1000).toStringAsFixed(ms % 1000 == 0 ? 0 : 1);
+    return '$s s';
+  }
+
+  String get monitorsTitle => _t('Tela do computador', 'Computer display',
+      '电脑显示器', "Écran de l'ordinateur", 'Pantalla del equipo');
+  String get monitorsSub => _t(
+      'Escolha qual monitor você quer ver e controlar.',
+      'Pick which monitor you want to see and control.',
+      '选择你想查看和控制的显示器。',
+      'Choisissez le moniteur que vous voulez voir et contrôler.',
+      'Elige qué monitor quieres ver y controlar.');
+  String get monitorPrimary =>
+      _t('principal', 'primary', '主显示器', 'principal', 'principal');
+  String clipboardOutside(int n) => _t(
+      n == 1
+          ? '1 arquivo copiado está fora da pasta do usuário e não pode ser trazido'
+          : '$n arquivos copiados estão fora da pasta do usuário e não podem ser trazidos',
+      n == 1
+          ? '1 copied file is outside the user folder and cannot be fetched'
+          : '$n copied files are outside the user folder and cannot be fetched',
+      '有 $n 个复制的文件不在用户文件夹内，无法获取',
+      n == 1
+          ? "1 fichier copié est hors du dossier utilisateur et ne peut pas être récupéré"
+          : "$n fichiers copiés sont hors du dossier utilisateur et ne peuvent pas être récupérés",
+      n == 1
+          ? '1 archivo copiado está fuera de la carpeta del usuario y no se puede traer'
+          : '$n archivos copiados están fuera de la carpeta del usuario y no se pueden traer');
+  String clipboardBringing(String name) => _t(
+      'Trazendo $name…', 'Bringing $name…', '正在获取 $name…',
+      'Récupération de $name…', 'Trayendo $name…');
+  String get clipboardIsFolder => _t('Pasta — baixe pelos arquivos',
+      'Folder — use the file browser', '文件夹 — 请用文件浏览器',
+      'Dossier — utilisez le navigateur de fichiers',
+      'Carpeta — usa el explorador de archivos');
+  String get clipboardTooBig => _t('Grande demais (máx. 100 MB)',
+      'Too large (max 100 MB)', '太大（上限 100 MB）',
+      'Trop volumineux (max 100 Mo)', 'Demasiado grande (máx. 100 MB)');
+
+  String get filesShortcuts => _t('Pastas do computador', 'Computer folders',
+      '电脑文件夹', "Dossiers de l'ordinateur", 'Carpetas del equipo');
+
+  // Perfis de controle (barra seletora)
+  String get profilesPanel => _t('Perfis', 'Profiles', '配置', 'Profils', 'Perfiles');
+  String get profileSystem => _t('Sistema', 'System', '系统', 'Système', 'Sistema');
+  String get profileVideo => _t('Vídeo', 'Video', '视频', 'Vidéo', 'Vídeo');
+  String get profileBrowser =>
+      _t('Navegador', 'Browser', '浏览器', 'Navigateur', 'Navegador');
+  String get profileWork => _t('Trabalho', 'Work', '办公', 'Travail', 'Trabajo');
+  String get profileSlides => _t('Apresentação', 'Presentation', '演示',
+      'Présentation', 'Presentación');
+
+  // Atalhos dos perfis
+  String get actionSwitchWindow => _t('Trocar de janela', 'Switch window',
+      '切换窗口', 'Changer de fenêtre', 'Cambiar de ventana');
+  String get actionShowDesktop => _t('Mostrar a área de trabalho',
+      'Show desktop', '显示桌面', 'Afficher le bureau', 'Mostrar el escritorio');
+  String get actionFileExplorer => _t('Abrir o explorador de arquivos',
+      'Open file explorer', '打开文件资源管理器', "Ouvrir l'explorateur de fichiers",
+      'Abrir el explorador de archivos');
+  String get actionTaskManager => _t('Gerenciador de tarefas', 'Task manager',
+      '任务管理器', 'Gestionnaire des tâches', 'Administrador de tareas');
+  String get actionSnapLeft => _t('Encaixar à esquerda', 'Snap left', '靠左分屏',
+      'Ancrer à gauche', 'Ajustar a la izquierda');
+  String get actionSnapRight => _t('Encaixar à direita', 'Snap right', '靠右分屏',
+      'Ancrer à droite', 'Ajustar a la derecha');
+  String get actionCloseWindow => _t('Fechar a janela', 'Close window', '关闭窗口',
+      'Fermer la fenêtre', 'Cerrar la ventana');
+  /// Seletor de layout de janelas, no editor de perfis.
+  String get layoutTitle => _t('Como as janelas se dividem',
+      'How the windows split', '窗口如何分布', 'Répartition des fenêtres',
+      'Cómo se dividen las ventanas');
+  String get layoutHint => _t(
+      'Ao abrir todos, cada programa vai para o seu lugar na tela.',
+      'When opening all, each program goes to its place on screen.',
+      '一次打开时，每个程序会移动到各自的位置。',
+      "À l'ouverture groupée, chaque programme va à sa place.",
+      'Al abrir todos, cada programa va a su lugar en la pantalla.');
+  String get zoneChoose =>
+      _t('Onde esta janela fica', 'Where this window goes', '该窗口的位置',
+          'Où va cette fenêtre', 'Dónde va esta ventana');
+  String get zoneNone => _t('Sem lugar fixo', 'No fixed place', '不固定位置',
+      'Sans place fixe', 'Sin lugar fijo');
+  /// Abriu, mas a janela não foi para o lugar. Não é falha de abertura - o
+  /// programa está lá -, e por isso tem texto próprio.
+  String openAllNotPlaced(String nomes) => _t(
+      'Abriu tudo. Não consegui posicionar: $nomes',
+      'All opened. Could not place: $nomes',
+      '全部已打开。无法定位：$nomes',
+      "Tout est ouvert. Impossible de placer : $nomes",
+      'Todo abierto. No se pudo colocar: $nomes');
+  String get actionOpenAll => _t('Abrir todos os programas',
+      'Open all programs', '打开全部程序', 'Ouvrir tous les programmes',
+      'Abrir todos los programas');
+  /// Todos abriram. Diz o número porque o resultado acontece **no computador**,
+  /// e de longe não se vê nada — sem isto, um toque que funcionou e um que não
+  /// fez nada seriam idênticos.
+  String openAllDone(int n) => _t(
+      n == 1 ? '1 programa aberto' : '$n programas abertos',
+      n == 1 ? '1 program opened' : '$n programs opened',
+      '已打开 $n 个程序',
+      n == 1 ? '1 programme ouvert' : '$n programmes ouverts',
+      n == 1 ? '1 programa abierto' : '$n programas abiertos');
+  /// Parte abriu. Nomeia quem faltou: "algo falhou" mandaria a pessoa conferir
+  /// os quatro para descobrir qual.
+  String openAllPartial(int abertos, int total, String faltaram) => _t(
+      '$abertos de $total abertos. Não abriu: $faltaram',
+      '$abertos of $total opened. Failed: $faltaram',
+      '已打开 $abertos/$total。未打开：$faltaram',
+      '$abertos sur $total ouverts. Échec : $faltaram',
+      '$abertos de $total abiertos. No abrió: $faltaram');
+  String get actionBrightnessDown => _t('Diminuir o brilho', 'Dim screen',
+      '降低亮度', "Baisser la luminosité", 'Bajar el brillo');
+  String get actionBrightnessUp => _t('Aumentar o brilho', 'Brighten screen',
+      '提高亮度', 'Augmenter la luminosité', 'Subir el brillo');
+  /// Confirmação do ajuste. Existe porque brilho não é um comando que se vê
+  /// pelo app: a tela que muda é a do computador, do outro lado.
+  String brightnessSet(int level) => _t('Brilho: $level%', 'Brightness: $level%',
+      '亮度：$level%', 'Luminosité : $level%', 'Brillo: $level%');
+  String get actionRewind =>
+      _t('Voltar um pouco', 'Rewind', '快退', 'Reculer', 'Retroceder');
+  String get actionForward =>
+      _t('Avançar um pouco', 'Fast forward', '快进', 'Avancer', 'Adelantar');
+  String get actionFullscreen =>
+      _t('Tela cheia', 'Fullscreen', '全屏', 'Plein écran', 'Pantalla completa');
+  String get actionExitFullscreen => _t('Sair da tela cheia', 'Exit fullscreen',
+      '退出全屏', 'Quitter le plein écran', 'Salir de pantalla completa');
+  String get actionNewTab =>
+      _t('Nova aba', 'New tab', '新标签页', 'Nouvel onglet', 'Nueva pestaña');
+  String get actionCloseTab => _t('Fechar a aba', 'Close tab', '关闭标签页',
+      "Fermer l'onglet", 'Cerrar la pestaña');
+  String get actionReopenTab => _t('Reabrir a aba fechada', 'Reopen closed tab',
+      '重新打开标签页', "Rouvrir l'onglet fermé", 'Reabrir la pestaña cerrada');
+  String get actionPageBack => _t('Voltar', 'Back', '后退', 'Retour', 'Atrás');
+  String get actionPageForward =>
+      _t('Avançar', 'Forward', '前进', 'Suivant', 'Adelante');
+  String get actionReload =>
+      _t('Atualizar a página', 'Reload page', '刷新页面', 'Actualiser la page',
+          'Recargar la página');
+  String get actionAddressBar => _t('Barra de endereço', 'Address bar', '地址栏',
+      "Barre d'adresse", 'Barra de direcciones');
+  String get actionUndo => _t('Desfazer', 'Undo', '撤销', 'Annuler', 'Deshacer');
+  String get actionRedo => _t('Refazer', 'Redo', '重做', 'Rétablir', 'Rehacer');
+  String get actionCopy => _t('Copiar', 'Copy', '复制', 'Copier', 'Copiar');
+  String get actionPaste => _t('Colar', 'Paste', '粘贴', 'Coller', 'Pegar');
+  String get actionFind => _t('Localizar', 'Find', '查找', 'Rechercher', 'Buscar');
+  String get actionPrint =>
+      _t('Imprimir', 'Print', '打印', 'Imprimer', 'Imprimir');
+  String get actionStartSlides => _t('Começar do início', 'Start from beginning',
+      '从头开始放映', 'Démarrer au début', 'Empezar desde el principio');
+  String get actionNextSlide => _t('Próximo slide', 'Next slide', '下一张',
+      'Diapositive suivante', 'Diapositiva siguiente');
+  String get actionPreviousSlide => _t('Slide anterior', 'Previous slide',
+      '上一张', 'Diapositive précédente', 'Diapositiva anterior');
+  String get actionBlackScreen =>
+      _t('Tela preta', 'Black screen', '黑屏', 'Écran noir', 'Pantalla negra');
+  String get actionExitSlides => _t('Sair da apresentação', 'Exit presentation',
+      '退出放映', 'Quitter la présentation', 'Salir de la presentación');
+
+  // Diálogos de conta
+  String get newEmail => _t('Novo e-mail', 'New email', '新邮箱', 'Nouvel e-mail', 'Nuevo correo');
+  // Avisa **antes** de a pessoa confirmar que ainda haverá um código. Sem isso,
+  // a tela de código aparece do nada e parece que a troca deu errado — e quem
+  // digitou um endereço a que não tem acesso só descobriria o problema ali.
+  String get contactNeedsCode => _t(
+      'Vamos enviar um código para o contato novo para confirmar que é seu.',
+      'We will send a code to the new contact to confirm it is yours.',
+      '我们会向新的联系方式发送验证码，以确认它属于你。',
+      'Nous enverrons un code au nouveau contact pour confirmer qu’il est bien à vous.',
+      'Enviaremos un código al nuevo contacto para confirmar que es tuyo.');
+  String get currentPassword => _t('Senha atual', 'Current password', '当前密码',
+      'Mot de passe actuel', 'Contraseña actual');
+  String get emailUpdated => _t('E-mail atualizado.', 'Email updated.', '邮箱已更新。',
+      'E-mail mis à jour.', 'Correo actualizado.');
+  // O par do e-mail, para a conta criada por telefone. `changePhone` sem
+  // prefixo, ao contrário do `verifyChangePhone`: aqui se **troca** o número da
+  // conta; lá se **corrige** o que foi digitado num cadastro que ainda nem
+  // virou conta.
+  String get changePhone => _t('Alterar telefone', 'Change phone', '修改手机号',
+      'Modifier le téléphone', 'Cambiar teléfono');
+  String get newPhone => _t('Novo telefone', 'New phone', '新手机号',
+      'Nouveau téléphone', 'Nuevo teléfono');
+  String get phoneUpdated => _t('Telefone atualizado.', 'Phone updated.',
+      '手机号已更新。', 'Téléphone mis à jour.', 'Teléfono actualizado.');
+  // Esqueci minha senha. Reaproveita `verifySentEmail`/`verifySentSms`,
+  // `resendCode` e as cinco regras: é o mesmo código, pelo mesmo caminho, com o
+  // mesmo prazo — duas redações para a mesma coisa fariam parecer dois
+  // mecanismos diferentes.
+  String get forgotLink => _t('Esqueci minha senha', 'Forgot my password',
+      '忘记密码', "J'ai oublié mon mot de passe", 'Olvidé mi contraseña');
+  String get forgotTitle => _t('Recuperar senha', 'Reset password', '重置密码',
+      'Réinitialiser le mot de passe', 'Recuperar contraseña');
+  String get forgotExplain => _t(
+      'Diga o e-mail ou o telefone da sua conta. Vamos mandar um código para você criar uma senha nova.',
+      "Tell us your account's email or phone. We'll send a code so you can create a new password.",
+      '请输入账户的邮箱或手机号。我们会发送验证码，让你设置新密码。',
+      "Indiquez l'e-mail ou le téléphone de votre compte. Nous enverrons un code pour créer un nouveau mot de passe.",
+      'Indica el correo o teléfono de tu cuenta. Enviaremos un código para crear una contraseña nueva.');
+  String get forgotSend => _t('Enviar código', 'Send code', '发送验证码',
+      'Envoyer le code', 'Enviar código');
+  String get forgotChange => _t('Trocar a senha', 'Change password', '修改密码',
+      'Changer le mot de passe', 'Cambiar la contraseña');
+  String get newPassword =>
+      _t('Nova senha', 'New password', '新密码', 'Nouveau mot de passe',
+          'Nueva contraseña');
+  String get newPasswordMin => _t('Nova senha (mín. 8 caracteres)',
+      'New password (min. 8 characters)', '新密码（至少 8 个字符）',
+      'Nouveau mot de passe (min. 8 caractères)', 'Nueva contraseña (mín. 8 caracteres)');
+  // Diz o efeito colateral porque ele é visível: quem usa a conta no iPhone e
+  // no iPad vai encontrar o outro aparelho pedindo login. Sem o aviso, isso
+  // parece defeito; com ele, é o recurso funcionando.
+  String get passwordUpdated => _t(
+      'Senha atualizada. Os outros aparelhos foram desconectados.',
+      'Password updated. Your other devices were signed out.',
+      '密码已更新。你的其他设备已退出登录。',
+      'Mot de passe mis à jour. Vos autres appareils ont été déconnectés.',
+      'Contraseña actualizada. Tus otros dispositivos fueron desconectados.');
+  String get deleteAccountBody => _t(
+      'Isso remove sua conta e todos os computadores pareados. A ação não pode ser desfeita.',
+      'This deletes your account and all paired computers. This cannot be undone.',
+      '这将删除你的账户和所有已配对的电脑。此操作无法撤销。',
+      'Ceci supprime votre compte et tous les ordinateurs associés. Action irréversible.',
+      'Esto elimina tu cuenta y todos los equipos vinculados. No se puede deshacer.');
+  String get confirmPassword => _t('Confirme a senha', 'Confirm your password', '确认密码',
+      'Confirmez le mot de passe', 'Confirma la contraseña');
+
+  // 2FA
+  // --- planos ---------------------------------------------------------------
+  String get planoTitulo =>
+      _t('Seu plano', 'Your plan', '你的方案', 'Votre forfait', 'Tu plan');
+  String get planoPago =>
+      _t('Deskside completo', 'Deskside full', 'Deskside 完整版',
+          'Deskside complet', 'Deskside completo');
+  String get planoGratis =>
+      _t('Deskside grátis', 'Deskside free', 'Deskside 免费版',
+          'Deskside gratuit', 'Deskside gratis');
+  String get planoSemPrazo => _t('Sem prazo', 'No expiry date', '无期限',
+      "Sans date d'expiration", 'Sin fecha de vencimiento');
+
+  /// O selo que diz que o plano pago desta conta são os 30 dias iniciais.
+  ///
+  /// Sem ele, "Deskside completo · Faltam 22 dias" não diz **por que** falta
+  /// algo: pode ser um teste acabando ou uma assinatura sendo cortada, e as
+  /// duas leituras pedem reações opostas de quem lê.
+  String get planoEmTeste =>
+      _t('Teste grátis', 'Free trial', '免费试用', "Essai gratuit", 'Prueba gratis');
+
+  /// O que acontece quando o teste acaba, dito no próprio cartão.
+  ///
+  /// A frase existe para desarmar o susto da contagem. "Faltam 22 dias" sem
+  /// isto faz pensar em conta bloqueada e trabalho perdido; o que acontece de
+  /// verdade é bem menos do que se teme.
+  String get planoTesteDepois => _t(
+      'Quando acabar, a conta continua no Deskside grátis. Nada é apagado.',
+      'When it ends, your account continues on Deskside free. Nothing is deleted.',
+      '试用结束后，账号将继续使用免费版，不会删除任何内容。',
+      'À la fin, votre compte continue sur Deskside gratuit. Rien n’est supprimé.',
+      'Cuando termine, tu cuenta sigue en Deskside gratis. No se borra nada.');
+  String planoDiasRestantes(int dias) => _t(
+      dias == 1 ? 'Termina amanhã' : 'Faltam $dias dias',
+      dias == 1 ? 'Ends tomorrow' : '$dias days left',
+      dias == 1 ? '明天结束' : '还剩 $dias 天',
+      dias == 1 ? 'Se termine demain' : 'Il reste $dias jours',
+      dias == 1 ? 'Termina mañana' : 'Quedan $dias días');
+  /// Quantos dias faltam até a **cobrança** seguinte.
+  ///
+  /// Só é dito a quem tem cobrança marcada. A mesma contagem tem três leituras
+  /// conforme o estado, e usar uma frase só para as três seria mentir em duas.
+  String planoProximaCobranca(int dias) => _t(
+      dias == 1
+          ? 'Próxima cobrança amanhã'
+          : 'Faltam $dias dias para a próxima cobrança',
+      dias == 1 ? 'Next charge tomorrow' : '$dias days until the next charge',
+      dias == 1 ? '明天扣款' : '距离下次扣款还有 $dias 天',
+      dias == 1
+          ? 'Prochain prélèvement demain'
+          : 'Prochain prélèvement dans $dias jours',
+      dias == 1 ? 'Próximo cobro mañana' : '$dias días para el próximo cobro');
+
+  /// Quem desligou a renovação: o prazo é um fim, e não uma cobrança.
+  String planoAcabaEm(int dias) => _t(
+      dias == 1 ? 'Acaba amanhã' : 'Acaba em $dias dias',
+      dias == 1 ? 'Ends tomorrow' : 'Ends in $dias days',
+      dias == 1 ? '明天到期' : '$dias 天后到期',
+      dias == 1 ? 'Se termine demain' : 'Se termine dans $dias jours',
+      dias == 1 ? 'Termina mañana' : 'Termina en $dias días');
+
+  String get planoGratisResumo => _t(
+      'Um computador, mouse, teclado, tela ao vivo e uma automação.',
+      'One computer, mouse, keyboard, live screen and one automation.',
+      '一台电脑、鼠标、键盘、实时画面和一个自动化。',
+      "Un ordinateur, souris, clavier, écran en direct et une automatisation.",
+      'Un equipo, ratón, teclado, pantalla en vivo y una automatización.');
+  String get planoPagoResumo => _t(
+      'Computadores ilimitados, horário marcado, arquivos, apresentação, som, perfis e monitores.',
+      'Unlimited computers, scheduling, files, presentation, audio, profiles and monitors.',
+      '无限电脑、定时、文件、演示、声音、配置和显示器。',
+      "Ordinateurs illimités, horaires, fichiers, présentation, son, profils et écrans.",
+      'Equipos ilimitados, horarios, archivos, presentación, sonido, perfiles y monitores.');
+  String get planoLimiteTitulo => _t('Isto é do Deskside completo',
+      'This is part of Deskside full', '这是完整版功能',
+      'Ceci fait partie de Deskside complet', 'Esto es de Deskside completo');
+  /// O teste acabou porque este computador já serviu a testes de outras
+  /// contas (ver `backend/app/teste.py`).
+  ///
+  /// Neutro de propósito: quem lê pode ser o segundo membro de uma família, e
+  /// não quem tentou ganhar outro mês. Diz o que aconteceu, que nada se
+  /// perdeu, e onde se resolve.
+  String get testeEncerradoTitulo => _t(
+      'Este computador já teve teste grátis',
+      'This computer already had a free trial',
+      '这台电脑已使用过免费试用',
+      "Cet ordinateur a déjà eu un essai gratuit",
+      'Este equipo ya tuvo prueba gratis');
+  String get testeEncerradoTexto => _t(
+      'Ele já foi usado no teste de 30 dias de outras contas, então o teste desta conta terminou. O computador foi pareado e continua funcionando no plano grátis. Para os recursos pagos, assine em Ajustes.',
+      'It was already used in the 30-day trial of other accounts, so this account\'s trial has ended. The computer was paired and keeps working on the free plan. For paid features, subscribe in Settings.',
+      '它已在其他账号的 30 天试用中使用过，因此本账号的试用已结束。电脑已配对，并继续使用免费版。如需付费功能，请在设置中订阅。',
+      "Il a déjà servi à l'essai de 30 jours d'autres comptes, donc l'essai de ce compte est terminé. L'ordinateur a été associé et continue de fonctionner avec le forfait gratuit. Pour les fonctions payantes, abonnez-vous dans Réglages.",
+      'Ya se usó en la prueba de 30 días de otras cuentas, así que la prueba de esta cuenta terminó. El equipo quedó vinculado y sigue funcionando en el plan gratis. Para las funciones de pago, suscríbete en Ajustes.');
+
+  String get planoEntendi =>
+      _t('Entendi', 'Got it', '知道了', "J'ai compris", 'Entendido');
+
+  /// Onde se assina — uma porta só, e esta frase é a placa dela.
+  ///
+  /// O aviso de limite **não** abre a compra direto, de propósito: ter duas
+  /// entradas para a mesma tela é ter duas telas para manter iguais, e um dia
+  /// uma delas passa a oferecer o que a outra já não oferece.
+  String get planoOndeAssinar => _t(
+      'Para assinar, abra Ajustes e toque em Assinar, no seu plano.',
+      'To subscribe, open Settings and tap Subscribe, under your plan.',
+      '如需订阅，请打开设置，在你的方案中点击订阅。',
+      'Pour vous abonner, ouvrez Réglages et touchez S’abonner, dans votre forfait.',
+      'Para suscribirte, abre Ajustes y toca Suscribirse, en tu plan.');
+
+  // --- Assinatura pela loja ---------------------------------------------------
+
+  String get assinaturaTitulo =>
+      _t('Deskside Pro', 'Deskside Pro', 'Deskside Pro', 'Deskside Pro', 'Deskside Pro');
+  String get assinaturaChamada => _t(
+      'Perfis, arquivos, agenda e vários computadores.',
+      'Profiles, files, schedule and several computers.',
+      '配置文件、文件传输、定时任务和多台电脑。',
+      'Profils, fichiers, horaire et plusieurs ordinateurs.',
+      'Perfiles, archivos, horario y varios equipos.');
+  String get assinaturaAssinar =>
+      _t('Assinar', 'Subscribe', '订阅', "S'abonner", 'Suscribirse');
+  String get assinaturaRestaurar => _t('Restaurar compra', 'Restore purchase',
+      '恢复购买', 'Restaurer un achat', 'Restaurar compra');
+  String get assinaturaVerificando => _t('Conferindo com a loja…',
+      'Checking with the store…', '正在与商店核对…', 'Vérification avec le magasin…',
+      'Comprobando con la tienda…');
+  String get assinaturaPronta => _t('Assinatura ativa. Tudo liberado.',
+      'Subscription active. Everything unlocked.', '订阅已生效，全部功能已解锁。',
+      'Abonnement actif. Tout est débloqué.', 'Suscripción activa. Todo desbloqueado.');
+  String get assinaturaCancelada => _t('Compra cancelada.', 'Purchase canceled.',
+      '购买已取消。', 'Achat annulé.', 'Compra cancelada.');
+
+  /// A compra pertence a outra conta do Deskside.
+  ///
+  /// Substitui o texto do servidor, que é curto de propósito — ele não diz de
+  /// qual conta se trata, para não confirmar a existência dela a quem estiver
+  /// tentando adivinhar. Aqui já se sabe que quem lê é o dono do aparelho.
+  ///
+  /// Diz as **duas** saídas, e não uma, porque a óbvia não funciona: cancelar
+  /// a assinatura não desfaz o vínculo. A transação continua sendo a mesma, e
+  /// ela é que está amarrada à outra conta.
+  String get assinaturaDeOutraConta => _t(
+      'Esta assinatura já pertence a outra conta do Deskside. Entre naquela conta para usar o plano, ou assine nesta com outro ID Apple. Cancelar a assinatura não desfaz esse vínculo.',
+      'This subscription already belongs to another Deskside account. Sign in to that account to use the plan, or subscribe here with a different Apple ID. Canceling the subscription does not undo the link.',
+      '此订阅已属于另一个 Deskside 账号。请登录该账号使用，或用其他 Apple ID 在此订阅。取消订阅不会解除绑定。',
+      "Cet abonnement appartient déjà à un autre compte Deskside. Connectez-vous à ce compte pour utiliser le forfait, ou abonnez-vous ici avec un autre identifiant Apple. Annuler l'abonnement ne supprime pas ce lien.",
+      'Esta suscripción ya pertenece a otra cuenta de Deskside. Entra en esa cuenta para usar el plan, o suscríbete aquí con otro ID de Apple. Cancelar la suscripción no deshace el vínculo.');
+
+  /// Restaurou e não havia nada.
+  ///
+  /// O caso mais comum de quem toca no botão, e o que antes travava a tela: a
+  /// loja não responde nada quando não há compra, então sem esta frase a
+  /// pessoa ficava olhando um roda-roda para sempre.
+  ///
+  /// Diz também **onde** a compra teria de estar, porque restaurar falha por
+  /// um motivo que não é óbvio: a compra pertence ao ID Apple, e não à conta
+  /// do Deskside. Quem comprou noutro ID Apple não restaura aqui, e sem essa
+  /// pista tentaria de novo achando que é defeito.
+  String get assinaturaNadaARestaurar => _t(
+      'Nenhuma compra para restaurar neste ID Apple.',
+      'No purchase to restore on this Apple ID.',
+      '此 Apple ID 没有可恢复的购买。',
+      "Aucun achat à restaurer sur cet identifiant Apple.",
+      'No hay compras para restaurar en este ID de Apple.');
+  /// Catálogo vazio: o caso do app instalado fora da loja.
+  ///
+  /// A loja responde e não devolve produto nenhum, sem erro. Dizer "tente de
+  /// novo" mandaria a pessoa repetir algo que nunca vai funcionar naquele
+  /// aparelho.
+  ///
+  /// O nome da loja entra por parâmetro: dizer "App Store" a quem está no
+  /// Android manda a pessoa procurar um aplicativo que não existe no aparelho
+  /// dela, e é a forma mais rápida de parecer que o produto não foi feito para
+  /// ela.
+  String assinaturaIndisponivel(String loja) => _t(
+      'A compra não está disponível neste aparelho. Instale o Deskside pela $loja para assinar.',
+      'Purchase is not available on this device. Install Deskside from the $loja to subscribe.',
+      '此设备无法购买。请从 $loja 安装 Deskside 后订阅。',
+      "L'achat n'est pas disponible sur cet appareil. Installez Deskside depuis le $loja pour vous abonner.",
+      'La compra no está disponible en este dispositivo. Instala Deskside desde la $loja para suscribirte.');
+
+  /// O nome da loja, como ela se chama em qualquer idioma.
+  ///
+  /// Não passa pelo `_t`: "App Store" e "Play Store" são marcas, e traduzir
+  /// marca é como se inventa um nome que ninguém encontra na busca.
+  String nomeDaLoja({required bool android}) =>
+      android ? 'Play Store' : 'App Store';
+  String get assinaturaJaTem =>
+      _t('Você já assina.', 'You are already subscribed.', '你已订阅。',
+          'Vous êtes déjà abonné.', 'Ya estás suscrito.');
+
+  /// A conta liberada à mão, sem prazo nenhum.
+  String get assinaturaSemPrazo => _t(
+      'Sua conta tem o Deskside Pro liberado, sem prazo.',
+      'Your account has Deskside Pro unlocked, with no end date.',
+      '你的账号已永久解锁 Deskside Pro。',
+      "Votre compte dispose de Deskside Pro, sans date de fin.",
+      'Tu cuenta tiene Deskside Pro desbloqueado, sin fecha de término.');
+
+  /// Quantos dias ainda faltam dos 30 iniciais.
+  ///
+  /// Dias, e não a data: "faltam 3 dias" é uma conta que já foi feita para
+  /// quem lê. "Até 21/11" obriga a pessoa a olhar o calendário para saber se
+  /// isso é urgente, e a maioria não olha.
+  String assinaturaTesteAcaba(int dias) => switch (dias) {
+        <= 0 => _t('Seu período de teste acaba hoje.',
+            'Your trial ends today.', '你的试用今天到期。',
+            "Votre essai se termine aujourd'hui.", 'Tu prueba termina hoy.'),
+        1 => _t('Falta 1 dia de teste do Deskside Pro.',
+            '1 day left of your Deskside Pro trial.',
+            'Deskside Pro 试用还剩 1 天。',
+            "Il reste 1 jour d'essai de Deskside Pro.",
+            'Queda 1 día de prueba de Deskside Pro.'),
+        _ => _t('Faltam $dias dias de teste do Deskside Pro.',
+            '$dias days left of your Deskside Pro trial.',
+            'Deskside Pro 试用还剩 $dias 天。',
+            "Il reste $dias jours d'essai de Deskside Pro.",
+            'Quedan $dias días de prueba de Deskside Pro.'),
+      };
+
+  /// O que acontece quando o teste acaba. Dito antes, e sem drama.
+  String get assinaturaDepoisDoTeste => _t(
+      'Depois disso a conta continua funcionando no plano grátis — nada é apagado.',
+      'After that your account keeps working on the free plan — nothing is deleted.',
+      '之后账号会转为免费版继续使用，不会删除任何内容。',
+      'Ensuite, votre compte continue sur le forfait gratuit — rien n’est supprimé.',
+      'Después tu cuenta sigue funcionando en el plan gratis: no se borra nada.');
+  /// Os dois documentos que a Apple exige na tela de compra (diretriz 3.1.2).
+  // --- Rótulos para leitor de tela -------------------------------------------
+
+  String get telaDoComputadorRotulo => _t(
+      'Tela do computador. Os gestos sobre ela controlam o mouse; veja Configurações, Como controlar.',
+      'Computer screen. Gestures on it control the mouse; see Settings, How to control.',
+      '电脑屏幕。在上面的手势控制鼠标；请参阅“设置”中的“如何控制”。',
+      "Écran de l'ordinateur. Les gestes dessus contrôlent la souris ; voir Réglages, Comment contrôler.",
+      'Pantalla del ordenador. Los gestos sobre ella controlan el ratón; consulta Ajustes, Cómo controlar.');
+  String get barraDeProgramasArrastar => _t('Arrastar a barra de programas',
+      'Drag the app bar', '拖动应用栏', 'Déplacer la barre des programmes',
+      'Arrastrar la barra de programas');
+  String get mostrarSenha => _t('Mostrar senha', 'Show password', '显示密码',
+      'Afficher le mot de passe', 'Mostrar contraseña');
+  String get esconderSenha => _t('Esconder senha', 'Hide password', '隐藏密码',
+      'Masquer le mot de passe', 'Ocultar contraseña');
+  String get mostrarTeclado => _t('Mostrar teclado', 'Show keyboard', '显示键盘',
+      'Afficher le clavier', 'Mostrar teclado');
+  String get esconderTeclado => _t('Esconder teclado', 'Hide keyboard', '隐藏键盘',
+      'Masquer le clavier', 'Ocultar teclado');
+  String get trazerArquivo => _t('Trazer para o celular', 'Bring to phone', '传到手机',
+      'Transférer vers le téléphone', 'Traer al teléfono');
+  String get moverEsquerda => _t('Mover para a esquerda', 'Move left', '向左移动',
+      'Déplacer à gauche', 'Mover a la izquierda');
+  String get moverDireita => _t('Mover para a direita', 'Move right', '向右移动',
+      'Déplacer à droite', 'Mover a la derecha');
+  String get moverCima => _t('Mover para cima', 'Move up', '向上移动',
+      'Déplacer vers le haut', 'Mover hacia arriba');
+  String get moverBaixo => _t('Mover para baixo', 'Move down', '向下移动',
+      'Déplacer vers le bas', 'Mover hacia abajo');
+
+  // --- Termos, privacidade e direitos (LGPD) ---------------------------------
+
+  /// "Li e aceito os [Termos de uso] e a [Política de privacidade]", em três
+  /// pedaços: os dois do meio são links.
+  String get termosAceitoPrefixo =>
+      _t('Li e aceito os ', 'I have read and accept the ', '我已阅读并接受', "J'ai lu et j'accepte les ",
+          'He leído y acepto los ');
+  String get termosAceitoMeio =>
+      _t(' e a ', ' and the ', '和', ' et la ', ' y la ');
+  String get termosNovaVersaoTitulo => _t('Termos atualizados', 'Updated terms', '条款已更新',
+      'Conditions mises à jour', 'Términos actualizados');
+  String get termosNovaVersaoTexto => _t(
+      'Atualizamos os termos de uso e a política de privacidade. Para continuar usando o Deskside, leia e aceite a nova versão.',
+      'We have updated the Terms of Use and the Privacy Policy. To keep using Deskside, please read and accept the new version.',
+      '我们更新了使用条款和隐私政策。如需继续使用 Deskside，请阅读并接受新版本。',
+      "Nous avons mis à jour les conditions d'utilisation et la politique de confidentialité. Pour continuer à utiliser Deskside, lisez et acceptez la nouvelle version.",
+      'Actualizamos los términos de uso y la política de privacidad. Para seguir usando Deskside, lee y acepta la nueva versión.');
+  String get termosAceitar => _t('Li e aceito', 'I accept', '我接受', "J'accepte", 'Acepto');
+  String get termosAceitarFalhou => _t(
+      'Não deu para registrar o aceite. Confira a conexão e tente de novo.',
+      'Could not record your acceptance. Check the connection and try again.',
+      '无法记录您的同意。请检查网络后重试。',
+      "Impossible d'enregistrer votre acceptation. Vérifiez la connexion et réessayez.",
+      'No se pudo registrar la aceptación. Revisa la conexión e inténtalo de nuevo.');
+  String get privacidadeETermos => _t('Privacidade e termos', 'Privacy and terms',
+      '隐私与条款', 'Confidentialité et conditions', 'Privacidad y términos');
+  String get licencasAbertas => _t('Licenças de código aberto', 'Open source licenses',
+      '开源许可', 'Licences open source', 'Licencias de código abierto');
+  String get exportarDados => _t('Baixar meus dados', 'Download my data', '下载我的数据',
+      'Télécharger mes données', 'Descargar mis datos');
+  String get exportarDadosSub => _t(
+      'Uma cópia de tudo o que guardamos sobre a sua conta',
+      'A copy of everything we store about your account',
+      '我们保存的关于您账户的全部数据副本',
+      'Une copie de tout ce que nous conservons sur votre compte',
+      'Una copia de todo lo que guardamos sobre tu cuenta');
+  String get exportarDadosFalhou => _t(
+      'Não deu para baixar os dados. Tente de novo.',
+      'Could not download your data. Please try again.',
+      '无法下载数据，请重试。',
+      'Impossible de télécharger vos données. Réessayez.',
+      'No se pudieron descargar los datos. Inténtalo de nuevo.');
+  String get gerenciarAssinatura => _t('Gerenciar ou cancelar assinatura',
+      'Manage or cancel subscription', '管理或取消订阅', "Gérer ou résilier l'abonnement",
+      'Gestionar o cancelar suscripción');
+
+  String get assinaturaTermos =>
+      _t('Termos de uso', 'Terms of Use', '使用条款', "Conditions d'utilisation",
+          'Términos de uso');
+  String get assinaturaPrivacidade => _t('Política de privacidade',
+      'Privacy Policy', '隐私政策', 'Politique de confidentialité',
+      'Política de privacidad');
+
+  /// Quando o navegador não abre. Raro, e ainda assim precisa de saída: sem
+  /// isto a pessoa toca no link e não acontece nada, que é como um app parece
+  /// quebrado sem estar.
+  String get assinaturaLinkFalhou => _t(
+      'Não consegui abrir. O endereço é deskside.com.br',
+      'Could not open it. The address is deskside.com.br',
+      '无法打开。网址是 deskside.com.br',
+      "Impossible d'ouvrir. L'adresse est deskside.com.br",
+      'No pude abrirlo. La dirección es deskside.com.br');
+
+  /// Como a assinatura renova e **onde se cancela**.
+  ///
+  /// Dois textos inteiros, e não um com o lugar trocado: em iOS cancela-se nos
+  /// Ajustes do sistema e em Android dentro da Play Store, e a frase muda de
+  /// forma em cada idioma. Um texto com buraco no meio sairia torto em pelo
+  /// menos três deles.
+  String assinaturaRenova({required bool android}) => android
+      ? _t(
+          'Renova sozinha todo mês. Dá para cancelar quando quiser, na Play Store.',
+          'Renews automatically every month. Cancel any time in the Play Store.',
+          '每月自动续订，可随时在 Play Store 中取消。',
+          'Se renouvelle chaque mois. Annulable à tout moment dans le Play Store.',
+          'Se renueva cada mes. Puedes cancelar cuando quieras en Play Store.')
+      : _t(
+          'Renova sozinha todo mês. Dá para cancelar quando quiser, nos Ajustes do iPhone.',
+          'Renews automatically every month. Cancel any time in your iPhone Settings.',
+          '每月自动续订，可随时在 iPhone 设置中取消。',
+          "Se renouvelle chaque mois. Annulable à tout moment dans les Réglages de l'iPhone.",
+          'Se renueva cada mes. Puedes cancelar cuando quieras en los Ajustes del iPhone.');
+
+  String get twoFactorTitle => _t('Verificação em duas etapas', 'Two-step verification',
+      '两步验证', 'Vérification en deux étapes', 'Verificación en dos pasos');
+  String get twoFactorSteps => _t(
+      '1. Instale um app autenticador (Google Authenticator, Microsoft Authenticator, etc.).\n'
+          '2. Escaneie o QR Code abaixo — ou digite o código manual.\n'
+          '3. Digite o código de 6 dígitos que o app mostrar para confirmar.',
+      '1. Install an authenticator app (Google Authenticator, Microsoft Authenticator, etc.).\n'
+          '2. Scan the QR code below — or type the manual code.\n'
+          '3. Enter the 6-digit code the app shows to confirm.',
+      '1. 安装身份验证器应用（Google Authenticator、Microsoft Authenticator 等）。\n'
+          '2. 扫描下方二维码，或手动输入密钥。\n'
+          '3. 输入应用显示的 6 位验证码以确认。',
+      "1. Installez une app d'authentification (Google Authenticator, Microsoft Authenticator, etc.).\n"
+          '2. Scannez le QR code ci-dessous — ou saisissez le code manuel.\n'
+          "3. Saisissez le code à 6 chiffres affiché par l'app pour confirmer.",
+      '1. Instala una app de autenticación (Google Authenticator, Microsoft Authenticator, etc.).\n'
+          '2. Escanea el código QR de abajo — o escribe el código manual.\n'
+          '3. Introduce el código de 6 dígitos que muestra la app para confirmar.');
+  String manualCode(String secret) => _t('Código manual: $secret', 'Manual code: $secret',
+      '手动密钥：$secret', 'Code manuel : $secret', 'Código manual: $secret');
+  String get codeCopied =>
+      _t('Código copiado.', 'Code copied.', '密钥已复制。', 'Code copié.', 'Código copiado.');
+  String get sixDigitCode => _t('Código de 6 dígitos', '6-digit code', '6 位验证码',
+      'Code à 6 chiffres', 'Código de 6 dígitos');
+  String get twoFactorEnabled => _t('Verificação em duas etapas ativada.',
+      'Two-step verification enabled.', '两步验证已启用。',
+      'Vérification en deux étapes activée.', 'Verificación en dos pasos activada.');
+  String get disableTwoFactor =>
+      _t('Desativar 2FA', 'Disable 2FA', '停用 2FA', 'Désactiver la 2FA', 'Desactivar 2FA');
+  String get disableTwoFactorBody => _t(
+      'Confirme sua senha para desativar a verificação em duas etapas.',
+      'Confirm your password to disable two-step verification.',
+      '确认密码以停用两步验证。',
+      'Confirmez votre mot de passe pour désactiver la vérification en deux étapes.',
+      'Confirma tu contraseña para desactivar la verificación en dos pasos.');
+  String get twoFactorDisabled => _t('Verificação em duas etapas desativada.',
+      'Two-step verification disabled.', '两步验证已停用。',
+      'Vérification en deux étapes désactivée.', 'Verificación en dos pasos desactivada.');
+
+  // Controle encerrado pela barra do computador
+  String get ok => _t('OK', 'OK', '好', 'OK', 'Aceptar');
+  String get controlEndedTitle => _t('Controle encerrado no computador',
+      'Control ended on the computer', '已在电脑上结束控制',
+      "Contrôle arrêté sur l'ordinateur", 'Control finalizado en el equipo');
+  String get controlEndedBody => _t(
+      'Alguém no computador clicou em Desconectar. Por segurança, este aparelho saiu da conta: entre de novo para continuar.',
+      'Someone at the computer clicked Disconnect. For security, this device was signed out: sign in again to continue.',
+      '有人在电脑上点击了“断开连接”。为安全起见，本设备已退出账户：请重新登录以继续。',
+      "Quelqu'un sur l'ordinateur a cliqué sur Déconnecter. Par sécurité, cet appareil a été déconnecté : reconnectez-vous pour continuer.",
+      'Alguien en el equipo hizo clic en Desconectar. Por seguridad, este dispositivo salió de la cuenta: inicia sesión de nuevo para continuar.');
+
+  // Aparelhos conectados
+  String get connectedDevices => _t('Aparelhos conectados', 'Signed-in devices',
+      '已登录的设备', 'Appareils connectés', 'Dispositivos conectados');
+  String get connectedDevicesSub => _t(
+      'Veja onde sua conta está aberta e desconecte',
+      'See where your account is open and sign out',
+      '查看账户在哪些设备上登录并退出',
+      'Voyez où votre compte est ouvert et déconnectez',
+      'Mira dónde está abierta tu cuenta y cierra sesión');
+  String get thisDevice =>
+      _t('Este aparelho', 'This device', '本设备', 'Cet appareil', 'Este dispositivo');
+  String get signOutDevice => _t('Sair', 'Sign out', '退出', 'Déconnecter', 'Salir');
+  String get signOutOthers => _t('Sair de todos os outros',
+      'Sign out all others', '退出其他所有设备', 'Déconnecter tous les autres',
+      'Salir de todos los demás');
+  String get oldAppDevice => _t('Aparelho com versão antiga do app',
+      'Device with an older app version', '使用旧版应用的设备',
+      "Appareil avec une ancienne version de l'app",
+      'Dispositivo con una versión antigua de la app');
+  String endSessionTitle(String nome) => _t('Desconectar "$nome"?',
+      'Sign out "$nome"?', '退出“$nome”？', 'Déconnecter « $nome » ?',
+      '¿Cerrar sesión en "$nome"?');
+  String get endSessionBody => _t('Ele sai da conta na hora.',
+      'It will be signed out right away.', '该设备将立即退出账户。',
+      'Il sera déconnecté immédiatement.', 'Saldrá de la cuenta de inmediato.');
+  String get endOthersBody => _t(
+      'Todos os outros aparelhos saem da conta na hora. Este continua conectado.',
+      'All other devices will be signed out right away. This one stays signed in.',
+      '其他所有设备将立即退出。本设备保持登录。',
+      'Tous les autres appareils seront déconnectés immédiatement. Celui-ci reste connecté.',
+      'Todos los demás dispositivos saldrán de inmediato. Este sigue conectado.');
+  String get sessionEnded => _t('Aparelho desconectado.', 'Device signed out.',
+      '设备已退出。', 'Appareil déconnecté.', 'Dispositivo desconectado.');
+  String get othersEnded => _t('Os outros aparelhos foram desconectados.',
+      'Other devices were signed out.', '其他设备已退出。',
+      'Les autres appareils ont été déconnectés.',
+      'Los demás dispositivos se desconectaron.');
+  String get onlyThisDevice => _t('Só este aparelho está conectado.',
+      'Only this device is signed in.', '仅本设备已登录。',
+      'Seul cet appareil est connecté.', 'Solo este dispositivo está conectado.');
+  String usadoHa(Duration ha) {
+    if (ha.inMinutes < 1) return _t('agora', 'now', '刚刚', "à l'instant", 'ahora');
+    if (ha.inHours < 1) {
+      final n = ha.inMinutes;
+      return _t('há $n min', '$n min ago', '$n 分钟前', 'il y a $n min', 'hace $n min');
+    }
+    if (ha.inDays < 1) {
+      final n = ha.inHours;
+      return _t('há $n h', '$n h ago', '$n 小时前', 'il y a $n h', 'hace $n h');
+    }
+    final n = ha.inDays;
+    return _t(n == 1 ? 'há 1 dia' : 'há $n dias', n == 1 ? '1 day ago' : '$n days ago',
+        '$n 天前', n == 1 ? 'il y a 1 jour' : 'il y a $n jours',
+        n == 1 ? 'hace 1 día' : 'hace $n días');
+  }
+
+  // Códigos de recuperação e o código nas ações sensíveis
+  String get recoveryCodesTitle => _t('Códigos de recuperação', 'Recovery codes',
+      '恢复码', 'Codes de récupération', 'Códigos de recuperación');
+  String get recoveryCodesHeadline => _t('Guarde estes códigos', 'Save these codes',
+      '请保存这些恢复码', 'Conservez ces codes', 'Guarda estos códigos');
+  String get recoveryCodesExplain => _t(
+      'Se perder o celular do autenticador, cada código abre a conta uma vez. '
+          'Guarde num lugar seguro, fora deste celular. Eles não aparecem de novo.',
+      'If you lose the phone with your authenticator, each code opens the account once. '
+          "Keep them somewhere safe, off this phone. They won't be shown again.",
+      '如果丢失装有身份验证器的手机，每个恢复码可登录一次。请存放在此手机以外的安全位置。它们不会再次显示。',
+      "Si vous perdez le téléphone de l'authentificateur, chaque code ouvre le compte une fois. "
+          "Gardez-les en lieu sûr, hors de ce téléphone. Ils ne seront plus affichés.",
+      'Si pierdes el móvil del autenticador, cada código abre la cuenta una vez. '
+          'Guárdalos en un lugar seguro, fuera de este móvil. No se volverán a mostrar.');
+  String get recoveryCodesCopied => _t('Códigos copiados.', 'Codes copied.',
+      '恢复码已复制。', 'Codes copiés.', 'Códigos copiados.');
+  String get share => _t('Compartilhar', 'Share', '分享', 'Partager', 'Compartir');
+  String get recoveryCodesSaved => _t('Guardei num lugar seguro',
+      'I saved them somewhere safe', '我已妥善保存', "Je les ai mis en lieu sûr",
+      'Los guardé en un lugar seguro');
+  String get recoveryCodesDone =>
+      _t('Concluir', 'Done', '完成', 'Terminer', 'Listo');
+  String get recoveryCodesMustConfirm => _t(
+      'Marque que guardou os códigos antes de sair.',
+      'Check that you saved the codes before leaving.',
+      '请先勾选已保存恢复码再离开。',
+      'Cochez que vous avez conservé les codes avant de quitter.',
+      'Marca que guardaste los códigos antes de salir.');
+  String recoveryCodesLeft(int n) => _t(
+      n == 1 ? '1 restante' : '$n restantes',
+      n == 1 ? '1 left' : '$n left',
+      '剩余 $n 个',
+      n == 1 ? '1 restant' : '$n restants',
+      n == 1 ? '1 restante' : '$n restantes');
+  String get recoveryCodesNone => _t(
+      'Você ainda não tem códigos de recuperação. Gere agora: sem eles, perder o celular é perder a conta.',
+      "You don't have recovery codes yet. Generate them now: without them, losing your phone means losing the account.",
+      '你还没有恢复码。请立即生成：没有恢复码，丢失手机就会失去账户。',
+      "Vous n'avez pas encore de codes de récupération. Générez-les maintenant : sans eux, perdre le téléphone, c'est perdre le compte.",
+      'Aún no tienes códigos de recuperación. Généralos ahora: sin ellos, perder el móvil es perder la cuenta.');
+  String get recoveryCodesFew => _t(
+      'Restam poucos códigos. Gere novos e guarde num lugar seguro.',
+      'Only a few codes left. Generate new ones and keep them safe.',
+      '恢复码所剩无几。请生成新的并妥善保存。',
+      'Il reste peu de codes. Générez-en de nouveaux et gardez-les en lieu sûr.',
+      'Quedan pocos códigos. Genera nuevos y guárdalos en un lugar seguro.');
+  String get recoveryCodesGenerate =>
+      _t('Gerar novos', 'Generate new', '生成新的', 'En générer', 'Generar nuevos');
+  String get recoveryCodesRegenerateBody => _t(
+      'Os códigos atuais param de valer.',
+      'Your current codes will stop working.',
+      '当前的恢复码将失效。',
+      'Les codes actuels ne fonctionneront plus.',
+      'Los códigos actuales dejarán de funcionar.');
+  String get secondFactorTitle => _t('Código de verificação', 'Verification code',
+      '验证码', 'Code de vérification', 'Código de verificación');
+  String get secondFactorBody => _t('Digite o código do seu app autenticador.',
+      'Enter the code from your authenticator app.', '请输入身份验证器应用中的验证码。',
+      "Saisissez le code de votre application d'authentification.",
+      'Introduce el código de tu app de autenticación.');
+  String get secondFactorRecoveryBody => _t(
+      'Digite um dos seus códigos de recuperação. Cada um vale uma vez.',
+      'Enter one of your recovery codes. Each works once.',
+      '请输入一个恢复码。每个只能使用一次。',
+      'Saisissez un de vos codes de récupération. Chacun ne sert qu’une fois.',
+      'Introduce uno de tus códigos de recuperación. Cada uno sirve una vez.');
+  String get useRecoveryCode => _t('Usar um código de recuperação',
+      'Use a recovery code', '使用恢复码', 'Utiliser un code de récupération',
+      'Usar un código de recuperación');
+  String get useAuthenticatorCode => _t('Usar o código do autenticador',
+      'Use the authenticator code', '使用身份验证器验证码',
+      "Utiliser le code de l'authentificateur", 'Usar el código del autenticador');
+  String get recoveryCode => _t('Código de recuperação', 'Recovery code', '恢复码',
+      'Code de récupération', 'Código de recuperación');
+
+  // Tela de controle
+  String get waitingScreen => _t('Aguardando a tela do computador...',
+      'Waiting for the computer screen...', '正在等待电脑画面…',
+      "En attente de l'écran de l'ordinateur…", 'Esperando la pantalla del equipo…');
+  String get reconnecting =>
+      _t('Reconectando…', 'Reconnecting…', '重新连接中…', 'Reconnexion…', 'Reconectando…');
+  String get zoomHint => _t(
+      'Modo lupa: use as setas para mover e + / − para ampliar.',
+      'Magnifier: use the arrows to move and + / − to zoom.',
+      '放大模式：用箭头移动，用 + / − 缩放。',
+      'Loupe : utilisez les flèches pour déplacer et + / − pour zoomer.',
+      'Lupa: usa las flechas para mover y + / − para ampliar.');
+  String get zoomOut => _t('Reduzir', 'Zoom out', '缩小', 'Réduire', 'Reducir');
+  String get zoomIn => _t('Ampliar', 'Zoom in', '放大', 'Agrandir', 'Ampliar');
+  String get zoomFit =>
+      _t('Tamanho normal', 'Fit to screen', '适应屏幕', "Ajuster à l'écran", 'Ajustar a pantalla');
+  String get zoomExit => _t('Sair da lupa', 'Exit magnifier', '退出放大', 'Quitter la loupe', 'Salir de la lupa');
+  String get zoomEnter => _t('Ampliar (lupa)', 'Magnify', '放大（放大镜）', 'Agrandir (loupe)', 'Ampliar (lupa)');
+
+  // Teclado físico (iPad com teclado Bluetooth)
+  String get physicalKeyboard => _t(
+      'Teclado físico detectado: digite direto. Cmd funciona como Ctrl.',
+      'Physical keyboard detected: just type. Cmd works as Ctrl.',
+      '检测到实体键盘：直接输入即可。Cmd 相当于 Ctrl。',
+      'Clavier physique détecté : tapez directement. Cmd fait office de Ctrl.',
+      'Teclado físico detectado: escribe directamente. Cmd funciona como Ctrl.');
+
+  // Tutorial de gestos
+  String get howToControlTitle =>
+      _t('Como controlar', 'How to control', '如何控制', 'Comment contrôler', 'Cómo controlar');
+  String get gestureIntro => _t(
+      'A tela do computador ocupa o celular inteiro e você controla como num touchscreen:',
+      'The computer screen fills your phone and you control it like a touchscreen:',
+      '电脑画面占满手机屏幕，你像操作触摸屏一样控制它：',
+      "L'écran de l'ordinateur occupe tout le téléphone et vous le contrôlez comme un écran tactile :",
+      'La pantalla del equipo ocupa todo el teléfono y la controlas como una pantalla táctil:');
+  String get gestureGotIt => _t('Entendi', 'Got it', '明白了', 'Compris', 'Entendido');
+  List<(String, String)> get gestures => [
+        (
+          _t('Tocar', 'Tap', '点按', 'Toucher', 'Tocar'),
+          _t('Leva o cursor ao ponto tocado e dá um clique (botão esquerdo).',
+              'Moves the cursor to the point and left-clicks.', '将光标移到触点并左键单击。',
+              'Déplace le curseur au point touché et fait un clic gauche.',
+              'Lleva el cursor al punto y hace clic izquierdo.'),
+        ),
+        (
+          _t('Arrastar', 'Drag', '拖动', 'Glisser', 'Arrastrar'),
+          _t('Move o cursor seguindo o seu dedo.', 'Moves the cursor following your finger.',
+              '光标跟随手指移动。', 'Déplace le curseur en suivant votre doigt.',
+              'Mueve el cursor siguiendo tu dedo.'),
+        ),
+        (
+          _t('Duplo toque', 'Double tap', '双击', 'Double toucher', 'Doble toque'),
+          _t(
+              'Seleciona a palavra. Sem tirar o dedo do segundo toque, arraste para selecionar mais.',
+              'Selects the word. Without lifting your finger on the second tap, drag to select more.',
+              '选中该词。第二次点击时不抬起手指，拖动可继续选择。',
+              'Sélectionne le mot. Sans lever le doigt au second toucher, glissez pour sélectionner plus.',
+              'Selecciona la palabra. Sin levantar el dedo en el segundo toque, arrastra para seleccionar más.'),
+        ),
+        (
+          _t('Segurar', 'Hold', '长按', 'Maintenir', 'Mantener'),
+          _t('Clique com o botão direito (menu de contexto).', 'Right-click (context menu).',
+              '右键单击（上下文菜单）。', 'Clic droit (menu contextuel).',
+              'Clic derecho (menú contextual).'),
+        ),
+        (
+          _t('Dois dedos', 'Two fingers', '两指', 'Deux doigts', 'Dos dedos'),
+          _t('Rola a página para cima e para baixo.', 'Scrolls up and down.', '上下滚动页面。',
+              'Fait défiler vers le haut et le bas.', 'Desplaza hacia arriba y abajo.'),
+        ),
+        (
+          _t('Botão da lupa', 'Magnifier button', '放大镜按钮', 'Bouton loupe', 'Botón de lupa'),
+          _t(
+              'Amplia a tela para enxergar melhor. Use + e − para ajustar e as setas nas bordas para mover; toque no X para voltar a controlar.',
+              'Enlarges the screen. Use + and − to adjust and the edge arrows to move; tap X to go back to control.',
+              '放大屏幕以看得更清楚。用 + 和 − 调整，用边缘箭头移动；点击 X 返回控制。',
+              'Agrandit l\'écran. Utilisez + et − pour ajuster et les flèches des bords pour déplacer ; touchez X pour revenir au contrôle.',
+              'Amplía la pantalla. Usa + y − para ajustar y las flechas de los bordes para mover; toca X para volver a controlar.'),
+        ),
+        (
+          _t('Botão do teclado', 'Keyboard button', '键盘按钮', 'Bouton clavier', 'Botón de teclado'),
+          _t('Abre o teclado com as teclas especiais (Ctrl, Alt, setas...).',
+              'Opens the keyboard with special keys (Ctrl, Alt, arrows...).',
+              '打开带特殊键（Ctrl、Alt、方向键…）的键盘。',
+              'Ouvre le clavier avec les touches spéciales (Ctrl, Alt, flèches...).',
+              'Abre el teclado con teclas especiales (Ctrl, Alt, flechas...).'),
+        ),
+      ];
+
+  // Manter o computador pronto: a única resposta genérica a um PC que dorme.
+  String get keepAwakeTitle => _t('Manter pronto', 'Keep ready', '保持就绪',
+      'Garder prêt', 'Mantener listo');
+  String get keepAwakeSwitch => _t(
+      'Não deixar este computador dormir',
+      "Don't let this computer sleep",
+      '不让这台电脑休眠',
+      'Ne pas laisser cet ordinateur se mettre en veille',
+      'No dejar que este equipo se duerma');
+  String get keepAwakeWhy => _t(
+      'Um computador que dorme deixa de ser alcançável, e trazê-lo de volta depende de configurações de fábrica que mudam de máquina para máquina — quando existe. Deixando-o acordado, não há nada para acordar: ele continua alcançável de qualquer lugar, sem você configurar nada.\n\nA tela continua apagando normalmente — é dela que vem quase toda a economia de energia. Um notebook acordado com a tela apagada gasta pouco, algo como uma lâmpada fraca.',
+      'A sleeping computer stops being reachable, and bringing it back depends on factory settings that differ from machine to machine — when they exist at all. Keeping it awake means there is nothing to wake: it stays reachable from anywhere, with no setup.\n\nThe screen still turns off normally — that is where almost all the power saving comes from. An awake laptop with the screen off uses little, about as much as a dim light bulb.',
+      '休眠的电脑将无法连接，而把它唤醒取决于因机器而异的出厂设置——如果它有的话。让它保持唤醒，就没有什么需要唤醒的：它随时随地都可连接，无需任何配置。\n\n屏幕仍会正常熄灭——几乎所有的省电都来自屏幕。屏幕熄灭的笔记本耗电很少，大致相当于一盏暗灯。',
+      "Un ordinateur en veille n'est plus joignable, et le ramener dépend de réglages d'usine qui varient d'une machine à l'autre — quand ils existent. En le gardant éveillé, il n'y a rien à réveiller : il reste joignable de partout, sans aucune configuration.\n\nL'écran continue de s'éteindre normalement — c'est de là que vient presque toute l'économie d'énergie. Un portable éveillé avec l'écran éteint consomme peu, comme une ampoule faible.",
+      'Un equipo que se duerme deja de ser accesible, y traerlo de vuelta depende de ajustes de fábrica que cambian de una máquina a otra — cuando existen. Manteniéndolo despierto, no hay nada que despertar: sigue accesible desde cualquier lugar, sin configurar nada.\n\nLa pantalla se sigue apagando normalmente — de ahí viene casi todo el ahorro de energía. Un portátil despierto con la pantalla apagada gasta poco, como una bombilla tenue.');
+  String get keepAwakeHolding => _t(
+      'Ativo agora: este computador não vai dormir.',
+      'Active now: this computer will not sleep.',
+      '当前生效：这台电脑不会休眠。',
+      "Actif maintenant : cet ordinateur ne se mettra pas en veille.",
+      'Activo ahora: este equipo no se va a dormir.');
+  String get keepAwakeOnBattery => _t(
+      'Ligado, mas sem efeito agora: o computador está na bateria. Ele volta a ser mantido acordado assim que for para a tomada — segurar na bateria descarregaria o aparelho com a tampa fechada.',
+      'On, but not in effect now: the computer is on battery. It will be kept awake again as soon as it is plugged in — holding it on battery would drain the machine with the lid closed.',
+      '已开启，但当前未生效：电脑正在使用电池。接上电源后会重新保持唤醒——用电池时保持唤醒会在合盖后耗尽电量。',
+      "Activé, mais sans effet pour l'instant : l'ordinateur est sur batterie. Il sera de nouveau gardé éveillé dès qu'il sera branché — le maintenir sur batterie viderait l'appareil couvercle fermé.",
+      'Encendido, pero sin efecto ahora: el equipo está con batería. Volverá a mantenerse despierto en cuanto se enchufe — mantenerlo con batería agotaría el aparato con la tapa cerrada.');
+  String get keepAwakeOff => _t(
+      'Desligado: o computador dorme normalmente, e enquanto estiver dormindo você não consegue alcançá-lo.',
+      'Off: the computer sleeps normally, and while it sleeps you cannot reach it.',
+      '已关闭：电脑会正常休眠，休眠期间无法连接。',
+      "Désactivé : l'ordinateur se met en veille normalement, et pendant la veille vous ne pouvez pas le joindre.",
+      'Apagado: el equipo se duerme normalmente, y mientras duerme no puedes alcanzarlo.');
+  String get keepAwakeLimits => _t(
+      'O que isto não cobre: fechar a tampa do notebook, desligar pelo menu Iniciar e queda de energia. Nesses casos alguém precisa ligar o computador de novo.',
+      'What this does not cover: closing the laptop lid, shutting down from the Start menu, and power outages. In those cases someone has to turn the computer back on.',
+      '本功能不涵盖：合上笔记本盖子、从开始菜单关机、断电。这些情况需要有人重新开机。',
+      "Ce que cela ne couvre pas : fermer le capot du portable, éteindre depuis le menu Démarrer et les coupures de courant. Dans ces cas, quelqu'un doit rallumer l'ordinateur.",
+      'Lo que esto no cubre: cerrar la tapa del portátil, apagar desde el menú Inicio y cortes de energía. En esos casos alguien tiene que encender el equipo de nuevo.');
+  String get keepAwakeOffline => _t(
+      'O computador precisa estar ligado para mudar isto.',
+      'The computer must be on to change this.',
+      '电脑需要开机才能更改此设置。',
+      "L'ordinateur doit être allumé pour changer ceci.",
+      'El equipo debe estar encendido para cambiar esto.');
+
+}

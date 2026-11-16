@@ -1,0 +1,801 @@
+# Build de iOS/iPadOS em Macs na nuvem (Codemagic) — dispensa possuir um Mac.
+#
+# Dois caminhos:
+#  - ios-sideload: gera um .ipa NÃO ASSINADO para instalar via Sideloadly com
+#    Apple ID grátis (ver docs/instalar-no-iphone.md). Não exige conta paga.
+#  - ios-testflight: build assinado que sobe para o TestFlight, que é como
+#    outras pessoas testam sem cabo, sem Sideloadly e sem expirar em 7 dias.
+#    Exige o Apple Developer Program e a chave da App Store Connect API
+#    cadastrada no painel do Codemagic. Não dispara sozinho: você aperta.
+
+workflows:
+  ios-sideload:
+    name: iOS (.ipa não assinado para sideload)
+    instance_type: mac_mini_m2
+    # 90 min: o framework nativo do WebRTC é grande e o pod install pesa.
+    max_build_duration: 90
+    working_directory: client
+    environment:
+      flutter: stable
+      xcode: latest
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+        # Enquanto os spikes do WebRTC estão em andamento, a branch de
+        # desenvolvimento também gera .ipa — é assim que o S1 é respondido.
+        - pattern: 'claude/*'
+          include: true
+    scripts:
+      - name: Gerar pasta ios/ se ainda não versionada
+        script: |
+          if [ ! -d ios ]; then
+            flutter create --org com.deskside --project-name deskside_client --platforms=ios .
+          fi
+      - name: Dependências
+        script: flutter pub get
+      - name: Ícone e splash
+        script: |
+          set -e
+
+          # Configuração **só do iOS**. Uma compartilhada com `android: true`
+          # faria a ferramenta escrever na pasta android/, que este workflow
+          # não cria — e ela morre com PathNotFoundException.
+          CONFIG=icone-ios.yaml
+
+          # Nenhum arquivo pode se chamar `flutter_launcher_icons-*.yaml`.
+          #
+          # A ferramenta trata esse nome como um *flavor*, e havendo qualquer
+          # flavor ela **ignora o `-f`** e faz um laço por todos — este
+          # workflow voltaria a tentar as duas plataformas e morreria na pasta
+          # que ele não cria. Foi assim que o build quebrou uma vez.
+          if ls flutter_launcher_icons-*.yaml >/dev/null 2>&1; then
+            echo "FALHOU: existe arquivo flutter_launcher_icons-*.yaml aqui."
+            echo "Esse nome vira flavor e faz o -f ser ignorado. Renomeie."
+            ls -la flutter_launcher_icons-*.yaml
+            exit 1
+          fi
+
+          # Confere que o arquivo existe antes de usá-lo. Com `-f` apontando
+          # para um nome errado, a ferramenta **cai calada** no pubspec.yaml
+          # (`loadConfigFromPath(...) ?? loadConfigFromPubSpec(...)`), e a
+          # geração sairia com outra configuração sem avisar.
+          if [ ! -f "$CONFIG" ]; then
+            echo "FALHOU: $CONFIG não existe."
+            exit 1
+          fi
+          # E que ele ainda manda gerar iOS. Um `ios: false` aqui não daria
+          # erro nenhum: a ferramenta sai com zero sem fazer nada, e o app
+          # chegaria ao TestFlight com o ícone do Flutter.
+          grep -q '^  ios: true' "$CONFIG" || {
+            echo "FALHOU: $CONFIG não tem 'ios: true'."; exit 1; }
+
+          # **Sem `|| echo`.** O passo tolerante é como o ícone do Android
+          # ficou errado por meses: o comando rodava, não gerava nada, e o
+          # build ficava verde.
+          dart run flutter_launcher_icons -f "$CONFIG"
+
+          # O splash segue tolerante: ele é cosmético, e mexe em pastas das
+          # duas plataformas por conta própria.
+          dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
+      - name: Ajustes obrigatórios do iOS
+        script: sh ../scripts/preparar-ios.sh
+      - name: Análise e testes
+        script: |
+          # `set -e` para o passo morrer no primeiro erro.
+          #
+          # Sem isto, um erro do `analyze` era reportado e o script seguia para
+          # os testes. O `flutter test` então falhava por não compilar a mesma
+          # coisa, e a mensagem do analyze — que nomeia arquivo, linha e o
+          # problema — ficava soterrada sob duzentas linhas de teste. O log
+          # dizia "loading widget_test.dart", que não aponta para nada.
+          set -e
+          # Antes do `analyze`, porque é mais rápido e a mensagem é melhor: uma
+          # string não fechada em `strings.dart` faz o compilador reclamar de
+          # dezenas de "getter não definido" — um por palavra da frase que virou
+          # código. Ver scripts/conferir-textos.py.
+          python3 ../scripts/conferir-textos.py lib/l10n/strings.dart
+          # A ordem das diretivas. Um `library;` abaixo dos imports é erro de
+          # compilação, e o Flutter o denuncia como "loading test/algum_test.dart"
+          # — sem citar o arquivo quebrado, sem citar a diretiva. Ver
+          # scripts/conferir-dart.py.
+          python3 ../scripts/conferir-dart.py lib test
+          # `--no-fatal-infos` porque `flutter analyze` sai com código 1 em
+          # **qualquer** aviso, inclusive sugestão de estilo — diferente do
+          # `dart analyze`, que só falha em erro e warning. Com o `set -e`
+          # acima, um `prefer_const_constructors` esquecido passaria a impedir
+          # uma entrega ao TestFlight, e isso é desproporcional: erro e warning
+          # devem barrar, sugestão de estilo não.
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Build iOS sem assinatura e empacotar .ipa
+        script: |
+          # O `--dart-define` é o que aponta o app para o servidor. Sem ele
+          # vale o padrão embutido em `lib/config.dart` — que hoje é o mesmo
+          # endereço, então esquecer aqui não quebra nada. A linha existe para o
+          # endereço ficar **visível no build**: ele era `localhost`, e num
+          # celular localhost é o próprio celular. O defeito passou meses sem
+          # aparecer porque quem desenvolve tinha a URL salva na tela de login.
+          flutter build ios --release --no-codesign \
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br \
+            --dart-define=DESKSIDE_COMMIT=$CM_COMMIT
+          mkdir -p build/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
+          cd build/ipa
+          zip -r Deskside-unsigned.ipa Payload
+          ls -la "$CM_BUILD_DIR/client/build/ipa"
+    # Caminhos cobrindo as duas interpretações (relativo à working_directory e
+    # à raiz do clone) + um glob que acha o .ipa em qualquer lugar.
+    artifacts:
+      - build/ipa/*.ipa
+      - client/build/ipa/*.ipa
+      - "**/*.ipa"
+
+  ios-testflight:
+    name: iOS (TestFlight — para amigos e família testarem)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    working_directory: client
+    environment:
+      flutter: stable
+      xcode: latest
+      # A assinatura é feita à mão, num passo, e não pelo bloco `ios_signing`
+      # daqui. O motivo é concreto: com `ios_signing`, o Codemagic busca
+      # certificado e perfil na **preparação** do build, antes do primeiro
+      # script. Quando isso falha, o build morre sem lista de passos e sem log
+      # — só a frase "No matching profiles found", que não diz se o
+      # identificador não existe, se a chave não o enxerga, ou se falta
+      # certificado. Passei um diagnóstico para dentro dos scripts e ele nunca
+      # chegou a rodar.
+      #
+      # No passo "Assinatura" lá embaixo dá para ver o que aconteceu, e o
+      # `--create` ainda cria o perfil e o certificado que faltarem.
+      #
+      # ---
+      #
+      # Grupo de variáveis criado no painel do Codemagic. Precisa conter
+      # `CERTIFICATE_PRIVATE_KEY`, marcada como secreta: é a chave privada RSA
+      # que assina o certificado de distribuição. Sem ela a ferramenta para em
+      # "Cannot save Signing Certificates without certificate private key" —
+      # ela consegue pedir o certificado à Apple, mas não tem com o que assinar.
+      #
+      # A chave é a mesma para sempre: gerar uma nova a cada build criaria um
+      # certificado novo a cada build, e a Apple limita quantos existem ao
+      # mesmo tempo. Duas ou três execuções e a conta trava.
+      groups:
+        - apple
+    integrations:
+      app_store_connect: deskside
+    # Sem gatilho automático, de propósito. Todo envio para o TestFlight
+    # consome um número de versão que não volta atrás, e é visível para quem
+    # testa. Este build sai quando você aperta "Start new build".
+    scripts:
+      - name: Gerar pasta ios/ se ainda não versionada
+        script: |
+          if [ ! -d ios ]; then
+            flutter create --org com.deskside --project-name deskside_client --platforms=ios .
+          fi
+      - name: Dependências
+        script: flutter pub get
+      - name: Ícone e splash
+        script: |
+          set -e
+
+          # Configuração **só do iOS**. Uma compartilhada com `android: true`
+          # faria a ferramenta escrever na pasta android/, que este workflow
+          # não cria — e ela morre com PathNotFoundException.
+          CONFIG=icone-ios.yaml
+
+          # Nenhum arquivo pode se chamar `flutter_launcher_icons-*.yaml`.
+          #
+          # A ferramenta trata esse nome como um *flavor*, e havendo qualquer
+          # flavor ela **ignora o `-f`** e faz um laço por todos — este
+          # workflow voltaria a tentar as duas plataformas e morreria na pasta
+          # que ele não cria. Foi assim que o build quebrou uma vez.
+          if ls flutter_launcher_icons-*.yaml >/dev/null 2>&1; then
+            echo "FALHOU: existe arquivo flutter_launcher_icons-*.yaml aqui."
+            echo "Esse nome vira flavor e faz o -f ser ignorado. Renomeie."
+            ls -la flutter_launcher_icons-*.yaml
+            exit 1
+          fi
+
+          # Confere que o arquivo existe antes de usá-lo. Com `-f` apontando
+          # para um nome errado, a ferramenta **cai calada** no pubspec.yaml
+          # (`loadConfigFromPath(...) ?? loadConfigFromPubSpec(...)`), e a
+          # geração sairia com outra configuração sem avisar.
+          if [ ! -f "$CONFIG" ]; then
+            echo "FALHOU: $CONFIG não existe."
+            exit 1
+          fi
+          # E que ele ainda manda gerar iOS. Um `ios: false` aqui não daria
+          # erro nenhum: a ferramenta sai com zero sem fazer nada, e o app
+          # chegaria ao TestFlight com o ícone do Flutter.
+          grep -q '^  ios: true' "$CONFIG" || {
+            echo "FALHOU: $CONFIG não tem 'ios: true'."; exit 1; }
+
+          # **Sem `|| echo`.** O passo tolerante é como o ícone do Android
+          # ficou errado por meses: o comando rodava, não gerava nada, e o
+          # build ficava verde.
+          dart run flutter_launcher_icons -f "$CONFIG"
+
+          # O splash segue tolerante: ele é cosmético, e mexe em pastas das
+          # duas plataformas por conta própria.
+          dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
+      # O mesmo arquivo que o sideload usa. O workflow de TestFlight nasceu
+      # sem estes ajustes, e teria subido para os testadores um app que trava
+      # na biometria e não conecta na rede local — sem nada no log dizendo.
+      - name: Ajustes obrigatórios do iOS
+        script: sh ../scripts/preparar-ios.sh
+      - name: Número da build
+        script: |
+          # A App Store Connect recusa um número de build repetido, e a
+          # mensagem dela ("The provided entity includes an attribute with a
+          # value that has already been used") não diz que é isso. O contador
+          # do Codemagic resolve: ele cresce sozinho a cada execução.
+          #
+          # A versão que a pessoa lê (0.1.0) continua vindo do pubspec.yaml.
+          echo "build number: $BUILD_NUMBER"
+      - name: Análise e testes
+        script: |
+          # `set -e` para o passo morrer no primeiro erro.
+          #
+          # Sem isto, um erro do `analyze` era reportado e o script seguia para
+          # os testes. O `flutter test` então falhava por não compilar a mesma
+          # coisa, e a mensagem do analyze — que nomeia arquivo, linha e o
+          # problema — ficava soterrada sob duzentas linhas de teste. O log
+          # dizia "loading widget_test.dart", que não aponta para nada.
+          set -e
+          python3 ../scripts/conferir-textos.py lib/l10n/strings.dart
+          python3 ../scripts/conferir-dart.py lib test
+          # `--no-fatal-infos` porque `flutter analyze` sai com código 1 em
+          # **qualquer** aviso, inclusive sugestão de estilo — diferente do
+          # `dart analyze`, que só falha em erro e warning. Com o `set -e`
+          # acima, um `prefer_const_constructors` esquecido passaria a impedir
+          # uma entrega ao TestFlight, e isso é desproporcional: erro e warning
+          # devem barrar, sugestão de estilo não.
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Assinatura
+        script: |
+          set -e
+          ESPERADO=com.deskside.desksideClient
+
+          # O que esta chave enxerga de verdade, antes de tentar qualquer coisa.
+          echo "--- identificadores visíveis para esta chave ---"
+          app-store-connect bundle-ids list | tee /tmp/ids.txt
+
+          # O identificador registrado precisa ser **exatamente** o do app.
+          #
+          # A âncora de fim de linha não é capricho: o que havia registrado era
+          # `com.deskside.desksideClient.3P2C2883SS` (o Team ID grudado no fim),
+          # e um `grep` sem âncora casa com isso e diz que está tudo certo. Seria
+          # mais uma conferência passando com o defeito no lugar.
+          #
+          # Quando falta, criar aqui em vez de mandar alguém ao formulário do
+          # portal. Não é preguiça: o formulário tem um campo de prefixo ao lado
+          # do identificador, e é exatamente ali que o Team ID entrou grudado da
+          # primeira vez. Aqui o texto é uma constante deste arquivo, e não há
+          # campo para errar. Só cria quando não existe.
+          if ! grep -q "^Identifier: ${ESPERADO}$" /tmp/ids.txt; then
+            echo "App ID '$ESPERADO' não está registrado. Criando."
+            app-store-connect bundle-ids create "$ESPERADO" \
+              --name "Deskside iOS" \
+              --platform IOS
+            app-store-connect bundle-ids list | tee /tmp/ids.txt
+            grep -q "^Identifier: ${ESPERADO}$" /tmp/ids.txt || {
+              echo "FALHOU: criei o App ID e ele não apareceu na lista."
+              echo "Pode ser atraso de propagação da Apple — tente de novo em"
+              echo "alguns minutos antes de procurar outra causa."
+              exit 1
+            }
+          fi
+
+          # Os registros de app que existem na App Store Connect, com o
+          # bundle id de cada um.
+          #
+          # Assinar e subir são coisas diferentes: o certificado e o perfil
+          # vêm do portal de desenvolvedor, mas o `.ipa` só entra num
+          # **registro de app** cujo bundle id seja exatamente o mesmo. Sem
+          # esse registro o build compila, assina, e o upload é recusado no
+          # fim — que foi o que aconteceu. Não dá para criar o registro por
+          # aqui (ele precisa de nome, SKU e idioma), então isto só imprime;
+          # nunca derruba o build.
+          echo "--- registros de app na App Store Connect ---"
+          app-store-connect apps list \
+            || echo "(não consegui listar os registros de app)"
+
+          # Chaveiro temporário desta máquina, onde o certificado vai morar.
+          keychain initialize
+
+          # `--certificate-key` é a chave privada que assina o certificado de
+          # distribuição; `--create` cria o certificado e o perfil que faltarem.
+          app-store-connect fetch-signing-files "$ESPERADO" \
+            --type IOS_APP_STORE \
+            --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
+            --create
+
+          # O widget é um segundo programa dentro do app (ver
+          # scripts/preparar-ios-alvos.rb), com identificador e perfil
+          # próprios. Mesmo raciocínio do app: criar aqui o que faltar, com o
+          # identificador escrito uma vez, em vez de alguém digitá-lo no
+          # portal. Não precisa de App Group: a configuração do widget mora no
+          # servidor.
+          WIDGET="${ESPERADO}.DesksideWidget"
+          if ! grep -q "^Identifier: ${WIDGET}$" /tmp/ids.txt; then
+            echo "App ID '$WIDGET' não está registrado. Criando."
+            app-store-connect bundle-ids create "$WIDGET" \
+              --name "Deskside Widget" \
+              --platform IOS
+          fi
+          app-store-connect fetch-signing-files "$WIDGET" \
+            --type IOS_APP_STORE \
+            --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
+            --create
+
+          keychain add-certificates
+
+          # Aplica o perfil ao projeto do Xcode e escreve o export_options.plist
+          # que o `flutter build ipa` usa no passo seguinte.
+          xcode-project use-profiles
+      - name: Build assinado e .ipa
+        script: |
+          # O `export_options.plist` vem do `use-profiles`, no passo anterior.
+          flutter build ipa --release \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist \
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br \
+            --dart-define=DESKSIDE_COMMIT=$CM_COMMIT
+
+          # Onde o .ipa foi parar, e se ele existe mesmo.
+          #
+          # A publicação só envia o que a seção `artifacts` conseguiu colher.
+          # Quando o caminho não casa, não há erro: o build fica verde, a
+          # publicação não tem o que mandar, e a build nunca aparece no
+          # TestFlight — exatamente o sintoma que estamos perseguindo. Melhor
+          # ver o arquivo no log do que deduzir pela ausência dele.
+          echo "--- .ipa gerado ---"
+          ls -la build/ios/ipa/ || echo "(pasta build/ios/ipa não existe)"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - client/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Sobe para o TestFlight, sem enviar para a revisão da App Store.
+        submit_to_testflight: true
+        # Descomente quando o grupo existir na App Store Connect (o nome tem
+        # que bater letra por letra). Sem isto a build chega ao TestFlight e
+        # você distribui pelo painel; com isto, ela vai sozinha para o grupo.
+        # beta_groups:
+        #   - Amigos e familia
+      email:
+        recipients:
+          - caiofbchaves@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  android:
+    name: Android (APK para instalar direto, sem expirar)
+    # Mac, apesar de o Android não precisar de macOS: a instância Linux é mais
+    # rápida e mais barata, mas **não está no plano gratuito** — o build morre
+    # em "The selected instance type is not available with the current billing
+    # plan" antes de rodar a primeira linha. O Mac é o que a conta tem.
+    #
+    # O preço disso é real: estes minutos saem do mesmo bolo dos builds de iOS.
+    # Se um dia a conta virar paga, voltar para `linux_x2` é trocar esta linha
+    # — os passos abaixo são portáteis de propósito.
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    working_directory: client
+    environment:
+      flutter: stable
+      # O Flutter estável exige JDK 17; a imagem traz várias versões.
+      java: 17
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+        - pattern: 'claude/*'
+          include: true
+    scripts:
+      - &android_gerar
+        name: Gerar pasta android/ se ainda não versionada
+        script: |
+          if [ ! -d android ]; then
+            flutter create --org com.deskside --project-name deskside_client --platforms=android .
+          fi
+      - &android_dependencias
+        name: Dependências
+        script: flutter pub get
+      - &android_icone
+        name: Ícone e splash
+        script: |
+          set -e
+
+          # **Sem `|| echo`, ao contrário dos workflows de iOS.**
+          #
+          # O passo tolerante é como o ícone do Android ficou errado sem
+          # ninguém ver: o `pubspec.yaml` tinha `android: false`, o comando
+          # rodava, não gerava nada para Android, o build ficava verde, e o
+          # APK saía com o robozinho do Flutter. Um passo que não pode falhar
+          # é um passo que não confere nada.
+          # Configuração **só do Android**: este workflow não cria a pasta
+          # ios/, e uma configuração com `ios: true` morre lá.
+          CONFIG=icone-android.yaml
+
+          # Nenhum arquivo pode se chamar `flutter_launcher_icons-*.yaml`.
+          #
+          # A ferramenta trata esse nome como um *flavor*, e havendo qualquer
+          # flavor ela **ignora o `-f`** e faz um laço por todos — este
+          # workflow voltaria a tentar as duas plataformas e morreria na pasta
+          # que ele não cria. Foi assim que o build quebrou uma vez.
+          if ls flutter_launcher_icons-*.yaml >/dev/null 2>&1; then
+            echo "FALHOU: existe arquivo flutter_launcher_icons-*.yaml aqui."
+            echo "Esse nome vira flavor e faz o -f ser ignorado. Renomeie."
+            ls -la flutter_launcher_icons-*.yaml
+            exit 1
+          fi
+          if [ ! -f "$CONFIG" ]; then
+            echo "FALHOU: $CONFIG não existe."
+            exit 1
+          fi
+
+          dart run flutter_launcher_icons -f "$CONFIG"
+          dart run flutter_native_splash:create || echo "aviso: geração de splash falhou"
+
+          # E conferir a saída, não só o código de retorno.
+          #
+          # Este arquivo é o descritor do ícone adaptativo, e o template do
+          # `flutter create` **não** o gera — só a ferramenta de ícone gera. A
+          # presença dele é, portanto, prova de que o ícone do Android foi
+          # gerado de verdade, e não de que um comando terminou sem reclamar.
+          ADAPTATIVO=android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          if [ ! -f "$ADAPTATIVO" ]; then
+            echo "FALHOU: $ADAPTATIVO não existe."
+            echo "O ícone adaptativo do Android não foi gerado. Confira"
+            echo "flutter_launcher_icons no pubspec.yaml: android, "
+            echo "adaptive_icon_background e adaptive_icon_foreground."
+            ls -la android/app/src/main/res/ || true
+            exit 1
+          fi
+          echo "--- ícone adaptativo gerado ---"
+          cat "$ADAPTATIVO"
+      - &android_ajustes
+        name: Ajustes obrigatórios do Android
+        script: |
+          set -e
+
+          # Cada ajuste confere se pegou, e derruba o build se não pegou. A
+          # pasta android/ é gerada pelo template do Flutter a cada execução, e
+          # template muda de forma entre versões: um `sed` que deixa de casar
+          # passaria batido e o defeito só apareceria no celular de alguém.
+          exigir() {
+            grep -q "$2" "$1" || {
+              echo "FALHOU: '$2' não está em $1 - o template do Flutter mudou."
+              exit 1
+            }
+          }
+
+          # Troca literal dentro de um arquivo, igual nos dois sistemas.
+          #
+          # Aqui havia `sed -i`, e ele **não é portátil**: no Linux o `-i`
+          # edita no lugar, no macOS (BSD) o `-i` exige um sufixo de backup e
+          # engole o próprio comando como se fosse o sufixo. Isso já bastaria
+          # para quebrar o build ao sair do Linux — mas o pior era outro: o
+          # `\n` do lado direito de uma substituição é extensão do GNU. No
+          # macOS ele vira um `n` literal, o manifesto sai corrompido, e a
+          # conferência logo abaixo **passa mesmo assim**, porque o texto que
+          # ela procura continua lá. Defeito que se anuncia é melhor do que
+          # defeito que espera; este esperava até o celular de alguém.
+          trocar() {
+            python3 - "$@" <<'PY'
+          import sys
+          caminho, de, para = sys.argv[1:4]
+          texto = open(caminho, encoding="utf-8").read()
+          if de in texto:
+              open(caminho, "w", encoding="utf-8").write(texto.replace(de, para))
+          PY
+          }
+
+          # --- 1. Biometria -------------------------------------------------
+          # O local_auth exige FlutterFragmentActivity. Com o FlutterActivity
+          # padrão a biometria não falha: **derruba o app**.
+          MAIN=$(find android/app/src/main -name MainActivity.kt | head -1)
+          trocar "$MAIN" "FlutterActivity" "FlutterFragmentActivity"
+          exigir "$MAIN" "FlutterFragmentActivity"
+
+          # --- 2. Manifesto -------------------------------------------------
+          MANIFESTO=android/app/src/main/AndroidManifest.xml
+
+          # O espaço de nomes `tools` é o que permite **remover** permissões que
+          # vieram de uma dependência.
+          # Numa linha só. O `\n` da versão anterior era exatamente o que não
+          # sobrevive à troca de sistema, e o XML não liga para a quebra.
+          trocar "$MANIFESTO" \
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">' \
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">'
+          exigir "$MANIFESTO" "xmlns:tools"
+
+          # INTERNET não vem no manifesto principal do template - só nos de
+          # debug e profile. Sem esta linha o APK de release **não conecta**, e
+          # o build passa: é o defeito que só aparece na versão que se
+          # distribui.
+          #
+          # CAMERA e RECORD_AUDIO vêm do manifesto do flutter_webrtc e são
+          # mescladas no nosso. O Deskside só **recebe** vídeo, nunca liga a
+          # câmera - e uma ficha de loja dizendo que um app de controle remoto
+          # pede câmera e microfone destrói a confiança de que a venda depende.
+          #
+          # --- 2a. Texto puro só onde faz sentido ---------------------------
+          # Havia um `usesCleartextTraffic="true"`, que libera http:// para
+          # **qualquer** destino - inclusive um servidor hostil num Wi-Fi de
+          # aeroporto. Existia porque o campo "Servidor" aceita http://IP:8000
+          # na rede local.
+          #
+          # Agora o padrão é recusar, com exceções nomeadas. O Android não
+          # aceita faixas de IP aqui (nada de 192.168.0.0/16), só nomes e
+          # endereços literais - por isso a lista é curta e explícita.
+          #
+          # Consequência prática, e ela é real: um APK **de release** apontado
+          # para http://192.168.x.x deixa de conectar. Para desenvolver na rede
+          # local, use `flutter run` (build de depuração, coberto pelo
+          # debug-overrides) ou acrescente o endereço à lista abaixo.
+          mkdir -p android/app/src/main/res/xml
+          cat > android/app/src/main/res/xml/network_security_config.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="false"/>
+              <domain-config cleartextTrafficPermitted="true">
+                  <domain includeSubdomains="false">localhost</domain>
+                  <domain includeSubdomains="false">127.0.0.1</domain>
+                  <!-- O host visto de dentro do emulador do Android Studio. -->
+                  <domain includeSubdomains="false">10.0.2.2</domain>
+              </domain-config>
+              <debug-overrides cleartextTrafficPermitted="true"/>
+          </network-security-config>
+          XML
+          # O here-doc acima entra indentado (o YAML exige); o XML não se
+          # importa com espaços à esquerda, mas a primeira linha precisa ser a
+          # declaração. Tirar a indentação evita depender disso.
+          python3 - android/app/src/main/res/xml/network_security_config.xml <<'PY'
+          import sys
+          caminho = sys.argv[1]
+          linhas = open(caminho, encoding="utf-8").read().splitlines(True)
+          open(caminho, "w", encoding="utf-8").writelines(l.lstrip(" ") for l in linhas)
+          PY
+          exigir android/app/src/main/res/xml/network_security_config.xml 'cleartextTrafficPermitted="false"'
+
+          python3 - "$MANIFESTO" <<'PY'
+          import re, sys
+          caminho = sys.argv[1]
+          texto = open(caminho, encoding="utf-8").read()
+          permissoes = (
+              '    <uses-permission android:name="android.permission.INTERNET"/>\n'
+              '    <uses-permission android:name="android.permission.CAMERA" tools:node="remove"/>\n'
+              '    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>\n\n'
+          )
+          texto = texto.replace("    <application", permissoes + "    <application", 1)
+          texto = re.sub(
+              r'android:label="[^"]*"',
+              'android:label="Deskside"\n        android:allowBackup="false"\n'
+              '        android:fullBackupContent="false"\n'
+              '        android:networkSecurityConfig="@xml/network_security_config"',
+              texto,
+              count=1,
+          )
+          open(caminho, "w", encoding="utf-8").write(texto)
+          PY
+          exigir "$MANIFESTO" "permission.INTERNET"
+          exigir "$MANIFESTO" 'tools:node="remove"'
+          exigir "$MANIFESTO" 'android:label="Deskside"'
+          exigir "$MANIFESTO" 'android:allowBackup="false"'
+          exigir "$MANIFESTO" 'networkSecurityConfig'
+          grep -q 'usesCleartextTraffic' "$MANIFESTO" && {
+            echo "FALHOU: usesCleartextTraffic voltou ao manifesto."
+            exit 1
+          }
+          true
+
+          # --- 2b. Kotlin dos plugins ---------------------------------------
+          # O template do Flutter agora gera AGP 9, e o AGP 9 traz compilação
+          # de Kotlin embutida. Os plugins passaram a confiar nisso: quando
+          # detectam AGP 9, **não** aplicam mais o plugin de Kotlin.
+          #
+          # Só que essa compilação embutida não alcança os módulos de plugin
+          # nesta versão do Flutter. O resultado foi este, depois de 5 minutos
+          # de build:
+          #
+          #     GeneratedPluginRegistrant.java:19: error: cannot find symbol
+          #       new com.mr.flutter.plugin.filepicker.FilePickerPlugin()
+          #
+          # O Kotlin do plugin simplesmente não virou classe. A prova de que o
+          # problema é esse: todos os outros plugins em Kotlin compilaram no
+          # mesmo build — eles ainda aplicam o plugin de Kotlin por conta
+          # própria, que é justamente o que o aviso do Flutter pede para parar
+          # de fazer.
+          #
+          # Dizer `builtInKotlin=false` faz o `android_file_picker` voltar a
+          # aplicar o Kotlin explicitamente. Quando a migração do Flutter para
+          # o AGP 9 terminar, esta linha sai.
+          python3 - <<'PY'
+          import pathlib
+          caminho = pathlib.Path("android/gradle.properties")
+          linhas = caminho.read_text(encoding="utf-8").splitlines() if caminho.exists() else []
+          # Escrito assim, e não com `>>`: a pasta android/ pode sobreviver de
+          # uma execução anterior, e append repetido deixa a chave duas vezes
+          # no arquivo. Já paguei esse preço num .env de servidor.
+          linhas = [l for l in linhas if not l.startswith("android.builtInKotlin")]
+          linhas.append("android.builtInKotlin=false")
+          caminho.write_text("\n".join(linhas) + "\n", encoding="utf-8")
+          PY
+          exigir android/gradle.properties "android.builtInKotlin=false"
+          test "$(grep -c '^android.builtInKotlin' android/gradle.properties)" = 1 || {
+            echo "FALHOU: android.builtInKotlin aparece mais de uma vez."
+            exit 1
+          }
+
+          # --- 3. minSdk ----------------------------------------------------
+          # O flutter_webrtc não compila abaixo da 23, e o flutter_secure_storage
+          # 11 exige 24 — vale o maior. 24 é Android 7, de 2016; abaixo disso o
+          # app deixa de instalar, o que é aceitável e é o que a dependência
+          # impõe de qualquer forma.
+          #
+          # Se ficasse em 23, a mesclagem de manifestos pararia o build com
+          # "minSdkVersion 23 cannot be smaller than version 24 declared in
+          # library" — barulhento, ao menos, mas depois de minutos de Gradle.
+          # O template usa Gradle
+          # em Groovy ou em Kotlin conforme a versão do Flutter; os dois casos
+          # entram aqui.
+          APPGRADLE=$(ls android/app/build.gradle.kts android/app/build.gradle 2>/dev/null | head -1)
+          trocar "$APPGRADLE" "minSdk = flutter.minSdkVersion" "minSdk = 24"
+          trocar "$APPGRADLE" "minSdkVersion flutter.minSdkVersion" "minSdkVersion 24"
+          # Procurar só por "24" aceitaria um "2024" em qualquer lugar do
+          # arquivo e diria que deu certo. A conferência precisa olhar para a
+          # linha que interessa.
+          exigir "$APPGRADLE" "minSdk.*24"
+
+          # --- 4. Widget da tela inicial ------------------------------------
+          # O código e o desenho moram em client/nativo/android/; o script os
+          # copia e registra o widget no manifesto, conferindo cada passo.
+          python3 ../scripts/preparar-android.py
+
+          echo "--- manifesto final ---"
+          cat "$MANIFESTO"
+      - &android_testes
+        name: Análise e testes
+        script: |
+          # `set -e` para o passo morrer no primeiro erro.
+          #
+          # Sem isto, um erro do `analyze` era reportado e o script seguia para
+          # os testes. O `flutter test` então falhava por não compilar a mesma
+          # coisa, e a mensagem do analyze — que nomeia arquivo, linha e o
+          # problema — ficava soterrada sob duzentas linhas de teste. O log
+          # dizia "loading widget_test.dart", que não aponta para nada.
+          set -e
+          # Antes do `analyze`, porque é mais rápido e a mensagem é melhor: uma
+          # string não fechada em `strings.dart` faz o compilador reclamar de
+          # dezenas de "getter não definido" — um por palavra da frase que virou
+          # código. Ver scripts/conferir-textos.py.
+          python3 ../scripts/conferir-textos.py lib/l10n/strings.dart
+          # A ordem das diretivas. Um `library;` abaixo dos imports é erro de
+          # compilação, e o Flutter o denuncia como "loading test/algum_test.dart"
+          # — sem citar o arquivo quebrado, sem citar a diretiva. Ver
+          # scripts/conferir-dart.py.
+          python3 ../scripts/conferir-dart.py lib test
+          # `--no-fatal-infos` porque `flutter analyze` sai com código 1 em
+          # **qualquer** aviso, inclusive sugestão de estilo — diferente do
+          # `dart analyze`, que só falha em erro e warning. Com o `set -e`
+          # acima, um `prefer_const_constructors` esquecido passaria a impedir
+          # uma entrega ao TestFlight, e isso é desproporcional: erro e warning
+          # devem barrar, sugestão de estilo não.
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Build do APK
+        # `--no-shrink` de propósito: o R8 do release removeria classes que o
+        # WebRTC alcança por reflexão, e o resultado seria um APK que instala,
+        # abre e quebra só na hora de mostrar a tela. As regras de ProGuard
+        # entram quando a pasta android/ for versionada - aqui o que se quer é
+        # um APK de teste que funcione.
+        #
+        # Sem assinatura de loja: o Flutter assina com a chave de depuração, o
+        # que basta para instalar no aparelho. E **não expira**, ao contrário
+        # do sideload do iPhone.
+        script: |
+          # O `--dart-define` é o que aponta o app para o servidor. Sem ele
+          # vale o padrão embutido em `lib/config.dart` — que hoje é o mesmo
+          # endereço, então esquecer aqui não quebra nada. A linha existe para o
+          # endereço ficar **visível no build**: ele era `localhost`, e num
+          # celular localhost é o próprio celular. O defeito passou meses sem
+          # aparecer porque quem desenvolve tinha a URL salva na tela de login.
+          # O commit vai no log e no app (Configurações, ao lado da versão):
+          # todo APK sai como 0.1.0+1, e sem isto não havia como saber qual
+          # código estava instalado no celular.
+          echo "commit do build: $CM_COMMIT"
+          flutter build apk --release --no-shrink \
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br \
+            --dart-define=DESKSIDE_COMMIT=$CM_COMMIT
+
+          # O APK leva o commit no nome. Com o nome padrão, todo build saía
+          # como `app-release.apk`, o navegador salvava os repetidos como
+          # `app-release (1).apk`, `(2)`... e um antigo foi instalado no lugar
+          # do novo mais de uma vez, sem nada que distinguisse os dois.
+          SAIDA=build/app/outputs/flutter-apk
+          mv "$SAIDA/app-release.apk" "$SAIDA/Deskside-${CM_COMMIT:0:7}.apk"
+          ls -la "$SAIDA"
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+      - client/build/app/outputs/flutter-apk/*.apk
+      - "**/*.apk"
+
+  # Android para a Play Store: .aab assinado com a chave de envio.
+  #
+  # Os passos de preparo são os mesmos do APK acima (as âncoras `*android_*`),
+  # para os dois nunca divergirem. O que muda: a assinatura de loja, o número
+  # da versão que cresce a cada build (a Play recusa número repetido) e o
+  # formato .aab, que é o único que a Play aceita.
+  #
+  # A chave de envio é cadastrada uma vez no Codemagic (Team settings > Code
+  # signing identities > Android keystores) com a referência `deskside_envio`.
+  # Ela não está no repositório e não aparece no log. Ver
+  # docs/publicar-na-play-store.md.
+  #
+  # Não dispara sozinho: você aperta. Cada build gasta um número de versão.
+  android-play:
+    name: Android (Play Store, .aab assinado)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    working_directory: client
+    environment:
+      flutter: stable
+      java: 17
+      android_signing:
+        - deskside_envio
+    scripts:
+      - *android_gerar
+      - *android_dependencias
+      - *android_icone
+      - *android_ajustes
+      - name: Assinatura de loja
+        script: python3 ../scripts/assinar-android.py
+      - *android_testes
+      - name: Build do .aab
+        # `--no-shrink` pelo mesmo motivo do APK: o R8 removeria classes que o
+        # WebRTC alcança por reflexão, e o app quebraria só ao mostrar a tela.
+        script: |
+          set -e
+          echo "commit do build: $CM_COMMIT · número da versão: $BUILD_NUMBER"
+          flutter build appbundle --release --no-shrink \
+            --build-number=$BUILD_NUMBER \
+            --dart-define=DESKSIDE_BACKEND=https://deskside.com.br \
+            --dart-define=DESKSIDE_COMMIT=$CM_COMMIT
+
+          SAIDA=build/app/outputs/bundle/release
+          AAB="$SAIDA/app-release.aab"
+          test -f "$AAB" || { echo "FALHOU: $AAB não foi gerado."; ls -la "$SAIDA" || true; exit 1; }
+
+          # Quem assinou. Se aparecer a chave de depuração, a Play recusaria
+          # o envio só depois do upload, com uma mensagem que não diz isso.
+          keytool -printcert -jarfile "$AAB" | tee /tmp/certificado.txt
+          if grep -q "CN=Android Debug" /tmp/certificado.txt; then
+            echo "FALHOU: o .aab saiu assinado com a chave de depuração."
+            exit 1
+          fi
+          grep -q "Owner:" /tmp/certificado.txt || { echo "FALHOU: o .aab não está assinado."; exit 1; }
+
+          mv "$AAB" "$SAIDA/Deskside-$BUILD_NUMBER-${CM_COMMIT:0:7}.aab"
+          ls -la "$SAIDA"
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+    publishing:
+      email:
+        recipients:
+          - caiofbchaves@gmail.com
+        notify:
+          success: true
+          failure: true

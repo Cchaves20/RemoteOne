@@ -1,0 +1,170 @@
+/// A conta de quem está usando o app, como o `/auth/me` a devolve.
+///
+/// Existe por uma pergunta que a tela de conta passou a ter de responder:
+/// **por qual das duas coisas esta conta se identifica?** Uma criada por
+/// telefone não tem e-mail nenhum, e mostrar "Alterar e-mail" ali era oferecer
+/// um botão que não servia para nada.
+class Conta {
+  const Conta({
+    required this.id,
+    this.email,
+    this.phone,
+    this.firstName = '',
+    this.lastName = '',
+    this.twoFactorEnabled = false,
+    this.recoveryCodesLeft = 0,
+    this.plano = 'gratis',
+    this.planoAte,
+    this.emTeste = false,
+    this.renova = false,
+    this.termosVersao = '',
+    this.termosAtual = '',
+    this.aniversario,
+  });
+
+  final int id;
+
+  /// Um dos dois vem preenchido — é o que identifica a conta e o que se digita
+  /// para entrar.
+  final String? email;
+  final String? phone;
+
+  final String firstName;
+  final String lastName;
+  final bool twoFactorEnabled;
+
+  /// Quantos códigos de recuperação ainda valem. Zero com a verificação ligada
+  /// é o caso de quem a ligou antes de os códigos existirem — e é quem mais
+  /// precisa do aviso para gerá-los.
+  final int recoveryCodesLeft;
+
+  /// `'gratis'` ou `'pago'`, **já considerando a validade**.
+  ///
+  /// O servidor calcula e manda pronto. Recalcular aqui a partir da data seria
+  /// uma segunda verdade sobre a mesma conta — e a que manda é a do servidor,
+  /// porque é ela que recusa as chamadas. Duas contas dessas discordando é
+  /// como se constrói uma tela que promete o que a chamada seguinte nega.
+  final String plano;
+
+  /// Até quando o plano pago vale. Nulo = sem prazo, ou já no grátis.
+  final DateTime? planoAte;
+
+  /// Se o plano pago são os 30 dias iniciais, e não uma assinatura comprada.
+  ///
+  /// Vem pronto do servidor porque só ele enxerga a tabela de assinaturas:
+  /// teste e assinatura chegam os dois como `pago` com trinta dias, e pelo
+  /// calendário são a mesma coisa.
+  final bool emTeste;
+
+  /// A versão dos termos que esta conta aceitou ("" = nunca pelo app).
+  final String termosVersao;
+
+  /// A versão em vigor no servidor. Vazia num servidor antigo.
+  final String termosAtual;
+
+  /// Dia e mês do aniversário, `"MM-DD"`, sem o ano. Nulo = não informado
+  /// (conta de antes, ou quem apagou), e o app só cumprimenta pelo horário.
+  final String? aniversario;
+
+  /// O mês e o dia de [aniversario], ou nulo se ele faltar ou vier torto.
+  (int mes, int dia)? get mesEDia {
+    final a = aniversario;
+    if (a == null || a.length != 5 || a[2] != '-') return null;
+    final mes = int.tryParse(a.substring(0, 2));
+    final dia = int.tryParse(a.substring(3));
+    if (mes == null || dia == null || mes < 1 || mes > 12 || dia < 1 || dia > 31) {
+      return null;
+    }
+    return (mes, dia);
+  }
+
+  /// Se [dia] (a data do celular) é o aniversário.
+  ///
+  /// Quem nasceu em 29 de fevereiro faz aniversário no dia 28 nos anos que
+  /// não são bissextos: sem isso, passaria três anos sem parabéns.
+  bool ehAniversarioEm(DateTime dia) {
+    final md = mesEDia;
+    if (md == null) return false;
+    final (mes, d) = md;
+    if (mes == 2 && d == 29 && !_bissexto(dia.year)) {
+      return dia.month == 2 && dia.day == 28;
+    }
+    return dia.month == mes && dia.day == d;
+  }
+
+  static bool _bissexto(int ano) =>
+      (ano % 4 == 0 && ano % 100 != 0) || ano % 400 == 0;
+
+  /// Há uma versão dos termos que a pessoa ainda não aceitou.
+  ///
+  /// Só quando o servidor conhece o aceite (`termosAtual` não vazio): um
+  /// servidor antigo não manda o campo, e pedir um aceite que ele não sabe
+  /// registrar travaria o app numa tela sem saída.
+  bool get termosPendentes =>
+      termosAtual.isNotEmpty && termosVersao != termosAtual;
+
+  /// Se há uma **cobrança marcada** para quando o prazo acabar.
+  ///
+  /// Falso no teste (ninguém comprou nada) e falso para quem desligou a
+  /// renovação (o prazo é um fim, não uma cobrança). Quem sabe é o servidor,
+  /// que enxerga o estado da assinatura na loja.
+  final bool renova;
+
+  bool get ehPago => plano == 'pago';
+
+  /// Quantos dias faltam, arredondando para cima.
+  ///
+  /// Para cima porque é assim que uma pessoa conta: faltando 6 horas, ela diz
+  /// "termina amanhã", não "faltam zero dias". Nulo quando não há prazo.
+  int? get diasRestantes {
+    if (planoAte == null) return null;
+    final falta = planoAte!.difference(DateTime.now());
+    if (falta.isNegative) return 0;
+    return falta.inHours ~/ 24 + (falta.inHours % 24 > 0 ? 1 : 0);
+  }
+
+  /// Se a conta se identifica por telefone.
+  ///
+  /// Pela **presença do telefone**, e não pela ausência do e-mail: se um dia
+  /// existirem os dois (hoje não existem), a conta continua sendo "de
+  /// telefone" para quem a criou assim, e a tela não muda debaixo da pessoa.
+  bool get porTelefone => phone != null && phone!.isNotEmpty;
+
+  /// Como a conta aparece na tela: o contato que a identifica.
+  String get contato => porTelefone ? phone! : (email ?? '');
+
+  /// Nome e sobrenome, ou o contato quando ainda não há nome — é o caso das
+  /// contas criadas antes de o cadastro pedir nome.
+  String get nomeCompleto {
+    final inteiro = '$firstName $lastName'.trim();
+    return inteiro.isEmpty ? contato : inteiro;
+  }
+
+  factory Conta.fromJson(Map<String, dynamic> json) => Conta(
+        id: (json['id'] as num?)?.toInt() ?? 0,
+        email: json['email'] as String?,
+        phone: json['phone'] as String?,
+        firstName: (json['first_name'] as String?) ?? '',
+        lastName: (json['last_name'] as String?) ?? '',
+        twoFactorEnabled: json['totp_enabled'] as bool? ?? false,
+        recoveryCodesLeft: (json['recovery_codes_left'] as num?)?.toInt() ?? 0,
+        plano: (json['plano'] as String?) ?? 'gratis',
+        // `tryParse` e não `parse`: um backend antigo não manda o campo, e um
+        // formato inesperado não pode derrubar a tela da conta inteira por
+        // causa de uma data.
+        planoAte: json['plano_ate'] == null
+            ? null
+            : DateTime.tryParse(json['plano_ate'] as String)?.toLocal(),
+        // Ausente num servidor antigo: `false` é o padrão certo, porque
+        // errar dizendo "não é teste" apenas omite a contagem, enquanto errar
+        // ao contrário poria uma contagem de teste na tela de quem paga.
+        emTeste: json['em_teste'] as bool? ?? false,
+        // `false` também é o padrão seguro aqui: sem o campo, o
+        // cartão diz "acaba em N dias", que é verdade em todo caso —
+        // enquanto prometer uma cobrança que não vem não é.
+        renova: json['renova'] as bool? ?? false,
+        termosVersao: (json['termos_versao'] as String?) ?? '',
+        termosAtual: (json['termos_atual'] as String?) ?? '',
+        aniversario: json['aniversario'] as String?,
+      );
+}

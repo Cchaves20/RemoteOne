@@ -1,0 +1,125 @@
+import pytest
+
+from app.protocol import (
+    Ack,
+    AutomationResult,
+    Error,
+    Heartbeat,
+    Hello,
+    WebrtcAnswer,
+    WebrtcIce,
+    Welcome,
+    parse_client_message,
+)
+
+
+def test_parse_hello():
+    msg = parse_client_message(
+        {
+            "type": "hello",
+            "device_id": "dev-1",
+            "hostname": "dell-g5",
+            "os": "windows",
+            "agent_version": "0.1.0",
+        }
+    )
+    assert isinstance(msg, Hello)
+    assert msg.device_id == "dev-1"
+    assert msg.os == "windows"
+
+
+def test_parse_heartbeat():
+    assert isinstance(parse_client_message({"type": "heartbeat"}), Heartbeat)
+
+
+def test_parse_unknown_type_raises():
+    with pytest.raises(ValueError):
+        parse_client_message({"type": "banana"})
+
+
+def test_parse_missing_field_raises():
+    with pytest.raises(ValueError):
+        parse_client_message({"type": "hello", "device_id": "x"})
+
+
+def test_server_messages_wire_format():
+    # O formato de fio precisa casar com o agente Rust.
+    # `ice_servers` vazio por padrão: um servidor sem TURN configurado manda a
+    # lista vazia, e o agente cai no STUN dele mesmo.
+    assert Welcome(server_version="0.1.0").model_dump() == {
+        "type": "welcome",
+        "server_version": "0.1.0",
+        "ice_servers": [],
+        # Nulo no caso comum: o agente já tem o segredo dele, e só há o que
+        # entregar na adoção de um aparelho pareado antes de eles existirem.
+        "secret": None,
+    }
+    assert Ack().model_dump() == {"type": "ack"}
+    assert Error(message="x").model_dump() == {"type": "error", "message": "x"}
+
+
+def test_heartbeat_wire_format():
+    assert Heartbeat().model_dump() == {"type": "heartbeat"}
+
+
+def test_parse_webrtc_answer():
+    msg = parse_client_message(
+        {"type": "webrtc_answer", "session_id": "s1", "sdp": "v=0\r\n"}
+    )
+    assert isinstance(msg, WebrtcAnswer)
+    assert msg.session_id == "s1"
+    assert msg.sdp == "v=0\r\n"
+
+
+def test_parse_webrtc_ice_com_e_sem_campos_opcionais():
+    completo = parse_client_message(
+        {
+            "type": "webrtc_ice",
+            "session_id": "s1",
+            "candidate": "candidate:1 1 udp 2130706431 10.0.0.2 5000 typ host",
+            "sdp_mid": "0",
+            "sdp_mline_index": 0,
+        }
+    )
+    assert isinstance(completo, WebrtcIce)
+    assert completo.sdp_mid == "0" and completo.sdp_mline_index == 0
+
+    # Fim dos candidatos: candidato vazio e sem os opcionais.
+    minimo = parse_client_message(
+        {"type": "webrtc_ice", "session_id": "s1", "candidate": ""}
+    )
+    assert isinstance(minimo, WebrtcIce)
+    assert minimo.candidate == ""
+    assert minimo.sdp_mid is None and minimo.sdp_mline_index is None
+
+
+def test_webrtc_ice_sem_session_id_e_recusado():
+    with pytest.raises(ValueError):
+        parse_client_message({"type": "webrtc_ice", "candidate": "c"})
+
+
+def test_parse_automation_result():
+    """O relatório da automação, como o agente Rust o serializa.
+
+    O `error` é omitido quando não há motivo (`skip_serializing_if` no lado do
+    Rust), então o backend precisa aceitar o passo sem ele. Exigir o campo faria
+    a mensagem inteira ser recusada, e o app receberia um 504 - "o computador
+    demorou para responder" - por uma automação que rodou inteira e deu certo.
+    """
+    msg = parse_client_message(
+        {
+            "type": "automation_result",
+            "request_id": "r1",
+            "results": [
+                {"index": 0, "ok": True},
+                {"index": 1, "ok": False, "error": "o Slack não estava aberto"},
+                {"index": 2, "ok": True, "error": "não achei a janela para posicionar"},
+            ],
+        }
+    )
+    assert isinstance(msg, AutomationResult)
+    assert msg.request_id == "r1"
+    assert msg.results[0].error is None
+    assert msg.results[1].ok is False
+    # Aviso não é falha: o passo aconteceu, e o motivo vem junto mesmo assim.
+    assert msg.results[2].ok is True and msg.results[2].error

@@ -1,0 +1,409 @@
+"""Camada de acesso ao banco de dados (SQLAlchemy 2.0).
+
+Em produção usa PostgreSQL (via `DESKSIDE_DATABASE_URL`); nos testes usa
+SQLite. A criação de tabelas é feita por `init_db()` na inicialização do app —
+quando o esquema evoluir, migramos para Alembic.
+"""
+
+from collections.abc import Iterator
+
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
+
+from app.config import settings
+
+# O SQLite precisa de check_same_thread=False para funcionar com o pool de
+# threads do FastAPI/TestClient; o Postgres não usa esse argumento.
+_connect_args = (
+    {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+)
+
+#: O estoque de conexões precisa ser **maior que o número de pedidos que o
+#: servidor atende ao mesmo tempo** (até 40 nas threads, mais o laço
+#: principal). Com o padrão (5 + 10), 15 pedidos lentos — logins, que conferem
+#: a senha devagar de propósito — esgotavam o estoque, e a próxima consulta
+#: feita no laço principal (a batida de um agente) **parava o servidor
+#: inteiro** esperando uma conexão. O teste de carga travou assim com 40
+#: celulares (ver `docs/teste-de-carga.md`).
+#:
+#: No SQLite, sem estoque: abrir o arquivo é barato e não há limite de
+#: conexões a respeitar. No PostgreSQL, 10 + 40, abaixo do limite padrão dele
+#: (100).
+_estoque = (
+    {"poolclass": NullPool}
+    if settings.database_url.startswith("sqlite")
+    else {"pool_size": 10, "max_overflow": 40}
+)
+engine = create_engine(
+    settings.database_url, connect_args=_connect_args, future=True, **_estoque
+)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+if settings.database_url.startswith("sqlite"):
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_em_wal(conexao, _registro) -> None:
+        """WAL e `synchronous=NORMAL` em toda conexão nova.
+
+        No diário padrão, cada gravação espera o disco duas vezes (o diário e o
+        banco). No disco de rede da Oracle isso é lento, e no teste de carga de
+        15/11 a fila de entrada dos computadores passou de 20 s. Com WAL, a
+        gravação vai para o fim do `-wal` e espera o disco só no checkpoint; e
+        quem lê não espera quem grava.
+
+        O que se troca: com `NORMAL`, uma queda de **energia** pode perder as
+        últimas gravações confirmadas, de alguns instantes. Não corrompe o
+        banco, e queda do processo não perde nada.
+
+        O backup (`app.backup`) usa a API de cópia do SQLite, que lê o `-wal`
+        junto: a cópia sai completa. Quem copiar o arquivo `.db` sozinho, à
+        mão, leva um banco sem as gravações mais recentes, por isso o guia de
+        restauração apaga `-wal` e `-shm` ao trocar o arquivo.
+        """
+        cursor = conexao.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+def get_db() -> Iterator[Session]:
+    """Dependência do FastAPI: fornece uma sessão e a fecha ao final."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def liberar(db: Session) -> None:
+    """Devolve a conexão do banco **antes** de esperar o computador responder.
+
+    Um pedido que pergunta algo ao computador — primeiro plano, programas
+    abertos, métricas, arquivos — passa quase todo o tempo esperando por ele,
+    não pelo banco, e uma transferência de arquivo espera minutos. Segurando a
+    conexão nessa espera, o estoque (que tem limite no PostgreSQL, ver
+    `_estoque`) acabava com poucas perguntas ao mesmo tempo, e a próxima
+    consulta feita no laço principal **parava o servidor inteiro**, inclusive a
+    parte que recebe as respostas dos computadores: um impasse. Visto no teste
+    de carga (ver `docs/teste-de-carga.md`).
+
+    `close`, e não `commit`: os objetos já lidos continuam legíveis (o nome do
+    computador, no fim de um envio de arquivo) sem voltar ao banco, e a sessão
+    pode ser usada de novo se for preciso. Só se chama depois das conferências
+    de dono e de plano, que são as únicas leituras desses pedidos.
+    """
+    db.close()
+
+
+def init_db() -> None:
+    """Cria as tabelas ainda inexistentes. Importa os modelos para registrá-los."""
+    from app import models  # noqa: F401  (registra as tabelas no metadata)
+
+    Base.metadata.create_all(bind=engine)
+    _migrate()
+
+
+def _migrate() -> None:
+    """Migração leve: adiciona colunas novas em bancos já existentes.
+
+    Como ainda não usamos Alembic, garantimos aqui as colunas que `create_all`
+    não adiciona a tabelas pré-existentes (funciona em SQLite e Postgres).
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    por_tabela = {
+        "devices": {
+            # Nula de propósito nos aparelhos que já estavam pareados: eles
+            # ganham o segredo na primeira reconexão de um agente que saiba
+            # guardá-lo. Preencher aqui com um valor qualquer trancaria todo
+            # mundo do lado de fora — o agente não teria como adivinhá-lo.
+            "agent_secret": "VARCHAR(64)",
+            "agent_secret_pendente": "VARCHAR(64)",
+            # Resumo da máquina (ver `app/teste.py`). Nula nos que já estavam
+            # pareados: o agente manda na próxima conexão, e nulo não corta o
+            # teste de ninguém.
+            "maquina": "VARCHAR(64)",
+        },
+        "pairing_requests": {
+            "maquina": "VARCHAR(64)",
+        },
+        # Agendamento das automações. As duas com padrão, porque `ADD COLUMN`
+        # com `NOT NULL` e sem padrão é recusado em tabela que já tem linhas.
+        "automations": {
+            "schedule_time": "VARCHAR(5) DEFAULT '' NOT NULL",
+            "schedule_days": "TEXT DEFAULT '[]' NOT NULL",
+        },
+        "users": {
+            "totp_secret": "VARCHAR(64)",
+            "totp_enabled": "BOOLEAN DEFAULT 0 NOT NULL",
+            # Contra reuso do código do autenticador e para os códigos de
+            # recuperação (ver `app/segundo_fator.py`). Conta antiga nasce sem
+            # nenhum dos dois, que é o estado certo: nenhum passo usado, nenhum
+            # código gerado.
+            "totp_ultimo_passo": "INTEGER",
+            "recovery_codes": "TEXT DEFAULT '[]' NOT NULL",
+            # Cadastro completo. Todas nulas ou com padrão: `ALTER TABLE ADD
+            # COLUMN` com `NOT NULL` e sem padrão é recusado numa tabela que já
+            # tem linhas, e o servidor não subiria.
+            #
+            # `phone` fica sem `UNIQUE` aqui de propósito: o SQLite não aceita
+            # adicionar coluna única a uma tabela existente. Em banco novo o
+            # `create_all` cria o índice; em banco antigo a unicidade fica por
+            # conta da checagem no cadastro. Some quando houver Alembic.
+            "phone": "VARCHAR(20)",
+            "first_name": "VARCHAR(80) DEFAULT '' NOT NULL",
+            "last_name": "VARCHAR(80) DEFAULT '' NOT NULL",
+            "birth_date": "DATE",
+            # Chave de sessão (ver `User.token_key`). Nasce vazia — `ADD COLUMN`
+            # com `NOT NULL` precisa de um padrão fixo, e sortear um por linha
+            # aqui é impossível — e `_sortear_chaves_de_sessao()` logo abaixo
+            # troca cada vazia por uma chave de verdade. Os tokens que as contas
+            # antigas têm em mãos não trazem chave nenhuma e param de valer
+            # nesta subida: um login a mais, uma vez só, que é o comportamento
+            # correto. Aceitá-los por compatibilidade manteria aberta
+            # exatamente a porta que a coluna fecha.
+            "token_key": "VARCHAR(32) DEFAULT '' NOT NULL",
+            # Planos. As contas que já existem nascem **pagas e sem prazo**, e
+            # não em teste: elas são de antes de haver cobrança, e rebaixá-las
+            # de um dia para o outro seria tirar recursos de quem já os usava
+            # sem nunca ter sido avisado de que eram pagos.
+            "plano": "VARCHAR(16) DEFAULT 'pago' NOT NULL",
+            "plano_ate": "TIMESTAMP",
+            "aviso_fim_teste_em": "TIMESTAMP",
+            # Aceite dos termos (ver `app/termos.py`). Conta antiga nasce sem
+            # aceite registrado, que é a verdade: o app pede na próxima vez.
+            "termos_versao": "VARCHAR(20) DEFAULT '' NOT NULL",
+            "termos_aceitos_em": "TIMESTAMP",
+            # Dia e mês do aniversário (ver `User.aniversario`). Conta antiga
+            # nasce sem: a data dela foi apagada, e a pessoa informa no app.
+            "aniversario": "VARCHAR(5)",
+        },
+        "pending_signups": {
+            "termos_versao": "VARCHAR(20) DEFAULT '' NOT NULL",
+            "termos_aceitos_em": "TIMESTAMP",
+            "aniversario": "VARCHAR(5)",
+        },
+    }
+    with engine.begin() as conn:
+        for tabela, colunas in por_tabela.items():
+            existing = {col["name"] for col in inspector.get_columns(tabela)}
+            for coluna, tipo in colunas.items():
+                if coluna not in existing:
+                    conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"))
+
+    _criar_indices()
+    _email_deixa_de_ser_obrigatorio()
+    _apagar_datas_de_nascimento()
+    _sortear_chaves_de_sessao()
+    _cifrar_segredos_do_2fa()
+    _registrar_testes_ja_dados()
+
+
+#: Índices que o modelo pede e que um banco antigo não tem: o `create_all` cria
+#: índice só junto com a tabela, nunca numa tabela que já existe. O nome é o que
+#: o próprio SQLAlchemy daria (`ix_<tabela>_<coluna>`), então num banco novo o
+#: `IF NOT EXISTS` encontra o índice já criado e não faz nada.
+_INDICES = {
+    # Toda lista de computadores, os perfis, o widget e o limite do plano
+    # procuram os computadores de uma conta por esta coluna.
+    "ix_devices_user_id": ("devices", "user_id"),
+}
+
+
+def _criar_indices() -> None:
+    from sqlalchemy import inspect, text
+
+    tabelas = set(inspect(engine).get_table_names())
+    with engine.begin() as conn:
+        for nome, (tabela, coluna) in _INDICES.items():
+            if tabela in tabelas:
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {nome} ON {tabela} ({coluna})"))
+
+
+def _apagar_datas_de_nascimento() -> None:
+    """Apaga as datas de nascimento guardadas antes de o cadastro parar de guardar.
+
+    A data só serve para conferir a idade mínima, no início do cadastro (ver
+    `auth.signup_start`). Depois disso ela é dado sem finalidade, e a LGPD
+    (art. 6º, III) pede que não fique. Roda a cada subida e não faz nada quando
+    não há o que apagar.
+    """
+    from sqlalchemy import inspect, text
+
+    with engine.begin() as conn:
+        for tabela in ("users", "pending_signups"):
+            if tabela in inspect(engine).get_table_names():
+                conn.execute(
+                    text(f"UPDATE {tabela} SET birth_date = NULL WHERE birth_date IS NOT NULL")
+                )
+
+
+def _registrar_testes_ja_dados() -> None:
+    """Anota que toda conta que **já existe** teve a sua chance de teste.
+
+    O registro de testes nasce vazio. Sem esta varredura, quem já tem conta
+    poderia criar outra com `+alguma-coisa` no mesmo e-mail e ganhar um teste
+    novo — justamente o que o registro existe para impedir, e justamente para
+    as pessoas que já conhecem o produto.
+
+    Vale para todas, inclusive as de antes de haver cobrança: elas não
+    precisam de teste, já usam o produto.
+
+    Idempotente — `registrar` não repete — e roda a cada subida pelo mesmo
+    motivo das outras migrações daqui: não depende de alguém lembrar.
+    """
+    from sqlalchemy import select
+
+    from app import teste
+    from app.models import TesteConcedido, User
+
+    with SessionLocal() as db:
+        ja_anotadas = set(db.scalars(select(TesteConcedido.conta)).all())
+        novas = 0
+        for email, phone in db.execute(select(User.email, User.phone)).all():
+            ident = teste.identidade(email, phone)
+            if ident is None:
+                continue
+            conta = teste.resumo(ident)
+            if conta in ja_anotadas:
+                continue
+            db.add(TesteConcedido(conta=conta))
+            ja_anotadas.add(conta)
+            novas += 1
+        if novas:
+            db.commit()
+            print(f"migração: {novas} conta(s) existente(s) anotada(s) como já tendo tido teste")
+
+
+def _cifrar_segredos_do_2fa() -> None:
+    """Passa a cifra por cima dos segredos de 2FA que estão em texto puro.
+
+    Feito na subida, e não na próxima gravação: a próxima gravação de um segredo
+    de 2FA é quando a pessoa **reconfigura** o 2FA, o que pode nunca acontecer.
+    Sem esta varredura, quem já usava 2FA continuaria com o segredo legível no
+    banco para sempre — e é justamente quem já tem 2FA que se importa.
+    """
+    from sqlalchemy import select, update
+
+    from app import cofre
+    from app.models import User
+
+    with SessionLocal() as db:
+        linhas = db.execute(
+            select(User.id, User.totp_secret).where(User.totp_secret.is_not(None))
+        ).all()
+        pendentes = [(i, seg) for i, seg in linhas if seg and not cofre.esta_cifrado(seg)]
+        for user_id, segredo in pendentes:
+            db.execute(
+                update(User).where(User.id == user_id).values(totp_secret=cofre.guardar(segredo))
+            )
+        if pendentes:
+            db.commit()
+            print(f"migração: {len(pendentes)} segredo(s) de 2FA cifrados em repouso")
+
+
+def _sortear_chaves_de_sessao() -> None:
+    """Dá uma `token_key` de verdade a quem entrou nesta coluna com ela vazia.
+
+    A vazia é recusada na conferência (`security.chave_confere`), então sem esta
+    etapa a conta antiga nunca mais entraria: cada login emitiria um token com
+    chave vazia que a requisição seguinte rejeitaria. O `ADD COLUMN` não tem
+    como sortear uma por linha — é um valor fixo para a tabela inteira —, e por
+    isso o sorteio acontece aqui, um por conta.
+    """
+    from sqlalchemy import inspect, select, text
+
+    from app.models import User
+    from app.security import nova_chave_de_sessao
+
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+    with engine.begin() as conn:
+        ids = list(conn.scalars(select(User.id).where(User.token_key == "")))
+        for user_id in ids:
+            conn.execute(
+                text("UPDATE users SET token_key = :chave WHERE id = :id"),
+                {"chave": nova_chave_de_sessao(), "id": user_id},
+            )
+    if ids:
+        print(f"migração: {len(ids)} conta(s) ganharam chave de sessão")
+
+
+def _email_deixa_de_ser_obrigatorio() -> None:
+    """Afrouxa `users.email` em bancos criados antes do cadastro por telefone.
+
+    Este é o remendo que faltava, e a falha que ele conserta era invisível até o
+    último passo: `ADD COLUMN` resolve coluna que **falta**, e nada resolve
+    coluna que existe com a restrição errada. O banco de produção nasceu com
+    `email NOT NULL`, o `create_all` não mexe em tabela que já existe, e criar
+    conta por telefone morria no `INSERT` — depois de o formulário passar, de o
+    SMS sair e de o código certo ser digitado. O pior lugar possível.
+
+    Em Postgres é uma linha. No SQLite não existe "alterar coluna": a tabela
+    precisa ser reconstruída, e é isso que acontece aqui.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+    colunas = {c["name"]: c for c in inspector.get_columns("users")}
+    email = colunas.get("email")
+    if email is None or email["nullable"]:
+        return
+
+    if engine.dialect.name != "sqlite":
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ALTER COLUMN email DROP NOT NULL"))
+        return
+
+    from app.models import User
+
+    # Só as colunas que existem dos dois lados: o banco antigo pode não ter as
+    # que acabaram de ser adicionadas, e a tabela nova não tem nada que só
+    # existisse no antigo.
+    comuns = [c.name for c in User.__table__.columns if c.name in colunas]
+    lista = ", ".join(f'"{n}"' for n in comuns)
+    indices = [i["name"] for i in inspector.get_indexes("users")]
+
+    # `AUTOCOMMIT` porque um `PRAGMA` dentro de transação é ignorado em silêncio,
+    # e são os dois PRAGMAs que tornam esta reconstrução segura. A transação
+    # volta logo abaixo, escrita à mão: sem ela, uma falha no meio deixaria o
+    # banco com a tabela renomeada e nenhuma `users`.
+    bruta = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+    with bruta as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        # O detalhe que decide: desde o SQLite 3.25, um RENAME reescreve as
+        # cláusulas `REFERENCES` das **outras** tabelas — `devices` passaria a
+        # apontar para `users_antiga`, que some no fim. Ninguém veria nada
+        # quebrar (o SQLite não força chaves estrangeiras por padrão), e o banco
+        # ficaria com uma referência para o nada.
+        conn.exec_driver_sql("PRAGMA legacy_alter_table=ON")
+        conn.exec_driver_sql("BEGIN")
+        try:
+            # Os índices seguem a tabela renomeada com o nome que tinham, e
+            # `ix_users_email` colidiria ao ser criado de novo.
+            for nome in indices:
+                conn.execute(text(f'DROP INDEX IF EXISTS "{nome}"'))
+            conn.execute(text("ALTER TABLE users RENAME TO users_antiga"))
+            User.__table__.create(bind=conn)
+            conn.execute(
+                text(f"INSERT INTO users ({lista}) SELECT {lista} FROM users_antiga")
+            )
+            conn.execute(text("DROP TABLE users_antiga"))
+            conn.exec_driver_sql("COMMIT")
+        except Exception:
+            conn.exec_driver_sql("ROLLBACK")
+            raise
+        finally:
+            conn.exec_driver_sql("PRAGMA legacy_alter_table=OFF")
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+    print("migração: users.email passou a ser opcional (cadastro por telefone)")

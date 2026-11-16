@@ -1,0 +1,834 @@
+﻿<#
+.SINOPSE
+    Atualiza as três pontas do Deskside de um terminal só: o agente no
+    Windows, o app Flutter e o backend no VPS.
+
+.DESCRIÇÃO
+    Sem isto são três terminais (PowerShell do agente, PowerShell do app e SSH
+    do servidor) e a chance de esquecer um deles - que foi a causa de metade
+    dos defeitos que investigamos: componente velho conversando com componente
+    novo.
+
+    No fim, o script pergunta ao /health o que o servidor realmente tem, e
+    compara com o que este código espera. É a checagem que responde "qual peça
+    está desatualizada?" sem SSH nenhum.
+
+.EXEMPLO
+    .\scripts\atualizar.ps1
+    Atualiza tudo (agente, app e VPS).
+
+.EXEMPLO
+    .\scripts\atualizar.ps1 -Agente -Rodar
+    Só o agente, e o deixa rodando à vista neste terminal.
+
+.EXEMPLO
+    .\scripts\atualizar.ps1 -Vps
+    Só o servidor.
+#>
+# ATENÇÃO ao editar: salve sempre como UTF-8 COM BOM, não use travessão, e não
+# crie variável com o nome de um parâmetro.
+#
+# E `\"` NÃO escapa aspas no PowerShell: o escape é `""` (ou a crase). Uma
+# linha como `"... '\"features\"'"` não compila, e o erro aponta para o token
+# seguinte. Quando o texto precisar de aspas, prefira reescrever para não
+# precisar delas - foi o que se fez no `grep` da conferência do deploy.
+#
+# Nomes de variável no PowerShell são insensíveis a maiúsculas: `$agente` **é**
+# o parâmetro `[switch]$Agente`. Uma linha inocente como
+# `$agente = Join-Path $raiz "agent"` põe um texto dentro de um switch e derruba
+# o script com "não é possível converter System.String no tipo
+# SwitchParameter" - um erro que aponta para o próprio arquivo e não diz qual
+# linha. Custou quatro rodadas de depuração. Os nomes tomados hoje são:
+# Agente, App, Vps, Rodar, Ocultar, Branch, Dominio, Servidor, ChaveSsh, NoPull,
+# Backup.
+#
+# O PowerShell 5.1 lê .ps1 sem BOM como ANSI. Nessa leitura, o travessão vira
+# a aspa curva ", que ele aceita como delimitador de string - e uma aspa solta
+# no meio de um comentário quebra o arquivo inteiro, com erros que apontam
+# para linhas que não têm nada de errado.
+[CmdletBinding()]
+param(
+    # Sem nenhuma destas três, o script faz tudo.
+    [switch]$Agente,
+    [switch]$App,
+    [switch]$Vps,
+
+    # Baixa a cópia de segurança mais recente do banco para este computador.
+    # Sozinha, faz **só** isso - nada de git, compilação ou deploy.
+    [switch]$Backup,
+
+    # Publica o instalador: copia o executável compilado para a pasta do site,
+    # confere a arquitetura e o manda para o VPS.
+    #
+    # Publica **a arquitetura desta máquina**, com o nome que ela merece - e é
+    # essa a razão de existir. Não há compilação cruzada aqui (o `audiopus_sys`
+    # não compila com host ARM64), então o x64 sai de um PC Intel e o ARM64 do
+    # MateBook. Derivar o nome do cabeçalho do binário, em vez de digitá-lo,
+    # torna impossível repetir o que já aconteceu: publicar o ARM64 com o nome
+    # do x64 e descobrir no computador de outra pessoa.
+    [switch]$Publicar,
+
+    # Deixa o agente rodando à vista no fim, para acompanhar as mensagens.
+    [switch]$Rodar,
+
+    # Instala o agente para subir sozinho (oculto) no logon, em vez de rodar
+    # à vista. Não combina com -Rodar.
+    [switch]$Ocultar,
+
+    [string]$Branch = "claude/testing-strategy-multiplatform-0nztwm",
+    # O domínio do servidor: a conferência do /health no fim do deploy, o
+    # endereço publicado do instalador e o servidor para onde o agente deste
+    # computador aponta ao ser reinstalado.
+    #
+    # Era o nome antigo do DuckDNS até o DNS do `deskside.com.br` propagar. Saiu
+    # dele quando o DuckDNS parou de resolver o nome e o agente do Dell, que o
+    # script reinstalava apontando para lá, ficou fora do ar sem que o
+    # servidor tivesse nada. O Caddy ainda atende os dois nomes.
+    [string]$Dominio = "deskside.com.br",
+
+    # Servidor e chave do SSH. O padrão pega a chave mais recente em Downloads;
+    # passe -ChaveSsh se a sua estiver noutro lugar.
+    [string]$Servidor = "ubuntu@137.131.184.239",
+    [string]$ChaveSsh = "",
+
+    # Uso interno: pula o `git pull`. O script se reinicia sozinho quando o
+    # pull traz uma versão nova dele mesmo, e a segunda passada não deve
+    # puxar de novo - nem poder virar laço.
+    [switch]$NoPull
+)
+
+$ErrorActionPreference = "Stop"
+
+# Nenhuma etapa escolhida = todas. O -Backup fica de fora desta conta de
+# propósito: baixar o banco é uma tarefa separada, e não faria sentido ela
+# acontecer toda vez que alguém compila o agente.
+if (-not ($Agente -or $App -or $Vps -or $Backup -or $Publicar)) {
+    $Agente = $true; $App = $true; $Vps = $true
+}
+
+$raiz = Split-Path -Parent $PSScriptRoot
+$falhas = @()
+
+function Titulo($texto) {
+    Write-Host ""
+    Write-Host "=== $texto ===" -ForegroundColor Cyan
+}
+
+function Passo($texto) { Write-Host "  $texto" -ForegroundColor DarkGray }
+
+# Roda um programa externo e devolve $false se ele falhar, sem derrubar o
+# script: uma etapa quebrada não deve impedir as outras de rodarem.
+#
+# O `Write-Host` no meio não é enfeite, e a falta dele custou caro. No
+# PowerShell, o que um programa externo escreve na saída padrão entra no fluxo
+# de saída da função - junto do $true/$false do `return`. Quem chama com
+# `if (Executar ...)` recebe então um **vetor** com as linhas do programa mais o
+# booleano, e vetor não vazio é verdadeiro. Resultado: qualquer programa que
+# imprima alguma coisa passava por bem-sucedido, e as linhas dele sumiam da tela
+# por terem sido capturadas pelo `if`.
+#
+# Foi exatamente isto que aconteceu com o `flutter analyze`: ele escreve os
+# apontamentos na saída padrão e só o resumo no erro padrão. A tela mostrava
+# "40 issues found." seguido de "App sem apontamentos", sem a lista no meio -
+# o pior de todos os mundos, porque some a prova e ainda se afirma o contrário.
+# O `cargo` escapou por acaso: ele fala quase tudo pelo erro padrão.
+#
+# `Write-Host` escreve direto no console, que é o único destino que **não** vira
+# valor de retorno.
+#
+# Só a saída padrão passa por aqui, de propósito. A primeira tentativa trouxe o
+# erro padrão junto com `2>&1`, e o resultado foi pior: o PowerShell converte
+# cada linha de erro de um programa externo num objeto de erro e a imprime com
+# o enfeite todo - nome do script, número da linha, `CategoryInfo`,
+# `FullyQualifiedErrorId` -, transformando um "40 issues found." de uma linha
+# num bloco vermelho de seis. Sem a redireção, o erro padrão vai direto para o
+# console pelo caminho de sempre, limpo, como sempre foi.
+function Executar($programa, $argumentos, $onde) {
+    Push-Location $onde
+    # O `$ErrorActionPreference = "Stop"` lá de cima vale para os comandos do
+    # PowerShell, onde ele é bom: um `Get-FileHash` que falha deve parar tudo.
+    # Aqui dentro ele é perigoso, porque o PowerShell trata **qualquer** linha
+    # que um programa externo escreva no erro padrão como erro - e com "Stop"
+    # isso encerra o script.
+    #
+    # Não é hipótese. Aconteceu: o `git pull` escreve "From https://..." no erro
+    # padrão em toda execução normal, e uma versão deste arquivo com `2>&1`
+    # morreu nessa linha, no primeiro passo, **antes** de conseguir baixar a
+    # correção de si mesma. A rede de segurança do `.cmd` não pegou: ela cobre
+    # arquivo que não compila, e este compilava.
+    #
+    # A atribuição é local à função - o PowerShell restaura o valor de fora ao
+    # sair, sem precisar guardar e devolver a mão.
+    $ErrorActionPreference = "Continue"
+    try {
+        & $programa @argumentos | ForEach-Object { Write-Host $_ }
+        return ($LASTEXITCODE -eq 0)
+    } finally {
+        Pop-Location
+    }
+}
+
+# A ferramenta existe nesta máquina?
+#
+# Existe porque "não instalado" e "instalado e falhou" pedem respostas
+# opostas, e o script tratava os dois como a mesma coisa. O Rust ausente caía
+# no ramo de erro de compilação, que repetia o build inteiro e depois sugeria
+# "o .exe está preso por outro programa" - um diagnóstico errado, para um
+# problema que a mensagem certa resolve em um comando.
+function Instalado($comando) {
+    return [bool](Get-Command $comando -ErrorAction SilentlyContinue)
+}
+
+# Encerra qualquer agente em execução.
+#
+# `-ErrorAction SilentlyContinue` nos dois: não haver agente rodando é o caso
+# normal, e sem isso o script inteiro cairia por causa dele.
+function PararAgente {
+    $vivos = Get-Process deskside-agent -ErrorAction SilentlyContinue
+    if ($vivos) {
+        Passo "parando $($vivos.Count) agente(s) em execução"
+        $vivos | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 800
+    }
+}
+
+# Diz quem tem o arquivo aberto, quando dá para descobrir sem ferramenta extra.
+#
+# Existe porque "Acesso negado" sozinho não é diagnóstico: manda a pessoa
+# adivinhar entre antivírus, Explorer, uma cópia do agente rodando e um build
+# anterior travado.
+function QuemSegura($caminho) {
+    if (-not (Test-Path $caminho)) {
+        Write-Host "  (o executável nem existe ainda: $caminho)" -ForegroundColor DarkGray
+        return
+    }
+    $donos = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -and $_.Path -ieq $caminho
+    }
+    if ($donos) {
+        foreach ($d in $donos) {
+            Write-Host "  Rodando: $($d.ProcessName) (PID $($d.Id))" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  Nenhum processo com esse executável - provavelmente o antivírus." -ForegroundColor DarkGray
+    }
+}
+
+# Põe o clang ao alcance do build, quando o Windows é ARM64.
+#
+# Só o ARM64 precisa. O `ring` (criptografia, sob o TLS) tem trechos em
+# assembly, e nesse alvo ele **não** os compila com o `cl.exe` da Microsoft:
+# exige o clang. Num Windows x86-64 nada disto acontece, e foi por isso que a
+# exigência apareceu só quando o projeto foi compilado numa máquina ARM.
+#
+# O instalador do LLVM costuma não pôr o clang no PATH, e o que vem junto do
+# Visual Studio nunca está. O erro que isso produz - "failed to find tool
+# clang" - não diz onde procurar nem que é coisa de ARM64.
+#
+# Procura nos dois lugares conhecidos e avisa o cc-rs pela variável do alvo,
+# em vez de mexer no PATH do sistema: vale só para esta execução.
+function PrepararClangArm64 {
+    $linha = & rustc -vV 2>$null | Select-String '^host:'
+    if (-not $linha) { return }
+    if ("$linha" -notmatch 'aarch64') { return }
+    if (Get-Command clang -ErrorAction SilentlyContinue) { return }
+    if ($env:CC_aarch64_pc_windows_msvc) { return }
+
+    $candidatos = @(
+        "$env:ProgramFiles\LLVM\bin\clang.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\ARM64\bin\clang.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\clang.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\bin\clang.exe"
+    )
+    $achado = $candidatos | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($achado) {
+        Passo "clang encontrado para o alvo ARM64: $achado"
+        $env:CC_aarch64_pc_windows_msvc = $achado
+        return
+    }
+
+    Write-Host "  Windows ARM64 sem clang: o 'ring' nao compila sem ele." -ForegroundColor Yellow
+    Write-Host "    winget install --id LLVM.LLVM -e" -ForegroundColor DarkGray
+    Write-Host "  So o ARM64 precisa disto; num Windows x86-64 nao faz falta." -ForegroundColor DarkGray
+}
+
+# Devolve o agente instalado ao ar depois de uma compilação que falhou.
+#
+# O `PararAgente` mata o agente **antes** do build, para liberar o .exe. Se o
+# build falha, o computador fica sem agente e some do app - e a pessoa não
+# associa "não consegui compilar" a "meu computador sumiu". Aconteceu: numa
+# máquina sem o linker da Microsoft, cada tentativa de atualizar derrubava o
+# agente que estava funcionando.
+#
+# Sobe o **instalado**, que é o binário antigo e continua servindo. Melhor um
+# agente desatualizado no ar do que nenhum.
+function RestaurarAgenteInstalado {
+    if ($Ocultar -or $Rodar) { return }
+    $jaInstalado = Join-Path $env:LOCALAPPDATA "Programs\Deskside\deskside-agent.exe"
+    if (-not (Test-Path $jaInstalado)) { return }
+    if (Get-Process deskside-agent -ErrorAction SilentlyContinue) { return }
+
+    Write-Host "  Subindo o agente que ja estava instalado (versao anterior)." -ForegroundColor Yellow
+    Start-Process -FilePath $jaInstalado -WindowStyle Hidden
+}
+
+# Reinstala o agente com o binário recém-compilado, se ele estava instalado.
+#
+# Sem isto, atualizar **derruba** o agente e não o levanta: o `PararAgente` o
+# encerra para liberar o .exe, e o instalado só voltaria no próximo login. O
+# sintoma seria o computador sumir do app depois de cada atualização, sem nada
+# explicando - e mexer no `atualizar` é justamente o que ninguém associa a isso.
+#
+# `install` sem URL preserva o backend já configurado: atualizar não é hora de
+# reescrever configuração.
+#
+# Não faz nada com `-Ocultar` (que já instala, logo abaixo) nem com `-Rodar`
+# (que quer o agente à vista neste terminal): nos dois casos o usuário pediu
+# outra coisa, e subir um segundo agente oculto disputaria o mesmo device_id.
+function ReinstalarSeInstalado($pasta) {
+    if ($Ocultar -or $Rodar) { return }
+
+    $jaInstalado = Join-Path $env:LOCALAPPDATA "Programs\Deskside\deskside-agent.exe"
+    if (-not (Test-Path $jaInstalado)) {
+        Passo "agente não está instalado: nada a reiniciar"
+        return
+    }
+
+    # De novo, e não só antes do build: entre um e outro passam minutos, e nesse
+    # intervalo o agente instalado volta a rodar sozinho - pelo logon, ou pelo
+    # `RestaurarAgenteInstalado` de uma tentativa anterior. Aí a cópia falha com
+    # "o arquivo já está sendo usado por outro processo", depois de a compilação
+    # ter dado certo: o pior momento para tropeçar.
+    PararAgente
+
+    Passo "reinstalando com o binário novo"
+    $recem = Join-Path $pasta "target\release\deskside-agent.exe"
+    if (Executar $recem @("install") $pasta) {
+        Write-Host "  Agente reinstalado e rodando." -ForegroundColor Green
+    } else {
+        $script:falhas += "agente (reinstalar)"
+        Write-Host "  Compilou, mas não reinstalou. Rode a mão:" -ForegroundColor Red
+        Write-Host "    $recem install" -ForegroundColor Red
+    }
+}
+
+# --- código ------------------------------------------------------------------
+
+Titulo "Código"
+
+# O PowerShell lê o arquivo inteiro na memória antes de executar a primeira
+# linha. Como o `git pull` abaixo pode trazer uma versão nova **deste script**,
+# a execução em curso continuaria sendo a antiga - e qualquer correção feita
+# aqui só valeria na próxima vez, sem nada dizendo isso.
+#
+# Aconteceu de verdade: uma correção no relatório do `flutter analyze` foi
+# baixada e a mesma execução imprimiu a mensagem errada, como se a correção não
+# tivesse funcionado.
+$eu = $PSCommandPath
+$antes = (Get-FileHash $eu -Algorithm SHA256).Hash
+
+if ($NoPull) {
+    Passo "código já atualizado nesta rodada"
+} else {
+    Passo "git pull ($Branch)"
+    if (-not (Executar "git" @("pull", "origin", $Branch) $raiz)) {
+        Write-Host "  Não consegui atualizar o código. Resolva o git e rode de novo." -ForegroundColor Red
+        exit 1
+    }
+}
+
+if (-not $NoPull -and (Get-FileHash $eu -Algorithm SHA256).Hash -ne $antes) {
+    Write-Host "  O próprio script mudou. Recomeçando com a versão nova." -ForegroundColor Yellow
+
+    # **Processo novo**, e não `& $eu` no mesmo processo. Duas razões:
+    #
+    # - Só um processo novo garante que o arquivo seja lido do disco de novo.
+    #   Reinvocar aqui dentro reaproveita a árvore já carregada em memória, que
+    #   é justamente o que se quer trocar.
+    # - Os argumentos vão como **texto**, montados um a um, e não por splat de
+    #   `$PSBoundParameters`. O splat parece equivalente e não é: a ligação de
+    #   parâmetros por `-File` é posicional e por texto, e a primeira versão
+    #   disto morreu com "não é possível converter System.String em
+    #   SwitchParameter" - um erro que não diz nada a quem só queria atualizar.
+    $passar = @()
+    foreach ($kv in $PSBoundParameters.GetEnumerator()) {
+        if ($kv.Value -is [switch]) {
+            if ($kv.Value.IsPresent) { $passar += "-$($kv.Key)" }
+        } else {
+            $passar += "-$($kv.Key)"
+            $passar += [string]$kv.Value
+        }
+    }
+    # `-NoPull` para a segunda passada não repetir o pull (que agora não traria
+    # nada) e, sobretudo, para não haver como isto virar laço.
+    $passar += "-NoPull"
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $eu @passar
+    exit $LASTEXITCODE
+}
+
+# --- agente ------------------------------------------------------------------
+
+if ($Agente) {
+    Titulo "Agente (Rust)"
+    $pastaAgente = Join-Path $raiz "agent"
+    $exeAgente = Join-Path $pastaAgente "target\release\deskside-agent.exe"
+
+    if (-not (Instalado "cargo")) {
+        $falhas += "agente (Rust nao instalado)"
+        Write-Host "  Rust nao esta instalado nesta maquina." -ForegroundColor Yellow
+        Write-Host "  Quem compila o agente e o computador que voce quer controlar;" -ForegroundColor DarkGray
+        Write-Host "  numa maquina que so acompanha o projeto, use: atualizar.cmd -Vps" -ForegroundColor DarkGray
+        Write-Host "  Para instalar aqui:" -ForegroundColor DarkGray
+        Write-Host "    winget install --id Rustlang.Rustup -e" -ForegroundColor DarkGray
+        Write-Host "    winget install --id Microsoft.VisualStudio.2022.BuildTools -e" -ForegroundColor DarkGray
+        Write-Host "  Os dois: o Rust nao traz o link.exe da Microsoft. Reabra o terminal depois." -ForegroundColor DarkGray
+    } else {
+        PrepararClangArm64
+        # O agente rodando segura o próprio .exe, e o build falha com
+        # "Acesso negado (os error 5)". Parar antes evita isso.
+        PararAgente
+        Passo "cargo build --release"
+        if (Executar "cargo" @("build", "--release") $pastaAgente) {
+            Write-Host "  Agente compilado." -ForegroundColor Green
+            ReinstalarSeInstalado $pastaAgente
+        } elseif (-not (Test-Path $exeAgente)) {
+            # Sem executável no disco, "alguém está segurando o arquivo" é
+            # impossível: o build nem chegou ao passo de gravá-lo. Repetir aqui
+            # custava a compilação inteira de novo para dar o mesmo erro, e a
+            # dica de "Acesso negado" no fim apontava para o lugar errado.
+            $falhas += "agente"
+            RestaurarAgenteInstalado
+            Write-Host "  Falha ao compilar o agente - o erro esta logo acima." -ForegroundColor Red
+            Write-Host "  Se disse 'linker link.exe not found', falta o compilador da Microsoft:" -ForegroundColor Red
+            Write-Host "    winget install --id Microsoft.VisualStudio.2022.BuildTools -e" -ForegroundColor DarkGray
+            Write-Host "  Em Windows ARM64, acrescente o componente ARM64 na instalacao." -ForegroundColor DarkGray
+            Write-Host "  Se disse 'failed to find tool clang', instale o LLVM:" -ForegroundColor Red
+            Write-Host "    winget install --id LLVM.LLVM -e" -ForegroundColor DarkGray
+            Write-Host "  Confira a arquitetura com: rustc -vV  (linha 'host')" -ForegroundColor DarkGray
+        } else {
+            # Com o .exe no disco, "Acesso negado" quase nunca é erro de
+            # código: é alguém segurando o arquivo. Costuma ser o antivírus
+            # terminando de examinar o binário recém-gravado, e nesse caso
+            # esperar resolve. Uma segunda tentativa custa segundos e evita
+            # mandar o usuário caçar um problema que não existe.
+            Write-Host "  Falhou. Vendo quem está segurando o executável..." -ForegroundColor Yellow
+            QuemSegura $exeAgente
+            PararAgente
+            Start-Sleep -Seconds 3
+            Passo "cargo build --release (segunda tentativa)"
+            if (Executar "cargo" @("build", "--release") $pastaAgente) {
+                Write-Host "  Agente compilado." -ForegroundColor Green
+                ReinstalarSeInstalado $pastaAgente
+            } else {
+                $falhas += "agente"
+                RestaurarAgenteInstalado
+                Write-Host "  Falha ao compilar o agente." -ForegroundColor Red
+                Write-Host "  Se disse 'Acesso negado', o .exe está preso por outro programa." -ForegroundColor Red
+                Write-Host "  Feche o Explorer nessa pasta, ou reinicie e rode de novo." -ForegroundColor Red
+            }
+        }
+    }
+}
+
+# --- app ---------------------------------------------------------------------
+
+if ($App) {
+    Titulo "App (Flutter)"
+    $cliente = Join-Path $raiz "client"
+    if (-not (Instalado "flutter")) {
+        # Aninhado num `else`, e não com um `return` aqui: este é corpo de
+        # script, não de função, e `return` encerraria o **script inteiro** - o
+        # deploy do VPS, logo abaixo, nunca rodaria. Falharia calado, que é o
+        # pior jeito de falhar num script cuja razão de existir é não deixar
+        # uma ponta para trás.
+        $falhas += "app (Flutter nao instalado)"
+        Write-Host "  Flutter nao esta instalado nesta maquina." -ForegroundColor Yellow
+        Write-Host "  O .ipa do iPhone sai do Codemagic, nao daqui - o Flutter local serve" -ForegroundColor DarkGray
+        Write-Host "  para rodar o analyze e os testes antes de gastar um build." -ForegroundColor DarkGray
+        Write-Host "  Numa maquina que so acompanha o projeto, use: atualizar.cmd -Vps" -ForegroundColor DarkGray
+    } else {
+        Passo "flutter pub get"
+        if (-not (Executar "flutter" @("pub", "get") $cliente)) {
+            $falhas += "app (pub get)"
+        } else {
+            # `--fatal-infos`: sem isto o `flutter analyze` **sai com sucesso**
+            # quando só há apontamentos de nível "info", e este script dizia
+            # "App sem apontamentos" com três problemas impressos logo acima.
+            # Um verificador que não distingue "passou" de "passou mas
+            # reclamou" é pior do que não ter verificador: ele ensina a ignorar
+            # a saída.
+            Passo "flutter analyze --fatal-infos"
+            if (Executar "flutter" @("analyze", "--fatal-infos") $cliente) {
+                Write-Host "  App sem apontamentos." -ForegroundColor Green
+            } else {
+                $falhas += "app (analyze)"
+                Write-Host "  O analyze apontou algo - a lista está logo acima." -ForegroundColor Red
+                Write-Host "  Corrija antes de gastar build do Codemagic." -ForegroundColor Red
+            }
+        }
+    }
+}
+
+# --- vps ---------------------------------------------------------------------
+
+# Acha a chave SSH, se ela não veio por parâmetro.
+#
+# Vive numa função porque agora há dois usuários dela: o deploy e o download da
+# cópia de segurança. Duas cópias da mesma busca acabariam divergindo no dia em
+# que a chave mudasse de lugar.
+function AcharChave($caminho) {
+    if ($caminho -ne "") { return $caminho }
+    # A chave da Oracle costuma estar em Downloads; pega a mais recente.
+    $chaves = Get-ChildItem "$env:USERPROFILE\Downloads" -Filter "*.key" -ErrorAction SilentlyContinue
+    $achada = $chaves | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($achada) { return $achada.FullName }
+    return ""
+}
+
+if ($Vps) {
+    Titulo "Backend (VPS)"
+    $ChaveSsh = AcharChave $ChaveSsh
+
+    if ($ChaveSsh -eq "" -or -not (Test-Path $ChaveSsh)) {
+        $falhas += "vps (chave SSH não encontrada)"
+        Write-Host "  Não achei a chave SSH. Rode com -ChaveSsh C:\caminho\sua-chave.key" -ForegroundColor Red
+    } else {
+        Passo "ssh $Servidor (git + docker compose)"
+        # Encadeado com && porque cada "ssh" abre uma sessão nova: em chamadas
+        # separadas, o "cd" da primeira não valeria para a segunda. O "&&" aqui
+        # é texto dentro de uma string - quem o executa é o shell do Linux, não
+        # o PowerShell (que nem o suporta na versão 5.1).
+        $passos = @(
+            # O caminho do clone no servidor, que **não** é a marca: é só onde
+            # o repositório foi baixado. A renomeação do projeto trocou este
+            # texto junto e derrubou o deploy com "No such file or directory".
+            # Aceitar os dois nomes deixa a pasta ser renomeada quando der
+            # vontade, sem prender o deploy a essa decisão.
+            "cd ~/Deskside 2>/dev/null || cd ~/RemoteOne",
+            "git fetch origin $Branch",
+            "git checkout $Branch",
+            "git reset --hard origin/$Branch",
+            "cd deploy",
+            "sudo docker compose -f docker-compose.lite.yml up -d --build",
+            # O Caddyfile entra por volume: mudá-lo no disco não muda nada no
+            # Caddy que já está rodando, e o `up -d` não recria o contêiner
+            # porque, do ponto de vista dele, o serviço não mudou. O resultado
+            # foi um proxy quebrado no ar com a correção parada no disco.
+            #
+            # `caddy reload` troca a configuração **sem derrubar** conexão
+            # nenhuma - e, se a configuração nova estiver errada, ele recusa e
+            # mantém a antiga de pé. Ou seja, também serve de validação.
+            "sudo docker compose -f docker-compose.lite.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile"
+        )
+        $remoto = $passos -join " && "
+        & ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $remoto
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  Backend atualizado." -ForegroundColor Green
+        } else {
+            $falhas += "vps"
+            Write-Host "  Falha ao atualizar o VPS." -ForegroundColor Red
+        }
+        # Aqui **não** vai uma conferência do /health. Já existe uma, logo
+        # abaixo, e duas fazem o mesmo GET com respostas diferentes: quem sobe
+        # o contêiner acabou de recriá-lo, então o primeiro pedido pega a API
+        # ainda levantando e o Caddy devolve 502. A conferência espera; uma
+        # checagem escrita aqui, sem espera, reprovaria um deploy perfeito.
+        #
+        # Duas versões disto já falharam - a primeira dentro do `ssh`, onde a
+        # VM não alcança o próprio IP público porque o NAT da nuvem não faz
+        # hairpin; a segunda aqui, sem paciência. Verificação é uma só, e é a
+        # que sabe esperar.
+    }
+}
+
+# --- cópia de segurança ------------------------------------------------------
+
+if ($Backup) {
+    Titulo "Cópia de segurança do banco"
+    $ChaveSsh = AcharChave $ChaveSsh
+
+    if ($ChaveSsh -eq "" -or -not (Test-Path $ChaveSsh)) {
+        $falhas += "backup (chave SSH não encontrada)"
+        Write-Host "  Não achei a chave SSH. Rode com -ChaveSsh C:\caminho\sua-chave.key" -ForegroundColor Red
+    } else {
+        # Aspas simples no PowerShell: dentro há `$PWD`, que é uma variável do
+        # **shell do Linux** e não daqui. Com aspas duplas o PowerShell a
+        # substituiria antes de mandar, e o servidor receberia o caminho do
+        # Windows - um erro que não parece erro de citação.
+        # `deskside-*.db*` pega as duas formas: em claro e cifrada (`.db.enc`).
+        # Sem o asterisco no fim, ligar a cifra no servidor faria este passo
+        # dizer "nenhuma cópia no servidor" com catorze cópias na pasta - e a
+        # conclusão natural seria que o backup parou de rodar.
+        $achar = 'cd ~/Deskside/deploy 2>/dev/null || cd ~/RemoteOne/deploy; ls -1d "$PWD"/backups/deskside-*.db* 2>/dev/null | tail -1'
+        Passo "procurando a cópia mais recente no servidor"
+        $remoto = (& ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $achar | Select-Object -Last 1)
+
+        if (-not $remoto) {
+            $falhas += "backup (nenhuma cópia no servidor)"
+            Write-Host "  O servidor não tem cópia nenhuma ainda." -ForegroundColor Red
+            Write-Host "  Instale a tarefa diária: veja docs/deploy-vps-oracle.md" -ForegroundColor Red
+            Write-Host "  Ou faça uma agora, por SSH:" -ForegroundColor DarkGray
+            Write-Host "    ~/Deskside/deploy/backup.sh" -ForegroundColor DarkGray
+        } else {
+            $pasta = Join-Path $env:USERPROFILE "Deskside-backups"
+            New-Item -ItemType Directory -Force -Path $pasta | Out-Null
+            $nome = Split-Path $remoto -Leaf
+            $local = Join-Path $pasta $nome
+
+            Passo "baixando $nome"
+            & scp -i $ChaveSsh -o StrictHostKeyChecking=accept-new "${Servidor}:${remoto}" $local
+
+            # Conferir o que chegou, e não só o código de saída. Um arquivo de
+            # zero byte, ou uma mensagem de erro gravada no lugar do banco,
+            # sairiam daqui como sucesso - e só se descobririam no dia da
+            # restauração, que é o pior dia possível para descobrir.
+            if (-not (Test-Path $local)) {
+                $falhas += "backup (não baixou)"
+                Write-Host "  O arquivo não chegou." -ForegroundColor Red
+            } else {
+                $tamanho = (Get-Item $local).Length
+                $cabecalho = [System.IO.File]::ReadAllBytes($local) | Select-Object -First 15
+                $texto = -join ($cabecalho | ForEach-Object { [char]$_ })
+
+                if ($nome -like "*.enc") {
+                    # Cópia cifrada. Não dá para conferir se é um banco sem a
+                    # chave — o que dá para conferir é se é um envelope de
+                    # verdade: todo token Fernet começa com o byte de versão
+                    # 0x80, que em base64 vira "gAAAAA". Um arquivo de zero byte
+                    # ou uma mensagem de erro gravada no lugar não passam.
+                    if (-not $texto.StartsWith("gAAAAA")) {
+                        $falhas += "backup (arquivo cifrado invalido)"
+                        Write-Host "  Baixou $tamanho bytes, mas nao parece uma copia cifrada." -ForegroundColor Red
+                        Write-Host "  Comeco do arquivo: $texto" -ForegroundColor Red
+                    } else {
+                        Write-Host "  Copia cifrada salva em $local ($tamanho bytes)." -ForegroundColor Green
+                        Write-Host "  Para abrir, na VM: docker compose exec api python -m app.backup --abrir /backups/$nome" -ForegroundColor DarkGray
+                    }
+                } elseif ($texto -ne "SQLite format 3") {
+                    # Todo banco SQLite começa com "SQLite format 3" e um zero.
+                    $falhas += "backup (arquivo não é um banco)"
+                    Write-Host "  Baixou $tamanho bytes, mas não é um banco SQLite." -ForegroundColor Red
+                    Write-Host "  Comeco do arquivo: $texto" -ForegroundColor Red
+                } else {
+                    Write-Host "  Copia salva em $local ($tamanho bytes)." -ForegroundColor Green
+                    Write-Host "  Sem cifra: defina DESKSIDE_BACKUP_KEY no deploy/.env da VM." -ForegroundColor DarkYellow
+                }
+            }
+        }
+    }
+}
+
+# --- conferência -------------------------------------------------------------
+
+# O que este código espera do servidor. Precisa espelhar a lista FEATURES do
+# `backend/app/main.py`: quando um recurso novo entra lá, o nome dele entra
+# aqui, e o script passa a acusar servidor velho sozinho.
+#
+# Ficou seis recursos atrasada sem ninguém notar - e uma conferência que não
+# confere o que existe hoje é a mesma armadilha do `flutter analyze` que saía
+# com sucesso: parece verificação, e não é.
+$esperado = @(
+    "pairing", "input", "screen-jpeg", "apps",
+    "totp", "webrtc-signaling", "system-stats",
+    "media-keys", "file-transfer", "foreground-app", "audio-stream",
+    "ice-servers", "clipboard", "monitors", "control-profiles",
+    "keep-awake", "brightness", "launch-many", "window-zones",
+    "automations", "signup-verification", "session-revocation",
+    "contact-verification", "close-all",
+    "focus-app", "automation-schedule", "save-all", "presentation-mode",
+    "rate-limit", "agent-unpair", "planos"
+)
+
+Titulo "Conferência"
+# Com paciência: o "docker compose up" volta quando o contêiner **inicia**, não
+# quando a aplicação está pronta para responder. Perguntar na mesma hora acusa
+# um servidor fora do ar que na verdade está só levantando.
+$saude = $null
+$bruto = ""
+$tentativas = 6
+for ($n = 1; $n -le $tentativas; $n++) {
+    try {
+        # `Invoke-WebRequest` e não `Invoke-RestMethod`: guardar o texto cru é
+        # o que permite **mostrar** o que chegou quando a conferência reprova.
+        # Sem isso, uma resposta 200 que não seja o JSON esperado - a página do
+        # app, por exemplo, quando o proxy está mal roteado - vira "servidor
+        # desatualizado", e o diagnóstico sai pelo lado errado. Aconteceu.
+        $resposta = Invoke-WebRequest "https://$Dominio/health" -TimeoutSec 10 -UseBasicParsing
+        $bruto = $resposta.Content
+        $saude = $bruto | ConvertFrom-Json
+    } catch {
+        $saude = $null
+        if ($bruto -eq "") { $bruto = $_.Exception.Message }
+    }
+
+    # Só para de tentar quando a resposta tem cara de saúde. Um 200 sem
+    # `features` costuma ser o servidor ainda subindo - ou o proxy entregando
+    # outra coisa -, e desistir na primeira vez perde os dois casos.
+    if ($null -ne $saude -and $null -ne $saude.features) { break }
+    if ($n -lt $tentativas) {
+        Passo "servidor ainda subindo, tentando de novo ($n/$tentativas)"
+        Start-Sleep -Seconds 5
+    }
+}
+
+if ($null -eq $saude -or $null -eq $saude.features) {
+    Write-Host "  https://$Dominio/health não respondeu o que se espera." -ForegroundColor Red
+    $recorte = $bruto
+    if ($recorte.Length -gt 300) { $recorte = $recorte.Substring(0, 300) + "..." }
+    Write-Host "  Recebido: $recorte" -ForegroundColor DarkGray
+    Write-Host "  Se veio HTML, o proxy está mandando /health para o app web." -ForegroundColor DarkGray
+    $falhas += "health"
+} else {
+    $faltando = $esperado | Where-Object { $saude.features -notcontains $_ }
+    if ($faltando) {
+        Write-Host "  O servidor não tem: $($faltando -join ', ')" -ForegroundColor Red
+        Write-Host "  (é ele que está velho, não o app nem o agente)" -ForegroundColor DarkGray
+        $falhas += "vps (desatualizado)"
+    } else {
+        Write-Host "  Servidor com tudo o que este código espera." -ForegroundColor Green
+    }
+
+    # A entrega do código de verificação é o único recurso que sobe "presente e
+    # desligado": as rotas existem, o /health lista `signup-verification`, e o
+    # código vai para o log em vez de para a pessoa. Sem esta linha, descobrir
+    # isso exige ler o JSON à mão - foi o que aconteceu, e a causa era o compose
+    # não repassar as variáveis do .env.
+    if ($null -ne $saude.delivery) {
+        $desligados = @()
+        if (-not $saude.delivery.email) { $desligados += "e-mail" }
+        if (-not $saude.delivery.sms) { $desligados += "SMS" }
+        if ($desligados.Count -eq 0) {
+            Write-Host "  Envio de codigo: e-mail e SMS configurados." -ForegroundColor Green
+        } else {
+            Write-Host "  Envio de codigo sem provedor: $($desligados -join ', ')." -ForegroundColor Yellow
+            Write-Host "  O codigo vai para o log do servidor; so voce consegue criar conta." -ForegroundColor DarkGray
+            Write-Host "  Configure em deploy/.env (ver docs/autenticacao.md)." -ForegroundColor DarkGray
+        }
+    }
+}
+
+# --- resumo ------------------------------------------------------------------
+
+Titulo "Resumo"
+if ($falhas.Count -eq 0) {
+    Write-Host "  Tudo atualizado." -ForegroundColor Green
+} else {
+    Write-Host "  Pendências: $($falhas -join ', ')" -ForegroundColor Yellow
+}
+
+if ($Publicar) {
+    Titulo "Publicar o instalador"
+    . (Join-Path $PSScriptRoot "lib-arquitetura.ps1")
+
+    $exe = Join-Path $raiz "agent\target\release\deskside-agent.exe"
+    $arq = ArquiteturaDoExe $exe
+    $nomePublicado = if ($arq) { NomePublicadoPara $arq } else { $null }
+
+    if (-not (Test-Path $exe)) {
+        $falhas += "publicar (sem executável)"
+        Write-Host "  Nao existe $exe. Compile antes: scripts\atualizar.cmd -Agente" -ForegroundColor Red
+    } elseif (-not $nomePublicado) {
+        $falhas += "publicar (arquitetura $arq)"
+        Write-Host "  O executavel e '$arq', e so publicamos x64 e ARM64." -ForegroundColor Red
+    } else {
+        $ChaveSsh = AcharChave $ChaveSsh
+        if ($ChaveSsh -eq "" -or -not (Test-Path $ChaveSsh)) {
+            $falhas += "publicar (chave SSH não encontrada)"
+            Write-Host "  Nao achei a chave SSH. Rode com -ChaveSsh C:\caminho\sua-chave.key" -ForegroundColor Red
+        } else {
+            $pastaSite = Join-Path $raiz "deploy\site\baixar"
+            New-Item -ItemType Directory -Force -Path $pastaSite | Out-Null
+            $local = Join-Path $pastaSite $nomePublicado
+
+            # O nome vem da arquitetura do binário, e não de um parâmetro: é o
+            # que impede publicar o ARM64 como se fosse o x64.
+            Passo "$arq -> $nomePublicado"
+            Copy-Item $exe $local -Force
+
+            $item = Get-Item $local
+            $mb = [math]::Round($item.Length / 1MB, 1)
+            Write-Host "  $nomePublicado : $arq, $mb MB, de $($item.LastWriteTime)" -ForegroundColor DarkGray
+
+            # O resumo do executavel, publicado ao lado dele. E por ele que o
+            # agente instalado descobre que ha versao nova: o numero de versao
+            # do agente nunca muda (0.1.0 desde sempre), e comparar resumos nao
+            # depende de ninguem lembrar de trocar numero nenhum.
+            #
+            # WriteAllText sem codificacao grava UTF-8 SEM BOM, e isso importa:
+            # o agente compara o texto do arquivo com o resumo que ele calcula,
+            # e um BOM na frente faria os dois nunca serem iguais.
+            $resumo = (Get-FileHash $local -Algorithm SHA256).Hash.ToLower()
+            $localResumo = "$local.sha256"
+            [IO.File]::WriteAllText($localResumo, $resumo)
+            Write-Host "  resumo: $resumo" -ForegroundColor DarkGray
+
+            # A data é a segunda conferência, e ela já salvou uma publicação:
+            # quando o build falha, o .exe do build anterior continua no disco e
+            # a cópia seguinte o leva sem erro nenhum. Um comando que da certo
+            # copiando a coisa errada e pior que um que falha.
+            $horas = ((Get-Date) - $item.LastWriteTime).TotalHours
+            if ($horas -gt 24) {
+                Write-Host "  AVISO: este executavel tem mais de um dia. A compilacao de agora falhou?" -ForegroundColor Yellow
+            }
+
+            $achar = 'cd ~/Deskside 2>/dev/null || cd ~/RemoteOne; pwd'
+            $raizRemota = (& ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor $achar | Select-Object -Last 1)
+            if (-not $raizRemota) {
+                $falhas += "publicar (não achei o projeto no servidor)"
+                Write-Host "  Nao achei o clone no servidor." -ForegroundColor Red
+            } else {
+                Passo "enviando para $Servidor"
+                & scp -i $ChaveSsh -o StrictHostKeyChecking=accept-new $local "${Servidor}:$raizRemota/deploy/site/baixar/"
+                $enviouExe = ($LASTEXITCODE -eq 0)
+                # O resumo vai DEPOIS do executavel, nunca antes. Na ordem
+                # contraria, por alguns segundos o site anunciaria uma versao
+                # nova enquanto ainda serve a velha; o agente baixaria a velha,
+                # o resumo nao bateria, e ele recusaria a atualizacao sem que
+                # nada estivesse errado.
+                $enviouResumo = $false
+                if ($enviouExe) {
+                    & scp -i $ChaveSsh -o StrictHostKeyChecking=accept-new $localResumo "${Servidor}:$raizRemota/deploy/site/baixar/"
+                    $enviouResumo = ($LASTEXITCODE -eq 0)
+                }
+                if (-not $enviouExe) {
+                    $falhas += "publicar (scp)"
+                    Write-Host "  O envio falhou." -ForegroundColor Red
+                } elseif (-not $enviouResumo) {
+                    # O executavel novo esta no ar, mas os agentes instalados
+                    # nao vao saber: continuam comparando com o resumo antigo.
+                    $falhas += "publicar (resumo)"
+                    Write-Host "  O executavel foi, o resumo nao. Os agentes nao vao ver a atualizacao." -ForegroundColor Red
+                } else {
+                    # A pagina do site e versionada; o binario nao. Sem este
+                    # `git pull`, um texto novo na pagina nunca chega ao ar.
+                    Passo "atualizando a pagina no servidor"
+                    & ssh -i $ChaveSsh -o StrictHostKeyChecking=accept-new $Servidor "cd $raizRemota; git pull --ff-only" | Out-Null
+                    Write-Host "  Publicado: https://$Dominio/baixar/$nomePublicado" -ForegroundColor Green
+                }
+            }
+        }
+    }
+}
+
+# Sem executável, `-Ocultar` e `-Rodar` só produziriam um "termo não
+# reconhecido" do PowerShell, apontando para esta linha - a três telas de
+# distância do erro de compilação que é a causa. Dizer o que falta aqui evita
+# que a última mensagem da tela seja a menos informativa das duas.
+$exeAgente = Join-Path $raiz "agent\target\release\deskside-agent.exe"
+if (($Ocultar -or $Rodar) -and -not (Test-Path $exeAgente)) {
+    Titulo "Agente"
+    Write-Host "  O executavel do agente nao existe - a compilacao acima nao passou." -ForegroundColor Red
+    Write-Host "  Resolva o erro do cargo antes de instalar ou rodar." -ForegroundColor Red
+} elseif ($Ocultar) {
+    Titulo "Agente oculto"
+    # Quem instala agora é o próprio executável: um `.ps1` não entra na
+    # verificação cruzada para Windows nem tem teste, e este projeto já pagou
+    # caro por código que ninguém verifica.
+    & $exeAgente install "wss://$Dominio/ws/agent"
+} elseif ($Rodar) {
+    Titulo "Agente (Ctrl+C para sair)"
+    # `run`, e nao sem argumento: sem argumento o agente nao se liga ao
+    # terminal (e o que acontece num duplo clique), e roda escondido.
+    & $exeAgente run
+}

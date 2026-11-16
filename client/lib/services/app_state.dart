@@ -1,0 +1,934 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../l10n/strings.dart';
+import '../models/automation.dart';
+import '../models/cadastro.dart';
+import '../models/conta.dart';
+import '../models/control_profile.dart';
+import '../models/device.dart';
+import '../models/foreground_app.dart';
+import '../models/keep_awake.dart';
+import '../models/remote_app.dart';
+import '../models/remote_file.dart';
+import '../models/sessao.dart';
+import '../models/system_stats.dart';
+import '../models/widget_config.dart';
+import '../models/window_zone.dart';
+import 'api_client.dart';
+import 'word_suggester.dart';
+
+/// Estado global do app: autenticação, dispositivos e preferências.
+class AppState extends ChangeNotifier {
+  AppState(this.api) {
+    // O idioma dos erros do servidor sai daqui. Uma função e não um valor: o
+    // idioma muda durante a sessão, e um `Strings` entregue uma vez ficaria no
+    // idioma de quando o app abriu.
+    api.textos = () => t;
+
+    // Quando o servidor recusa o refresh, a sessão acabou de verdade: alguém
+    // trocou a senha noutro aparelho, ou a conta foi excluída. O cliente já
+    // descartou os tokens; aqui se apaga o resto e se avisa a interface, que
+    // troca sozinha para a tela de login (ver `main.dart`).
+    //
+    // Sem este aviso o app ficava na tela de dentro dando "credenciais
+    // inválidas" em cada toque até ser reaberto — o recurso funcionando, com
+    // cara de defeito.
+    api.aoEncerrarSessao = () {
+      _esquecerSessao();
+      notifyListeners();
+    };
+  }
+
+  final ApiClient api;
+
+  List<Device> devices = [];
+  Device? selected;
+  ThemeMode themeMode = ThemeMode.system;
+  bool appLockEnabled = false;
+  bool twoFactorEnabled = false;
+
+  /// A última tentativa de falar com o servidor falhou por falta de rede.
+  ///
+  /// Separa "não há computadores" de "não consegui perguntar": sem isto, o app
+  /// aberto em modo avião mostrava a lista vazia com o convite para parear, e o
+  /// cartão do plano dizia "grátis" com o botão Assinar — para quem paga.
+  bool semConexao = false;
+
+  /// A próxima tentativa, enquanto `semConexao` durar.
+  Timer? _novaTentativa;
+  Duration _espera = _esperaInicial;
+  static const _esperaInicial = Duration(seconds: 5);
+  static const _esperaMaxima = Duration(minutes: 1);
+
+  /// A recarga em andamento, para a volta do segundo plano e a nova
+  /// tentativa agendada não dispararem duas ao mesmo tempo.
+  Future<void>? _recarregando;
+
+  /// O app está atrás da tela de bloqueio. Escrito pelo `LockGate`.
+  ///
+  /// Existe para os atalhos do ícone: a tela de computadores continua montada
+  /// por baixo do bloqueio, e sem isto uma automação pedida pelo ícone rodaria
+  /// antes de o dono desbloquear o app.
+  bool bloqueado = false;
+
+  void definirBloqueado(bool valor) {
+    if (bloqueado == valor) return;
+    bloqueado = valor;
+    notifyListeners();
+  }
+
+  /// Um atalho do ícone tocado e ainda não executado (`automacao:<id>`). Ver
+  /// `services/atalhos_do_icone.dart`.
+  String? atalhoPendente;
+
+  void receberAtalho(String tipo) {
+    atalhoPendente = tipo;
+    notifyListeners();
+  }
+
+  /// Entrega o atalho pendente uma vez só.
+  String? tomarAtalho() {
+    final tipo = atalhoPendente;
+    atalhoPendente = null;
+    return tipo;
+  }
+
+  /// A conta de quem está logado. `null` enquanto o `/me` não respondeu — e a
+  /// tela de conta trata isso mostrando o contato vazio em vez de adivinhar se
+  /// a conta é de e-mail ou de telefone.
+  Conta? conta;
+  bool gestureTutorialSeen = false;
+
+  /// Se o app tenta receber a tela por WebRTC (vídeo H.264) antes de cair no
+  /// JPEG. Ligado por padrão — é o caminho bom —, mas desligável: se o WebRTC
+  /// se comportar mal, dá para voltar ao que funciona sem reinstalar o app.
+  bool webrtcVideoEnabled = true;
+
+  /// Barra de sugestões no teclado remoto. Ligada por padrão, e desligável —
+  /// ela nunca corrige sozinha, mas quem digita comando o dia todo pode achar
+  /// que ela só ocupa espaço.
+  bool suggestionsEnabled = true;
+
+  /// Se o computador avisa o telefone quando alguém copia algo por lá.
+  ///
+  /// Desligado por padrão, e a escolha é sobre privacidade: o que passa pela
+  /// área de transferência de alguém costuma incluir senha, e mandá-la sozinha
+  /// para outro aparelho tem que ser deliberado.
+  bool clipboardSync = false;
+
+  /// Quanto o som do computador é amplificado antes de ser codificado.
+  ///
+  /// Serve a um jeito específico de usar: computador no volume mínimo (sem
+  /// silenciar, senão não sobra o que capturar) e o volume de verdade
+  /// recuperado aqui. 1 = como o computador entregou.
+  double audioGain = 1;
+
+  /// Perfil de atalhos aberto por último na barra seletora (`null` = nenhum).
+  /// Guardado porque quem usa o app para assistir filme abre no mesmo perfil
+  /// todo dia, e reescolher a cada sessão seria um passo sem motivo.
+  String? profileId;
+
+  AppLanguage language = AppLanguage.system;
+
+  /// Palavras que já foram digitadas, carregadas do disco na inicialização.
+  Map<String, int> _learnedWords = {};
+  WordSuggester? _suggester;
+
+  /// Sugeridor do idioma atual, com o histórico de quem usa.
+  WordSuggester get wordSuggester => _suggester ??= WordSuggester.forLanguage(
+        _resolvedLanguage,
+        learned: _learnedWords,
+      );
+
+  bool get isAuthenticated => api.isAuthenticated;
+
+  /// Textos no idioma atual (resolve "sistema" para um dos cinco suportados).
+  Strings get t => Strings(_resolvedLanguage);
+
+  AppLanguage get _resolvedLanguage {
+    if (language != AppLanguage.system) return language;
+    return switch (ui.PlatformDispatcher.instance.locale.languageCode) {
+      'pt' => AppLanguage.ptBr,
+      'zh' => AppLanguage.zh,
+      'fr' => AppLanguage.fr,
+      'es' => AppLanguage.es,
+      _ => AppLanguage.en,
+    };
+  }
+
+  Future<void> setLanguage(AppLanguage lang) async {
+    language = lang;
+    // As palavras comuns são do idioma; o histórico de quem usa não é, e por
+    // isso sobrevive à troca.
+    _learnedWords = {..._suggester?.learned ?? _learnedWords};
+    _suggester = null;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('language', lang.name);
+  }
+
+  /// Carrega as preferências salvas (tema, bloqueio) na inicialização.
+  Future<void> loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    themeMode = switch (prefs.getString('themeMode')) {
+      'light' => ThemeMode.light,
+      'dark' => ThemeMode.dark,
+      _ => ThemeMode.system,
+    };
+    appLockEnabled = prefs.getBool('appLock') ?? false;
+    gestureTutorialSeen = prefs.getBool('gestureTutorialSeen') ?? false;
+    webrtcVideoEnabled = prefs.getBool('webrtcVideo') ?? true;
+    suggestionsEnabled = prefs.getBool('suggestions') ?? true;
+    profileId = prefs.getString('profileId');
+    ultimoComputador = prefs.getString('ultimoComputador');
+    audioGain = (prefs.getDouble('audioGain') ?? 1).clamp(1.0, 32.0);
+    clipboardSync = prefs.getBool('clipboardSync') ?? false;
+    _learnedWords = _decodeLearned(prefs.getString('learnedWords'));
+    language = AppLanguage.values.firstWhere(
+      (l) => l.name == prefs.getString('language'),
+      orElse: () => AppLanguage.system,
+    );
+    // Reaponta ao mesmo servidor usado no login anterior. Precisa vir antes
+    // de restoreSession(), senão o refresh do token vai para localhost e falha.
+    final savedUrl = prefs.getString('serverUrl');
+    if (savedUrl != null && savedUrl.isNotEmpty) {
+      api.baseUrl = _normalizeServerUrl(savedUrl);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setWebrtcVideoEnabled(bool enabled) async {
+    webrtcVideoEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('webrtcVideo', enabled);
+  }
+
+  /// Guarda (ou esquece) o perfil de atalhos escolhido. Não avisa os ouvintes:
+  /// quem manda na barra é a tela de controle, e um `notifyListeners` aqui
+  /// reconstruiria o app inteiro a cada toque num perfil.
+  Future<void> setProfile(String? id) async {
+    profileId = id;
+    final prefs = await SharedPreferences.getInstance();
+    if (id == null) {
+      await prefs.remove('profileId');
+    } else {
+      await prefs.setString('profileId', id);
+    }
+  }
+
+  Future<void> setSuggestionsEnabled(bool enabled) async {
+    suggestionsEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('suggestions', enabled);
+  }
+
+  /// Guarda o que foi aprendido digitando. Chamado ao sair do controle, e não a
+  /// cada palavra: escrever no disco a cada tecla seria caro e sem ganho.
+  Future<void> saveLearnedWords() async {
+    final aprendidas = _suggester?.learned;
+    if (aprendidas == null || aprendidas.isEmpty) return;
+    _learnedWords = {...aprendidas};
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('learnedWords', jsonEncode(aprendidas));
+  }
+
+  static Map<String, int> _decodeLearned(String? raw) {
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+    } catch (_) {
+      // Histórico corrompido não pode impedir o app de abrir: recomeça vazio.
+      return {};
+    }
+  }
+
+  Future<void> markGestureTutorialSeen() async {
+    gestureTutorialSeen = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('gestureTutorialSeen', true);
+  }
+
+  Future<void> setAppLockEnabled(bool enabled) async {
+    appLockEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('appLock', enabled);
+  }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    themeMode = mode;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('themeMode', mode.name);
+  }
+
+  /// Tenta retomar a sessão salva (login persistente). Ignora falhas de rede.
+  Future<void> restoreSession() async {
+    bool restored;
+    try {
+      restored = await api.restore();
+    } catch (_) {
+      restored = false;
+    }
+    // Sem rede agora, segue autenticado, e `recarregar` tenta de novo sozinho
+    // até conseguir. Antes, a lista e a conta ficavam vazias até alguém
+    // fechar e abrir o app.
+    if (restored) await recarregar();
+    notifyListeners();
+  }
+
+  /// Relê os computadores e a conta. Não lança: falha de rede vira
+  /// `semConexao` e uma nova tentativa agendada.
+  ///
+  /// Chamado ao abrir o app, ao voltar do segundo plano e pela própria
+  /// tentativa agendada. O intervalo dobra a cada falha (5 s, 10 s, 20 s...
+  /// até 1 min): rápido o bastante para a lista voltar logo que a internet
+  /// volta, sem martelar o servidor nem a bateria num túnel de metrô.
+  Future<void> recarregar() => _recarregando ??=
+      _recarregar().whenComplete(() => _recarregando = null);
+
+  Future<void> _recarregar() async {
+    if (!isAuthenticated) return;
+    // Os quatro pedidos saem **juntos**. Um depois do outro, a lista só
+    // aparecia depois da quarta ida e volta ao servidor — no 4G, meio segundo
+    // a mais em toda abertura do app, só esperando.
+    //
+    // As automações também, porque os atalhos do ícone saem delas: sem isto,
+    // só existiriam depois de alguém abrir a tela de automações. Elas e o
+    // widget são opcionais: falham para `null` e nunca derrubam a recarga
+    // (backend antigo, ou plano sem o recurso).
+    final automacoes = api.automations().then<List<Automation>?>(
+          (v) => v,
+          onError: (Object _) => null,
+        );
+    final doWidget = api.widget().then<ConfigDoWidget?>(
+          (v) => v,
+          onError: (Object _) => null,
+        );
+    try {
+      // `Future.wait`, e não o `.wait` de record: este repassa o primeiro erro
+      // como ele é, e o `on ApiException` abaixo continua pegando. O `.wait`
+      // o embrulharia num `ParallelWaitError`, e uma sessão encerrada passaria
+      // a contar como "sem rede".
+      final lidos = await Future.wait<Object>(
+        [api.listDevices(), api.fetchAccount()],
+      );
+      final lista = lidos[0] as List<Device>;
+      final lida = lidos[1] as Conta;
+      // Saiu da conta enquanto a resposta vinha: ela é da sessão que acabou.
+      if (!isAuthenticated) return;
+      devices = lista;
+      conta = lida;
+      twoFactorEnabled = lida.twoFactorEnabled;
+      _conexaoVoltou();
+      final autos = await automacoes;
+      final config = await doWidget;
+      if (!isAuthenticated) return;
+      if (autos != null) automations = autos;
+      // Sem resposta, os atalhos usam as primeiras automações.
+      if (config != null) widget = config;
+    } on ApiException {
+      // O servidor respondeu, então há conexão. O erro em si (sessão
+      // encerrada, servidor em manutenção) já tem quem trate.
+      _conexaoVoltou();
+    } catch (_) {
+      // Sem rede: o que já estava na tela fica. Apagar a lista e a conta por
+      // causa de um Wi-Fi instável é pior do que mostrá-las um pouco velhas.
+      semConexao = true;
+      _agendarNovaTentativa();
+    }
+    notifyListeners();
+  }
+
+  void _conexaoVoltou() {
+    semConexao = false;
+    _espera = _esperaInicial;
+    _novaTentativa?.cancel();
+    _novaTentativa = null;
+  }
+
+  void _agendarNovaTentativa() {
+    if (_novaTentativa?.isActive ?? false) return;
+    final espera = _espera;
+    final dobro = espera * 2;
+    _espera = dobro > _esperaMaxima ? _esperaMaxima : dobro;
+    _novaTentativa = Timer(espera, () {
+      _novaTentativa = null;
+      recarregar();
+    });
+  }
+
+  @override
+  void dispose() {
+    _novaTentativa?.cancel();
+    super.dispose();
+  }
+
+  String get serverUrl => api.baseUrl;
+  set serverUrl(String value) {
+    final normalized = _normalizeServerUrl(value);
+    api.baseUrl = normalized;
+    notifyListeners();
+    // Persiste para reabrir o app já apontando ao mesmo servidor.
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.setString('serverUrl', normalized));
+  }
+
+  /// Normaliza a URL do servidor: remove espaços e barras finais e, se o
+  /// usuário esquecer o esquema, assume https (evita o redirecionamento 308
+  /// http→https que quebra o login).
+  static String _normalizeServerUrl(String value) {
+    var v = value.trim();
+    if (v.isNotEmpty && !v.startsWith('http://') && !v.startsWith('https://')) {
+      v = 'https://$v';
+    }
+    return v.replaceAll(RegExp(r'/+$'), '');
+  }
+
+  Future<void> login(
+    String password, {
+    String? email,
+    String? phone,
+    String? country,
+    String? totpCode,
+  }) async {
+    await api.login(
+      password,
+      email: email,
+      phone: phone,
+      country: country,
+      totpCode: totpCode,
+    );
+    await refreshDevices();
+    try {
+      conta = await api.fetchAccount();
+      twoFactorEnabled = conta!.twoFactorEnabled;
+    } catch (_) {
+      // Status do 2FA é secundário; não deve derrubar o login.
+    }
+    notifyListeners();
+  }
+
+  // --- verificação em duas etapas (2FA) --------------------------------------
+
+  Future<Map<String, String>> setupTwoFactor() => api.setupTwoFactor();
+
+  /// Liga a verificação e devolve os códigos de recuperação para mostrar.
+  Future<List<String>> enableTwoFactor(String code) async {
+    final codigos = await api.enableTwoFactor(code);
+    twoFactorEnabled = true;
+    // Relê para o contador de códigos restantes aparecer nas configurações.
+    await recarregarConta();
+    notifyListeners();
+    return codigos;
+  }
+
+  Future<List<String>> regenerateRecoveryCodes(String totpCode) async {
+    final codigos = await api.regenerateRecoveryCodes(totpCode);
+    await recarregarConta();
+    return codigos;
+  }
+
+  Future<void> disableTwoFactor(String password, {String? totpCode}) async {
+    await api.disableTwoFactor(password, totpCode: totpCode);
+    twoFactorEnabled = false;
+    await recarregarConta();
+    notifyListeners();
+  }
+
+  /// Primeira etapa do cadastro. Não cria conta — manda o código.
+  Future<SignupPending> signupStart({
+    required String firstName,
+    required String lastName,
+    required DateTime birthDate,
+    String? email,
+    String? phone,
+    String? country,
+    required String password,
+    required String passwordConfirm,
+  }) =>
+      api.signupStart(
+        firstName: firstName,
+        lastName: lastName,
+        birthDate: birthDate,
+        email: email,
+        phone: phone,
+        country: country,
+        password: password,
+        passwordConfirm: passwordConfirm,
+      );
+
+  /// Segunda etapa: com o código certo, a conta passa a existir e a sessão
+  /// começa. É aqui que se carrega o que uma sessão nova precisa.
+  Future<void> signupVerify(String destination, String code) async {
+    await api.signupVerify(destination, code);
+    await refreshDevices();
+    // Ler o `/me` aqui não é redundância com o cadastro que acabou de passar: é
+    // o que troca a conta **anterior** que ficou na memória. Era o único caminho
+    // de entrada que não lia — `login`, `restore` e a recuperação de senha leem
+    // —, e o efeito aparecia na tela de conta: quem apagava uma conta de
+    // telefone e criava uma de e-mail no mesmo uso do app continuava vendo
+    // "Alterar telefone", com o número da conta que já não existia.
+    await recarregarConta();
+    notifyListeners();
+  }
+
+  Future<SignupPending> signupResend(String destination) =>
+      api.signupResend(destination);
+
+  // --- esqueci minha senha ---------------------------------------------------
+
+  Future<SignupPending> forgotPassword({
+    String? email,
+    String? phone,
+    String? country,
+  }) =>
+      api.forgotPassword(email: email, phone: phone, country: country);
+
+  /// Troca a senha e entra. Carrega o que uma sessão nova precisa, como o
+  /// cadastro faz — quem chega aqui vai direto para a lista de computadores.
+  Future<void> resetPassword(
+    String destination,
+    String code,
+    String password,
+    String passwordConfirm, {
+    String? totpCode,
+  }) async {
+    await api.resetPassword(destination, code, password, passwordConfirm,
+        totpCode: totpCode);
+    await refreshDevices();
+    await recarregarConta();
+    notifyListeners();
+  }
+
+  Future<void> refreshDevices() async {
+    devices = await api.listDevices();
+    notifyListeners();
+  }
+
+  Future<Device> pair(String code) async {
+    final device = await api.claim(code);
+    await refreshDevices();
+    // O plano mudou no servidor: reler é o que faz o cartão "Seu plano" e os
+    // recursos pagos refletirem isso agora, e não na próxima abertura do app.
+    if (device.testeEncerrado) await recarregarConta();
+    return device;
+  }
+
+  void selectDevice(Device device) {
+    selected = device;
+    ultimoComputador = device.deviceId;
+    notifyListeners();
+    SharedPreferences.getInstance()
+        .then((p) => p.setString('ultimoComputador', device.deviceId));
+  }
+
+  /// O computador aberto por último, que o início mostra grande, com o
+  /// "Continuar". Fica no celular: é sobre este aparelho, não sobre a conta.
+  String? ultimoComputador;
+
+  /// O computador em destaque no início: o último usado, se ainda está na
+  /// conta; senão, o primeiro online; senão, o primeiro da lista.
+  Device? get computadorEmDestaque {
+    if (devices.isEmpty) return null;
+    for (final d in devices) {
+      if (d.deviceId == ultimoComputador) return d;
+    }
+    for (final d in devices) {
+      if (d.online) return d;
+    }
+    return devices.first;
+  }
+
+  /// Define ou apaga o dia e o mês do aniversário (`"MM-DD"`).
+  Future<void> setAniversario(String? mesDia) async {
+    await api.setBirthday(mesDia);
+    conta = await api.fetchAccount();
+    notifyListeners();
+  }
+
+  Future<void> renameDevice(Device device, String name) async {
+    await api.renameDevice(device.deviceId, name);
+    await refreshDevices();
+  }
+
+  Future<void> removeDevice(Device device) async {
+    await api.removeDevice(device.deviceId);
+    if (selected?.deviceId == device.deviceId) selected = null;
+    await refreshDevices();
+  }
+
+  Future<void> powerDevice(Device device, String action) async {
+    await api.powerDevice(device.deviceId, action);
+  }
+
+  // --- aplicativos do computador ---------------------------------------------
+
+  Future<List<RemoteApp>> listApps(Device device, {String kind = 'installed'}) =>
+      api.listApps(device.deviceId, kind: kind);
+
+  Future<void> launchApp(Device device, String id) =>
+      api.launchApp(device.deviceId, id);
+
+  Future<void> closeApp(Device device, String id) =>
+      api.closeApp(device.deviceId, id);
+
+  // --- métricas e mídia --------------------------------------------------------
+
+  Future<SystemStats> systemStats(Device device) =>
+      api.systemStats(device.deviceId);
+
+  Future<void> mediaKey(Device device, String action) =>
+      api.mediaKey(device.deviceId, action);
+
+  /// Abre vários programas de uma vez. Devolve o resultado de cada um.
+  Future<List<LaunchResult>> launchMany(
+    Device device,
+    List<String> apps, {
+    List<WindowZone?>? zones,
+  }) =>
+      api.launchMany(device.deviceId, apps, zones: zones);
+
+  /// Ajusta o brilho da tela do computador. Devolve o nível resultante.
+  Future<int> setBrightness(Device device, {int? level, int? delta}) =>
+      api.setBrightness(device.deviceId, level: level, delta: delta);
+
+  /// Área de transferência do computador (texto e arquivos copiados).
+  Future<RemoteClipboard> clipboard(Device device) =>
+      api.clipboard(device.deviceId);
+
+  /// Perfis criados pelo usuário e a ordem da barra.
+  ///
+  /// Guardados aqui e não relidos a cada tela: a lista muda quando o usuário
+  /// mexe nela, e um pedido por abertura de tela seria gasto sem contrapartida.
+  List<ControlProfile> customProfiles = const [];
+  List<String> profileOrder = const [];
+
+  /// Recarrega os perfis do servidor. Falha em silêncio: sem eles a barra
+  /// continua com os cinco de fábrica, que é melhor do que uma tela de erro.
+  Future<void> loadProfiles() async {
+    try {
+      final r = await api.profiles();
+      customProfiles = r.profiles;
+      profileOrder = r.order;
+      notifyListeners();
+    } catch (_) {
+      // Backend antigo ou rede fora: a barra fica só com os de fábrica.
+    }
+  }
+
+  Future<ControlProfile> createProfile(ControlProfile p) async {
+    final criado = await api.createProfile(p);
+    customProfiles = [...customProfiles, criado];
+    notifyListeners();
+    return criado;
+  }
+
+  Future<void> updateProfile(ControlProfile p) async {
+    final salvo = await api.updateProfile(p);
+    customProfiles = [
+      for (final c in customProfiles) c.id == salvo.id ? salvo : c,
+    ];
+    notifyListeners();
+  }
+
+  Future<void> deleteProfile(String id) async {
+    await api.deleteProfile(id);
+    customProfiles = customProfiles.where((c) => c.id != id).toList();
+    profileOrder = profileOrder.where((i) => i != id).toList();
+    notifyListeners();
+  }
+
+  Future<void> setProfileOrder(List<String> ids) async {
+    final anterior = profileOrder;
+    profileOrder = ids;
+    notifyListeners();
+    try {
+      await api.setProfileOrder(ids);
+    } catch (e) {
+      // Mostrar uma ordem que o servidor não guardou seria mentir: ela
+      // voltaria sozinha na próxima abertura, sem nada explicando.
+      profileOrder = anterior;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// As automações da conta.
+  ///
+  /// Mesma escolha dos perfis, e pelos mesmos dois motivos: ficam no servidor
+  /// (a conta é usada em mais de um aparelho, e o app instalado por sideload é
+  /// reinstalado com frequência) e ficam em memória aqui (a lista só muda
+  /// quando o usuário mexe nela).
+  List<Automation> automations = const [];
+
+  /// Recarrega as automações. Falha em silêncio, como os perfis: um backend
+  /// antigo, que não tem o endpoint, deixa a seção vazia em vez de derrubar a
+  /// tela de perfis inteira.
+  Future<void> loadAutomations() async {
+    try {
+      automations = await api.automations();
+      notifyListeners();
+    } catch (_) {
+      // Backend antigo ou rede fora.
+    }
+  }
+
+  Future<Automation> createAutomation(Automation a) async {
+    final criada = await api.createAutomation(a);
+    automations = [...automations, criada];
+    notifyListeners();
+    return criada;
+  }
+
+  Future<void> updateAutomation(Automation a) async {
+    final salva = await api.updateAutomation(a);
+    automations = [for (final c in automations) c.id == salva.id ? salva : c];
+    notifyListeners();
+  }
+
+  Future<void> deleteAutomation(String id) async {
+    await api.deleteAutomation(id);
+    automations = automations.where((c) => c.id != id).toList();
+    notifyListeners();
+  }
+
+  /// O widget do celular (e os atalhos do ícone). `null` até o servidor
+  /// responder — ou num servidor antigo, que não tem o endpoint.
+  ConfigDoWidget? widget;
+
+  Future<void> carregarWidget() async {
+    try {
+      widget = await api.widget();
+      notifyListeners();
+    } catch (_) {
+      // Servidor antigo ou rede fora: os atalhos usam as primeiras automações.
+    }
+  }
+
+  Future<void> salvarWidget(ConfigDoWidget config) async {
+    widget = await api.salvarWidget(config);
+    notifyListeners();
+  }
+
+  /// As automações dos atalhos do ícone, na ordem escolhida na tela de
+  /// widgets — ou as primeiras da lista, se ninguém escolheu.
+  List<Automation> get automacoesDoIcone {
+    final escolhidas = widget?.atalhos ?? const [];
+    if (escolhidas.isEmpty) return automations;
+    final porId = {for (final a in automations) a.id: a};
+    return [
+      for (final id in escolhidas)
+        if (porId[id] != null) porId[id]!,
+    ];
+  }
+
+  Future<List<StepResult>> runAutomation(Automation a, {String? deviceId}) =>
+      api.runAutomation(a.id, deviceId: deviceId);
+
+  Future<RemoteMonitors> monitors(Device device) =>
+      api.monitors(device.deviceId);
+
+  Future<void> setMonitor(Device device, int? monitor) =>
+      api.setMonitor(device.deviceId, monitor);
+
+  Future<void> setClipboard(Device device, String text) =>
+      api.setClipboard(device.deviceId, text);
+
+  Future<void> setClipboardImage(Device device, Uint8List imagem) =>
+      api.setClipboardImage(device.deviceId, imagem);
+
+  /// Liga/desliga o aviso automático de cópia nova no computador, e guarda a
+  /// escolha. Desligado por padrão: o que passa pela área de transferência de
+  /// alguém costuma incluir senha, e mandar isso sozinho para outro aparelho
+  /// tem que ser uma decisão consciente.
+  Future<void> setClipboardSync(Device device, bool enabled) async {
+    await api.setClipboardSync(device.deviceId, enabled);
+    clipboardSync = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('clipboardSync', enabled);
+  }
+
+  /// Servidores ICE do backend. Falha em silêncio para a lista padrão: sem
+  /// eles o vídeo direto ainda tenta pelo STUN público, e um erro aqui não
+  /// pode impedir de ver a tela.
+  Future<List<Map<String, dynamic>>?> iceServers() async {
+    try {
+      final servers = await api.iceServers();
+      return servers.isEmpty ? null : servers;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Liga ou desliga o som do computador no telefone, com o ganho atual.
+  Future<void> setAudio(Device device, bool enabled) =>
+      api.setAudio(device.deviceId, enabled, gain: audioGain);
+
+  /// Só o ganho, sem mexer no liga/desliga (o agente aplica na hora).
+  Future<void> sendAudioGain(Device device) =>
+      api.setAudio(device.deviceId, true, gain: audioGain);
+
+  /// Guarda o ganho escolhido. Sem `notifyListeners`: quem manda no controle é
+  /// a tela de controle, e arrastar o cursor reconstruiria o app inteiro.
+  Future<void> setAudioGain(double gain) async {
+    audioGain = gain.clamp(1.0, 32.0);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('audioGain', audioGain);
+  }
+
+  /// Se o computador está sendo mantido pronto para ser alcançado.
+  Future<KeepAwakeState> keepAwake(Device device) =>
+      api.keepAwake(device.deviceId);
+
+  /// Liga ou desliga o "manter pronto" naquele computador.
+  Future<void> setKeepAwake(Device device, bool enabled) =>
+      api.setKeepAwake(device.deviceId, enabled);
+
+  /// Qual programa está em primeiro plano no computador (para os ícones dos
+  /// perfis). `null` quando não há nenhum em foco.
+  Future<ForegroundApp?> foregroundApp(Device device) =>
+      api.foregroundApp(device.deviceId);
+
+  // --- arquivos ----------------------------------------------------------------
+
+  Future<RemoteListing> listFiles(
+    Device device, {
+    String path = '',
+    int offset = 0,
+  }) =>
+      api.listFiles(device.deviceId, path: path, offset: offset);
+
+  Future<Uint8List> downloadFile(Device device, String path) =>
+      api.downloadFile(device.deviceId, path);
+
+  Future<String> uploadFile(Device device, String name, Uint8List bytes) =>
+      api.uploadFile(device.deviceId, name, bytes);
+
+  /// Traz a janela de um programa aberto para frente.
+  Future<void> focusApp(Device device, String id) =>
+      api.focusApp(device.deviceId, id);
+
+  // --- conta -----------------------------------------------------------------
+
+  /// Começa a troca de contato: manda o código para o contato **novo**.
+  ///
+  /// Nada muda na conta aqui, e por isso não há o que recarregar ainda.
+  Future<SignupPending> contactChangeStart({
+    required String currentPassword,
+    String? email,
+    String? phone,
+    String? country,
+    String? totpCode,
+  }) =>
+      api.contactChangeStart(
+        currentPassword: currentPassword,
+        email: email,
+        phone: phone,
+        country: country,
+        totpCode: totpCode,
+      );
+
+  Future<SignupPending> contactChangeResend() => api.contactChangeResend();
+
+  /// Confirma o código e **relê o `/me`**.
+  ///
+  /// Reler não é zelo: a tela de conta mostra o contato atual, e sem isso ela
+  /// continuaria exibindo o antigo até o app ser reaberto — parecendo que a
+  /// troca não pegou. A resposta do `verify` já traz a conta, mas passar pelo
+  /// `recarregarConta` mantém um caminho só para atualizar esse estado.
+  Future<void> contactChangeVerify(String code) async {
+    await api.contactChangeVerify(code);
+    await recarregarConta();
+  }
+
+  Future<void> recarregarConta() async {
+    try {
+      conta = await api.fetchAccount();
+      twoFactorEnabled = conta!.twoFactorEnabled;
+      notifyListeners();
+    } catch (_) {
+      // Rede fora: a tela segue com o que já tinha, que é melhor do que apagar
+      // o contato da conta por causa de um Wi-Fi instável.
+    }
+  }
+
+  Future<void> updatePassword(String currentPassword, String newPassword,
+          {String? totpCode}) =>
+      api.updatePassword(currentPassword, newPassword, totpCode: totpCode);
+
+  // --- aparelhos conectados -------------------------------------------------
+
+  Future<List<Sessao>> listSessions() => api.listSessions();
+
+  Future<void> endSession(String id) => api.endSession(id);
+
+  Future<void> endOtherSessions() => api.endOtherSessions();
+
+    /// Aceita a versão dos termos em vigor e relê a conta, para o pedido de
+  /// aceite sumir da tela.
+  Future<void> acceptTerms() async {
+    await api.acceptTerms();
+    conta = await api.fetchAccount();
+    notifyListeners();
+  }
+
+  /// O JSON com tudo o que o servidor guarda sobre a conta.
+  Future<String> exportMyData() => api.exportMyData();
+
+    Future<void> deleteAccount(String password, {String? totpCode}) async {
+    await api.deleteAccount(password, totpCode: totpCode);
+    _esquecerSessao();
+    notifyListeners();
+  }
+
+  /// O computador encerrou o controle pelo botão "Desconectar" da barra, e o
+  /// servidor encerrou o login deste aparelho junto. Só esquece: avisar o
+  /// servidor seria pedir para encerrar o que ele já encerrou.
+  Future<void> encerradoNoComputador() async {
+    await api.logout();
+    _esquecerSessao();
+    notifyListeners();
+  }
+
+  Future<void> logout() async {
+    await api.sair();
+    _esquecerSessao();
+    notifyListeners();
+  }
+
+  /// Apaga **tudo** o que pertencia à sessão que acabou.
+  ///
+  /// Existe porque sair e excluir a conta zeravam só a lista de computadores, e
+  /// o que sobrava não era uma sobra inofensiva: `conta` alimenta a tela de
+  /// conta, que decide entre "Alterar e-mail" e "Alterar telefone" e mostra o
+  /// contato embaixo. Entrar numa conta nova sem passar por um caminho que
+  /// releia o `/me` deixava a **conta anterior** na tela — com o contato de
+  /// alguém que já não estava logado ali.
+  ///
+  /// `twoFactorEnabled` cai junto pelo mesmo motivo: herdado, o interruptor de
+  /// 2FA apareceria ligado numa conta que nunca configurou nada.
+  ///
+  /// É a mesma armadilha das cascatas do `User` no servidor, um andar acima: o
+  /// que não for explicitamente descartado não fica esquecido — reaparece como
+  /// dado de outra pessoa.
+  void _esquecerSessao() {
+    _conexaoVoltou();
+    automations = const [];
+    widget = null;
+    atalhoPendente = null;
+    devices = [];
+    selected = null;
+    conta = null;
+    twoFactorEnabled = false;
+  }
+}

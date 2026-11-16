@@ -1,0 +1,69 @@
+# Rust
+agent/target/
+# Compilar ou testar dentro de uma biblioteca corrigida cria estes dois.
+agent/vendor/*/target/
+agent/vendor/*/Cargo.lock
+# Cargo.lock é versionado (o agente é uma aplicação — builds reproduzíveis)
+# Launcher oculto gerado pelo instalador do Windows.
+agent/start-agent-hidden.vbs
+# Diretório de config local usado em testes manuais do agente.
+agent/config/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Bancos SQLite locais (dev/testes)
+*.db
+
+# Segredos de deploy (nunca versionar). O .env.example é versionado.
+.env
+deploy/.env
+
+# Certificados de âncora de confiança. O .cer da Apple é público — qualquer um
+# baixa do site deles — mas versionar uma raiz de confiança é péssimo hábito:
+# ela passa a ser atualizada por `git pull`, e quem revisa um diff de bytes
+# binários não revisa nada. Ela é buscada na fonte, no servidor, e conferida lá.
+deploy/certs/*
+!deploy/certs/.gitkeep
+!deploy/certs/LEIAME.md
+
+# Flutter / Dart
+client/.dart_tool/
+client/build/
+# Pastas de plataforma: geradas por `flutter create` na hora do build, como a
+# ios/ no Codemagic. Versionar traria arquivos que mudam com a versao do
+# Flutter e ninguem revisa.
+client/ios/
+client/android/
+client/.flutter-plugins*
+client/pubspec.lock
+
+# IDEs e SO
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Cópias de segurança do banco, feitas na VM. Nunca versionadas: são dados
+# de usuário, e o repositório é público.
+deploy/backups/
+
+# O pacote que a página do site oferece para baixar.
+#
+# Binário no Git incha o repositório para sempre — cada versão fica no histórico
+# —, e o executável é gerado a cada build e vai ao VPS por `scp`. Ver
+# docs/publicar-instalador.md.
+deploy/site/baixar/*.zip
+deploy/site/baixar/*.exe
+deploy/site/baixar/*.dmg
+# O resumo de cada executavel (ver `atualizar.ps1 -Publicar`). Vai ao VPS pelo
+# mesmo `scp`, e **nao** pode estar no Git: um `git pull` no servidor trocaria o
+# resumo do executavel que esta no ar por um velho, e todo agente passaria a
+# ver uma "atualizacao" que nao bate com arquivo nenhum.
+deploy/site/baixar/*.sha256

@@ -1,0 +1,204 @@
+[package]
+name = "deskside-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Agente desktop do Deskside: recebe comandos remotos e executa ações no sistema operacional"
+license = "MIT"
+
+[dependencies]
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal"] }
+# native-tls habilita wss:// (TLS) para falar com o backend atrás de HTTPS
+# (VPS/Caddy). No Windows usa o SChannel nativo do sistema (sem OpenSSL nem
+# crypto provider do rustls); no Linux de dev usa OpenSSL.
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+# O mesmo TLS, usado direto para baixar atualizações (ver `atualizacao.rs`).
+# Já vinha na árvore por baixo do `tokio-tungstenite`: nenhuma crate nova.
+native-tls = "0.2"
+futures-util = "0.3"
+uuid = { version = "1", features = ["v4"] }
+gethostname = "0.5"
+# Resumo do identificador da máquina (ver `identity::resumo_da_maquina`). Já
+# vinha na árvore por baixo de outra dependência; aqui só passa a ser usado
+# direto. Rust puro, sem C: não pesa no build do ARM64.
+sha2 = "0.10"
+# Usado para passar scripts ao PowerShell via -EncodedCommand (sem problemas
+# de escape de aspas na linha de comando).
+base64 = "0.22"
+# Codificação JPEG dos frames (multiplataforma; usada também pelo stub).
+# `png` entra porque o icone da bandeja e da janela e um PNG embutido no
+# binario (assets/tray.png), decodificado em tempo de execucao.
+# `bmp` entra por causa da imagem copiada: o Windows entrega a área de
+# transferência em DIB, que é um BMP sem o cabeçalho de arquivo - decodificar
+# é o primeiro passo antes de reencodar em PNG para o telefone.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp"] }
+# Codificação H.264 do vídeo por WebRTC (medido no spike S2 do plano).
+openh264 = "0.9.7"
+webrtc = "0.17.2"
+# `network` e `component` entram com o painel completo de monitoramento: taxa
+# de rede e temperatura. A temperatura vem vazia na maioria dos Windows (a
+# leitura exige driver do fabricante), e por isso o campo é opcional dos dois
+# lados - ver `system_info.rs`.
+sysinfo = { version = "0.38.4", default-features = false, features = ["system", "disk", "network", "component"] }
+fast_image_resize = "6.1.0"
+
+# Só no Windows (única plataforma testável aqui). Linux/macOS usam os stubs
+# em src/injector.rs e src/capture.rs, sem estas dependências.
+# Som do computador indo para o telefone. O `cpal` abre o dispositivo de SAÍDA
+# como entrada, que é como o WASAPI faz "loopback" (capturar o que sai pelo
+# alto-falante). O `audiopus` traz o Opus, exigido pelo WebRTC - no MSVC ele
+# linka uma biblioteca pronta que vem no próprio pacote, sem cmake nem
+# compilador C a mais.
+#
+# **Windows x86/x64 apenas, e não Windows inteiro.** A biblioteca pronta do
+# `audiopus_sys` existe só para essas duas arquiteturas: o `build.rs` dele
+# define a constante `ARCHITECTURE` com `#[cfg]` para x86 e x86_64 e mais nada,
+# então em ARM64 ele nem compila - o erro é `cannot find value ARCHITECTURE`,
+# que não diz que a causa é a arquitetura não ser suportada.
+#
+# Num Windows ARM o agente cai no mesmo stub que Linux e macOS usam: tudo
+# funciona menos o som do computador. Melhor perder um recurso do que não
+# existir na plataforma.
+#
+# **E há uma consequência que não é óbvia: não dá para gerar o binário x86-64
+# a partir de um Windows ARM64.** O `cfg` acima olha o **alvo**, então mirar
+# x86_64 traz o `audiopus_sys` para a compilação; mas o `build.rs` dele compila
+# para a máquina que está compilando, e ali `ARCHITECTURE` continua indefinida.
+# Falha no host, com o mesmo erro, mesmo estando tudo certo com o alvo.
+#
+# Cada arquitetura é compilada na máquina dela. Ver `docs/publicar-instalador.md`.
+#
+# Fora do Windows elas nem entram, porque o `cpal` no Linux pediria as
+# bibliotecas do ALSA para compilar.
+[target.'cfg(all(windows, any(target_arch = "x86", target_arch = "x86_64")))'.dependencies]
+cpal = "0.18"
+audiopus = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+enigo = "0.2"
+# 0.9.x traz o backend WGC (Windows.Graphics.Capture), acelerado por hardware,
+# no lugar do BitBlt do GDI. A feature não é padrão e precisa ser pedida.
+xcap = { version = "0.9", features = ["wgc"] }
+# Área de transferência. Leve e sem C: o que interessa aqui é o `seq_num`, o
+# contador que o Windows muda a cada cópia - é ele que permite perceber uma
+# cópia nova sem ficar lendo o conteúdo o segundo inteiro.
+clipboard-win = "5"
+# Atalhos do Menu Iniciar e da area de trabalho. Escreve o .lnk direto, sem
+# COM e sem PowerShell: o instalador que dependia de um `powershell.exe` para
+# cada passo era lento, piscava janela e e o padrao que antivirus marcam.
+mslnk = "0.1"
+# A janela e o icone ao lado do relogio.
+#
+# `wgpu` e nao `glow`, depois de a versao com `glow` falhar numa maquina de
+# verdade: "egui_glow requires opengl 2.0+". Maquina virtual costuma nao ter
+# OpenGL 2.0, e sessao de Area de Trabalho Remota prende o OpenGL na versao
+# 1.1 - instalar por RDP e cenario comum demais num produto de controle
+# remoto. No Windows o `wgpu` usa DX12, que existe nos dois casos.
+#
+# Custa ~75 crates a mais que o `glow`. E o preco de a janela abrir onde o
+# usuario esta, e nao so onde o desenvolvedor testou.
+#
+# A versao 0.31 e nao a 0.29 por um motivo so: e a partir dela que existe o
+# `native_adapter_selector`, que deixa escolher a placa de video. Sem ele o
+# `egui-wgpu` pede o adaptador com `force_fallback_adapter: false` cravado no
+# codigo, e o renderizador por software do Windows nunca e considerado.
+eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts"] }
+tray-icon = "0.19"
+# O codificador H.264 da placa de vídeo, pelo Media Foundation (ver
+# `h264_placa.rs`), e a digitação de emoji (ver `injector.rs`). A mesma versão
+# que o `wgpu` e o `xcap` já trazem.
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Variant",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
+
+# O Mac. As mesmas bibliotecas do Windows onde elas cobrem os dois sistemas
+# (tela, mouse e teclado), e as APIs da Apple direto onde não cobrem (área de
+# transferência, permissões). Ver `docs/agente-mac.md`.
+#
+# O `xcap` daqui é **sem** a feature `wgc`: ela é a captura do Windows; no Mac
+# a biblioteca usa a captura da Apple sozinha.
+[target.'cfg(target_os = "macos")'.dependencies]
+enigo = "0.2"
+xcap = "0.9"
+# A mesma janela e o mesmo ícone do Windows (ver `gui.rs`). No Mac o `wgpu`
+# desenha pelo Metal, que todo Mac tem.
+eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts"] }
+tray-icon = "0.19"
+# Trazer a janela para a frente a partir de outra thread: a AppKit só aceita
+# ser chamada na principal, e é pela fila dela que o pedido chega lá.
+dispatch2 = "0.3"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSArray", "NSDictionary", "NSValue", "NSGeometry", "NSURL", "NSError", "NSObject"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "objc2-core-graphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSResponder", "NSWindow", "NSWorkspace", "NSRunningApplication", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "NSPanel", "NSView", "NSControl", "NSTextField", "NSButton", "NSColor", "NSFont", "NSScreen", "NSParagraphStyle", "NSText", "NSEvent"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGImage"] }
+# O som do computador (ver `audio.rs`). A captura pelo ScreenCaptureKit, que
+# é o único jeito de pegar o som do sistema no Mac sem instalar driver. E o
+# Opus em Rust puro (o mesmo libopus, convertido): o `audiopus` do Windows só
+# compila no Mac com autotools, e não para as duas arquiteturas de uma vez.
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-media", "objc2-core-graphics", "libc", "SCStream", "SCShareableContent", "SCError"] }
+objc2-core-media = { version = "0.3", default-features = false, features = ["std", "CMSampleBuffer", "CMBlockBuffer", "CMFormatDescription", "CMTime", "objc2-core-audio-types", "objc2-core-video"] }
+# A imagem da tela pelo mesmo ScreenCaptureKit (ver `captura_mac.rs`): os
+# quadros chegam como CVPixelBuffer.
+objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std"] }
+objc2-core-audio-types = { version = "0.3", default-features = false, features = ["std", "CoreAudioBaseTypes"] }
+block2 = "0.6"
+unsafe-libopus = "0.2"
+# O Mac entrega a imagem copiada em TIFF quando ela vem do Preview ou do
+# Safari. Só aqui: no Windows a área de transferência nunca usa TIFF.
+image = { version = "0.25", default-features = false, features = ["tiff"] }
+
+# Embute o icone e a versao no .exe (ver build.rs). So roda no alvo Windows.
+[build-dependencies]
+winresource = "0.1"
+
+[dev-dependencies]
+image = { version = "0.25", features = ["png"] }
+# O Opus do Mac é Rust puro, e por isso é testado em qualquer sistema.
+unsafe-libopus = "0.2"
+
+# O ICE do webrtc-rs com o repasse (TURN) por TCP, que a versão publicada não
+# tem: no código dela, o caso TCP é um `TODO` e a URL é ignorada com um aviso.
+# Sem ele, numa rede que bloqueia UDP (Wi-Fi de faculdade, de empresa) o
+# computador não oferece caminho nenhum para fora e o vídeo direto não fecha.
+# A mudança está isolada em `vendor/webrtc-ice/src/agent/turn_tcp.rs` e num
+# ramo de `agent_gather.rs`; ver o LEIAME da pasta. Sai quando o webrtc-rs
+# publicar o suporte.
+[patch.crates-io]
+webrtc-ice = { path = "vendor/webrtc-ice" }
+
+# O Linux (ver `docs/agente-linux.md`). Dois caminhos, escolhidos ao rodar:
+#
+# - **Wayland** (Ubuntu e Fedora novos): tela e controle pelo portal do sistema
+#   (`zbus`), que pede permissão uma vez e devolve uma ficha para as próximas, e
+#   os quadros pelo PipeWire. São as mesmas versões que o `xcap` já traz.
+# - **X11**: as mesmas bibliotecas do Windows e do Mac. O `enigo` vai pelo
+#   `x11rb`, Rust puro, em vez do `libxdo` de C.
+#
+# Sem nenhum dos dois (servidor, CI) continua o quadro sintético.
+[target.'cfg(target_os = "linux")'.dependencies]
+xcap = "0.9"
+enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
+zbus = { version = "5.17", default-features = false, features = ["blocking-api", "async-io"] }
+pipewire = "0.10"
+# O layout do teclado do computador (ver `teclado_linux.rs`): para saber com
+# que teclas sai cada caractere — tecla própria, ou acento + letra.
+xkbcommon = { version = "0.8", default-features = false }
+unicode-normalization = "0.1"
+# O ícone ao lado do relógio (ver `interface_linux.rs`), pelo protocolo que o
+# Ubuntu e o KDE mostram (StatusNotifierItem), falando direto pelo D-Bus — sem
+# GTK, que traria um bloco grande de bibliotecas gráficas só para um ícone.
+ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
+# A área de transferência no X11 (texto, imagem e arquivos). No Wayland ela vai
+# pelo portal (ver `wayland.rs`), e por isso sem o `wayland-data-control`, que
+# o GNOME não oferece.
+arboard = { version = "3.6", default-features = false, features = ["image-data"] }
+# O som do computador (ver `audio.rs`): o mesmo Opus em Rust puro do Mac.
+unsafe-libopus = "0.2"

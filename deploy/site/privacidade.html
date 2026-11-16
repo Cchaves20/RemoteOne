@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacidade — Deskside</title>
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="/estatico/icone.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/estatico/deskside.css">
+</head>
+<body>
+<div class="pagina">
+<div class="caixa estreita">
+  <header class="topo">
+    <a class="marca" href="/">
+        <svg width="30" height="24" viewBox="0 0 30 24" aria-hidden="true">
+          <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7C4DFF"/><stop offset=".55" stop-color="#4364F7"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs>
+          <rect x="1.5" y="1.5" width="27" height="16.5" rx="3.5" fill="#0F1330" stroke="url(#g)" stroke-width="2.4"/>
+          <path d="M13 9.2l5.2 1.9-2.2.8-.8 2.2z" fill="#22D3EE"/>
+          <rect x="11" y="20.5" width="8" height="2.2" rx="1.1" fill="#34D399"/>
+        </svg>
+        Deskside
+      </a>
+    <nav aria-label="Páginas">
+      <a href="/#baixar">Baixar</a>
+      <a href="/termos">Termos</a>
+      <a href="/privacidade" aria-current="page">Privacidade</a>
+    </nav>
+  </header>
+
+  <h1>Política de privacidade</h1>
+  <p class="data">Versão 2026-11.2 &middot; atualizada em novembro de 2026.</p>
+  <div class="rascunho">
+    <strong>Ainda sem revisão jurídica.</strong> Este texto foi conferido linha a
+    linha contra o código que está no ar — o que ele descreve é o que o programa
+    faz de verdade —, mas ainda vai passar pela revisão de um advogado.
+  </div>
+
+  <h2>1. O que guardamos, para quê, e com que base legal</h2>
+  <p>
+    A Lei Geral de Proteção de Dados (Lei 13.709/2018) exige uma finalidade e
+    uma base legal para cada dado. Estas são as nossas:
+  </p>
+  <table>
+    <thead>
+      <tr><th>Dado</th><th>Para quê</th><th>Base legal (LGPD, art. 7º)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Nome e sobrenome</td><td>Identificar a conta</td>
+        <td>Execução de contrato (V)</td></tr>
+      <tr><td>E-mail (ou telefone, nas contas antigas que entram por telefone)</td>
+        <td>Entrar, receber os códigos de verificação, os avisos de segurança e
+          o aviso de fim do mês completo</td><td>Execução de contrato (V)</td></tr>
+      <tr><td>Senha</td><td>Entrar. Guardada só como hash (bcrypt): não temos como
+          ler a sua senha</td><td>Execução de contrato (V)</td></tr>
+      <tr><td>Data de nascimento</td><td>Conferir a idade mínima no cadastro.
+          <strong>O ano não é guardado</strong>: a data inteira serve na hora e é
+          descartada</td>
+        <td>Execução de contrato (V)</td></tr>
+      <tr><td>Dia e mês do aniversário, sem o ano</td><td>Desejar feliz
+          aniversário no app, no dia. Você muda ou apaga em Configurações</td>
+        <td>Legítimo interesse (IX)</td></tr>
+      <tr><td>Aceite dos termos (versão e data)</td><td>Provar o contrato</td>
+        <td>Execução de contrato (V)</td></tr>
+      <tr><td>Dos computadores pareados: um identificador, o nome que você deu, o
+          nome da máquina na rede, o sistema operacional, um resumo (hash
+          SHA-256) do identificador que o próprio sistema dá à máquina — o
+          identificador em si nunca sai do computador — e o resumo do segredo que
+          prova ao servidor que aquele computador é o seu</td>
+        <td>Parear e controlar os seus computadores</td>
+        <td>Execução de contrato (V)</td></tr>
+      <tr><td>Perfis de atalho, automações (com horários) e o widget</td>
+        <td>Guardar o que você configurou</td><td>Execução de contrato (V)</td></tr>
+      <tr><td>Aparelhos conectados: o nome do aparelho e as datas de entrada e
+          último uso</td><td>Mostrar onde a conta está aberta e deixar você
+          encerrar</td><td>Execução de contrato (V) e legítimo interesse na
+          segurança da conta (IX)</td></tr>
+      <tr><td>Plano e assinatura: plano, validade, a loja, o produto, o estado da
+          assinatura e um resumo do identificador da compra</td>
+        <td>Liberar a versão paga e manter o plano em dia</td>
+        <td>Execução de contrato (V)</td></tr>
+      <tr><td>Verificação em duas etapas: a chave do seu autenticador, guardada
+          cifrada, e os códigos de recuperação, só como resumo</td>
+        <td>Proteger a conta</td><td>Execução de contrato (V)</td></tr>
+      <tr><td>Quem já teve o teste grátis: um resumo (hash SHA-256) do e-mail ou
+          telefone e, se houve pareamento no teste, do computador</td>
+        <td>Impedir que o teste de 30 dias seja tirado de novo com outra conta. O
+          resumo não permite descobrir o e-mail</td>
+        <td>Legítimo interesse na prevenção de fraude (IX)</td></tr>
+      <tr><td>Registros de acesso: endereço IP, porta de origem, data, hora e o
+          endereço pedido</td><td>Guarda exigida pelo Marco Civil da Internet
+          (Lei 12.965/2014, art. 15)</td><td>Cumprimento de obrigação legal (II)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>2. O que não guardamos</h2>
+  <p>Esta é a parte mais importante desta página:</p>
+  <ul>
+    <li><strong>A imagem da sua tela não é gravada.</strong> Ela viaja do
+      computador ao celular e é descartada — nunca vai para disco. O servidor
+      mantém, no máximo, o último quadro <em>em memória</em>, para a tela
+      aparecer no instante em que você abre o aplicativo; ele some assim que o
+      computador se desconecta.
+      Sempre que possível a conexão é direta entre os dois
+      aparelhos e não passa pelos nossos servidores. Quando a rede não permite,
+      ela passa por um servidor de relay — e o vídeo é cifrado de ponta a ponta
+      pelo próprio WebRTC, então o relay não tem como ler o que repassa.</li>
+    <li><strong>Não guardamos o que você digita</strong> nem os movimentos do
+      mouse.</li>
+    <li><strong>Não guardamos os seus arquivos.</strong> As transferências vão de
+      um aparelho ao outro.</li>
+    <li><strong>Não acessamos os seus computadores.</strong> E aqui preferimos
+      ser exatos, porque o contrário seria fácil de escrever e falso: um
+      servidor do Deskside conseguiria mandar comandos a um computador
+      pareado — é assim que o seu próprio celular o controla.
+      Por isso o compromisso aqui é de conduta e de operação: pouquíssimas
+      pessoas alcançam o servidor, o acesso é por chave e com verificação em duas
+      etapas, e usar essa capacidade para entrar no computador de alguém sem
+      pedido dele é violação destes termos <em>por nós</em>.</li>
+    <li><strong>Não usamos</strong> rastreadores, ferramentas de análise de uso,
+      anúncios, cookies nem inteligência artificial. Não vendemos nem
+      compartilhamos dados com anunciantes.</li>
+  </ul>
+
+  <h2>3. A área de transferência</h2>
+  <p>
+    O compartilhamento da área de transferência vem <strong>desligado</strong>, e
+    de propósito: o que passa por ali com frequência inclui senha. Ligá-lo é uma
+    escolha sua, nas configurações, e mesmo ligado o conteúdo não é armazenado.
+  </p>
+
+  <h2>4. Com quem compartilhamos</h2>
+  <ul>
+    <li><strong>Hospedagem</strong>: os servidores rodam na Oracle Cloud, em São
+      Paulo.</li>
+    <li><strong>Provedor de e-mail</strong>, apenas para entregar os códigos de
+      verificação e os avisos. Ele pode processar o seu endereço fora do Brasil,
+      com as garantias do art. 33 da LGPD.</li>
+    <li><strong>Apple e Google</strong>, quando você assina pelo aplicativo: o
+      pagamento é feito com eles, sob as regras deles, e nós recebemos só a
+      confirmação da compra.</li>
+    <li>O <strong>ditado por voz</strong> é o do teclado do seu próprio aparelho:
+      o áudio é tratado pela Apple ou pelo Google, sob os termos deles, e não
+      passa por nós.</li>
+  </ul>
+  <p>Nada além disso.</p>
+
+  <h2>5. Seus direitos</h2>
+  <p>
+    A LGPD (art. 18) lhe dá direito a confirmar o tratamento, acessar, corrigir,
+    portar e eliminar os seus dados, saber com quem os compartilhamos e revogar o
+    consentimento. No aplicativo, em Configurações, você pode
+    <strong>corrigir o contato</strong>, <strong>baixar uma cópia dos seus
+    dados</strong> (um arquivo JSON com tudo o que guardamos sobre a conta, menos
+    as credenciais) e <strong>excluir a conta inteira</strong>. Para os demais
+    pedidos, escreva para
+    <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>:
+    respondemos em até 15 dias.
+  </p>
+
+  <h2>6. Por quanto tempo</h2>
+  <ul>
+    <li><strong>A conta e o que você configurou</strong>: enquanto a conta
+      existir. Excluída a conta, os dados são removidos — com a exceção do
+      registro de quem já teve o teste grátis (item 1), que continua, pelo motivo
+      dito lá.</li>
+    <li><strong>Cadastros e recuperações de senha não concluídos</strong>: são
+      apagados até um dia depois de o código vencer.</li>
+    <li><strong>Aparelhos que saíram da conta</strong>: 30 dias.</li>
+    <li><strong>Registros de acesso</strong>: 6 meses, como pede o Marco Civil,
+      e então são apagados.</li>
+    <li><strong>Cópias de segurança</strong>: catorze, uma por dia, e as mais
+      antigas são descartadas automaticamente. Uma cópia cifrada pode ser
+      guardada fora da nossa infraestrutura, para o caso de o servidor ser perdido
+      por inteiro. Por isso dados de uma conta excluída podem sobreviver alguns
+      dias dentro dessas cópias, até serem substituídas.</li>
+  </ul>
+
+  <h2>7. Crianças e adolescentes</h2>
+  <p>
+    O Deskside é para quem tem pelo menos 13 anos. A idade é conferida no
+    cadastro pela data de nascimento, da qual só ficam o dia e o mês.
+  </p>
+
+  <h2>8. Segurança e incidentes</h2>
+  <p>
+    Senhas e segredos ficam só como resumo ou cifrados, o acesso aos servidores é
+    restrito, e cada novo acesso, computador pareado ou troca de senha gera um
+    aviso para você. Se acontecer um incidente de segurança que possa trazer
+    risco aos seus dados, comunicamos a Autoridade Nacional de Proteção de Dados
+    (ANPD) e as pessoas afetadas em até três dias úteis.
+  </p>
+
+  <h2>9. Encarregado</h2>
+  <p>
+    Pedidos e dúvidas sobre dados pessoais:
+    <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>.
+  </p>
+
+  <h2>10. Mudanças</h2>
+  <p>
+    Quando esta política mudar de forma relevante, avisamos no aplicativo ou por
+    e-mail, e o aplicativo pede o aceite da versão nova.
+  </p>
+
+  <footer>
+    <a href="/">Deskside</a> &middot; <a href="/termos">Termos</a> &middot;
+    <a href="/privacidade">Privacidade</a> &middot;
+    <a href="/excluir-conta">Excluir conta</a> &middot;
+    <a href="/licencas.txt">Licenças</a> &middot;
+    <a href="mailto:contato@deskside.com.br">contato@deskside.com.br</a>
+  </footer>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,781 @@
+//! Transferência de arquivos entre o celular e o computador.
+//!
+//! Como o `system_info`, este módulo é multiplataforma de verdade: não tem
+//! stub, e o mesmo código roda no Windows, no Linux e no macOS — o que permite
+//! testá-lo aqui, e não só no PC.
+//!
+//! **Fronteira:** tudo acontece dentro da pasta do usuário. Não é o dono da
+//! máquina que precisa ser contido — ele já pode tudo —, é o caminho que vem
+//! pela rede: sem essa checagem, um `..\..\Windows\System32` numa mensagem
+//! adulterada leria o que quisesse.
+
+use serde::{Deserialize, Serialize};
+
+/// Tamanho do pedaço em que os arquivos viajam.
+///
+/// 64 KiB é o meio-termo: pedaço pequeno demais multiplica o custo por mensagem
+/// (cada uma leva JSON e base64 em volta), e grande demais engasga o socket que
+/// também carrega a tela.
+pub const CHUNK_BYTES: usize = 64 * 1024;
+
+/// Teto de um arquivo, nos dois sentidos.
+///
+/// Existe porque a transferência passa pelo VPS gratuito (1 GB de RAM): o
+/// backend só repassa os pedaços, sem guardar o arquivo, mas um envio sem limite
+/// ainda prenderia a conexão por horas. O backend tem o mesmo número.
+pub const MAX_TRANSFER_BYTES: u64 = 100 * 1024 * 1024;
+
+/// Um item de uma pasta do computador.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileEntry {
+    pub name: String,
+    /// Caminho absoluto, que é o que volta ao agente para abrir ou baixar.
+    pub path: String,
+    pub is_dir: bool,
+    /// Tamanho em bytes. Zero em pastas — o custo de somar o conteúdo não se
+    /// justifica para um número que ninguém usa.
+    pub size: u64,
+}
+
+/// O conteúdo de uma pasta, com o caminho de onde se está e o de voltar.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Listing {
+    pub path: String,
+    /// Pasta acima, ou `None` quando já se está na raiz permitida.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    pub entries: Vec<FileEntry>,
+    /// Quantos itens a pasta tem ao todo. Maior que `offset + entries.len()`
+    /// quando há mais páginas: o app oferece "carregar mais".
+    pub total: usize,
+    /// De onde esta página começa.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub offset: usize,
+    /// Atalhos para as pastas conhecidas (Área de Trabalho, Downloads...).
+    ///
+    /// Só vêm preenchidos **na raiz**: é onde eles servem para alguma coisa.
+    /// Mandá-los em toda listagem seria repetir a mesma lista a cada passo da
+    /// navegação, sem ninguém olhando.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shortcuts: Vec<FileEntry>,
+}
+
+/// A pasta do usuário: a raiz de tudo o que este módulo enxerga.
+fn home() -> Result<std::path::PathBuf, String> {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var(var)
+        .map(std::path::PathBuf::from)
+        .map_err(|_| format!("não consegui descobrir a pasta do usuário ({var})"))
+}
+
+/// Resolve um caminho recebido pela rede, garantindo que fica dentro da pasta
+/// do usuário.
+///
+/// Vazio significa "a pasta do usuário". O caminho é **canonicalizado** antes da
+/// comparação: é isso que derruba `..` e atalhos que apontariam para fora —
+/// comparar texto cru deixaria passar.
+pub fn resolve(path: &str) -> Result<std::path::PathBuf, String> {
+    let root = home()?;
+    let root = root.canonicalize().unwrap_or(root);
+    if path.trim().is_empty() {
+        return Ok(root);
+    }
+    let candidate = std::path::Path::new(path);
+    let joined = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        root.join(candidate)
+    };
+    let real = joined
+        .canonicalize()
+        .map_err(|e| format!("caminho inacessível: {e}"))?;
+    if !real.starts_with(&root) {
+        return Err("fora da pasta do usuário".to_string());
+    }
+    Ok(real)
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+/// Itens por página da listagem.
+///
+/// Sem teto, uma pasta de Downloads com 10 mil arquivos virava uma resposta de
+/// alguns megabytes, atravessando o servidor e o 4G de uma vez, para mostrar
+/// as primeiras quinze linhas. Com 500, a primeira página chega em
+/// ~100 KB, e o resto vem só se a pessoa rolar até o fim e pedir.
+pub const POR_PAGINA: usize = 500;
+
+/// Lista uma pasta inteira (ver `list_page`).
+#[cfg(test)]
+pub fn list(path: &str) -> Result<Listing, String> {
+    list_page(path, 0)
+}
+
+/// Lista uma página de uma pasta: subpastas primeiro, depois arquivos, cada
+/// grupo em ordem alfabética — a ordem em que se procura algo com o olho.
+///
+/// A pasta é lida e ordenada inteira a cada página: é o que garante que a
+/// página 2 continua de onde a 1 parou. Ler os nomes custa pouco ao disco; o
+/// que pesava era mandar todos eles pela rede.
+pub fn list_page(path: &str, offset: usize) -> Result<Listing, String> {
+    let dir = resolve(path)?;
+    if !dir.is_dir() {
+        return Err("não é uma pasta".to_string());
+    }
+    let root = home()?;
+    let root = root.canonicalize().unwrap_or(root);
+
+    let mut entries = Vec::new();
+    for item in std::fs::read_dir(&dir)
+        .map_err(|e| e.to_string())?
+        .flatten()
+    {
+        // Um item que não se deixa inspecionar (permissão, link quebrado) é
+        // pulado: uma pasta inteira não deve sumir por causa de um arquivo.
+        let Ok(meta) = item.metadata() else { continue };
+        let name = item.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue; // ocultos do Unix: ruído para quem só quer buscar um arquivo
+        }
+        entries.push(FileEntry {
+            name,
+            path: item.path().to_string_lossy().to_string(),
+            is_dir: meta.is_dir(),
+            size: if meta.is_dir() { 0 } else { meta.len() },
+        });
+    }
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            // Desempate pelo nome exato: "Foto" e "foto" convivem no Linux, e
+            // sem isto a ordem entre os dois podia mudar de uma página para
+            // a outra — um repetido e um sumido.
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let total = entries.len();
+    let entries: Vec<FileEntry> = entries.into_iter().skip(offset).take(POR_PAGINA).collect();
+
+    let parent = if dir == root {
+        None
+    } else {
+        dir.parent().map(|p| p.to_string_lossy().to_string())
+    };
+    Ok(Listing {
+        path: dir.to_string_lossy().to_string(),
+        parent: parent.clone(),
+        entries,
+        total,
+        offset,
+        // Na raiz, e só nela, e só na primeira página: é onde os atalhos
+        // servem para alguma coisa.
+        shortcuts: if parent.is_none() && offset == 0 {
+            shortcuts()
+        } else {
+            Vec::new()
+        },
+    })
+}
+
+/// As pastas conhecidas do usuário: Área de Trabalho, Downloads, Documentos,
+/// Imagens, Músicas e Vídeos.
+///
+/// **Não** dá para montar esses caminhos concatenando `USERPROFILE` com o nome
+/// em inglês, e há dois motivos independentes: o nome muda com o idioma do
+/// Windows ("Área de Trabalho"), e o OneDrive **redireciona** essas pastas
+/// quando está ligado - a Área de Trabalho real passa a ser
+/// `...\OneDrive\Área de Trabalho`. Quem sabe a resposta certa é o próprio
+/// sistema, e é a ele que se pergunta.
+///
+/// O resultado é lembrado: essas pastas não mudam de lugar enquanto o
+/// computador está ligado, e perguntar custa um processo do PowerShell.
+pub fn shortcuts() -> Vec<FileEntry> {
+    static CACHE: std::sync::OnceLock<Vec<FileEntry>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(imp_shortcuts).clone()
+}
+
+/// Transforma caminhos em atalhos, descartando o que não existe ou não está
+/// dentro da pasta do usuário. Função pura - testada em qualquer sistema.
+///
+/// O filtro pelo `resolve` não é decorativo: é o mesmo limite da navegação e do
+/// download, e um atalho para fora dele seria um botão que leva a um erro.
+fn shortcuts_from<I: IntoIterator<Item = (String, String)>>(paths: I) -> Vec<FileEntry> {
+    let mut vistos = std::collections::HashSet::new();
+    let mut atalhos = Vec::new();
+    for (name, path) in paths {
+        if path.trim().is_empty() {
+            continue;
+        }
+        let Ok(real) = resolve(&path) else { continue };
+        if !real.is_dir() {
+            continue;
+        }
+        let texto = real.to_string_lossy().to_string();
+        // A mesma pasta pode aparecer duas vezes (Documentos e "Meus
+        // Documentos" apontando para o mesmo lugar).
+        if !vistos.insert(texto.clone()) {
+            continue;
+        }
+        atalhos.push(FileEntry {
+            name,
+            path: texto,
+            is_dir: true,
+            size: 0,
+        });
+    }
+    atalhos
+}
+
+/// Pergunta ao Windows onde ficam as pastas conhecidas.
+///
+/// `[Environment]::GetFolderPath` devolve o caminho **real**, já com o
+/// redirecionamento do OneDrive e no idioma do sistema. Uma chamada só traz
+/// todas: abrir um PowerShell por pasta seria seis vezes o custo pela mesma
+/// informação.
+#[cfg(windows)]
+fn imp_shortcuts() -> Vec<FileEntry> {
+    const SCRIPT: &str = r#"
+$saida = @()
+foreach ($par in @(
+    @('Área de Trabalho','Desktop'),
+    @('Downloads',''),
+    @('Documentos','MyDocuments'),
+    @('Imagens','MyPictures'),
+    @('Músicas','MyMusic'),
+    @('Vídeos','MyVideos')
+)) {
+  $caminho = ''
+  if ($par[1] -eq '') {
+    # Downloads não está no enum do .NET; o registro é quem sabe (e ele
+    # também acompanha o redirecionamento).
+    try {
+      $caminho = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders')."{374DE290-123F-4565-9164-39C4925E467B}"
+    } catch { }
+    if (-not $caminho) { $caminho = Join-Path $env:USERPROFILE 'Downloads' }
+  } else {
+    try { $caminho = [Environment]::GetFolderPath($par[1]) } catch { }
+  }
+  $saida += [PSCustomObject]@{ name = $par[0]; path = $caminho }
+}
+ConvertTo-Json -InputObject @($saida) -Compress
+"#;
+    let output = match crate::apps::run_powershell(SCRIPT) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("Atalhos de pasta indisponíveis: {e}");
+            return Vec::new();
+        }
+    };
+    let texto = String::from_utf8_lossy(&output.stdout);
+    let pares = parse_shortcuts(&texto);
+    if pares.is_empty() {
+        eprintln!("Atalhos de pasta: o PowerShell não devolveu nada.");
+    }
+    shortcuts_from(pares)
+}
+
+/// Fora do Windows, monta a partir da pasta do usuário. Serve ao
+/// desenvolvimento e mantém o caminho inteiro exercitável.
+#[cfg(not(windows))]
+fn imp_shortcuts() -> Vec<FileEntry> {
+    let Ok(root) = home() else { return Vec::new() };
+    let nomes = [
+        ("Área de Trabalho", "Desktop"),
+        ("Downloads", "Downloads"),
+        ("Documentos", "Documents"),
+        ("Imagens", "Pictures"),
+        ("Músicas", "Music"),
+        ("Vídeos", "Videos"),
+    ];
+    shortcuts_from(nomes.into_iter().map(|(rotulo, pasta)| {
+        (
+            rotulo.to_string(),
+            root.join(pasta).to_string_lossy().to_string(),
+        )
+    }))
+}
+
+/// Lê o JSON do PowerShell com os pares nome/caminho. Função pura.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn parse_shortcuts(text: &str) -> Vec<(String, String)> {
+    let Ok(valor) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
+        return Vec::new();
+    };
+    let itens = match valor {
+        serde_json::Value::Array(itens) => itens,
+        outro => vec![outro],
+    };
+    itens
+        .into_iter()
+        .filter_map(|item| {
+            let name = item.get("name")?.as_str()?.to_string();
+            let path = item.get("path")?.as_str().unwrap_or_default().to_string();
+            Some((name, path))
+        })
+        .collect()
+}
+
+/// Abre um arquivo para leitura, devolvendo também o tamanho.
+pub fn open_read(path: &str) -> Result<(std::fs::File, u64), String> {
+    let file = resolve(path)?;
+    if !file.is_file() {
+        return Err("não é um arquivo".to_string());
+    }
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+    let handle = std::fs::File::open(&file).map_err(|e| e.to_string())?;
+    Ok((handle, size))
+}
+
+/// Onde os arquivos vindos do celular são guardados, criada se não existir.
+pub fn inbox() -> Result<std::path::PathBuf, String> {
+    let dir = home()?.join("Downloads").join("Deskside");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("não consegui criar {dir:?}: {e}"))?;
+    Ok(dir)
+}
+
+/// Reduz um nome vindo da rede ao que ele deveria ser: **só** um nome.
+///
+/// Descarta qualquer coisa que pareça caminho — é o que impede que um
+/// `..\\..\\Windows\\System32\\algo.dll` vindo do celular escreva onde não deve.
+pub fn safe_name(name: &str) -> String {
+    let base = name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(name)
+        .trim()
+        .trim_matches('.');
+    let limpo: String = base
+        .chars()
+        .filter(|c| !matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') && !c.is_control())
+        .collect();
+    if limpo.is_empty() {
+        return "arquivo".to_string();
+    }
+    if e_dispositivo(&limpo) {
+        // Um sublinhado na frente, e não uma recusa: o arquivo chegou, a pessoa
+        // do outro lado quis mandá-lo, e negar por causa de um nome seria
+        // perder o conteúdo por uma herança do MS-DOS.
+        return format!("_{limpo}");
+    }
+    limpo
+}
+
+/// Os nomes que o Windows trata como **aparelho**, e não como arquivo.
+///
+/// `CON`, `NUL`, `PRN`, `AUX`, `COM1`..`COM9`, `LPT1`..`LPT9` vêm do MS-DOS e
+/// continuam reservados. Abrir `NUL` para escrita não cria arquivo nenhum: o
+/// sistema entrega o dispositivo, os bytes somem, e a transferência termina
+/// dizendo que deu certo com nada no disco.
+///
+/// A reserva vale **com qualquer extensão** — `CON.txt` também é o console —, e
+/// é por isso que a comparação olha só o pedaço antes do primeiro ponto.
+fn e_dispositivo(nome: &str) -> bool {
+    const RESERVADOS: [&str; 5] = ["CON", "PRN", "AUX", "NUL", "CONIN$"];
+    let raiz = nome.split('.').next().unwrap_or(nome).trim_end();
+    let maiusculo = raiz.to_ascii_uppercase();
+    if RESERVADOS.contains(&maiusculo.as_str()) {
+        return true;
+    }
+    // COM1..COM9 e LPT1..LPT9. O dígito é sempre um só; `COM10` é nome válido.
+    let porta = |prefixo: &str| {
+        maiusculo
+            .strip_prefix(prefixo)
+            .is_some_and(|resto| resto.len() == 1 && matches!(resto.as_bytes()[0], b'1'..=b'9'))
+    };
+    porta("COM") || porta("LPT")
+}
+
+/// Escolhe um caminho livre na caixa de entrada: `foto.png`, `foto (2).png`…
+///
+/// Sobrescrever seria a única alternativa, e apagar em silêncio o arquivo de
+/// mesmo nome que a pessoa mandou antes é o tipo de perda que não se desfaz.
+pub fn free_path(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let candidate = dir.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let path = std::path::Path::new(name);
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| name.to_string());
+    let ext = path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    for n in 2..1000 {
+        let tentativa = dir.join(format!("{stem} ({n}){ext}"));
+        if !tentativa.exists() {
+            return tentativa;
+        }
+    }
+    dir.join(format!("{stem} ({}){ext}", std::process::id()))
+}
+
+/// O arquivo temporário de uma transferência: o final com `.parte` no fim.
+///
+/// **Acrescentado**, e não trocado pela extensão. Com `with_extension`,
+/// `foto.png` e `foto.txt` viravam os dois `foto.parte` — duas transferências
+/// ao mesmo tempo escreviam no mesmo arquivo e cada uma achava que era dona
+/// dele. O `free_path` garante que o nome final é único; o temporário não
+/// herdava essa garantia.
+fn caminho_temporario(final_path: &std::path::Path) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("{}.parte", final_path.display()))
+}
+
+/// Um arquivo sendo recebido do celular, escrito pedaço a pedaço.
+///
+/// Grava num arquivo temporário (`.parte`) e só renomeia no fim: uma
+/// transferência interrompida não deixa para trás algo com nome de arquivo
+/// pronto e conteúdo pela metade.
+pub struct Incoming {
+    file: std::fs::File,
+    temp: std::path::PathBuf,
+    final_path: std::path::PathBuf,
+    written: u64,
+    limit: u64,
+}
+
+impl Incoming {
+    pub fn create(name: &str, limit: u64) -> Result<Self, String> {
+        let dir = inbox()?;
+        let final_path = free_path(&dir, &safe_name(name));
+        let temp = caminho_temporario(&final_path);
+        let file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
+        Ok(Self {
+            file,
+            temp,
+            final_path,
+            written: 0,
+            limit,
+        })
+    }
+
+    pub fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
+        use std::io::Write;
+        self.written += bytes.len() as u64;
+        if self.written > self.limit {
+            return Err(format!(
+                "arquivo maior que o limite de {} bytes",
+                self.limit
+            ));
+        }
+        self.file.write_all(bytes).map_err(|e| e.to_string())
+    }
+
+    /// Fecha e publica o arquivo, devolvendo o caminho final.
+    pub fn finish(self) -> Result<String, String> {
+        drop(self.file);
+        std::fs::rename(&self.temp, &self.final_path).map_err(|e| e.to_string())?;
+        Ok(self.final_path.to_string_lossy().to_string())
+    }
+
+    /// Desiste: apaga o arquivo pela metade.
+    pub fn cancel(self) {
+        drop(self.file);
+        let _ = std::fs::remove_file(&self.temp);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn atalhos_ignoram_o_que_nao_existe() {
+        use super::shortcuts_from;
+        // Nem todo computador tem as seis pastas (quem nunca abriu o gravador
+        // de som não tem "Músicas"). Oferecer um atalho que leva a erro é pior
+        // do que não oferecer.
+        let atalhos = shortcuts_from([
+            (
+                "Existe".to_string(),
+                // HOME não existe no Windows; a pasta do usuário, sim.
+                super::home().unwrap().to_string_lossy().into_owned(),
+            ),
+            (
+                "Não existe".to_string(),
+                "/caminho/que/nao/existe".to_string(),
+            ),
+            ("Vazio".to_string(), String::new()),
+        ]);
+        assert_eq!(atalhos.len(), 1);
+        assert_eq!(atalhos[0].name, "Existe");
+        assert!(atalhos[0].is_dir);
+    }
+
+    #[test]
+    fn atalhos_nao_repetem_a_mesma_pasta() {
+        use super::shortcuts_from;
+        let casa = super::home().unwrap().to_string_lossy().into_owned();
+        let atalhos = shortcuts_from([
+            ("Documentos".to_string(), casa.clone()),
+            ("Meus Documentos".to_string(), casa),
+        ]);
+        assert_eq!(
+            atalhos.len(),
+            1,
+            "a mesma pasta não deve aparecer duas vezes"
+        );
+    }
+
+    #[test]
+    fn atalho_fora_da_pasta_do_usuario_e_recusado() {
+        use super::shortcuts_from;
+        // Mesmo limite da navegação e do download.
+        let atalhos = shortcuts_from([("Raiz".to_string(), "/".to_string())]);
+        assert!(atalhos.is_empty());
+    }
+
+    #[test]
+    fn le_os_atalhos_que_o_powershell_devolve() {
+        use super::parse_shortcuts;
+        let json = r#"[{"name":"Área de Trabalho","path":"C:\\Users\\eu\\OneDrive\\Área de Trabalho"},
+                       {"name":"Downloads","path":"C:\\Users\\eu\\Downloads"}]"#;
+        let pares = parse_shortcuts(json);
+        assert_eq!(pares.len(), 2);
+        assert_eq!(pares[0].0, "Área de Trabalho");
+        // O caminho real passa pelo OneDrive: é justamente o que montar na mão
+        // erraria.
+        assert!(pares[0].1.contains("OneDrive"));
+    }
+
+    #[test]
+    fn powershell_mudo_nao_quebra_a_listagem() {
+        use super::parse_shortcuts;
+        assert!(parse_shortcuts("").is_empty());
+        assert!(parse_shortcuts("não é json").is_empty());
+    }
+
+    #[test]
+    fn a_raiz_traz_atalhos_e_as_subpastas_nao() {
+        use super::list;
+        // Os atalhos servem na raiz; repeti-los a cada passo da navegação seria
+        // mandar a mesma lista sem ninguém olhando.
+        let raiz = list("").expect("a pasta do usuário deve listar");
+        assert!(raiz.parent.is_none());
+        // (No ambiente de teste pode não haver nenhuma das pastas conhecidas;
+        // o que se afirma é a regra, não a quantidade.)
+        let sub = raiz.entries.iter().find(|e| e.is_dir);
+        if let Some(pasta) = sub {
+            let dentro = list(&pasta.path).expect("subpasta deve listar");
+            assert!(dentro.parent.is_some());
+            assert!(dentro.shortcuts.is_empty(), "atalhos só na raiz");
+        }
+    }
+
+    use super::*;
+
+    #[test]
+    fn resolve_vazio_e_a_pasta_do_usuario() {
+        let home = home().unwrap();
+        assert_eq!(resolve("").unwrap(), home.canonicalize().unwrap_or(home));
+    }
+
+    #[test]
+    fn resolve_recusa_sair_da_pasta_do_usuario() {
+        // O caso que a checagem existe para pegar.
+        assert!(resolve("../../etc").is_err());
+        assert!(resolve("/etc").is_err());
+        assert!(resolve("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn resolve_aceita_subpasta_existente() {
+        let sub = home().unwrap().join("deskside-teste-resolve");
+        std::fs::create_dir_all(&sub).unwrap();
+        let resolvido = resolve(&sub.to_string_lossy()).unwrap();
+        assert!(resolvido.ends_with("deskside-teste-resolve"));
+        std::fs::remove_dir_all(&sub).ok();
+    }
+
+    #[test]
+    fn listagem_ordena_pastas_antes_de_arquivos() {
+        let base = home().unwrap().join("deskside-teste-lista");
+        std::fs::create_dir_all(base.join("zpasta")).unwrap();
+        std::fs::write(base.join("aarquivo.txt"), b"oi").unwrap();
+        std::fs::write(base.join(".oculto"), b"x").unwrap();
+
+        let listing = list(&base.to_string_lossy()).unwrap();
+        let nomes: Vec<&str> = listing.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(nomes, vec!["zpasta", "aarquivo.txt"], "pasta vem primeiro");
+        assert!(listing.parent.is_some(), "dá para voltar de uma subpasta");
+        let arquivo = listing.entries.iter().find(|e| !e.is_dir).unwrap();
+        assert_eq!(arquivo.size, 2);
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn pasta_grande_vem_em_paginas_sem_repetir_nem_perder() {
+        let base = home().unwrap().join("deskside-teste-paginas");
+        std::fs::create_dir_all(&base).unwrap();
+        let quantos = POR_PAGINA + 7;
+        for i in 0..quantos {
+            std::fs::write(base.join(format!("arq-{i:04}.txt")), b"").unwrap();
+        }
+        // Dois nomes que só diferem na caixa: o desempate pelo nome exato é
+        // o que impede um de trocar de lugar com o outro entre as páginas.
+        std::fs::write(base.join("Caixa.txt"), b"").unwrap();
+        std::fs::write(base.join("caixa.txt"), b"").unwrap();
+        let caminho = base.to_string_lossy().to_string();
+
+        let primeira = list_page(&caminho, 0).unwrap();
+        let total = primeira.total;
+        assert!(total >= quantos, "o total conta a pasta inteira");
+        assert_eq!(primeira.entries.len(), POR_PAGINA);
+        assert_eq!(primeira.offset, 0);
+
+        let segunda = list_page(&caminho, POR_PAGINA).unwrap();
+        assert_eq!(segunda.offset, POR_PAGINA);
+        assert_eq!(segunda.total, total);
+        assert_eq!(segunda.entries.len(), total - POR_PAGINA);
+        assert!(
+            segunda.shortcuts.is_empty(),
+            "atalhos só na primeira página"
+        );
+
+        let mut nomes: Vec<String> = primeira
+            .entries
+            .iter()
+            .chain(&segunda.entries)
+            .map(|e| e.name.clone())
+            .collect();
+        let juntos = nomes.len();
+        nomes.sort();
+        nomes.dedup();
+        assert_eq!(nomes.len(), juntos, "nenhum nome em duas páginas");
+        assert_eq!(juntos, total, "nenhum nome perdido");
+
+        // Passar do fim é uma página vazia, e não um erro.
+        assert!(list_page(&caminho, total + 10).unwrap().entries.is_empty());
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_raiz_nao_oferece_voltar() {
+        // Sem isso o app mostraria um "voltar" que sai da área permitida e
+        // devolve erro — um beco sem saída visível na tela.
+        assert!(list("").unwrap().parent.is_none());
+    }
+
+    #[test]
+    fn arquivos_de_nomes_diferentes_nao_disputam_o_mesmo_temporario() {
+        // Com `with_extension`, `foto.png` e `foto.txt` viravam os dois
+        // `foto.parte` — e uma transferência corrompia a outra em silêncio.
+        let dir = std::env::temp_dir().join(format!("deskside-parte-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = free_path(&dir, "foto.png");
+        let b = free_path(&dir, "foto.txt");
+        assert_ne!(
+            caminho_temporario(&a),
+            caminho_temporario(&b),
+            "dois envios disputariam o mesmo .parte"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nomes_de_aparelho_do_dos_ganham_um_prefixo() {
+        // `NUL` não é arquivo: é o buraco onde os bytes somem. Escrever nele
+        // termina "com sucesso" e não deixa nada no disco — a transferência
+        // diria que deu certo e a pessoa procuraria o arquivo para sempre.
+        for reservado in ["NUL", "CON", "PRN", "AUX", "COM1", "LPT9", "nul", "Con"] {
+            let saida = safe_name(reservado);
+            assert_eq!(saida, format!("_{reservado}"), "{reservado} passou inteiro");
+        }
+    }
+
+    #[test]
+    fn a_reserva_vale_com_extensao_e_so_ate_o_primeiro_ponto() {
+        // `CON.txt` continua sendo o console para o Windows. E o espaço antes
+        // do ponto também: `CON .txt` abre o mesmo dispositivo.
+        assert_eq!(safe_name("CON.txt"), "_CON.txt");
+        assert_eq!(safe_name("con.tar.gz"), "_con.tar.gz");
+    }
+
+    #[test]
+    fn nomes_parecidos_com_reservados_passam_intactos() {
+        // O risco do lado oposto: renomear arquivo legítimo é perder o nome que
+        // a pessoa escolheu. `CONTA` começa com CON, `COM10` não é porta.
+        for comum in [
+            "CONTA.pdf",
+            "COM10.txt",
+            "console.log",
+            "auxiliar.doc",
+            "NULO.txt",
+        ] {
+            assert_eq!(safe_name(comum), comum, "{comum} foi renomeado à toa");
+        }
+    }
+
+    #[test]
+    fn safe_name_reduz_caminho_a_nome() {
+        assert_eq!(safe_name("../../Windows/System32/evil.dll"), "evil.dll");
+        assert_eq!(safe_name("C:\\Users\\caio\\foto.png"), "foto.png");
+        assert_eq!(safe_name("relatório final.pdf"), "relatório final.pdf");
+        assert_eq!(safe_name("../.."), "arquivo");
+        assert_eq!(safe_name(""), "arquivo");
+        assert_eq!(safe_name("nome:com*proibidos?.txt"), "nomecomproibidos.txt");
+    }
+
+    #[test]
+    fn free_path_nao_sobrescreve() {
+        let dir = home().unwrap().join("deskside-teste-livre");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("nota.txt"), b"antigo").unwrap();
+
+        let livre = free_path(&dir, "nota.txt");
+        assert_eq!(livre.file_name().unwrap(), "nota (2).txt");
+        assert_eq!(
+            std::fs::read(dir.join("nota.txt")).unwrap(),
+            b"antigo",
+            "o arquivo anterior continua intacto"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn recebido_so_aparece_pronto_no_fim() {
+        let mut incoming = Incoming::create("teste-deskside.bin", 1024).unwrap();
+        let destino = incoming.final_path.clone();
+        incoming.write(b"parte um ").unwrap();
+        assert!(!destino.exists(), "não existe enquanto está pela metade");
+        incoming.write(b"parte dois").unwrap();
+        let caminho = incoming.finish().unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&caminho).unwrap(),
+            "parte um parte dois"
+        );
+        std::fs::remove_file(&caminho).ok();
+    }
+
+    #[test]
+    fn recebido_respeita_o_limite_de_tamanho() {
+        let mut incoming = Incoming::create("teste-limite.bin", 8).unwrap();
+        let temp = incoming.temp.clone();
+        assert!(incoming.write(&[0u8; 4]).is_ok());
+        assert!(
+            incoming.write(&[0u8; 8]).is_err(),
+            "passar do limite tem de falhar"
+        );
+        incoming.cancel();
+        assert!(!temp.exists(), "o pedaço escrito é apagado");
+    }
+
+    #[test]
+    fn leitura_recusa_pasta_e_aceita_arquivo() {
+        let dir = home().unwrap().join("deskside-teste-leitura");
+        std::fs::create_dir_all(&dir).unwrap();
+        let arquivo = dir.join("dados.bin");
+        std::fs::write(&arquivo, vec![7u8; 100]).unwrap();
+
+        assert!(open_read(&dir.to_string_lossy()).is_err());
+        let (_, size) = open_read(&arquivo.to_string_lossy()).unwrap();
+        assert_eq!(size, 100);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

@@ -1,0 +1,442 @@
+//! Brilho da tela do computador.
+//!
+//! ## O que funciona, e o que não tem como funcionar
+//!
+//! Brilho por software só alcança o **painel embutido** de um notebook. O
+//! Windows expõe isso pelo WMI (`WmiMonitorBrightnessMethods`), que é o mesmo
+//! caminho que o controle deslizante da central de ações usa.
+//!
+//! Monitor externo é outra história: o ajuste ali viaja pelo cabo, em DDC/CI, e
+//! depende de o monitor implementar o protocolo e de o fabricante não o ter
+//! desligado. Muitos ignoram. Este módulo **não** tenta esse caminho, e a
+//! consequência é assumida: num computador de mesa a resposta é um erro claro,
+//! e não um comando que parece funcionar e não faz nada.
+//!
+//! ## Por que o passo relativo é resolvido aqui
+//!
+//! A barra de perfis manda "mais 10" e "menos 10", não um valor absoluto. Fazer
+//! o telefone ler o brilho, somar e escrever custaria duas idas e voltas por
+//! toque - e dois toques rápidos se atropelariam, porque os dois leriam o mesmo
+//! valor antigo e o segundo desfaria o primeiro. Somar do lado do computador
+//! resolve os dois problemas de uma vez.
+//!
+//! ## No Linux
+//!
+//! O nível vem de `/sys/class/backlight`, que todos podem ler. Escrever ali
+//! exige administrador, então o ajuste é pedido ao `logind`
+//! (`Session.SetBrightness`), que deixa a pessoa da sessão ativa mudar o
+//! brilho da própria tela — no Wayland e no X11, em qualquer ambiente.
+
+/// Onde parar quando o passo pedido sai da faixa.
+///
+/// Pura e separada da chamada ao sistema porque é aqui que mora o erro fácil:
+/// somar num `u8` e estourar, ou deixar o brilho chegar a zero e a pessoa ficar
+/// olhando para um painel apagado sem saber que foi ela quem fez isso.
+///
+/// O piso é 5 e não 0 de propósito. Um notebook com o brilho no zero parece
+/// desligado, e quem está do outro lado do controle remoto não tem como
+/// perceber que o que aconteceu foi um toque a mais no botão de diminuir.
+pub fn aplicar_passo(atual: u8, delta: i16) -> u8 {
+    const PISO: i32 = 5;
+    let alvo = atual as i32 + delta as i32;
+    alvo.clamp(PISO, 100) as u8
+}
+
+/// Ajusta o brilho e devolve o nível resultante.
+///
+/// `level` tem precedência sobre `delta` quando os dois vêm - não deveria
+/// acontecer, mas uma mensagem malformada não pode virar comportamento
+/// indefinido.
+pub fn ajustar(level: Option<u8>, delta: Option<i16>) -> Result<u8, String> {
+    match (level, delta) {
+        (Some(nivel), _) => {
+            let alvo = nivel.min(100);
+            imp::definir(alvo)?;
+            Ok(alvo)
+        }
+        (None, Some(passo)) => {
+            let atual = imp::ler()?;
+            let alvo = aplicar_passo(atual, passo);
+            imp::definir(alvo)?;
+            Ok(alvo)
+        }
+        (None, None) => Err("nenhum brilho pedido".to_string()),
+    }
+}
+
+/// O brilho atual, de 0 a 100.
+pub fn ler() -> Result<u8, String> {
+    imp::ler()
+}
+
+#[cfg(windows)]
+mod imp {
+    /// Lê o brilho pelo WMI.
+    ///
+    /// `WmiMonitorBrightness` já responde em porcentagem (0–100), então não há
+    /// conversão a fazer - ao contrário da temperatura, que vem em décimos de
+    /// Kelvin.
+    const LER: &str = r#"
+$ErrorActionPreference = 'Stop'
+(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness |
+    Select-Object -First 1).CurrentBrightness
+"#;
+
+    pub fn ler() -> Result<u8, String> {
+        let saida = crate::apps::run_powershell(LER)
+            .map_err(|e| format!("não consegui perguntar o brilho: {e}"))?;
+        interpretar(&String::from_utf8_lossy(&saida.stdout))
+    }
+
+    /// Lê a resposta do PowerShell.
+    ///
+    /// Vazia é o caso do computador de mesa: a classe do WMI existe, mas não há
+    /// painel embutido para responder por ela. O erro precisa dizer isso, e não
+    /// "falhou" - a diferença entre "seu monitor não permite" e "deu problema"
+    /// é o que decide se a pessoa vai tentar de novo ou parar de tentar.
+    fn interpretar(saida: &str) -> Result<u8, String> {
+        let texto = saida.trim();
+        if texto.is_empty() {
+            return Err("este computador não permite ajustar o brilho por software \
+                 (só painel embutido de notebook)"
+                .to_string());
+        }
+        texto
+            .parse::<u32>()
+            .map(|v| v.min(100) as u8)
+            .map_err(|_| format!("não entendi o brilho devolvido pelo Windows: {texto}"))
+    }
+
+    /// Escreve o brilho pelo WMI.
+    ///
+    /// O `Timeout` de 1 segundo é do próprio método: é por quanto tempo o
+    /// Windows tenta antes de desistir, e não um tempo de transição.
+    pub fn definir(nivel: u8) -> Result<(), String> {
+        let script = format!(
+            r#"
+$ErrorActionPreference = 'Stop'
+$m = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods |
+    Select-Object -First 1
+if ($null -eq $m) {{ Write-Error 'sem painel embutido' }}
+Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness `
+    -Arguments @{{ Brightness = [byte]{nivel}; Timeout = [uint32]1 }} | Out-Null
+"#
+        );
+        let saida = crate::apps::run_powershell(&script)
+            .map_err(|e| format!("não consegui ajustar o brilho: {e}"))?;
+        if saida.status.success() {
+            return Ok(());
+        }
+        // A mensagem do PowerShell é longa e cheia de detalhe de objeto; o que
+        // interessa ao usuário é a primeira linha.
+        let erro = String::from_utf8_lossy(&saida.stderr);
+        let primeira = erro.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+        Err(if primeira.is_empty() {
+            "este computador não permite ajustar o brilho por software \
+             (só painel embutido de notebook)"
+                .to_string()
+        } else {
+            primeira.trim().to_string()
+        })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::interpretar;
+
+        #[test]
+        fn le_o_numero() {
+            assert_eq!(interpretar("60\r\n"), Ok(60));
+        }
+
+        #[test]
+        fn resposta_vazia_explica_o_motivo() {
+            let erro = interpretar("   ").unwrap_err();
+            assert!(erro.contains("notebook"), "{erro}");
+        }
+
+        #[test]
+        fn valor_acima_de_cem_e_aparado() {
+            assert_eq!(interpretar("255"), Ok(100));
+        }
+    }
+}
+
+/// No Mac, pelo `DisplayServices`: a biblioteca do próprio sistema que a
+/// tecla de brilho usa, e a mesma que os utilitários de brilho do Mac usam.
+///
+/// Não é API pública — a Apple não oferece uma. Por isso é aberta em tempo de
+/// execução (`dlopen`), e não ligada ao programa: se uma versão futura do
+/// macOS a tirar, o agente continua abrindo e só o brilho responde que não dá.
+///
+/// Vale para a tela **embutida** (MacBook, iMac). Monitor externo responde
+/// por outro caminho (DDC), que fica de fora, como no Windows.
+#[cfg(target_os = "macos")]
+mod imp {
+    use std::ffi::{c_char, c_int, c_void, CStr};
+
+    const BIBLIOTECA: &CStr =
+        c"/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices";
+    const RTLD_LAZY: c_int = 1;
+
+    extern "C" {
+        fn dlopen(caminho: *const c_char, modo: c_int) -> *mut c_void;
+        fn dlsym(biblioteca: *mut c_void, nome: *const c_char) -> *mut c_void;
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGMainDisplayID() -> u32;
+    }
+
+    type Ler = unsafe extern "C" fn(u32, *mut f32) -> c_int;
+    type Definir = unsafe extern "C" fn(u32, f32) -> c_int;
+
+    const SEM_TELA: &str = "este Mac não deixa ajustar o brilho por software \
+                            (só a tela embutida de MacBook e iMac)";
+
+    fn simbolo(nome: &CStr) -> Result<*mut c_void, String> {
+        let biblioteca = unsafe { dlopen(BIBLIOTECA.as_ptr(), RTLD_LAZY) };
+        if biblioteca.is_null() {
+            return Err(SEM_TELA.to_string());
+        }
+        let f = unsafe { dlsym(biblioteca, nome.as_ptr()) };
+        if f.is_null() {
+            return Err(SEM_TELA.to_string());
+        }
+        Ok(f)
+    }
+
+    pub fn ler() -> Result<u8, String> {
+        let ler: Ler = unsafe { std::mem::transmute(simbolo(c"DisplayServicesGetBrightness")?) };
+        let mut valor = 0f32;
+        if unsafe { ler(CGMainDisplayID(), &mut valor) } != 0 {
+            return Err(SEM_TELA.to_string());
+        }
+        Ok((valor.clamp(0.0, 1.0) * 100.0).round() as u8)
+    }
+
+    pub fn definir(nivel: u8) -> Result<(), String> {
+        let definir: Definir =
+            unsafe { std::mem::transmute(simbolo(c"DisplayServicesSetBrightness")?) };
+        if unsafe { definir(CGMainDisplayID(), nivel.min(100) as f32 / 100.0) } != 0 {
+            return Err(SEM_TELA.to_string());
+        }
+        Ok(())
+    }
+}
+
+/// Um controle de brilho em `/sys/class/backlight`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Controle {
+    pub nome: String,
+    /// `firmware`, `platform` ou `raw`.
+    pub tipo: String,
+}
+
+/// Qual controle usar quando há mais de um.
+///
+/// A ordem que a documentação do kernel recomenda: o do firmware (ACPI)
+/// conhece a tela; o `raw` mexe direto no registrador da placa e às vezes
+/// não é o que acende o painel.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn escolher_controle(controles: &[Controle]) -> Option<&Controle> {
+    let ordem = |tipo: &str| match tipo {
+        "firmware" => 0,
+        "platform" => 1,
+        "raw" => 2,
+        _ => 3,
+    };
+    controles
+        .iter()
+        .min_by_key(|c| (ordem(&c.tipo), c.nome.clone()))
+}
+
+/// O valor do aparelho em 0–100.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn para_percentual(valor: u32, maximo: u32) -> u8 {
+    if maximo == 0 {
+        return 0;
+    }
+    ((valor.min(maximo) as f64 / maximo as f64) * 100.0).round() as u8
+}
+
+/// 0–100 no valor do aparelho. Acima de zero nunca vira zero: em painel de
+/// poucos degraus, 5% arredondaria para "apagado".
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn do_percentual(percentual: u8, maximo: u32) -> u32 {
+    let valor = (percentual.min(100) as f64 / 100.0 * maximo as f64).round() as u32;
+    if percentual > 0 {
+        valor.max(1)
+    } else {
+        0
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::{do_percentual, escolher_controle, para_percentual, Controle};
+    use std::path::{Path, PathBuf};
+
+    const PASTA: &str = "/sys/class/backlight";
+    const SEM_TELA: &str = "este computador não tem tela com brilho ajustável \
+                            (só a tela embutida de notebooks)";
+
+    /// O controle a usar, entre os que existem em `pasta`.
+    pub(super) fn controle_em(pasta: &Path) -> Result<(String, PathBuf), String> {
+        let controles: Vec<Controle> = std::fs::read_dir(pasta)
+            .map_err(|_| SEM_TELA.to_string())?
+            .flatten()
+            .map(|e| Controle {
+                nome: e.file_name().to_string_lossy().into_owned(),
+                tipo: std::fs::read_to_string(e.path().join("type"))
+                    .map(|t| t.trim().to_string())
+                    .unwrap_or_default(),
+            })
+            .collect();
+        let c = escolher_controle(&controles).ok_or_else(|| SEM_TELA.to_string())?;
+        Ok((c.nome.clone(), pasta.join(&c.nome)))
+    }
+
+    fn numero(arquivo: &Path) -> Result<u32, String> {
+        std::fs::read_to_string(arquivo)
+            .ok()
+            .and_then(|t| t.trim().parse().ok())
+            .ok_or_else(|| format!("não li {}", arquivo.display()))
+    }
+
+    pub(super) fn ler_em(pasta: &Path) -> Result<u8, String> {
+        let (_, controle) = controle_em(pasta)?;
+        // `actual_brightness` é o que o painel está mostrando; `brightness`,
+        // o último pedido. Quase sempre iguais.
+        let valor = numero(&controle.join("actual_brightness"))
+            .or_else(|_| numero(&controle.join("brightness")))?;
+        let maximo = numero(&controle.join("max_brightness"))?;
+        Ok(para_percentual(valor, maximo))
+    }
+
+    pub fn ler() -> Result<u8, String> {
+        ler_em(Path::new(PASTA))
+    }
+
+    pub fn definir(nivel: u8) -> Result<(), String> {
+        let (nome, controle) = controle_em(Path::new(PASTA))?;
+        let valor = do_percentual(nivel, numero(&controle.join("max_brightness"))?);
+        let conexao = zbus::blocking::Connection::system()
+            .map_err(|e| format!("sem conexão com o sistema: {e}"))?;
+        conexao
+            .call_method(
+                Some("org.freedesktop.login1"),
+                "/org/freedesktop/login1/session/auto",
+                Some("org.freedesktop.login1.Session"),
+                "SetBrightness",
+                &("backlight", nome.as_str(), valor),
+            )
+            .map(|_| ())
+            .map_err(|e| format!("o sistema recusou o brilho: {e}"))
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+mod imp {
+    const NAO_HA: &str = "o ajuste de brilho não está disponível neste sistema";
+
+    pub fn ler() -> Result<u8, String> {
+        Err(NAO_HA.to_string())
+    }
+
+    pub fn definir(_nivel: u8) -> Result<(), String> {
+        Err(NAO_HA.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn o_passo_soma_e_subtrai() {
+        assert_eq!(aplicar_passo(50, 10), 60);
+        assert_eq!(aplicar_passo(50, -10), 40);
+    }
+
+    #[test]
+    fn nao_passa_de_cem() {
+        assert_eq!(aplicar_passo(95, 10), 100);
+        assert_eq!(aplicar_passo(100, 50), 100);
+    }
+
+    #[test]
+    fn nao_apaga_a_tela() {
+        // Zero deixaria o painel parecendo desligado, e quem está do outro lado
+        // do controle remoto não teria como perceber que foi um toque a mais.
+        assert_eq!(aplicar_passo(10, -50), 5);
+        assert_eq!(aplicar_passo(5, -10), 5);
+    }
+
+    #[test]
+    fn passo_gigante_nao_estoura_o_tipo() {
+        // Uma mensagem adulterada com delta 30000 não pode dar volta no `u8`.
+        assert_eq!(aplicar_passo(50, i16::MAX), 100);
+        assert_eq!(aplicar_passo(50, i16::MIN), 5);
+    }
+
+    #[test]
+    fn sem_nivel_e_sem_passo_e_erro() {
+        assert!(ajustar(None, None).is_err());
+    }
+
+    fn controle(nome: &str, tipo: &str) -> Controle {
+        Controle {
+            nome: nome.into(),
+            tipo: tipo.into(),
+        }
+    }
+
+    #[test]
+    fn o_controle_do_firmware_vem_antes_do_da_placa() {
+        let lista = [
+            controle("intel_backlight", "raw"),
+            controle("acpi_video0", "firmware"),
+        ];
+        assert_eq!(escolher_controle(&lista).unwrap().nome, "acpi_video0");
+        let so_placa = [controle("amdgpu_bl0", "raw")];
+        assert_eq!(escolher_controle(&so_placa).unwrap().nome, "amdgpu_bl0");
+        assert!(escolher_controle(&[]).is_none());
+    }
+
+    #[test]
+    fn converte_entre_percentual_e_o_aparelho() {
+        assert_eq!(para_percentual(96000, 96000), 100);
+        assert_eq!(para_percentual(48000, 96000), 50);
+        assert_eq!(para_percentual(5, 0), 0);
+        assert_eq!(do_percentual(50, 96000), 48000);
+        assert_eq!(do_percentual(100, 7), 7);
+        // Painel de 7 degraus: 5% não pode virar "apagado".
+        assert_eq!(do_percentual(5, 7), 1);
+        assert_eq!(do_percentual(0, 7), 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn le_o_brilho_do_sysfs_e_explica_quando_nao_ha_tela() {
+        let pasta = std::env::temp_dir().join(format!("deskside-brilho-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&pasta);
+        std::fs::create_dir_all(&pasta).unwrap();
+        // Computador de mesa (ou máquina virtual): pasta vazia.
+        let erro = imp::ler_em(&pasta).unwrap_err();
+        assert!(erro.contains("só a tela embutida"), "{erro}");
+
+        let c = pasta.join("intel_backlight");
+        std::fs::create_dir_all(&c).unwrap();
+        for (arquivo, valor) in [
+            ("type", "raw\n"),
+            ("max_brightness", "120000\n"),
+            ("actual_brightness", "30000\n"),
+        ] {
+            std::fs::write(c.join(arquivo), valor).unwrap();
+        }
+        assert_eq!(imp::ler_em(&pasta), Ok(25));
+        let _ = std::fs::remove_dir_all(&pasta);
+    }
+}

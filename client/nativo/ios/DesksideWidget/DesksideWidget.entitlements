@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- O grupo de chaves do app: é por ele que o widget lê o login que o
+	     app guardou (ver Comum/DesksideComum.swift). Todo perfil de
+	     distribuição já permite grupos com o prefixo do time, então isto não
+	     pede nada no portal da Apple. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.deskside.desksideClient</string>
+	</array>
+</dict>
+</plist>
