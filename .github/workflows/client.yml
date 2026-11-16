@@ -79,7 +79,7 @@ jobs:
       - name: Build APK (release)
         run: flutter build apk --release --no-shrink
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: deskside-android-release
           path: client/build/app/outputs/flutter-apk/app-release.apk
