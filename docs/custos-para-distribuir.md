@@ -6,13 +6,15 @@ virar algo que um estranho instala, usa e paga.
 **Três ressalvas antes dos números.** Os preços são do que eu conhecia até maio
 de 2026 e mudam — confirme cada um antes de gastar. O câmbio usado é
 **US$ 1 = R$ 5,50**; se estiver diferente, os valores em real mudam junto. E a
-parte de empresa e impostos é estimativa de quem não é contador: confirme com
-um antes de abrir o CNPJ.
+parte de impostos é estimativa de quem não é contador: confirme com um antes
+da primeira cobrança.
 
-**Corrigido em 16/11/2026:** a versão anterior supunha **MEI**. Desenvolver e
-licenciar software não está entre as atividades permitidas ao MEI, então a
-conta agora usa uma **Microempresa (ME) no Simples Nacional**, que precisa de
-contador e paga imposto como porcentagem do faturamento. Ver "CNPJ" abaixo.
+**Decidido em 16/11/2026: o Deskside sai pelo CPF.** As duas lojas aceitam
+pessoa física, e sem empresa somem da conta o contador, a abertura e o
+certificado e-CNPJ. Em troca, o que as lojas pagam entra no seu imposto de
+renda, o Google pede um teste fechado antes de publicar e algumas portas ficam
+fechadas (ver "Pelo CPF"). A versão anterior deste arquivo fazia a conta com
+uma Microempresa no Simples; o resumo dela ficou em "Se um dia virar CNPJ".
 
 ## A tabela, item por item
 
@@ -20,16 +22,17 @@ contador e paga imposto como porcentagem do faturamento. Ver "CNPJ" abaixo.
 |---|---:|---:|---|
 | Google Play Console (US$ 25) | R$ 138 | — | sim |
 | Revisão jurídica dos termos | R$ 1.000 a 3.000 | — | sim, antes de cobrar |
-| Abertura do CNPJ (ME, taxas da Junta) | ~R$ 200 | — | sim |
 | Apple Developer (US$ 99/ano) | — | R$ 45 | sim |
-| Contador (ME no Simples) | — | ~R$ 200 | sim |
-| Certificado digital e-CNPJ (~R$ 200/ano) | — | R$ 17 | sim |
 | Domínio `.com.br` (R$ 40/ano) | — | R$ 3 | sim |
 | Envio de e-mail (Amazon SES) | — | R$ 5 | sim |
 | Servidor (Oracle Always Free) | — | R$ 0 | sim |
-| Azure Trusted Signing (US$ 9,99/mês) | — | R$ 55 | não |
-| — *ou* certificado EV (~US$ 500/ano) | — | R$ 229 | não |
+| Azure Trusted Signing (US$ 9,99/mês) | — | R$ 55 | não, e talvez não aceite CPF |
+| — *ou* certificado OV de pessoa física (~US$ 300/ano) | — | R$ 140 | não |
+| Contador só para a declaração anual | ~R$ 300/ano | — | não |
 | SMS (Twilio) | — | — | **não faça** |
+
+O certificado EV, que tirava o aviso do Windows na hora, **não existe para
+pessoa física**: ele valida uma empresa. Ver "Para os avisos do Windows sumirem".
 
 ## Os totais
 
@@ -37,53 +40,57 @@ Usando R$ 2.000 para a revisão jurídica (meio da faixa):
 
 | Cenário | Uma vez | Por mês | **Primeiro ano** |
 |---|---:|---:|---:|
-| **A — sem certificado** | R$ 2.338 | R$ 270 | **R$ 5.578** |
-| **B — com Azure Signing** | R$ 2.338 | R$ 325 | **R$ 6.238** |
-| **C — com certificado EV** | R$ 2.338 | R$ 499 | **R$ 8.326** |
+| **A — sem certificado** | R$ 2.138 | R$ 53 | **R$ 2.774** |
+| **B — com Azure Signing** | R$ 2.138 | R$ 108 | **R$ 3.434** |
+| **C — com certificado OV** | R$ 2.138 | R$ 193 | **R$ 4.454** |
 
-A partir do segundo ano cai para 12 × a mensalidade: **R$ 3.240**, **R$ 3.900**
-ou **R$ 5.988**.
+A partir do segundo ano cai para 12 × a mensalidade: **R$ 636**, **R$ 1.296**
+ou **R$ 2.316**.
 
-**Só para pôr no ar, sem cobrar ainda**, tire a revisão jurídica: R$ 338 de
-entrada e R$ 270 por mês. Isso é o cenário A menos os R$ 2.000. O contador é a
-maior parcela fixa; antes de haver faturamento, pergunte a ele se compensa
-abrir a empresa já ou só perto da primeira cobrança.
+**Só para pôr no ar, sem cobrar ainda**, tire a revisão jurídica: R$ 138 de
+entrada e R$ 53 por mês.
 
 ## Os custos que não estão na tabela
 
-**15% de cada mensalidade vai para a Apple ou para o Google**, e **o Simples
-Nacional leva outra fatia do faturamento**. Os dois são variáveis, então não
-cabem nas linhas acima — mas assim que houver clientes eles passam tudo o mais.
+**15% de cada mensalidade vai para a Apple ou para o Google**, e **o imposto
+de renda leva uma fatia do resto**. Os dois são variáveis, então não cabem nas
+linhas acima — mas assim que houver clientes eles passam tudo o mais.
+
+Pelo CPF, o que as lojas pagam é rendimento recebido do exterior e entra no
+**carnê-leão**, todo mês, na tabela progressiva. Quanto dele vira imposto
+depende da sua renda total no mês, e não do Deskside sozinho:
 
 ```
 R$ 30,00  mensalidade
 - R$ 4,50  15% da loja
-- R$ 1,80  ~6% do Simples (Anexo III, ver "CNPJ")
-= R$ 23,70 líquido por assinante
+= R$ 25,50 que a loja paga
+- R$ 7,01  27,5% de IR, se você já está na faixa de cima
+= R$ 18,49 líquido por assinante, no pior caso
 ```
 
-Sem o "fator R" (explicado em "CNPJ"), o Simples vai para ~15,5% (Anexo V): sai
-R$ 4,65 em vez de R$ 1,80, e sobram R$ 20,85.
+Na faixa de cima é isso. Se a sua renda total do mês ficar na faixa isenta —
+desde 2026 a isenção vai até R$ 5.000 por mês, pela reforma do IR; confirme o
+valor em vigor —, os R$ 25,50 ficam inteiros. A conta abaixo usa o pior caso.
 
 Vendendo pelo site, a taxa do processador de pagamento fica em torno de 5% no
-lugar dos 15% da loja, e sobram cerca de R$ 26,60 — quase R$ 3 a mais por
-assinante, todo mês.
+lugar dos 15% da loja: sobram R$ 28,50 antes do imposto, R$ 20,66 depois dos
+27,5% — R$ 2 a mais por assinante, todo mês.
 
 ## Quantos assinantes fecham a conta
 
 | Cenário | Só o mensal | Primeiro ano, com o de uma vez diluído |
 |---|---:|---:|
-| A | 12 | 20 |
-| B | 14 | 22 |
-| C | 22 | 30 |
+| A | 3 | 13 |
+| B | 6 | 16 |
+| C | 11 | 21 |
 
-Contas com R$ 23,70 líquidos por assinante (loja e Simples a 6% já
+Contas com R$ 18,49 líquidos por assinante (loja e 27,5% de IR já
 descontados). A coluna da direita é a honesta para quem está começando: ela
-paga também os R$ 2.338 de entrada ao longo dos doze primeiros meses.
+paga também os R$ 2.138 de entrada ao longo dos doze primeiros meses.
 
-**Vinte a vinte e dois assinantes cobrem o primeiro ano inteiro** nos cenários
-que eu escolheria. Ainda é uma barreira baixa — mais alta que a da versão com
-MEI, por causa do contador.
+**Treze assinantes cobrem o primeiro ano** sem certificado, e três pagam o mês
+a partir do segundo ano. Sem o contador, a barreira caiu bastante em relação à
+conta com CNPJ (eram vinte).
 
 ## Obrigatório — sem isto ninguém além de você usa
 
@@ -103,12 +110,20 @@ builds que duram 90 dias) e a App Store propriamente dita.
 
 Pagamento único, para sempre. Comparado aos US$ 99/ano da Apple, é de graça.
 
-**A pegadinha não é o preço.** Contas pessoais criadas depois de novembro de
-2023 precisam rodar um teste fechado com **12 testadores por 14 dias seguidos**
-antes de poder publicar. Contas de organização (com CNPJ) são dispensadas disso.
+**A pegadinha não é o preço, e pelo CPF ela vale.** Contas pessoais criadas
+depois de novembro de 2023 precisam rodar um teste fechado com **12 testadores
+por 14 dias seguidos** antes de poder publicar. Contas de organização (com CNPJ)
+são dispensadas disso.
 
-Ou seja: o CNPJ, que parecia assunto de contabilidade, encurta o lançamento no
-Android em duas semanas e doze pessoas.
+Ou seja: comece o teste fechado assim que a conta existir, e junte os doze
+testadores antes — amigos e família servem, desde que fiquem inscritos os
+catorze dias. É o item que mais atrasa o lançamento no Android, e não custa
+nada além de organização.
+
+Conta pessoal que vende (assinatura dentro do app) também pode ter que mostrar
+um endereço na página da loja, por causa das regras de alguns países para
+quem vende. Confira ao criar a conta; se for exigido, um endereço comercial ou
+caixa postal evita expor o de casa.
 
 ### Domínio `deskside.com.br` — ~R$ 40/ano
 
@@ -226,11 +241,16 @@ De longe o mais barato, e o que eu tentaria primeiro.
 
 **Confirme a elegibilidade antes de contar com isto.** Até onde eu sei, a
 Microsoft exige uma pessoa jurídica com **três anos de existência verificável**
-para o plano padrão. Uma empresa aberta este mês não passaria. Havia um caminho para
+para o plano padrão, o que pelo CPF não se tem. Havia um caminho para
 desenvolvedor individual, mas não sei em que estado está — é a primeira coisa a
-checar.
+checar, e se ele não existir este cenário sai da mesa.
 
-### Certificado OV — ~US$ 220 a 400/ano (~R$ 1.200 a 2.200/ano, R$ 100 a 183/mês)
+### Certificado OV de pessoa física — ~US$ 220 a 400/ano (~R$ 1.200 a 2.200/ano, R$ 100 a 183/mês)
+
+O caminho que sobra pelo CPF: algumas autoridades certificadoras emitem o
+certificado de assinatura de código para indivíduo (às vezes chamado de "IV"),
+com o seu nome no lugar do de uma empresa. A tabela usa o meio da faixa,
+R$ 140/mês.
 
 Reduz o aviso, não elimina: a reputação vai se acumulando ao longo de semanas de
 downloads. Desde 2023 a chave tem que ficar em token físico ou HSM na nuvem, o
@@ -239,7 +259,7 @@ que pode acrescentar custo e enviar um dispositivo pelo correio.
 ### Certificado EV — ~US$ 400 a 600/ano (~R$ 2.200 a 3.300/ano, R$ 183 a 275/mês)
 
 **Elimina o aviso na hora**, sem esperar reputação. Exige CNPJ e verificação da
-empresa.
+empresa — **pelo CPF, não dá**. Fica para se um dia houver empresa.
 
 ### E o que é de graça
 
@@ -249,37 +269,35 @@ pouco. Precisa ser refeito a cada versão do executável.
 
 ## Para poder cobrar de verdade
 
-### CNPJ (Microempresa no Simples) — ~R$ 220/mês fixos, mais % do faturamento
+### Pelo CPF — sem custo fixo, imposto na tabela progressiva
 
-**MEI não serve.** As atividades de desenvolvimento e licenciamento de software
-(CNAE 6201-5/01, 6202-3/00, 6203-1/00) não estão na lista de ocupações
-permitidas ao MEI. O caminho comum para um dono só é uma **Sociedade Limitada
-Unipessoal (SLU)**, enquadrada como **Microempresa no Simples Nacional**.
+O que muda por publicar como pessoa física:
 
-O que custa:
+- **Imposto:** o que a Apple e o Google pagam vem do exterior e entra no
+  **carnê-leão**, recolhido todo mês pelo próprio site da Receita (Carnê-Leão
+  Web, de graça), e depois na declaração anual. A alíquota é a da tabela
+  progressiva, até **27,5%**, sobre a sua renda total do mês.
+- **Contador:** não é obrigatório. Vale pagar um uma vez por ano para a
+  declaração (~R$ 300) se as contas do exterior parecerem complicadas.
+- **Nas lojas:** o nome que aparece como vendedor é o seu, e no Google vale o
+  teste fechado de 12 testadores por 14 dias (ver "Google Play Console").
+- **O que fica de fora:** nota fiscal, conta de organização nas lojas e
+  certificado EV para o Windows. Nenhum deles impede de lançar.
 
-- **Abertura:** taxas da Junta Comercial, que variam por estado (estimei
-  R$ 200). Muitas contabilidades online fazem a abertura sem cobrar à parte.
-- **Contador:** obrigatório na prática. Contabilidade online, em torno de
-  **R$ 150 a 250/mês** (estimei R$ 200).
-- **Certificado digital e-CNPJ:** em torno de **R$ 200/ano**, para emitir nota e
-  falar com a Receita.
-- **Imposto (DAS do Simples):** uma **porcentagem do faturamento**, e não um
-  valor fixo. Sem faturamento, não há imposto. Para software e SaaS, a alíquota
-  inicial fica em torno de **6% (Anexo III)** se a folha — o pró-labore do
-  dono — for pelo menos 28% do faturamento (o "fator R"), e de **15,5%
-  (Anexo V)** se não for. O pró-labore paga INSS (11%), então o contador
-  ajuda a achar o ponto que custa menos.
+### Se um dia virar CNPJ
 
-Sem CNPJ você não emite nota fiscal, não abre conta de organização nas lojas,
-não tira certificado EV, e cai no limite de 12 testadores do Google.
+MEI não serve: desenvolvimento e licenciamento de software (CNAE 6201-5/01,
+6202-3/00, 6203-1/00) não estão na lista do MEI. O caminho seria uma
+**Sociedade Limitada Unipessoal (SLU)** como **Microempresa no Simples
+Nacional**: ~R$ 200 de abertura, contador a ~R$ 200/mês, e-CNPJ a ~R$ 200/ano,
+e imposto de **~6% do faturamento (Anexo III)** se o pró-labore for pelo menos
+28% do faturamento (o "fator R"), ou **~15,5% (Anexo V)** se não for.
 
-**E pelo CPF?** Dá para publicar nas duas lojas como pessoa física, sem
-contador. Mas aí vale a regra dos 12 testadores no Google, o nome que aparece na
-loja é o seu, e o que as lojas pagam entra no seu imposto de renda (carnê-leão,
-na tabela progressiva, até 27,5%). Para começar pequeno pode ser mais barato; a
-partir de algumas dezenas de assinantes, a empresa costuma compensar. É uma
-conta para fazer com o contador.
+**Quando compensa:** a diferença entre os 27,5% do CPF e os ~6% do Simples é de
+cerca de R$ 5,50 por assinante por mês. Contra uns R$ 220 de custo fixo da
+empresa, a troca se paga a partir de **uns 40 assinantes** — se você já estiver
+na faixa de 27,5%. Abaixo disso, ou com a renda na faixa isenta, o CPF sai mais
+barato. É a conta para refazer com um contador quando chegar perto.
 
 ### As lojas ficam com 15% — e este é o maior custo de todos
 
@@ -321,18 +339,16 @@ Para conferir os totais lá de cima sem precisar refazer a soma:
 
 ```
 R$  45  Apple, diluída no mês (US$ 99/ano)
-R$ 200  contador (ME no Simples)
-R$  17  certificado digital e-CNPJ (R$ 200/ano)
 R$   3  domínio (R$ 40/ano)
 R$   5  e-mail (SES)
 R$   0  servidor (Oracle Always Free)
-= R$ 270  cenário A
+= R$  53  cenário A
 
-+ R$  55  Azure Trusted Signing      = R$ 325  cenário B
-+ R$ 229  certificado EV, no lugar   = R$ 499  cenário C
++ R$  55  Azure Trusted Signing       = R$ 108  cenário B
++ R$ 140  certificado OV, no lugar    = R$ 193  cenário C
 
-O imposto do Simples não entra aqui: é porcentagem do faturamento (ver
-"Os custos que não estão na tabela").
+O imposto de renda não entra aqui: depende do faturamento e da sua renda
+total (ver "Os custos que não estão na tabela").
 ```
 
 O Google Play não aparece: são US$ 25 **uma vez só**, e diluir um pagamento
@@ -340,17 +356,16 @@ O Google Play não aparece: são US$ 25 **uma vez só**, e diluir um pagamento
 
 ## A ordem em que eu gastaria
 
-1. **CNPJ (ME no Simples), com contador** — destrava o resto. ~R$ 200 para
-   abrir e ~R$ 220/mês. Decida antes com o contador entre CPF e CNPJ.
-2. **SMTP (SES)** — sem isto, ninguém além de você cria conta. Centavos.
+1. **SMTP (SES)** — sem isto, ninguém além de você cria conta. Centavos.
+2. **Play Console, US$ 25, e já o teste fechado** — pagamento único; os 14 dias
+   com 12 testadores começam a contar só depois da conta pronta, então quanto
+   antes, melhor.
 3. **Apple Developer, US$ 99** — sem isto, o iOS não existe para outra pessoa.
-4. **Play Console, US$ 25** — pagamento único, e com o CNPJ some a regra dos 12
-   testadores.
-5. **Revisão jurídica** — antes da primeira cobrança, não depois.
-6. **Certificado de assinatura** — o aviso do Windows atrapalha, mas a página do
+4. **Revisão jurídica** — antes da primeira cobrança, não depois.
+5. **Certificado de assinatura** — o aviso do Windows atrapalha, mas a página do
    site já explica o que vai acontecer. Dá para viver com ele por uns meses.
-7. **Servidor pago** — quando o dinheiro entrar, e não antes.
+6. **Servidor pago** — quando o dinheiro entrar, e não antes.
 
-Itens 1 a 4 somam cerca de **R$ 1.300 no primeiro mês** (abertura, contador,
-e-CNPJ, Apple e Google) e colocam o produto no ar para estranhos nas três
+Itens 1 a 3 somam cerca de **R$ 690 no primeiro mês** (Google, a anuidade da
+Apple e o e-mail) e colocam o produto no ar para estranhos nas três
 plataformas.
