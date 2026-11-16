@@ -231,6 +231,7 @@ function PrepararClangArm64 {
     $linha = & rustc -vV 2>$null | Select-String '^host:'
     if (-not $linha) { return }
     if ("$linha" -notmatch 'aarch64') { return }
+    CarregarAmbienteDoVisualStudio
     if (Get-Command clang -ErrorAction SilentlyContinue) { return }
     if ($env:CC_aarch64_pc_windows_msvc) { return }
 
@@ -250,6 +251,36 @@ function PrepararClangArm64 {
     Write-Host "  Windows ARM64 sem clang: o 'ring' nao compila sem ele." -ForegroundColor Yellow
     Write-Host "    winget install --id LLVM.LLVM -e" -ForegroundColor DarkGray
     Write-Host "  So o ARM64 precisa disto; num Windows x86-64 nao faz falta." -ForegroundColor DarkGray
+}
+
+# Carrega o ambiente do compilador da Microsoft (INCLUDE, LIB, PATH) nesta
+# execução, como o "Developer PowerShell" faria.
+#
+# O clang acha o `link.exe` sozinho, mas os cabeçalhos do C (`assert.h`, do
+# Windows SDK) ele só acha com o INCLUDE preenchido. Sem isto o `ring` parou
+# de compilar no ARM64 com "'assert.h' file not found" num terminal comum.
+function CarregarAmbienteDoVisualStudio {
+    if ($env:INCLUDE) { return }
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) { return }
+    $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath | Select-Object -First 1
+    if (-not $vs) { return }
+    $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvarsall.bat"
+    if (-not (Test-Path $vcvars)) { return }
+    # Por um .cmd temporário: aspas dentro de um argumento para o cmd.exe
+    # chegam diferentes no PowerShell 5 e no 7, e o caminho tem espaços.
+    $tmp = Join-Path $env:TEMP "deskside-vcvars.cmd"
+    Set-Content -Path $tmp -Encoding ASCII -Value "@call `"$vcvars`" arm64 >nul 2>&1 && set"
+    $linhas = & cmd.exe /d /c $tmp
+    $ok = ($LASTEXITCODE -eq 0)
+    Remove-Item $tmp -ErrorAction SilentlyContinue
+    if (-not $ok) { return }
+    foreach ($linha in $linhas) {
+        if ($linha -match '^([^=]+)=(.*)$') {
+            [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+        }
+    }
+    if ($env:INCLUDE) { Passo "ambiente do Visual Studio (ARM64): $vs" }
 }
 
 # Devolve o agente instalado ao ar depois de uma compilação que falhou.
@@ -725,7 +756,14 @@ if ($Publicar) {
     $arq = ArquiteturaDoExe $exe
     $nomePublicado = if ($arq) { NomePublicadoPara $arq } else { $null }
 
-    if (-not (Test-Path $exe)) {
+    # Pediu -Agente e a compilação falhou: o .exe no disco é o do build
+    # anterior. Publicá-lo pareceria dar certo e mandaria a versão velha.
+    # Aconteceu: o ARM64 de três dias antes foi para o site.
+    $agenteFalhou = $falhas | Where-Object { "$_" -like "agente*" }
+    if ($Agente -and $agenteFalhou) {
+        $falhas += "publicar (o agente nao compilou)"
+        Write-Host "  Nao publiquei: o agente nao compilou agora, e o executavel no disco e o do build anterior." -ForegroundColor Red
+    } elseif (-not (Test-Path $exe)) {
         $falhas += "publicar (sem executável)"
         Write-Host "  Nao existe $exe. Compile antes: scripts\atualizar.cmd -Agente" -ForegroundColor Red
     } elseif (-not $nomePublicado) {
