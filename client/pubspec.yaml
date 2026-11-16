@@ -32,7 +32,7 @@ dependencies:
   # há o que migrar; no iPhone, se o login cair, é entrar de novo uma vez.
   flutter_secure_storage: ^11.1.0
   wakelock_plus: ^1.2.0
-  local_auth: ^2.3.0
+  local_auth: ^3.0.2
   qr_flutter: ^4.1.0
   # Spike S1 do plano de WebRTC (docs/webrtc-plano.md). Traz o framework
   # nativo do WebRTC, que é grande — se o spike reprovar, sai daqui.
@@ -51,7 +51,7 @@ dependencies:
   # 3.38+, e se a máquina de build for mais velha eu prefiro que o `pub get`
   # recuse na hora, com o motivo escrito, a resolver para a 11 e falhar cinco
   # minutos depois com "cannot find symbol".
-  file_picker: ^12.2.0
+  file_picker: ^13.3.3
   path_provider: ^2.1.0
   # Faixa larga de propósito: as versões mais novas do share_plus exigem um
   # Flutter bem recente, e a API que usamos (SharePlus.instance.share com
@@ -71,7 +71,7 @@ dependencies:
   # do AGP 9 — o mesmo caminho que derrubou o file_picker, e que o
   # `android.builtInKotlin=false` do codemagic.yaml desliga. A 1.0.30 ainda
   # aplica o Kotlin por conta própria. Sai junto com aquele ajuste.
-  quick_actions_android: 1.0.30
+  quick_actions_android: 1.0.34
   # O widget da tela inicial (ver `services/widget_da_tela.dart`): no Android,
   # grava o que o widget mostra e roda os toques nos botões em segundo plano;
   # no iPhone, só pede o redesenho. O `build.gradle` dela lê o
