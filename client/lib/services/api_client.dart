@@ -350,29 +350,31 @@ class ApiClient {
     return Conta.fromJson(_decode(res) as Map<String, dynamic>);
   }
 
-  /// Restaura a sessão a partir dos tokens salvos. Renova o access token com o
-  /// refresh; retorna false (e limpa) se não houver sessão válida.
-  Future<bool> restore() async {
+  /// Lê o login guardado neste aparelho, sem falar com o servidor. Devolve se
+  /// havia um.
+  ///
+  /// Roda antes da primeira tela: quem já entrou vê a lista de computadores
+  /// desde o começo, e não a tela de login por um segundo enquanto a sessão é
+  /// renovada pela internet. A renovação vem depois, em [restore].
+  Future<bool> carregarSessao() async {
     final (access, refresh) = await _store.load();
     if (refresh == null) return false;
     _accessToken = access;
     _refreshToken = refresh;
-    try {
-      await refreshAccess();
-      return true;
-    } on ApiException catch (e) {
-      // Só desloga se o servidor rejeitou o refresh (token inválido/expirado).
-      // Erros de rede não devem forçar novo login: mantém a sessão e o app
-      // revalida quando o servidor voltar a responder.
-      if (e.statusCode == 401) {
-        await logout();
-        return false;
-      }
-      return true;
-    } catch (_) {
-      // Falha de rede (servidor fora do ar, Wi-Fi caiu): segue autenticado.
-      return true;
-    }
+    return isAuthenticated;
+  }
+
+  /// Renova a sessão guardada no servidor. Devolve se ela continua valendo.
+  ///
+  /// Usa a mesma renovação compartilhada das requisições: a lista de
+  /// computadores já está pedindo dados enquanto isto roda, e duas renovações
+  /// ao mesmo tempo usariam o mesmo refresh token duas vezes — que o servidor
+  /// entende como cópia. Sem rede, segue autenticado; refresh recusado (401)
+  /// encerra a sessão e volta ao login.
+  Future<bool> restore() async {
+    if (_refreshToken == null && !await carregarSessao()) return false;
+    await _renovarSessao();
+    return isAuthenticated;
   }
 
   /// Troca o refresh token por um novo access token **e um refresh novo**.

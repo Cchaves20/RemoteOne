@@ -271,6 +271,16 @@ class AppState extends ChangeNotifier {
     await prefs.setString('themeMode', mode.name);
   }
 
+  /// Lê o login guardado no aparelho antes da primeira tela (ver
+  /// [ApiClient.carregarSessao]). Não espera mais de 2 s: se o armazenamento
+  /// seguro travar, a abertura segue como antes e [restoreSession] tenta de
+  /// novo.
+  Future<void> carregarSessaoGuardada() async {
+    try {
+      await api.carregarSessao().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
+
   /// Tenta retomar a sessão salva (login persistente). Ignora falhas de rede.
   Future<void> restoreSession() async {
     bool restored;

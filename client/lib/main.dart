@@ -22,6 +22,9 @@ Future<void> main() async {
       ApiClient(baseUrl: backendPadrao)..aparelho = nomeDoAparelho());
   // Só o carregamento local (rápido) roda antes de desenhar a tela.
   await state.loadPreferences();
+  // O login guardado também (leitura local, sem rede): quem já entrou abre
+  // direto na lista, sem passar um segundo pela tela de login.
+  await state.carregarSessaoGuardada();
   // Mostra a UI imediatamente; a restauração da sessão (rede) roda depois,
   // sem travar a abertura. Assim, um servidor fora do ar nunca causa tela
   // branca — a UI reage via ChangeNotifier quando a sessão resolve.
