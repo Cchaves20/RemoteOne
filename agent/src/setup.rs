@@ -680,6 +680,8 @@ mod imp {
         let mut link =
             mslnk::ShellLink::new(exe).map_err(|e| format!("não montei o atalho: {e}"))?;
         link.set_name(Some(format!("{APP_NAME} - controle remoto")));
+        // Quem clica no atalho quer ver o programa (ver `Cmd::Run` em main.rs).
+        link.set_arguments(Some("abrir".into()));
         // O ícone vem do próprio executável (embutido pelo build.rs).
         link.create_lnk(destino)
             .map_err(|e| format!("não gravei {}: {e}", destino.display()))
@@ -687,6 +689,27 @@ mod imp {
 
     fn current_exe() -> Result<PathBuf, String> {
         std::env::current_exe().map_err(|e| format!("não descobri o próprio caminho: {e}"))
+    }
+
+    /// Regrava os atalhos que já existem, para o jeito de agora.
+    ///
+    /// A atualização automática troca só o executável, e os atalhos ficariam
+    /// os da instalação: sem o `abrir`, clicar neles com o agente parado o
+    /// subiria escondido. Só os que existem - um atalho que a pessoa apagou
+    /// não volta - e só na cópia instalada.
+    pub fn renovar_atalhos() {
+        let (Ok(exe), Ok(lugares)) = (current_exe(), lugares()) else {
+            return;
+        };
+        let plano = plan(&exe, &lugares);
+        if plano.copy {
+            return;
+        }
+        for destino in [&plano.start_menu, &plano.desktop] {
+            if destino.exists() {
+                let _ = criar_atalho(&plano.exe, destino);
+            }
+        }
     }
 
     /// Encerra qualquer agente que já esteja rodando, **menos este processo**.
@@ -1127,6 +1150,9 @@ mod imp {
         uninstall()
     }
 
+    /// Só o Windows tem atalhos `.lnk` para regravar.
+    pub fn renovar_atalhos() {}
+
     pub fn status() -> Status {
         let cfg = crate::load_config();
         let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
@@ -1329,6 +1355,9 @@ mod imp {
         uninstall()
     }
 
+    /// Só o Windows tem atalhos `.lnk` para regravar.
+    pub fn renovar_atalhos() {}
+
     pub fn status() -> Status {
         let cfg = crate::load_config();
         let do_ambiente = std::env::var("DESKSIDE_BACKEND_URL")
@@ -1355,7 +1384,7 @@ mod imp {
     }
 }
 
-pub use imp::{install, status, uninstall, uninstall_completo};
+pub use imp::{install, renovar_atalhos, status, uninstall, uninstall_completo};
 
 #[cfg(test)]
 mod tests {

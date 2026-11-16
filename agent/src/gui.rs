@@ -109,6 +109,22 @@ pub fn compartilhar(inicial: Estado) -> Compartilhado {
     Arc::new(Mutex::new(inicial))
 }
 
+/// Se a janela deve aparecer logo ao subir (ver `abrir_ao_iniciar`).
+static ABRIR_AO_INICIAR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Pede que a janela apareça ao subir, em vez de nascer escondida.
+///
+/// Quem sobe pelo login quer o agente quieto; quem clica num atalho quer ver
+/// o programa. Chamar antes de `rodar`.
+pub fn abrir_ao_iniciar() {
+    ABRIR_AO_INICIAR.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+fn deve_abrir_ao_iniciar() -> bool {
+    ABRIR_AO_INICIAR.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Sobe a interface. Só volta quando o usuário escolhe sair.
 ///
 /// Fora do Windows não há bandeja nem instalação: o agente de desenvolvimento
@@ -1062,8 +1078,8 @@ mod imp {
             .with_inner_size([420.0, 600.0])
             .with_resizable(false)
             // Nasce escondida: quem instalou quer o agente subindo no login
-            // sem nada piscando na tela.
-            .with_visible(false);
+            // sem nada piscando na tela. Menos quando veio de um atalho.
+            .with_visible(super::deve_abrir_ao_iniciar());
         if let Some(icone) = icone_janela() {
             viewport = viewport.with_icon(std::sync::Arc::new(icone));
         }
@@ -1194,6 +1210,13 @@ mod imp {
                 }
             })
             .ok();
+
+        // Veio de um atalho: sem janela, o "estado" é a caixa que faz as vezes
+        // dela.
+        if super::deve_abrir_ao_iniciar() {
+            let ao_abrir = estado.clone();
+            std::thread::spawn(move || caixa_de_estado(&ao_abrir));
+        }
 
         let do_atalho = estado.clone();
         std::thread::Builder::new()
