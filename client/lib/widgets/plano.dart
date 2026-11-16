@@ -30,7 +30,7 @@
 /// Mandar essa pessoa até os Ajustes perde parte dela pelo caminho.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../l10n/strings.dart';
 import '../services/api_client.dart';

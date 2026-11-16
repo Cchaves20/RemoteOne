@@ -1,5 +1,5 @@
 import 'package:deskside_client/widgets/barra_do_sistema.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// O app acima da barra de navegação do Android — e só no Android.

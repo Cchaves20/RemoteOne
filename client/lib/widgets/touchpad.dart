@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Área sensível ao toque com gestos de trackpad:
 /// - 1 dedo deslizando → mover o cursor

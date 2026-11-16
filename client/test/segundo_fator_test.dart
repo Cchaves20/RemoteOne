@@ -1,7 +1,7 @@
 import 'package:deskside_client/l10n/strings.dart';
 import 'package:deskside_client/services/api_client.dart';
 import 'package:deskside_client/widgets/segundo_fator.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Abre um botão que roda [comSegundoFator] com [acao] e guarda o desfecho.

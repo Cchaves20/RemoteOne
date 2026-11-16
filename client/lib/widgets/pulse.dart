@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Efeito de "respiração" (opacidade pulsante) para placeholders de carregamento.
 /// Sem dependências externas — usa um AnimationController simples.

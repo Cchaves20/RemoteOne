@@ -5,6 +5,11 @@ version: 0.1.0+1
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
+  # Os componentes vêm de material_ui e cupertino_ui desde a 3.50, quando o
+  # `package:flutter/material.dart` ficou obsoleto. Uma máquina com Flutter
+  # mais velho recusa aqui, com a versão na mensagem, em vez de falhar no
+  # meio da compilação.
+  flutter: ">=3.50.0"
 
 dependencies:
   flutter:
@@ -89,6 +94,8 @@ dependencies:
   # **links funcionais** para os dois documentos na tela de compra, e texto
   # copiável não é link. É a rejeição mais comum de app de assinatura.
   url_launcher: ^6.3.0
+  material_ui: ^1.11.0
+  cupertino_ui: ^1.1.6
 
 dev_dependencies:
   flutter_test:

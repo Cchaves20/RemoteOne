@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Transição "fade through" (desvanecer + leve escala), mais suave que o
 /// empurrão lateral padrão. Usada nas navegações do app.

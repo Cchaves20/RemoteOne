@@ -1,5 +1,5 @@
 // `Icons` mora no material (o widgets.dart só traz o `IconData`).
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../l10n/strings.dart';
 import 'window_zone.dart';
