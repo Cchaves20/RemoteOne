@@ -1,4 +1,9 @@
-# Atualizações de dependências, uma vez por semana, em pull requests.
+# Atualizações de dependências, uma vez por mês, em pull requests.
+#
+# Um PR por parte (servidor, agente, app, Actions) com todas as atualizações
+# dela juntas, em vez de um PR por pacote: no máximo quatro por mês. O Claude
+# junta os que passarem no PR seguinte para a `main`, e o Dependabot fecha os
+# dele sozinho quando vê as versões novas na branch.
 #
 # Os PRs vão para a branch de desenvolvimento, que é de onde o servidor e os
 # instaladores saem. O CI de cada parte roda nos PRs (pull_request nos
@@ -15,28 +20,34 @@ updates:
     directory: /backend
     target-branch: claude/testing-strategy-multiplatform-0nztwm
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+      interval: monthly
+    groups:
+      todas:
+        patterns: ["*"]
 
   - package-ecosystem: cargo
     directory: /agent
     target-branch: claude/testing-strategy-multiplatform-0nztwm
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+      interval: monthly
+    groups:
+      todas:
+        patterns: ["*"]
 
   - package-ecosystem: pub
     directory: /client
     target-branch: claude/testing-strategy-multiplatform-0nztwm
     schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+      interval: monthly
+    groups:
+      todas:
+        patterns: ["*"]
 
   - package-ecosystem: github-actions
     directory: /
     target-branch: claude/testing-strategy-multiplatform-0nztwm
     schedule:
       interval: monthly
+    groups:
+      todas:
+        patterns: ["*"]
