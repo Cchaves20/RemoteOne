@@ -19,7 +19,7 @@ tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 native-tls = "0.2"
 futures-util = "0.3"
 uuid = { version = "1", features = ["v4"] }
-gethostname = "0.5"
+gethostname = "1.1"
 # Resumo do identificador da máquina (ver `identity::resumo_da_maquina`). Já
 # vinha na árvore por baixo de outra dependência; aqui só passa a ser usado
 # direto. Rust puro, sem C: não pesa no build do ARM64.
@@ -198,7 +198,7 @@ zbus = { version = "5.17", default-features = false, features = ["blocking-api",
 pipewire = "0.10"
 # O layout do teclado do computador (ver `teclado_linux.rs`): para saber com
 # que teclas sai cada caractere — tecla própria, ou acento + letra.
-xkbcommon = { version = "0.8", default-features = false }
+xkbcommon = { version = "0.9", default-features = false }
 unicode-normalization = "0.1"
 # O ícone ao lado do relógio (ver `interface_linux.rs`), pelo protocolo que o
 # Ubuntu e o KDE mostram (StatusNotifierItem), falando direto pelo D-Bus — sem
@@ -207,6 +207,6 @@ ksni = { version = "0.3", default-features = false, features = ["blocking", "asy
 # A área de transferência no X11 (texto, imagem e arquivos). No Wayland ela vai
 # pelo portal (ver `wayland.rs`), e por isso sem o `wayland-data-control`, que
 # o GNOME não oferece.
-arboard = { version = "3.6", default-features = false, features = ["image-data"] }
+arboard = { version = "3.7", default-features = false, features = ["image-data"] }
 # O som do computador (ver `audio.rs`): o mesmo Opus em Rust puro do Mac.
 unsafe-libopus = "0.2"
