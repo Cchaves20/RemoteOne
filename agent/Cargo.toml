@@ -47,7 +47,7 @@ webrtc = "0.17.2"
 # de rede e temperatura. A temperatura vem vazia na maioria dos Windows (a
 # leitura exige driver do fabricante), e por isso o campo é opcional dos dois
 # lados - ver `system_info.rs`.
-sysinfo = { version = "0.38.4", default-features = false, features = ["system", "disk", "network", "component"] }
+sysinfo = { version = "0.40.3", default-features = false, features = ["system", "disk", "network", "component"] }
 fast_image_resize = "6.1.0"
 
 # Só no Windows (única plataforma testável aqui). Linux/macOS usam os stubs
