@@ -10,5 +10,13 @@
 set -e
 cd "$(dirname "$0")/../agent"
 cargo about generate about.hbs -o LICENCAS-DE-TERCEIROS.txt
-cp LICENCAS-DE-TERCEIROS.txt ../deploy/site/licencas.txt
+# O texto do codec da Cisco vai junto (condição 4 da licença dela; ver
+# src/codec_cisco.rs), com o mesmo título que o `deskside-agent licencas` usa.
+{
+  cat LICENCAS-DE-TERCEIROS.txt
+  printf '\n------------------------------------------------------------------------------\n'
+  printf 'OpenH264 (binário da Cisco, baixado à parte pelo agente)\n'
+  printf -- '------------------------------------------------------------------------------\n\n'
+  cat LICENCA-OPENH264-CISCO.txt
+} > ../deploy/site/licencas.txt
 echo "licenças atualizadas: agent/LICENCAS-DE-TERCEIROS.txt e deploy/site/licencas.txt"

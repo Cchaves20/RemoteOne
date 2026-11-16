@@ -107,6 +107,11 @@ pub const ESPERA_DE_CONEXAO: Duration = Duration::from_secs(8);
 pub const RECONEXAO_MINIMA: Duration = Duration::from_secs(1);
 pub const RECONEXAO_MAXIMA: Duration = Duration::from_secs(30);
 
+/// De quanto em quanto tempo, sem H.264, o agente tenta o vídeo de novo. Curto
+/// o bastante para o vídeo entrar logo depois que o codec da Cisco termina de
+/// baixar; longo o bastante para não ficar alternando com o JPEG.
+const NOVA_TENTATIVA_H264: Duration = Duration::from_secs(20);
+
 /// Quanto esperar antes da próxima tentativa de conexão.
 ///
 /// Era fixo em cinco segundos, e cinco é a escolha errada nos **dois** extremos.
@@ -483,6 +488,12 @@ pub async fn run(
     let mut last_video_frame: Option<std::time::Instant> = None;
     // Se o quadro anterior foi de vídeo, para saber quando a sessão troca.
     let mut was_video = false;
+    // Quando o H.264 falhou por último. Sem codificador (o codec da Cisco
+    // ainda baixando, desligado pela pessoa, ou um Windows em ARM sem placa
+    // que codifique), o vídeo não sai — e o app só larga o JPEG quando chega
+    // um quadro de vídeo. Então o agente volta ao JPEG e tenta o vídeo de
+    // novo a cada `NOVA_TENTATIVA_H264`; sem isto a tela congelava.
+    let mut sem_h264: Option<std::time::Instant> = None;
     // Captura correndo à parte, para o laço só pagar a codificação. `pump_config`
     // é a largura e a taxa com que ela foi aberta: quando o desejado difere, a
     // thread é recriada.
@@ -704,7 +715,8 @@ pub async fn run(
                 codificacoes = 0;
             }
             _ = frame_ticker.tick() => {
-                let quer_video = video.wants_video();
+                let quer_video = video.wants_video()
+                    && sem_h264.is_none_or(|desde| desde.elapsed() >= NOVA_TENTATIVA_H264);
                 let desejada =
                     desired_capture(
                         streaming,
@@ -823,6 +835,9 @@ pub async fn run(
                     .await;
                     match encoded {
                         Ok(Ok(frame)) => {
+                            if sem_h264.take().is_some() {
+                                crate::diario("Vídeo: H.264 disponível, saindo do JPEG");
+                            }
                             // Só depois de codificar de verdade: se a criação
                             // falhou, o degrau anotado tem de continuar sendo
                             // o antigo, para a próxima volta tentar de novo.
@@ -852,7 +867,15 @@ pub async fn run(
                                 pump.as_ref().and_then(|p| p.cost().take_average_ms());
                             stats.report_if_due("Vídeo", capture_ms);
                         }
-                        Ok(Err(e)) => eprintln!("Falha ao codificar a tela: {e}"),
+                        Ok(Err(e)) => {
+                            if sem_h264.is_none() {
+                                crate::diario(&format!("Vídeo: sem H.264, a tela segue em JPEG ({e})"));
+                            }
+                            sem_h264 = Some(std::time::Instant::now());
+                            // O próximo JPEG sai mesmo que a tela não tenha
+                            // mudado: o app pode estar parado no último.
+                            last_frame = crate::capture::NO_FRAME;
+                        }
                         Err(e) => eprintln!("Falha na tarefa de vídeo: {e}"),
                     }
                 } else {

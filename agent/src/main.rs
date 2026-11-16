@@ -335,7 +335,13 @@ fn main() {
             // `write_all` e não `print!`: quem lê com `| more` e fecha no meio
             // não pode ver um pânico por causa do cano fechado.
             use std::io::Write;
-            let _ = std::io::stdout().write_all(include_bytes!("../LICENCAS-DE-TERCEIROS.txt"));
+            let mut saida = std::io::stdout();
+            let _ = saida.write_all(include_bytes!("../LICENCAS-DE-TERCEIROS.txt"));
+            // O codec H.264 é baixado da Cisco, não vem no executável, mas a
+            // licença dele pede o texto inteiro onde ficam as licenças
+            // (condição 4). Ver `codec_cisco.rs`.
+            let _ = saida.write_all(CABECALHO_CISCO.as_bytes());
+            let _ = saida.write_all(include_bytes!("../LICENCA-OPENH264-CISCO.txt"));
             return;
         }
         Cmd::AplicarAtualizacao { pid } => {
@@ -507,6 +513,9 @@ fn main() {
         deskside_agent::atualizacao::limpar_sobras();
     }
     deskside_agent::atualizacao::vigiar(estado.clone());
+    // O codec H.264 da Cisco, se ainda não estiver na pasta: baixa em segundo
+    // plano, para a primeira sessão de vídeo já o encontrar pronto.
+    deskside_agent::codec_cisco::preparar();
 
     // O agente sobe **antes** da interface e independe dela. Se a janela não
     // abrir - sessão sem desktop, driver gráfico recusando -, o computador
@@ -546,6 +555,12 @@ fn main() {
     // escolher Sair no ícone ao lado do relógio.
     deskside_agent::gui::rodar(estado);
 }
+
+/// O título da seção do codec da Cisco, no `licencas` e no site.
+const CABECALHO_CISCO: &str =
+    "\n------------------------------------------------------------------------------\n\
+OpenH264 (binário da Cisco, baixado à parte pelo agente)\n\
+------------------------------------------------------------------------------\n\n";
 
 #[cfg(test)]
 mod tests {

@@ -35,7 +35,13 @@ base64 = "0.22"
 # é o primeiro passo antes de reencodar em PNG para o telefone.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp"] }
 # Codificação H.264 do vídeo por WebRTC (medido no spike S2 do plano).
-openh264 = "0.9.7"
+# **Sem** o código do codec: só o carregador (`libloading`), para o binário
+# que a Cisco publica e o agente baixa (ver `codec_cisco.rs`). Assim a licença
+# das patentes do H.264 é a da Cisco, e não nossa. Os testes compilam o codec
+# da fonte (`[dev-dependencies]`), o que não chega ao executável distribuído.
+openh264 = { version = "0.9.7", default-features = false, features = ["libloading"] }
+# Os binários da Cisco vêm em `.bz2`. Rust puro (libbz2-rs-sys), sem C.
+bzip2 = "0.6"
 webrtc = "0.17.2"
 # `network` e `component` entram com o painel completo de monitoramento: taxa
 # de rede e temperatura. A temperatura vem vazia na maioria dos Windows (a
@@ -160,6 +166,8 @@ image = { version = "0.25", default-features = false, features = ["tiff"] }
 winresource = "0.1"
 
 [dev-dependencies]
+# O codec compilado da fonte, só nos testes (ver o `openh264` acima).
+openh264 = { version = "0.9.7", default-features = false, features = ["libloading", "source"] }
 image = { version = "0.25", features = ["png"] }
 # O Opus do Mac é Rust puro, e por isso é testado em qualquer sistema.
 unsafe-libopus = "0.2"

@@ -76,7 +76,10 @@ notarizar() {
 
 assinar() {
     if [ -n "$IDENTIDADE" ]; then
-        codesign --force --options runtime --timestamp --sign "$IDENTIDADE" "$1"
+        # O entitlements deixa carregar o codec da Cisco, baixado à parte e
+        # não assinado por nós (ver mac/deskside.entitlements).
+        codesign --force --options runtime --timestamp \
+            --entitlements mac/deskside.entitlements --sign "$IDENTIDADE" "$1"
     else
         codesign --force --sign - --timestamp=none "$1"
     fi
