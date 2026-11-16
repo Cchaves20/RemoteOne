@@ -691,6 +691,26 @@ mod imp {
         std::env::current_exe().map_err(|e| format!("não descobri o próprio caminho: {e}"))
     }
 
+    /// Copia insistindo por alguns segundos.
+    ///
+    /// O agente que `stop_running` acabou de encerrar ainda segura o `.exe`
+    /// até terminar de sair, e um antivírus examinando o arquivo também. A
+    /// cópia nesse instante falha com "seção mapeada pelo usuário aberta"
+    /// (erro 1224) - visto no Dell -, e esperar um pouco resolve.
+    fn copiar_com_paciencia(de: &Path, para: &Path) -> std::io::Result<u64> {
+        let mut tentativas = 0;
+        loop {
+            match std::fs::copy(de, para) {
+                Ok(n) => return Ok(n),
+                Err(e) if tentativas >= 40 => return Err(e),
+                Err(_) => {
+                    tentativas += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+            }
+        }
+    }
+
     /// Regrava os atalhos que já existem, para o jeito de agora.
     ///
     /// A atualização automática troca só o executável, e os atalhos ficariam
@@ -850,7 +870,7 @@ mod imp {
         std::fs::create_dir_all(&plano.dir)
             .map_err(|e| format!("não consegui criar {}: {e}", plano.dir.display()))?;
         if plano.copy {
-            std::fs::copy(&exe_atual, &plano.exe)
+            copiar_com_paciencia(&exe_atual, &plano.exe)
                 .map_err(|e| format!("não consegui copiar para {}: {e}", plano.exe.display()))?;
             // Tira a marca de "veio da internet" que o `CopyFile` trouxe junto.
             // Ver `caminho_da_marca`. Falha ignorada de propósito: o caso comum é

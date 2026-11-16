@@ -108,6 +108,7 @@ if (-not ($Agente -or $App -or $Vps -or $Backup -or $Publicar)) {
 
 $raiz = Split-Path -Parent $PSScriptRoot
 $falhas = @()
+$agenteCompilou = $false
 
 function Titulo($texto) {
     Write-Host ""
@@ -188,7 +189,18 @@ function PararAgente {
     if ($vivos) {
         Passo "parando $($vivos.Count) agente(s) em execução"
         $vivos | Stop-Process -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Milliseconds 800
+        # Esperar sair de verdade, e não um tempo fixo: o Windows só solta o
+        # .exe quando o processo termina, e copiar antes disso falha com
+        # "seção mapeada pelo usuário aberta" (erro 1224). Visto no Dell.
+        $vivos | Wait-Process -Timeout 15 -ErrorAction SilentlyContinue
+        $teimosos = Get-Process deskside-agent -ErrorAction SilentlyContinue
+        if ($teimosos) {
+            # Quem sobrevive a um Stop-Process de usuário comum costuma ser um
+            # agente iniciado por um terminal de administrador.
+            Write-Host "  Nao consegui parar o agente (PID $($teimosos.Id -join ', '))." -ForegroundColor Yellow
+            Write-Host "  Se ele foi aberto por um terminal de administrador, feche pelo icone" -ForegroundColor DarkGray
+            Write-Host "  ao lado do relogio (Sair) e rode de novo." -ForegroundColor DarkGray
+        }
     }
 }
 
@@ -422,6 +434,7 @@ if ($Agente) {
         Passo "cargo build --release"
         if (Executar "cargo" @("build", "--release") $pastaAgente) {
             Write-Host "  Agente compilado." -ForegroundColor Green
+            $script:agenteCompilou = $true
             ReinstalarSeInstalado $pastaAgente
         } elseif (-not (Test-Path $exeAgente)) {
             # Sem executável no disco, "alguém está segurando o arquivo" é
@@ -450,6 +463,7 @@ if ($Agente) {
             Passo "cargo build --release (segunda tentativa)"
             if (Executar "cargo" @("build", "--release") $pastaAgente) {
                 Write-Host "  Agente compilado." -ForegroundColor Green
+                $script:agenteCompilou = $true
                 ReinstalarSeInstalado $pastaAgente
             } else {
                 $falhas += "agente"
@@ -759,8 +773,8 @@ if ($Publicar) {
     # Pediu -Agente e a compilação falhou: o .exe no disco é o do build
     # anterior. Publicá-lo pareceria dar certo e mandaria a versão velha.
     # Aconteceu: o ARM64 de três dias antes foi para o site.
-    $agenteFalhou = $falhas | Where-Object { "$_" -like "agente*" }
-    if ($Agente -and $agenteFalhou) {
+    # Só o build conta: compilou e não reinstalou ainda é um .exe novo.
+    if ($Agente -and -not $agenteCompilou) {
         $falhas += "publicar (o agente nao compilou)"
         Write-Host "  Nao publiquei: o agente nao compilou agora, e o executavel no disco e o do build anterior." -ForegroundColor Red
     } elseif (-not (Test-Path $exe)) {
