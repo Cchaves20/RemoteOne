@@ -40,7 +40,7 @@ use openh264::encoder::{
     BitRate, Encoder as Openh264Encoder, EncoderConfig, FrameRate, FrameType, QpRange, UsageType,
 };
 use openh264::formats::{RgbSliceU8, YUVBuffer};
-use openh264::{OpenH264API, Timestamp};
+use openh264::Timestamp;
 
 /// Um quadro codificado, pronto para virar amostra de vídeo.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,7 +97,10 @@ impl Openh264 {
             // e sem economizar tempo algum. O teto continua, porque limita o
             // pior caso e custa zero.
             .qp(QpRange::new(0, 46));
-        let inner = Openh264Encoder::with_api_config(OpenH264API::from_source(), config)
+        // O binário da Cisco, baixado à parte (ver `codec_cisco.rs`). Sem ele
+        // ainda, o erro sobe e o vídeo fica no JPEG até ele chegar.
+        let api = crate::codec_cisco::api()?;
+        let inner = Openh264Encoder::with_api_config(api, config)
             .map_err(|e| format!("não consegui criar o codificador H.264: {e}"))?;
         Ok(Self {
             inner,

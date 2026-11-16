@@ -220,7 +220,7 @@ impl Origem {
 
     /// O pedido, pronto para ir pelo fio.
     pub fn pedido(&self, caminho: &str) -> String {
-        let host = if self.porta == 443 {
+        let host = if self.porta == 443 || self.porta == 80 {
             self.host.clone()
         } else {
             format!("{}:{}", self.host, self.porta)
@@ -409,6 +409,39 @@ fn baixar(
     limite: u64,
     saida: &mut dyn Write,
 ) -> Result<u64, String> {
+    baixar_de(origem, caminho, limite, saida)
+}
+
+/// O mesmo GET por HTTPS, para quem baixa de outro site (o codec da Cisco,
+/// ver `codec_cisco.rs`).
+pub fn baixar_de(
+    origem: &Origem,
+    caminho: &str,
+    limite: u64,
+    saida: &mut dyn Write,
+) -> Result<u64, String> {
+    let tcp = conectar(origem)?;
+    let conector = native_tls::TlsConnector::new().map_err(|e| format!("TLS: {e}"))?;
+    let tls = conector
+        .connect(&origem.host, tcp)
+        .map_err(|e| format!("TLS com {}: {e}", origem.host))?;
+    pedir(tls, origem, caminho, limite, saida)
+}
+
+/// GET **sem** TLS. Só para o codec da Cisco, que o servidor dela publica por
+/// HTTP; quem chama confere o resumo do que chegou, e é isso que garante o
+/// arquivo — não o canal. Nunca usar para o executável do agente.
+pub fn baixar_sem_tls(
+    origem: &Origem,
+    caminho: &str,
+    limite: u64,
+    saida: &mut dyn Write,
+) -> Result<u64, String> {
+    let tcp = conectar(origem)?;
+    pedir(tcp, origem, caminho, limite, saida)
+}
+
+fn conectar(origem: &Origem) -> Result<std::net::TcpStream, String> {
     use std::net::{TcpStream, ToSocketAddrs};
     use std::time::Duration;
 
@@ -429,11 +462,17 @@ fn baixar(
     let tcp = tcp.ok_or(ultimo_erro)?;
     let _ = tcp.set_read_timeout(Some(Duration::from_secs(30)));
     let _ = tcp.set_write_timeout(Some(Duration::from_secs(30)));
+    Ok(tcp)
+}
 
-    let conector = native_tls::TlsConnector::new().map_err(|e| format!("TLS: {e}"))?;
-    let mut tls = conector
-        .connect(&origem.host, tcp)
-        .map_err(|e| format!("TLS com {}: {e}", origem.host))?;
+/// Manda o pedido e lê a resposta, num canal já aberto (com TLS ou sem).
+fn pedir(
+    mut tls: impl Read + Write,
+    origem: &Origem,
+    caminho: &str,
+    limite: u64,
+    saida: &mut dyn Write,
+) -> Result<u64, String> {
     tls.write_all(origem.pedido(caminho).as_bytes())
         .map_err(|e| format!("não enviei o pedido: {e}"))?;
 

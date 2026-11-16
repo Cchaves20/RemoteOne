@@ -3,9 +3,16 @@
 Tudo que precisa ser pago para o produto sair de "funciona na minha casa" e
 virar algo que um estranho instala, usa e paga.
 
-**Duas ressalvas antes dos números.** Os preços são do que eu conhecia até maio
-de 2026 e mudam — confirme cada um antes de gastar. E o câmbio usado é
-**US$ 1 = R$ 5,50**; se estiver diferente, os valores em real mudam junto.
+**Três ressalvas antes dos números.** Os preços são do que eu conhecia até maio
+de 2026 e mudam — confirme cada um antes de gastar. O câmbio usado é
+**US$ 1 = R$ 5,50**; se estiver diferente, os valores em real mudam junto. E a
+parte de empresa e impostos é estimativa de quem não é contador: confirme com
+um antes de abrir o CNPJ.
+
+**Corrigido em 16/11/2026:** a versão anterior supunha **MEI**. Desenvolver e
+licenciar software não está entre as atividades permitidas ao MEI, então a
+conta agora usa uma **Microempresa (ME) no Simples Nacional**, que precisa de
+contador e paga imposto como porcentagem do faturamento. Ver "CNPJ" abaixo.
 
 ## A tabela, item por item
 
@@ -13,9 +20,10 @@ de 2026 e mudam — confirme cada um antes de gastar. E o câmbio usado é
 |---|---:|---:|---|
 | Google Play Console (US$ 25) | R$ 138 | — | sim |
 | Revisão jurídica dos termos | R$ 1.000 a 3.000 | — | sim, antes de cobrar |
-| Abertura do CNPJ (MEI) | R$ 0 | — | sim |
+| Abertura do CNPJ (ME, taxas da Junta) | ~R$ 200 | — | sim |
 | Apple Developer (US$ 99/ano) | — | R$ 45 | sim |
-| DAS do MEI | — | R$ 78 | sim |
+| Contador (ME no Simples) | — | ~R$ 200 | sim |
+| Certificado digital e-CNPJ (~R$ 200/ano) | — | R$ 17 | sim |
 | Domínio `.com.br` (R$ 40/ano) | — | R$ 3 | sim |
 | Envio de e-mail (Amazon SES) | — | R$ 5 | sim |
 | Servidor (Oracle Always Free) | — | R$ 0 | sim |
@@ -29,44 +37,53 @@ Usando R$ 2.000 para a revisão jurídica (meio da faixa):
 
 | Cenário | Uma vez | Por mês | **Primeiro ano** |
 |---|---:|---:|---:|
-| **A — sem certificado** | R$ 2.138 | R$ 131 | **R$ 3.710** |
-| **B — com Azure Signing** | R$ 2.138 | R$ 186 | **R$ 4.370** |
-| **C — com certificado EV** | R$ 2.138 | R$ 361 | **R$ 6.470** |
+| **A — sem certificado** | R$ 2.338 | R$ 270 | **R$ 5.578** |
+| **B — com Azure Signing** | R$ 2.338 | R$ 325 | **R$ 6.238** |
+| **C — com certificado EV** | R$ 2.338 | R$ 499 | **R$ 8.326** |
 
-A partir do segundo ano cai para 12 × a mensalidade: **R$ 1.572**, **R$ 2.232**
-ou **R$ 4.332**.
+A partir do segundo ano cai para 12 × a mensalidade: **R$ 3.240**, **R$ 3.900**
+ou **R$ 5.988**.
 
-**Só para pôr no ar, sem cobrar ainda**, tire a revisão jurídica: R$ 138 de
-entrada e R$ 131 por mês. Isso é o cenário A menos os R$ 2.000, e é onde dá
-para começar.
+**Só para pôr no ar, sem cobrar ainda**, tire a revisão jurídica: R$ 338 de
+entrada e R$ 270 por mês. Isso é o cenário A menos os R$ 2.000. O contador é a
+maior parcela fixa; antes de haver faturamento, pergunte a ele se compensa
+abrir a empresa já ou só perto da primeira cobrança.
 
-## O custo que não está na tabela
+## Os custos que não estão na tabela
 
-**15% de cada mensalidade vai para a Apple ou para o Google.** É variável, então
-não cabe nas linhas acima — mas assim que houver clientes ele passa tudo o mais.
+**15% de cada mensalidade vai para a Apple ou para o Google**, e **o Simples
+Nacional leva outra fatia do faturamento**. Os dois são variáveis, então não
+cabem nas linhas acima — mas assim que houver clientes eles passam tudo o mais.
 
 ```
 R$ 30,00  mensalidade
 - R$ 4,50  15% da loja
-= R$ 25,50 líquido por assinante
+- R$ 1,80  ~6% do Simples (Anexo III, ver "CNPJ")
+= R$ 23,70 líquido por assinante
 ```
 
-Vendendo pelo site, a taxa do processador de pagamento fica em torno de 5% e
-sobram R$ 28,40 — R$ 3 a mais por assinante, todo mês.
+Sem o "fator R" (explicado em "CNPJ"), o Simples vai para ~15,5% (Anexo V): sai
+R$ 4,65 em vez de R$ 1,80, e sobram R$ 20,85.
+
+Vendendo pelo site, a taxa do processador de pagamento fica em torno de 5% no
+lugar dos 15% da loja, e sobram cerca de R$ 26,60 — quase R$ 3 a mais por
+assinante, todo mês.
 
 ## Quantos assinantes fecham a conta
 
 | Cenário | Só o mensal | Primeiro ano, com o de uma vez diluído |
 |---|---:|---:|
-| A | 6 | 13 |
-| B | 8 | 15 |
-| C | 15 | 22 |
+| A | 12 | 20 |
+| B | 14 | 22 |
+| C | 22 | 30 |
 
-A coluna da direita é a honesta para quem está começando: ela paga também os
-R$ 2.138 de entrada ao longo dos doze primeiros meses.
+Contas com R$ 23,70 líquidos por assinante (loja e Simples a 6% já
+descontados). A coluna da direita é a honesta para quem está começando: ela
+paga também os R$ 2.338 de entrada ao longo dos doze primeiros meses.
 
-**Treze a quinze assinantes cobrem o primeiro ano inteiro** nos cenários que eu
-escolheria. É uma barreira baixa, e é a notícia boa desta página.
+**Vinte a vinte e dois assinantes cobrem o primeiro ano inteiro** nos cenários
+que eu escolheria. Ainda é uma barreira baixa — mais alta que a da versão com
+MEI, por causa do contador.
 
 ## Obrigatório — sem isto ninguém além de você usa
 
@@ -209,7 +226,7 @@ De longe o mais barato, e o que eu tentaria primeiro.
 
 **Confirme a elegibilidade antes de contar com isto.** Até onde eu sei, a
 Microsoft exige uma pessoa jurídica com **três anos de existência verificável**
-para o plano padrão. Um MEI aberto este mês não passaria. Havia um caminho para
+para o plano padrão. Uma empresa aberta este mês não passaria. Havia um caminho para
 desenvolvedor individual, mas não sei em que estado está — é a primeira coisa a
 checar.
 
@@ -232,19 +249,37 @@ pouco. Precisa ser refeito a cada versão do executável.
 
 ## Para poder cobrar de verdade
 
-### CNPJ (MEI) — ~R$ 75 a 80/mês
+### CNPJ (Microempresa no Simples) — ~R$ 220/mês fixos, mais % do faturamento
 
-Abrir é grátis e leva minutos. O que custa é o DAS mensal, por volta de
-**R$ 75 a 80** para serviços (confirme o valor de 2026 — ele sobe com o
-salário mínimo).
+**MEI não serve.** As atividades de desenvolvimento e licenciamento de software
+(CNAE 6201-5/01, 6202-3/00, 6203-1/00) não estão na lista de ocupações
+permitidas ao MEI. O caminho comum para um dono só é uma **Sociedade Limitada
+Unipessoal (SLU)**, enquadrada como **Microempresa no Simples Nacional**.
+
+O que custa:
+
+- **Abertura:** taxas da Junta Comercial, que variam por estado (estimei
+  R$ 200). Muitas contabilidades online fazem a abertura sem cobrar à parte.
+- **Contador:** obrigatório na prática. Contabilidade online, em torno de
+  **R$ 150 a 250/mês** (estimei R$ 200).
+- **Certificado digital e-CNPJ:** em torno de **R$ 200/ano**, para emitir nota e
+  falar com a Receita.
+- **Imposto (DAS do Simples):** uma **porcentagem do faturamento**, e não um
+  valor fixo. Sem faturamento, não há imposto. Para software e SaaS, a alíquota
+  inicial fica em torno de **6% (Anexo III)** se a folha — o pró-labore do
+  dono — for pelo menos 28% do faturamento (o "fator R"), e de **15,5%
+  (Anexo V)** se não for. O pró-labore paga INSS (11%), então o contador
+  ajuda a achar o ponto que custa menos.
 
 Sem CNPJ você não emite nota fiscal, não abre conta de organização nas lojas,
 não tira certificado EV, e cai no limite de 12 testadores do Google.
 
-O teto de faturamento do MEI é de **R$ 81.000/ano** (havia projetos para
-aumentar; confirme). A R$ 30/mês, isso são 225 assinantes simultâneos o ano
-inteiro — problema bom de ter, e quando chegar lá o passo é migrar para
-Microempresa.
+**E pelo CPF?** Dá para publicar nas duas lojas como pessoa física, sem
+contador. Mas aí vale a regra dos 12 testadores no Google, o nome que aparece na
+loja é o seu, e o que as lojas pagam entra no seu imposto de renda (carnê-leão,
+na tabela progressiva, até 27,5%). Para começar pequeno pode ser mais barato; a
+partir de algumas dezenas de assinantes, a empresa costuma compensar. É uma
+conta para fazer com o contador.
 
 ### As lojas ficam com 15% — e este é o maior custo de todos
 
@@ -286,14 +321,18 @@ Para conferir os totais lá de cima sem precisar refazer a soma:
 
 ```
 R$  45  Apple, diluída no mês (US$ 99/ano)
-R$  78  DAS do MEI
+R$ 200  contador (ME no Simples)
+R$  17  certificado digital e-CNPJ (R$ 200/ano)
 R$   3  domínio (R$ 40/ano)
 R$   5  e-mail (SES)
 R$   0  servidor (Oracle Always Free)
-= R$ 131  cenário A
+= R$ 270  cenário A
 
-+ R$  55  Azure Trusted Signing      = R$ 186  cenário B
-+ R$ 229  certificado EV, no lugar   = R$ 361  cenário C
++ R$  55  Azure Trusted Signing      = R$ 325  cenário B
++ R$ 229  certificado EV, no lugar   = R$ 499  cenário C
+
+O imposto do Simples não entra aqui: é porcentagem do faturamento (ver
+"Os custos que não estão na tabela").
 ```
 
 O Google Play não aparece: são US$ 25 **uma vez só**, e diluir um pagamento
@@ -301,7 +340,8 @@ O Google Play não aparece: são US$ 25 **uma vez só**, e diluir um pagamento
 
 ## A ordem em que eu gastaria
 
-1. **CNPJ (MEI)** — destrava o resto e é barato. R$ 78/mês.
+1. **CNPJ (ME no Simples), com contador** — destrava o resto. ~R$ 200 para
+   abrir e ~R$ 220/mês. Decida antes com o contador entre CPF e CNPJ.
 2. **SMTP (SES)** — sem isto, ninguém além de você cria conta. Centavos.
 3. **Apple Developer, US$ 99** — sem isto, o iOS não existe para outra pessoa.
 4. **Play Console, US$ 25** — pagamento único, e com o CNPJ some a regra dos 12
@@ -311,5 +351,6 @@ O Google Play não aparece: são US$ 25 **uma vez só**, e diluir um pagamento
    site já explica o que vai acontecer. Dá para viver com ele por uns meses.
 7. **Servidor pago** — quando o dinheiro entrar, e não antes.
 
-Itens 1 a 4 somam cerca de **R$ 800 no primeiro mês** e colocam o produto no ar
-para estranhos nas três plataformas.
+Itens 1 a 4 somam cerca de **R$ 1.300 no primeiro mês** (abertura, contador,
+e-CNPJ, Apple e Google) e colocam o produto no ar para estranhos nas três
+plataformas.

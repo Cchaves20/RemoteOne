@@ -45,7 +45,7 @@ jobs:
             libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libssl-dev \
             libxkbcommon-dev xkb-data
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -104,7 +104,7 @@ jobs:
           ( cd target/linux && sha256sum "$AGENTE" | cut -d' ' -f1 > "$AGENTE.sha256" )
           ls -la target/linux
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Deskside-linux-${{ matrix.arquitetura }}
           path: |
@@ -121,7 +121,7 @@ jobs:
       # Para criar o pré-lançamento com os arquivos.
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: Deskside-linux-*
           merge-multiple: true

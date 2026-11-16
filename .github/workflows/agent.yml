@@ -27,7 +27,7 @@ jobs:
       run:
         working-directory: agent
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -46,6 +46,13 @@ jobs:
       - name: Testes
         run: cargo test
 
+      # O codec H.264 vem do servidor da Cisco (src/codec_cisco.rs): baixa
+      # todos os binários, confere os resumos, e carrega o do Windows para
+      # codificar um quadro. Fica fora do `cargo test` comum, que não depende
+      # de rede.
+      - name: Codec da Cisco
+        run: cargo test codec_cisco -- --ignored --nocapture
+
       - name: Build release
         run: cargo build --release
 
@@ -57,7 +64,7 @@ jobs:
       run:
         working-directory: agent
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt

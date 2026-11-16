@@ -21,6 +21,7 @@ pub mod captura_mac;
 pub mod capture;
 pub mod client;
 pub mod clipboard;
+pub mod codec_cisco;
 pub mod config;
 pub mod datachannel;
 pub mod files;

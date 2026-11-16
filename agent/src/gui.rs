@@ -513,6 +513,8 @@ mod imp {
         confirmando_saida: bool,
         /// Já clicou em desinstalar: a thread de saída está trabalhando.
         saindo: bool,
+        /// Não deu para gravar a escolha do codec.
+        erro_codec: Option<String>,
     }
 
     impl App {
@@ -643,6 +645,7 @@ mod imp {
                 copiado: false,
                 confirmando_saida: false,
                 saindo: false,
+                erro_codec: None,
             }
         }
     }
@@ -739,7 +742,11 @@ mod imp {
             let codigo = crate::notify::codigo_pendente();
 
             egui::CentralPanel::default().show(ctx, |ui| {
-                self.desenhar(ui, &estado, codigo);
+                // Rola: com o código de pareamento, um aviso e a seção do
+                // codec juntos, o conteúdo passa da altura fixa da janela.
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    self.desenhar(ui, &estado, codigo);
+                });
             });
 
             // Escondida, a janela não recebe nada do sistema. Este pedido é o
@@ -814,11 +821,46 @@ mod imp {
                 },
             );
 
+            self.desenhar_codec(ui);
+
             ui.add_space(16.0);
             ui.label(egui::RichText::new(ONDE_SAIR).small().weak());
 
             ui.add_space(20.0);
             self.desenhar_desinstalar(ui);
+        }
+
+        /// Ligar e desligar o codec H.264 da Cisco, com o aviso que ela exige
+        /// nesse mesmo lugar (condições 2 e 3 da licença; ver `codec_cisco.rs`).
+        ///
+        /// Some onde a Cisco não publica o binário (Windows em ARM): não há o
+        /// que controlar ali.
+        fn desenhar_codec(&mut self, ui: &mut egui::Ui) {
+            use crate::codec_cisco::{self, Situacao};
+            if codec_cisco::BINARIO.is_none() {
+                return;
+            }
+            let situacao = codec_cisco::situacao();
+            ui.add_space(12.0);
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                let mut ligado = situacao != Situacao::Desligado;
+                if ui.checkbox(&mut ligado, "Codec de vídeo H.264 (OpenH264)").changed() {
+                    self.erro_codec = codec_cisco::definir(ligado).err();
+                }
+                ui.label(egui::RichText::new(codec_cisco::AVISO).small());
+                let texto = match &situacao {
+                    Situacao::Pronto => "Pronto. O vídeo pode usá-lo.".to_string(),
+                    Situacao::Baixando => "Baixando do site da Cisco...".to_string(),
+                    Situacao::Falhou(e) => format!("Não consegui baixar ({e}). Tento de novo na próxima tela aberta."),
+                    Situacao::Desligado => "Desligado. O vídeo usa a placa de vídeo, quando ela codifica, ou imagens JPEG.".to_string(),
+                    Situacao::SemBinario => String::new(),
+                };
+                ui.label(egui::RichText::new(texto).small().weak());
+                if let Some(erro) = &self.erro_codec {
+                    ui.label(egui::RichText::new(erro).small().weak());
+                }
+            });
         }
 
         /// O botão de atualizar, quando há o que atualizar.
@@ -1017,7 +1059,7 @@ mod imp {
 
     pub fn rodar(estado: Compartilhado) {
         let mut viewport = egui::ViewportBuilder::default()
-            .with_inner_size([420.0, 520.0])
+            .with_inner_size([420.0, 600.0])
             .with_resizable(false)
             // Nasce escondida: quem instalou quer o agente subindo no login
             // sem nada piscando na tela.

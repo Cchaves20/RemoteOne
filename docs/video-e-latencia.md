@@ -36,6 +36,39 @@ placa de vídeo, pelo Media Foundation (`agent/src/h264_placa.rs`):
 
 Mac (VideoToolbox) e Linux (VA-API) seguem no openh264 por enquanto.
 
+### O openh264 é o binário da Cisco, baixado à parte (desde 16/11/2026)
+
+O agente não traz mais o codec dentro do executável: ele baixa o binário que
+a Cisco publica (`ciscobinary.openh264.org`, versão 2.6.0), confere o SHA-256
+contra a lista da crate `openh264` e só então o carrega
+(`agent/src/codec_cisco.rs`). É o que faz a licença das patentes do H.264 ser
+a da Cisco, sob as quatro condições do `agent/LICENCA-OPENH264-CISCO.txt`:
+
+- **Baixado à parte:** na primeira execução, em segundo plano, para a pasta de
+  configuração (`codec/`).
+- **A pessoa liga e desliga:** na janela do agente (Windows e Mac), no menu do
+  ícone (Linux), ou com `DESKSIDE_OPENH264=desligado` no `agent.conf`.
+- **O aviso** "OpenH264 Video Codec provided by Cisco Systems, Inc." aparece
+  junto desse controle.
+- **A licença inteira** sai no `deskside-agent licencas` e no
+  `deskside.com.br/licencas.txt`.
+
+Sem o binário (baixando, desligado, ou num Windows em ARM, para o qual a
+Cisco não publica), o vídeo usa a placa de vídeo quando houver, ou fica no
+**JPEG**: o agente volta ao JPEG quando o H.264 falha e tenta o vídeo de novo
+a cada 20 s (`sem_h264` em `client.rs`). Antes disso, uma falha do codec
+deixava a tela parada no celular.
+
+No Mac, a assinatura Developer ID usa `agent/mac/deskside.entitlements`
+(`disable-library-validation`): sem ele, o "hardened runtime" recusaria
+carregar o binário da Cisco, que não é assinado por nós.
+
+Os testes continuam compilando o openh264 da fonte (`[dev-dependencies]`), o
+que não chega ao executável distribuído. O CI do Windows roda também o teste
+`baixa_confere_e_carrega_os_binarios_da_cisco` (com `--ignored`), que baixa
+os cinco binários de verdade, confere os resumos e codifica um quadro com o do
+Windows.
+
 ### Largura pelo processador (todos os sistemas)
 
 Sem placa de vídeo, o custo de codificar pode passar do que o processador

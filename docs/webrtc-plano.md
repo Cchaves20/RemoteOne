@@ -792,3 +792,11 @@ pequena — vale saber disso antes de escolher.
 Não é conselho jurídico e eu não vou fingir que é. É um item para checar antes
 de cobrar pelo produto — não antes de construí-lo. Se virar um problema, o
 plano B é VP8, que é livre de royalties e custa bateria do iPhone.
+
+**Feito em 16/11/2026:** o agente passou ao binário da Cisco, baixado à parte
+(`libloading`). Ver "O openh264 é o binário da Cisco" em
+`docs/video-e-latencia.md`. Uma ressalva fica para a revisão jurídica: o aviso
+da licença diz que ela cobre o **uso pessoal de um consumidor, ou usos sem
+remuneração**, e que provedores de serviço que usam H.264 podem precisar de
+licença própria da MPEG LA (Via LA). Se um serviço pago de acesso remoto entra
+nisso é pergunta para o advogado.

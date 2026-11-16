@@ -354,6 +354,22 @@ impl ksni::Tray for Bandeja {
             );
         }
         itens.push(MenuItem::Separator);
+        // Ligar e desligar o codec H.264 da Cisco, com o aviso que ela exige
+        // no lugar onde se controla (ver `codec_cisco.rs`). No GNOME sem ícone,
+        // o mesmo controle é `DESKSIDE_OPENH264=desligado` no agent.conf.
+        if crate::codec_cisco::BINARIO.is_some() {
+            itens.push(
+                ksni::menu::CheckmarkItem {
+                    label: format!("Codec H.264 ({})", crate::codec_cisco::AVISO),
+                    checked: crate::codec_cisco::ligado(),
+                    activate: Box::new(|_: &mut Self| {
+                        let _ = crate::codec_cisco::definir(!crate::codec_cisco::ligado());
+                    }),
+                    ..Default::default()
+                }
+                .into(),
+            );
+        }
         itens.push(
             StandardItem {
                 label: if self.atualizar {

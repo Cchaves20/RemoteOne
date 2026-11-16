@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  O codec H.264 é o binário da Cisco, baixado à parte (src/codec_cisco.rs),
+	  e não é assinado por nós. Com o "hardened runtime" da assinatura
+	  Developer ID, o macOS só carrega biblioteca da mesma equipe; sem isto o
+	  vídeo cairia sempre no JPEG. O agente confere o SHA-256 do arquivo antes
+	  de carregá-lo.
+	-->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
