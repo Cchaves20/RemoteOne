@@ -32,7 +32,7 @@ dependencies:
   # há o que migrar; no iPhone, se o login cair, é entrar de novo uma vez.
   flutter_secure_storage: ^11.1.0
   wakelock_plus: ^1.2.0
-  local_auth: ^2.3.0
+  local_auth: ^3.0.2
   qr_flutter: ^4.1.0
   # Spike S1 do plano de WebRTC (docs/webrtc-plano.md). Traz o framework
   # nativo do WebRTC, que é grande — se o spike reprovar, sai daqui.
