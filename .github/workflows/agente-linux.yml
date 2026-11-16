@@ -45,7 +45,7 @@ jobs:
             libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libssl-dev \
             libxkbcommon-dev xkb-data
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
